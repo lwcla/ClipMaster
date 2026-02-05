@@ -1,6 +1,9 @@
 <resources>
-    <string name="app_name">LwlDemo</string>
-    <string name="the_shizuku_service_is_unavailable">请先连接 Shizuku 服务，否则将无法读取剪贴板的内容</string>
-    <string name="shizuku_not_install">未安装 Shizuku</string>
-    <string name="shizuku_not_install_tip">在后台复制剪贴板的内容需要依赖 Shizuku 的服务，检测到设备未安装。</string>
+    <string name="host_app_name">lwldemo</string>
+    <string name="host_shizuku_not_install">shizuku 未安装</string>
+    <string name="host_shizuku_service_not_alive">shizuku 服务未存活</string>
+    <string name="host_shizuku_version_too_low">shizuku 版本过低</string>
+    <string name="host_shizuku_not_granted">shizuku 未授权</string>
+    <string name="host_shizuku_service_require">在后台复制剪贴板的内容需要依赖 SHIZUKU 的服务</string>
+
 </resources>

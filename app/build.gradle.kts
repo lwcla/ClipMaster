@@ -6,6 +6,7 @@ plugins {
 
 android {
     namespace = "com.cla.clip.master"
+    resourcePrefix("host_")
     compileSdk {
         version = release(36)
     }
@@ -39,6 +40,9 @@ android {
 }
 
 dependencies {
+    implementation(project(":base:general"))
+    implementation(project(":base:shizuku"))
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
@@ -54,7 +58,4 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
-
-    implementation(libs.shizuku.api)
-    implementation(libs.shizuku.provider)
 }

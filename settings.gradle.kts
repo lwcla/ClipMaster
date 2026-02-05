@@ -21,4 +21,6 @@ dependencyResolutionManagement {
 
 rootProject.name = "LwlDemo"
 include(":app")
- 
+include(":base")
+include(":base:general")
+include(":base:shizuku")
