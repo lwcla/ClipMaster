@@ -1,16 +1,16 @@
 package com.cla.clip.master.ui.widget
 
 import android.Manifest
-import android.app.Activity
 import android.os.Build
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -19,13 +19,17 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.LifecycleEventObserver
@@ -99,11 +103,17 @@ fun HandleNotificationPermission(trigger: Boolean) {
         }
     )
 
+    // --- 新增代码：使用 rememberSaveable 记录是否已经自动触发过 ---
+    // 这样即使切换主题导致 Activity 重建，这个变量依然会保持为 true，从而阻止 LaunchedEffect 内部逻辑再次运行
+    var hasAutoRequested by rememberSaveable { mutableStateOf(false) }
+
     // 3. 监听触发信号，执行初次检查与请求
-    LaunchedEffect(Unit) { // Key 使用 Unit，配合外层的 if (!trigger) return，确保只在组件进入组合且 satisfied 时运行一次
-        if (!context.hasPermission(permission)) {
+    LaunchedEffect(owner) { // Key 使用 Unit，配合外层的 if (!trigger) return，确保只在组件进入组合且 satisfied 时运行一次
+        if (!hasAutoRequested && !context.hasPermission(permission)) {
             Log.d("通知权限", "触发条件满足，正在请求通知权限...")
             requestTime = System.currentTimeMillis()
+            // 标记位设为 true，下次重建 Activity 时这里依然是 true
+            hasAutoRequested = true
             notificationPermissionLauncher.launch(permission)
         }
     }
@@ -130,26 +140,38 @@ fun HandleNotificationPermission(trigger: Boolean) {
         )
     }
 
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp), // 所有子元素间隔 8dp
+    Text(
+        text = buildAnnotatedString {
+            // 第一段：红色
+            withStyle(style = SpanStyle(color = Color.Red, fontWeight = FontWeight.Bold)) {
+                append(stringResource(R.string.host_notification_permission_tip))
+            }
+
+            // 间隔
+            append("  ")
+
+            // 第二段：
+            withStyle(style = SpanStyle(color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Normal)) {
+                append(stringResource(com.cla.clip.base.general.R.string.base_general_to_authorize).plus(">>"))
+            }
+        },
         modifier = Modifier
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            // 1. 添加圆角边框 (例如: 宽度 1dp, 红色, 8dp 圆角)
+            .border(
+                width = 1.dp,
+                color = Color.Red, // 或者使用 MaterialTheme.colorScheme.error
+                shape = RoundedCornerShape(8.dp)
+            )
+            // 2. 如果希望背景点击效果也遵循圆角，需要 clip
+            .clip(RoundedCornerShape(8.dp))
             .clickable(true, onClick = {
                 Log.d("通知权限", "手动点击，去请求通知权限")
                 requestTime = System.currentTimeMillis()
                 notificationPermissionLauncher.launch(permission)
             })
             .padding(horizontal = 16.dp, vertical = 12.dp),
-    ) {
-        Text(
-            text = stringResource(R.string.host_notification_permission_tip),
-            fontWeight = FontWeight.Bold,
-            color = Color.Red,
-            modifier = Modifier.weight(1f) // 让文字占据剩余空间，把开关挤到右边
-        )
-
-        Text(stringResource(com.cla.clip.base.general.R.string.base_general_to_authorize).plus(">>"))
-    }
+    )
 }
 
 @Preview
