@@ -5,5 +5,8 @@
     <string name="host_shizuku_version_too_low">shizuku 版本过低</string>
     <string name="host_shizuku_not_granted">shizuku 未授权</string>
     <string name="host_shizuku_service_require">在后台复制剪贴板的内容需要依赖 SHIZUKU 的服务</string>
+    <string name="host_notification_permission_is_required">需要通知权限</string>
+    <string name="host_notification_permission_tip">为了让您及时收到剪贴板的处理结果，App 需要申请通知权限去创建一个前台服务。</string>
+    <string name="host_notification_permission_tip_dialog">为了让您及时收到剪贴板的处理结果，App 需要申请通知权限去创建一个前台服务。\n请在下一步授权中点击“允许”。</string>
 
 </resources>

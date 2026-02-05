@@ -73,31 +73,6 @@ fun ShizukuServiceUnavailableTip() {
         }
     }
 
-    // 3. 定义请求权限的启动器
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-        onResult = { isGranted ->
-            Log.d("通知权限", "通知权限是否授予: $isGranted")
-        }
-    )
-
-    // 4. 监听 status 变化，连接成功自动请求权限
-    LaunchedEffect(status) {
-        if (status is ShizukuStatus.Connected) {
-            Log.d("通知权限", "Shizuku 已连接，准备请求通知权限")
-
-            // 通知权限仅在 Android 13 (API 33) 及以上需要动态申请
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                val hasPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-
-                if (!hasPermission) {
-                    Log.d("通知权限", "Shizuku 已连接，正在请求通知权限...")
-                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                }
-            }
-        }
-    }
-
     // ========================================================
     // 【关键修改】调用分离出来的权限处理组件
     // 只要 status 是 Connected，就触发权限检查逻辑
