@@ -17,6 +17,7 @@ import android.util.Log
 import android.view.View
 import android.view.WindowManager
 import androidx.core.app.NotificationCompat
+import com.cla.clip.base.general.logD
 import com.cla.clip.master.BuildConfig
 import com.cla.clip.master.R
 import com.cla.clip.shizuku.ClipboardShizukuService
@@ -28,6 +29,8 @@ import rikka.shizuku.Shizuku
 class ClipboardService : Service() {
 
     companion object {
+
+        private const val TAG = "ClipboardService"
 
         private const val CHANNEL_ID = "clipboard_service_channel"
         private const val NOTIFICATION_ID = 1001
@@ -51,6 +54,8 @@ class ClipboardService : Service() {
 
     private val manager by lazy { getSystemService(NotificationManager::class.java) }
     private val clipboardManager by lazy { getSystemService(ClipboardManager::class.java) }
+    private val windowManager by lazy { getSystemService(WindowManager::class.java) as WindowManager }
+    private val handler by lazy { Handler(mainLooper) }
 
     private val userServiceArgs = Shizuku.UserServiceArgs(ComponentName(BuildConfig.APPLICATION_ID, ClipboardShizukuService::class.java.name))
         .daemon(false)
@@ -64,23 +69,25 @@ class ClipboardService : Service() {
                 val service = IClipboardShizukuService.Stub.asInterface(binder)
                 service.start()
                 service.addCallback(object : ShizukuCallback.Stub() {
-                    override fun onOpNoted(
-                        op: String,
-                        uid: Int,
-                        packageName: String,
-                        appName: String?,
-                        attributionTag: String?,
-                        flags: Int,
-                        result: Int
-                    ) {
-
-
-                        if (op == "android:write_clipboard" && packageName != BuildConfig.APPLICATION_ID) {
-
-                            Log.i("lwl", "ClipboardService onOpNoted: appName=$appName")
-
-                            magic(packageName)
+                    override fun onOpNoted(op: String, packageName: String, appName: String?, appIcon: ByteArray) {
+                        if (op != "android:write_clipboard") {
+                            return
                         }
+
+                        if (packageName == BuildConfig.APPLICATION_ID) {
+                            return
+                        }
+
+                        logD(TAG) {
+                            """
+                            剪贴板有更新了：
+                            packageName=$packageName
+                            appName=$appName
+                            appIcon=${appIcon.size}
+                            """.trimIndent()
+                        }
+
+                        magic(packageName)
                     }
                 })
 //                createNotification()
@@ -139,10 +146,8 @@ class ClipboardService : Service() {
     }
 
     private fun magic(packageName: String = "?") {
-        // Another magic, create a floating view to ensure clipboard access
-        val handler = Handler(mainLooper)
+        // 通过添加一个不可见的 View 来触发系统读取剪贴板内容，从而获取最新的剪贴板数据
         handler.post {
-            val windowManager = getSystemService(WindowManager::class.java) as WindowManager
             val view = View(applicationContext)
             windowManager.addView(view, WindowManager.LayoutParams(-2, -2, 2038, 32, -3).apply {
                 x = 0
@@ -157,7 +162,7 @@ class ClipboardService : Service() {
 
     private fun doClipboard(packageName: String = "?") {
         clipboardManager.primaryClip?.getItemAt(0)?.text?.let {
-            Log.i("lwl", "ClipboardService doClipboard: $packageName 写入了剪切板 ${it}")
+            logD(TAG) { "读取到剪贴板内容：$it" }
 //            sendNotification(
 //                title = "$packageName 写入了剪切板",
 //                content = "内容：$it"

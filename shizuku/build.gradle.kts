@@ -56,6 +56,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":base:general"))
     implementation(project(":base:hidden-api"))
 
     implementation(libs.androidx.core.ktx)
