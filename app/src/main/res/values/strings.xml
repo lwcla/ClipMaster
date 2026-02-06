@@ -1,5 +1,10 @@
 <resources>
     <string name="host_app_name">lwldemo</string>
+    <string name="host_clipboard_assistant">剪贴板助手</string>
+    <string name="host_clipboard_service">剪贴板服务</string>
+    <string name="host_service_is_running">服务正在运行中</string>
+    <string name="host_listen_for_changes_in_the_clipboard_content">监听剪贴板内容变化</string>
+    <string name="host_waiting_for_shizuku_connection">等待shizuku连接..</string>
     <string name="host_shizuku_not_install">shizuku未安装</string>
     <string name="host_shizuku_service_not_alive">shizuku服务未存活</string>
     <string name="host_shizuku_version_too_low">shizuku版本过低</string>

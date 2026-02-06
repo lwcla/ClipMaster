@@ -16,6 +16,7 @@ import com.cla.clip.base.general.logD
 import dev.rikka.tools.refine.Refine
 import org.lsposed.hiddenapibypass.HiddenApiBypass
 import java.io.ByteArrayOutputStream
+import kotlin.compareTo
 
 @Keep
 class ClipboardShizukuService(private val context: Context) : IClipboardShizukuService.Stub() {
@@ -50,7 +51,7 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         packageManager = context.packageManager
         // DO NOT convert it to lambda due to R8 will break it down
         opNotedListener = AppOpsManagerHidden.OnOpNotedListener { op, uid, packageName, attributionTag, flags, result ->
-            if (op.isNullOrBlank()) {
+            if (op.isNullOrBlank() || op != "android:write_clipboard") {
                 return@OnOpNotedListener
             }
 
@@ -58,22 +59,20 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
             val name = packageInfo?.applicationInfo?.loadLabel(packageManager)?.toString().takeUnless { it.isNullOrBlank() } ?: "Unknown"
 
             // 获取图标 Drawable
-            val iconDrawable = packageInfo?.applicationInfo?.loadIcon(packageManager)
-            // 转换为压缩数据
-            val iconBytes = getCompressedIconData(iconDrawable) ?: ByteArray(0) // 如果没有图标，传空数组
-
+            // Android 的 Bitmap 类实现了 Parcelable，并且针对 Binder 传输做了特殊优化（会将大图片数据放在 Ashmem 匿名共享内存中，而不是 Binder 缓冲区，只传递文件描述符）
+            val bitmap = getIconBitmap(packageInfo?.applicationInfo?.loadIcon(packageManager))
 
             logD(TAG) {
                 """
-                name=$name
-                iconBytes=${iconBytes.size}
+                op=$op
                 packageName=${packageName} 
                 uid=$uid
-                op=$op
+                name=$name
+                bitmap=${bitmap?.width} x ${bitmap?.height}
             """.trimIndent()
             }
 
-            shizukuCallback.onOpNoted(op, packageName, name, iconBytes)
+            shizukuCallback.onOpNoted(packageName, name, bitmap)
         }
         // Allow self to draw floating window
         Refine.unsafeCast<AppOpsManagerHidden>(appOpsManager)
@@ -93,41 +92,24 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
     }
 
     // 辅助方法：将 Drawable 转为压缩后的 byte[]
-    private fun getCompressedIconData(drawable: Drawable?): ByteArray? {
+    private fun getIconBitmap(drawable: Drawable?): Bitmap? {
         drawable ?: return null
 
         val size = 72
 
-        // 1. 限制尺寸 (比如限制在 72x72 或 96x96，足够列表显示即可)
-        // 如果原图太大，这里需要缩小
         val width = if (drawable.intrinsicWidth > size) size else drawable.intrinsicWidth
         val height = if (drawable.intrinsicHeight > size) size else drawable.intrinsicHeight
 
-        val bitmap = if (drawable is BitmapDrawable) {
-            // 如果原本就是 BitmapDrawable，且尺寸合适，直接用；否则缩放
-            if (drawable.bitmap.width <= size) {
-                drawable.bitmap
-            } else {
-                drawable.bitmap.scale(width, height)
-            }
-        } else {
-            // 其他 Drawable (如 AdaptiveIconDrawable) 手动绘制
-            val bitmap = createBitmap(width, height)
-            val canvas = Canvas(bitmap)
-            drawable.setBounds(0, 0, canvas.width, canvas.height)
-            drawable.draw(canvas)
-            bitmap
+        // 如果本身就是合适大小的 BitmapDrawable，直接复用
+        if (drawable is BitmapDrawable && drawable.bitmap.width <= size && drawable.bitmap.height <= size) {
+            return drawable.bitmap
         }
 
-        // 2. 压缩为 PNG 格式的字节流
-        val stream = ByteArrayOutputStream()
-        // PNG 是无损压缩，适合图标；质量参数对 PNG 无效，填 100 即可
-        bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
-        val byteArray = stream.toByteArray()
-
-        // 如果不是复用的 bitmap，记得 recycle 防止内存泄露（视情况而定，createBitmap生成的一般需要）
-        // 但在 Service 且传递完就销毁的场景，GC 会处理，严谨点可以不做 recycle 避免时序问题
-
-        return byteArray
+        // 否则绘制一个新的 Bitmap
+        val bitmap = createBitmap(width, height)
+        val canvas = Canvas(bitmap)
+        drawable.setBounds(0, 0, canvas.width, canvas.height)
+        drawable.draw(canvas)
+        return bitmap
     }
 }
