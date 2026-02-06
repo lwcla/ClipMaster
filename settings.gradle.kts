@@ -23,4 +23,5 @@ rootProject.name = "LwlDemo"
 include(":app")
 include(":base")
 include(":base:general")
-include(":base:shizuku")
+include(":base:hidden-api")
+include(":shizuku")

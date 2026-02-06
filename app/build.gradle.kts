@@ -35,13 +35,14 @@ android {
         jvmTarget = "11"
     }
     buildFeatures {
+        buildConfig = true
         compose = true
     }
 }
 
 dependencies {
     implementation(project(":base:general"))
-    implementation(project(":base:shizuku"))
+    implementation(project(":shizuku"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

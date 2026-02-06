@@ -27,10 +27,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.cla.clip.base.shizuku.ShizukuStatus
-import com.cla.clip.base.shizuku.ShizukuUtils
 import com.cla.clip.master.R
 import com.cla.clip.master.ui.theme.LwlDemoTheme
+import com.cla.clip.shizuku.ShizukuStatus
+import com.cla.clip.shizuku.ShizukuUtils
 import rikka.shizuku.Shizuku
 
 /** shizuku 服务不可用提示 */

@@ -38,6 +38,7 @@ import com.cla.clip.base.general.PermissionUtils
 import com.cla.clip.base.general.hasPermission
 import com.cla.clip.base.general.toPermissionSetting
 import com.cla.clip.master.R
+import com.cla.clip.master.service.ClipboardService
 import com.cla.clip.master.ui.theme.LwlDemoTheme
 
 /**
@@ -48,12 +49,17 @@ import com.cla.clip.master.ui.theme.LwlDemoTheme
 @Composable
 fun HandleNotificationPermission(trigger: Boolean) {
     // 1. Android 13 以下不需要动态申请，直接退出
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
-
-    // 如果触发条件不满足（比如 Shizuku 还没连上），直接退出，不浪费资源
-    if (!trigger) return
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+        return
+    }
 
     val context = LocalContext.current
+    // 如果触发条件不满足（比如 Shizuku 还没连上），直接退出，不浪费资源
+    if (!trigger) {
+        ClipboardService.stop(context)
+        return
+    }
+
     val owner = LocalLifecycleOwner.current
 
     val permission = Manifest.permission.POST_NOTIFICATIONS
@@ -76,7 +82,11 @@ fun HandleNotificationPermission(trigger: Boolean) {
     if (hasPermission) {
         // 已经有权限，直接退出
         Log.i("通知权限", "HandleNotificationPermission: 已经有通知权限了")
+        // 有通知权限了，需要去拉起前台服务
+        ClipboardService.start(context)
         return
+    } else {
+        ClipboardService.stop(context)
     }
 
     var showRationaleDialog by remember { mutableStateOf(false) }
