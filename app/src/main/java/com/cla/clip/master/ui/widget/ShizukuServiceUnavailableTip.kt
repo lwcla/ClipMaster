@@ -1,34 +1,29 @@
 package com.cla.clip.master.ui.widget
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
 import android.util.Log
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -104,9 +99,32 @@ fun ShizukuServiceUnavailableTip() {
         }
     }
 
-    Column(
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+    Text(
+        text = buildAnnotatedString {
+            // 第一段：红色
+            withStyle(style = SpanStyle(color = Color.Red, fontWeight = FontWeight.Bold)) {
+                append(stringResource(R.string.host_shizuku_service_require))
+            }
+
+            withStyle(style = SpanStyle(color = Color.Red, fontWeight = FontWeight.Medium)) {
+                append("(${tip.first})")
+            }
+
+            // 第二段：
+            withStyle(style = SpanStyle(color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Normal)) {
+                append("\n${tip.second}>>")
+            }
+        },
         modifier = Modifier
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            // 1. 添加圆角边框 (例如: 宽度 1dp, 红色, 8dp 圆角)
+            .border(
+                width = 1.dp,
+                color = Color.Red, // 或者使用 MaterialTheme.colorScheme.error
+                shape = RoundedCornerShape(10.dp)
+            )
+            // 2. 如果希望背景点击效果也遵循圆角，需要 clip
+            .clip(RoundedCornerShape(10.dp))
             .clickable(true, onClick = {
                 Log.d("shizuku", "ShizukuUtils toConnect: 去连接 Shizuku，当前状态：$status")
                 when (status) {
@@ -131,29 +149,7 @@ fun ShizukuServiceUnavailableTip() {
                 }
             })
             .padding(horizontal = 16.dp, vertical = 12.dp),
-    ) {
-        Text(
-            text = stringResource(R.string.host_shizuku_service_require),
-            fontWeight = FontWeight.Normal,
-            color = Color.Red,
-            maxLines = 1,
-            modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE) // 添加跑马灯效果
-        )
-
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp), // 所有子元素间隔 8dp
-        ) {
-            Text(
-                text = tip.first,
-                fontWeight = FontWeight.Bold,
-                color = Color.Red,
-                modifier = Modifier.weight(1f) // 让文字占据剩余空间，把开关挤到右边
-            )
-
-            Text(tip.second.plus(">>"))
-        }
-    }
+    )
 }
 
 

@@ -15,9 +15,7 @@ object PermissionUtils {
      * 在这里用回调的时间来判断，如果是用户手动操作的，回调时间应该是比较长的，
      * 如果是系统直接返回的拒绝，那么回调的间隔时间应该是很短的
      */
-    const val DENIED_FOREVER_TAKE_TIME = 300
-
-
+    const val DENIED_FOREVER_TAKE_TIME = 350
 }
 
 /** 检查某个权限是否被授予 */

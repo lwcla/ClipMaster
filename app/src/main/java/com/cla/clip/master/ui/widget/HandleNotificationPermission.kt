@@ -161,10 +161,10 @@ fun HandleNotificationPermission(trigger: Boolean) {
             .border(
                 width = 1.dp,
                 color = Color.Red, // 或者使用 MaterialTheme.colorScheme.error
-                shape = RoundedCornerShape(8.dp)
+                shape = RoundedCornerShape(10.dp)
             )
             // 2. 如果希望背景点击效果也遵循圆角，需要 clip
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(10.dp))
             .clickable(true, onClick = {
                 Log.d("通知权限", "手动点击，去请求通知权限")
                 requestTime = System.currentTimeMillis()
