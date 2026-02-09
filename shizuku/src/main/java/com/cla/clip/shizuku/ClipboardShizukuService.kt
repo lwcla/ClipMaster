@@ -11,12 +11,9 @@ import android.graphics.drawable.Drawable
 import android.os.Build
 import androidx.annotation.Keep
 import androidx.core.graphics.createBitmap
-import androidx.core.graphics.scale
 import com.cla.clip.base.general.logD
 import dev.rikka.tools.refine.Refine
 import org.lsposed.hiddenapibypass.HiddenApiBypass
-import java.io.ByteArrayOutputStream
-import kotlin.compareTo
 
 @Keep
 class ClipboardShizukuService(private val context: Context) : IClipboardShizukuService.Stub() {
