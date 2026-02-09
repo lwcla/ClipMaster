@@ -85,4 +85,7 @@ dependencies {
 
     // Jsoup，用于解析HTML，实现链接预览功能
     implementation(libs.jsoup)
+
+    // AndroidX Palette KTX，用于从图片中提取主色调，实现动态主题功能
+    implementation(libs.androidx.palette.ktx)
 }

@@ -19,6 +19,7 @@ import android.view.View
 import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.FileProvider
+import androidx.palette.graphics.Palette
 import com.cla.clip.base.general.entity.ClipData
 import com.cla.clip.base.general.logD
 import com.cla.clip.base.general.logI
@@ -249,6 +250,18 @@ class ClipboardService : Service() {
 //                // OcrProcessingWorker.enqueue(this@ClipboardService, clipContent, newClip.id)
 //            }
 
+            val color = if (appIcon != null) {
+                // 提取图标的主色调作为标签颜色
+                runCatching {
+                    val palette = Palette.from(appIcon).generate()
+                    val color = palette.getDominantColor(0xFF000000.toInt()) // 默认黑色
+                    // 只保留 RGB 信息，去除透明度，生成 #RRGGBB 格式
+                    String.format("#%06X", 0xFFFFFF and color)
+                }.getOrNull()
+            } else {
+                null
+            }
+
             // 创建新的Clip对象
             val newClip = ClipData(
                 id = 0, // Room会自动生成ID
@@ -257,7 +270,7 @@ class ClipboardService : Service() {
                 content = clipContent,
                 timestamp = System.currentTimeMillis(),
                 isPinned = false,
-                colorTag = null,
+                colorTag = color,
                 sourceAppPackage = packageName,
                 sourceAppName = appName,
                 sourceAppIconPath = saveAppIcon(packageName, appIcon)
