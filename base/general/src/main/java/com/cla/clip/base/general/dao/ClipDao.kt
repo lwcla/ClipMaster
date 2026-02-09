@@ -19,8 +19,8 @@ interface ClipDao {
     suspend fun upsertClip(clip: ClipData): Long
 
     // 1. 基础查询：查找是否存在相同内容
-    @Query("SELECT * FROM clips WHERE content = :content AND is_latest=:isLastest LIMIT 1")
-    suspend fun getClipByContent(content: String, isLastest: Boolean): ClipData?
+    @Query("SELECT * FROM clips WHERE content = :content AND is_latest = 1 LIMIT 1")
+    suspend fun getClipByContent(content: String): ClipData?
 
     /**
      * 将指定分组中的所有条目的 isLatest 标志设置为 false。
@@ -38,7 +38,7 @@ interface ClipDao {
     @Transaction
     suspend fun addNewClip(clip: ClipData) {
         // 先尝试查找旧数据
-        val existingClip = getClipByContent(clip.content, clip.isLatest)
+        val existingClip = getClipByContent(clip.content)
 
         if (existingClip != null) {
             // === 情况 A：数据库有相同 content ===

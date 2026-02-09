@@ -40,7 +40,6 @@ import androidx.room.PrimaryKey
         Index(value = ["color_tag"]),
         Index(value = ["source_app_name"]),
         Index(value = ["content"]),
-        Index(value = ["is_latest"]),
     ]
 )
 data class ClipData(
