@@ -2,6 +2,7 @@ package com.cla.clip.master.ui.screen.main
 
 import android.content.ClipboardManager
 import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -138,9 +139,9 @@ private fun ClipCard(
         onClick = {
 //             getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            val clipData = android.content.ClipData.newPlainText("Clip", "这是测试字符串")
+            val clipData = android.content.ClipData.newPlainText("ClipMaster", clip.content)
             clipboard.setPrimaryClip(clipData)
-
+            Toast.makeText(context, "已复制:${clip.content.take(10)}...", Toast.LENGTH_SHORT).show()
         }
     ) {
         Column(modifier = Modifier.padding(16.dp)) {

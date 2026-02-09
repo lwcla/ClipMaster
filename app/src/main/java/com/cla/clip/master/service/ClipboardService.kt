@@ -10,8 +10,6 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -189,19 +187,155 @@ class ClipboardService : Service() {
     }
 
     private fun doClipboard(packageName: String, appName: String?, appIcon: Bitmap?) {
-        clipboardManager.primaryClip?.let { clip ->
-            logD(TAG) { "读取到剪贴板内容：$clip" }
-            if (clip.itemCount > 0) {
-                serviceScope.launch {
+        clipboardManager.primaryClip?.let { clipData ->
+            logD(TAG) { "读取到剪贴板内容：$clipData" }
+            val clip = runCatching { clipData.getItemAt(0) }.getOrNull() ?: return@let
 
-//                    ensureForeground(
-//                        title = "$appName 写入了剪切板",
-//                        content = "内容：$it"
-//                    )
+            serviceScope.launch(Dispatchers.IO) {
+                processClip(clip, packageName, appName, appIcon)
+            }
+        }
+    }
 
-                    processClip(clip, packageName, appName, appIcon)
+    /**
+     * 处理新的剪贴板内容
+     */
+    private suspend fun processClip(
+        item: android.content.ClipData.Item,
+        packageName: String,
+        appName: String?,
+        appIcon: Bitmap?
+    ) {
+        try {
+            // 保存剪贴板内容
+            val contentUri = item.uri
+            val contentText = item.text?.toString()
+
+            // 确定内容类型和实际内容
+//            val clipType: ClipType
+            val clipContent = when {
+                // 处理图片类型
+                contentUri != null && contentUri.toString().startsWith("content://") -> {
+                    //                    clipType = ClipType.IMAGE
+                    saveImageAndGetPath(contentUri)
+                }
+                // 处理链接类型
+                contentText != null && URL_PATTERN.matches(contentText) -> {
+                    //                    clipType = ClipType.LINK
+                    contentText
+                }
+                // 处理文本类型
+                contentText != null -> {
+                    //                    clipType = ClipType.TEXT
+                    contentText
+                }
+                // 未知类型，忽略
+                else -> null
+            }?.trim()
+
+            if (clipContent.isNullOrBlank()) {
+                return
+            }
+
+            // 对于链接类型，启动链接解析任务
+//            if (clipType == ClipType.LINK) {
+//                // TODO: 实现链接解析逻辑
+//                // LinkParserWorker.enqueue(this@ClipboardService, clipContent, newClip.id)
+//            }
+
+            // 对于图片类型，启动OCR任务
+//            if (clipType == ClipType.IMAGE) {
+//                // TODO: 实现图片OCR逻辑
+//                // OcrProcessingWorker.enqueue(this@ClipboardService, clipContent, newClip.id)
+//            }
+
+            // 创建新的Clip对象
+            val newClip = ClipData(
+                id = 0, // Room会自动生成ID
+                groupId = 0, // 在Repository中设置为id
+                isLatest = true,
+                content = clipContent,
+                timestamp = System.currentTimeMillis(),
+                isPinned = false,
+                colorTag = null,
+                sourceAppPackage = packageName,
+                sourceAppName = appName,
+                sourceAppIconPath = saveAppIcon(packageName, appIcon)
+            )
+
+            Log.i("lwl", "ClipboardService processClip: newClip=$newClip")
+
+            // 保存到数据库
+            clipRepository.addNewClip(newClip)
+
+            withContext(Dispatchers.Main) {
+                ensureForeground(
+                    title = "$appName 写入了剪切板",
+                    content = "内容：${clipContent}"
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    /**
+     * 保存应用图标到内部存储，并返回保存路径
+     */
+    private fun saveAppIcon(packageName: String, icon: Bitmap?): String? {
+        if (icon == null) {
+            return null
+        }
+
+        val iconDir = File(filesDir, APP_ICONS_DIR)
+        if (!iconDir.exists()) {
+            iconDir.mkdirs()
+        }
+
+        val iconFile = File(iconDir, "$packageName.png")
+        return try {
+
+            FileOutputStream(iconFile).use { out ->
+                icon.compress(Bitmap.CompressFormat.PNG, 100, out)
+            }
+
+            "$APP_ICONS_DIR/$packageName.png"
+        } catch (e: IOException) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    /**
+     * 保存剪贴板中的图片，并返回保存路径
+     */
+    private fun saveImageAndGetPath(imageUri: Uri): String {
+        val imageDir = File(filesDir, "clip_images")
+        if (!imageDir.exists()) {
+            imageDir.mkdirs()
+        }
+
+        val fileName = "clip_img_${UUID.randomUUID()}.png"
+        val imageFile = File(imageDir, fileName)
+
+        return try {
+            contentResolver.openInputStream(imageUri)?.use { input ->
+                FileOutputStream(imageFile).use { output ->
+                    input.copyTo(output)
                 }
             }
+
+            // 返回ContentProvider URI，确保应用内可访问
+            val fileUri = FileProvider.getUriForFile(
+                this@ClipboardService,
+                "${applicationContext.packageName}.fileprovider",
+                imageFile
+            )
+
+            fileUri.toString()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            ""
         }
     }
 
@@ -252,211 +386,6 @@ class ClipboardService : Service() {
                 description = applicationContext.getString(R.string.host_listen_for_changes_in_the_clipboard_content)
             }
             manager.createNotificationChannel(serviceChannel)
-        }
-    }
-
-    /**
-     * 处理新的剪贴板内容
-     */
-    private suspend fun processClip(clip: android.content.ClipData, packageName: String, appName: String?, appIcon: Bitmap?) = withContext(Dispatchers.IO) {
-        try {
-            // 获取剪贴板内容
-            val item = clip.getItemAt(0)
-            val contentUri = item.uri
-            val contentText = item.text?.toString()
-
-            // 确定内容类型和实际内容
-//            val clipType: ClipType
-            val clipContent: String
-
-            when {
-                // 处理图片类型
-                contentUri != null && contentUri.toString().startsWith("content://") -> {
-//                    clipType = ClipType.IMAGE
-                    clipContent = saveImageAndGetPath(contentUri)
-                }
-                // 处理链接类型
-                contentText != null && URL_PATTERN.matches(contentText) -> {
-//                    clipType = ClipType.LINK
-                    clipContent = contentText
-                }
-                // 处理文本类型
-                contentText != null -> {
-//                    clipType = ClipType.TEXT
-                    clipContent = contentText
-                }
-                // 未知类型，忽略
-                else -> return@withContext
-            }
-
-            // 获取来源应用信息 (Android 10+)
-//            var sourceAppPackage: String? = null
-//            var sourceAppName: String? = null
-//            var sourceAppIconPath: String? = null
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-//                clip.description.extras?.getString(ClipboardManager.EXTRA_SOURCE_PACKAGE)?.let { packageName ->
-//                    sourceAppPackage = packageName
-//
-//                    try {
-//                        // 获取应用显示名称
-//                        val packageManager = applicationContext.packageManager
-//                        val appInfo = packageManager.getApplicationInfo(packageName, 0)
-//                        sourceAppName = packageManager.getApplicationLabel(appInfo).toString()
-//
-//                        // 保存应用图标
-//                        val appIcon = packageManager.getApplicationIcon(packageName)
-//                        sourceAppIconPath = saveAppIcon(packageName, appIcon)
-//                    } catch (e: PackageManager.NameNotFoundException) {
-//                        // 应用可能已被卸载
-//                        sourceAppName = "Unknown App"
-//                    }
-//                }
-            }
-
-            // 修正：使用getSource()方法获取来源包名
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-//                val packageName = clip.description.getSource()
-//                if (packageName != null) {
-//                    sourceAppPackage = packageName
-//
-//                    try {
-//                        // 获取应用显示名称
-//                        val packageManager = applicationContext.packageManager
-//                        val appInfo = packageManager.getApplicationInfo(packageName, 0)
-//                        sourceAppName = packageManager.getApplicationLabel(appInfo).toString()
-//
-//                        // 保存应用图标
-//                        val appIcon = packageManager.getApplicationIcon(packageName)
-//                        sourceAppIconPath = saveAppIcon(packageName, appIcon)
-//                    } catch (e: PackageManager.NameNotFoundException) {
-//                        // 应用可能已被卸载
-//                        sourceAppName = "Unknown App"
-//                    }
-//                }
-            }
-
-            // 修正部分代码 - 正确获取剪贴板来源
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-//                val extras = clip.description.extras
-//                if (extras != null && extras.containsKey(ClipDescription.EXTRA_SOURCE_PACKAGE)) {
-//                    val packageName = extras.getString(ClipDescription.EXTRA_SOURCE_PACKAGE)
-//                    if (packageName != null) {
-//                        sourceAppPackage = packageName
-//
-//                        try {
-//                            // 获取应用显示名称
-//                            val packageManager = applicationContext.packageManager
-//                            val appInfo = packageManager.getApplicationInfo(packageName, 0)
-//                            sourceAppName = packageManager.getApplicationLabel(appInfo).toString()
-//
-//                            // 保存应用图标
-//                            val appIcon = packageManager.getApplicationIcon(packageName)
-//                            sourceAppIconPath = saveAppIcon(packageName, appIcon)
-//                        } catch (e: PackageManager.NameNotFoundException) {
-//                            // 应用可能已被卸载
-//                            sourceAppName = "Unknown App"
-//                        }
-//                    }
-//                }
-            }
-
-            // 对于链接类型，启动链接解析任务
-//            if (clipType == ClipType.LINK) {
-//                // TODO: 实现链接解析逻辑
-//                // LinkParserWorker.enqueue(this@ClipboardService, clipContent, newClip.id)
-//            }
-
-            // 对于图片类型，启动OCR任务
-//            if (clipType == ClipType.IMAGE) {
-//                // TODO: 实现图片OCR逻辑
-//                // OcrProcessingWorker.enqueue(this@ClipboardService, clipContent, newClip.id)
-//            }
-
-            val sourceAppIconPath = saveAppIcon(packageName,appIcon)
-
-            // 创建新的Clip对象
-            val newClip = ClipData(
-                id = 0, // Room会自动生成ID
-                groupId = 0, // 在Repository中设置为id
-                isLatest = true,
-                content = clipContent,
-                timestamp = System.currentTimeMillis(),
-                isPinned = false,
-                colorTag = null,
-                sourceAppPackage = packageName,
-                sourceAppName = appName,
-                sourceAppIconPath = sourceAppIconPath
-            )
-
-            Log.i("lwl", "ClipboardService processClip: newClip=$newClip")
-
-            // 保存到数据库
-            clipRepository.addNewClip(newClip)
-
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    /**
-     * 保存应用图标到内部存储，并返回保存路径
-     */
-    private suspend fun saveAppIcon(packageName: String, icon: Bitmap?): String? = withContext(Dispatchers.IO) {
-
-        if(icon == null){
-            return@withContext null
-        }
-
-        val iconDir = File(filesDir, APP_ICONS_DIR)
-        if (!iconDir.exists()) {
-            iconDir.mkdirs()
-        }
-
-        val iconFile = File(iconDir, "$packageName.png")
-        try {
-
-            FileOutputStream(iconFile).use { out ->
-                icon.compress(Bitmap.CompressFormat.PNG, 100, out)
-            }
-
-            return@withContext "$APP_ICONS_DIR/$packageName.png"
-        } catch (e: IOException) {
-            e.printStackTrace()
-            return@withContext null
-        }
-    }
-
-    /**
-     * 保存剪贴板中的图片，并返回保存路径
-     */
-    private suspend fun saveImageAndGetPath(imageUri: Uri): String = withContext(Dispatchers.IO) {
-        val imageDir = File(filesDir, "clip_images")
-        if (!imageDir.exists()) {
-            imageDir.mkdirs()
-        }
-
-        val fileName = "clip_img_${UUID.randomUUID()}.png"
-        val imageFile = File(imageDir, fileName)
-
-        try {
-            contentResolver.openInputStream(imageUri)?.use { input ->
-                FileOutputStream(imageFile).use { output ->
-                    input.copyTo(output)
-                }
-            }
-
-            // 返回ContentProvider URI，确保应用内可访问
-            val fileUri = FileProvider.getUriForFile(
-                this@ClipboardService,
-                "${applicationContext.packageName}.fileprovider",
-                imageFile
-            )
-
-            return@withContext fileUri.toString()
-        } catch (e: Exception) {
-            e.printStackTrace()
-            return@withContext ""
         }
     }
 
