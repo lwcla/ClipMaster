@@ -1,7 +1,9 @@
 package com.cla.clip.master
 
 import com.cla.clip.base.general.BaseApplication
+import dagger.hilt.android.HiltAndroidApp
 
-class App : BaseApplication(){
+@HiltAndroidApp
+class App : BaseApplication() {
 
 }

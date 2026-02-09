@@ -2,6 +2,8 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.google.devtools.ksp)                 // 应用KSP插件，用于代码生成
+    alias(libs.plugins.google.dagger.hilt.android)                // 应用Hilt插件，用于依赖注入
 }
 
 android {
@@ -61,4 +63,26 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+
+    // Hilt与Jetpack Navigation Compose的集成，用于在Compose中获取ViewModel
+    implementation(libs.hilt.navigation.compose)
+    // Material Design 扩展图标库，用于提供额外的图标资源
+    implementation(libs.compose.material.icons.extended)
+
+    // 瀑布流
+    implementation(libs.androidx.compose.foundation)
+
+    // Coil3依赖项
+    implementation(libs.io.coil.compose)
+    implementation(libs.io.coil.network.okhttp)
+
+    // Hilt依赖注入，用于解耦代码，方便管理对象实例
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+
+    // Google ML Kit，用于实现图片OCR功能
+    implementation(libs.mlkit.ocr)
+
+    // Jsoup，用于解析HTML，实现链接预览功能
+    implementation(libs.jsoup)
 }

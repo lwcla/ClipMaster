@@ -1,8 +1,8 @@
 [versions]
 agp = "8.13.2"
-kotlin = "2.3.0"
+kotlin = "2.2.0"
 refine = "4.4.0"
-ksp = "2.3.1" # KSP 版本，与 Kotlin 版本对应
+ksp = "2.2.0-2.0.2" # KSP 版本，与 Kotlin 版本对应
 
 coreKtx = "1.17.0"
 junit = "4.13.2"
@@ -13,15 +13,26 @@ activityCompose = "1.12.3"
 composeBom = "2026.01.01"
 material = "1.13.0"
 appcompat = "1.7.1"
+# Hilt与Jetpack Navigation Compose的集成库版本，提供hiltViewModel()函数
+hiltNavigationCompose = "1.2.0"
+# Jetpack Compose Material图标扩展库的版本，应与项目中其他Compose库版本保持一致
+# 提供了例如 PushPin (图钉) 等不包含在核心库中的图标
+composeMaterialIcons = "1.7.8"
+# 瀑布流版本
+foundation = "1.8.3"
 
 shizuku = "13.1.5"
 hiddenApiBypass = "6.1"
-
 # Room (数据库) 版本
 room = "2.8.4"
-
 # Hilt 版本
 hilt = "2.57"
+# Google ML Kit (OCR) 版本
+mlkit = "16.0.1"
+# Jsoup (HTML解析) 版本
+jsoup = "1.22.1"
+# Coil (图片加载) 版本
+coil = "3.3.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -41,11 +52,23 @@ androidx-compose-material3 = { group = "androidx.compose.material3", name = "mat
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 
+# Hilt与Jetpack Navigation Compose的集成库
+# 允许在Composable函数中通过 hiltViewModel() 轻松获取Hilt注入的ViewModel
+hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "hiltNavigationCompose" }
+# Jetpack Compose Material图标扩展库
+# 包含了Material Design图标的完整集合
+compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended", version.ref = "composeMaterialIcons" }
+# 瀑布流
+androidx-compose-foundation = { group = "androidx.compose.foundation", name = "foundation", version.ref = "foundation" }
+
+# shizuku - 用于在非root环境下访问系统API
 shizuku-api = { group = "dev.rikka.shizuku", name = "api", version.ref = "shizuku" }
 shizuku-provider = { group = "dev.rikka.shizuku", name = "provider", version.ref = "shizuku" }
 
+# 隐藏api绕过库 - 用于在Android 9及以上版本绕过隐藏API限制，允许访问更多系统功能
 hideen-api-bypass = { group = "org.lsposed.hiddenapibypass", name = "hiddenapibypass", version.ref = "hiddenApiBypass" }
 
+# Refine - 用于在编译时分析和优化代码，提供更好的性能和更小的APK体积
 refine-annotation-processor = { group = "dev.rikka.tools.refine", name = "annotation-processor", version.ref = "refine" }
 refine-annotation = { group = "dev.rikka.tools.refine", name = "annotation", version.ref = "refine" }
 refine-runtime = { group = "dev.rikka.tools.refine", name = "runtime", version.ref = "refine" }
@@ -64,16 +87,23 @@ hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref
 # Hilt的编译器，通过KSP在编译时生成依赖注入所需的代码
 hilt-compiler = { group = "com.google.dagger", name = "hilt-compiler", version.ref = "hilt" }
 
+# Google ML Kit - 用于图片文字识别(OCR)，特别指定中文模型
+mlkit-ocr = { group = "com.google.mlkit", name = "text-recognition-chinese", version.ref = "mlkit" }
+# Jsoup - 用于解析HTML文档，实现URL链接预览功能
+jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
+# 图片加载
+io-coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
+io-coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil" }
+
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 android-library = { id = "com.android.library", version.ref = "agp" }
-
+# refine 插件 - 用于在编译时分析和优化代码，提供更好的性能和更小的APK体积
 refine = { id = "dev.rikka.tools.refine", version.ref = "refine" }
-
 # KSP 用于 Room 和 Hilt
 google-devtools-ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
-
+#hilt 依赖注入插件
 google-dagger-hilt-android = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 
