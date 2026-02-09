@@ -18,6 +18,10 @@ interface ClipDao {
     @Upsert
     suspend fun upsertClip(clip: ClipData): Long
 
+    // 1. 基础查询：查找是否存在相同内容
+    @Query("SELECT * FROM clips WHERE content = :content LIMIT 1")
+    suspend fun getClipByContent(content: String): ClipData?
+
     /**
      * 将指定分组中的所有条目的 isLatest 标志设置为 false。
      * 这是在插入新版本之前必须调用的步骤。
@@ -33,11 +37,25 @@ interface ClipDao {
      */
     @Transaction
     suspend fun addNewClip(clip: ClipData) {
-        // 1. 先插入条目，此时groupId是临时的（通常为0或默认值）
-        val newId = upsertClip(clip.copy(id = 0)) // 确保是插入操作
-        // 2. 使用新生成的ID更新该条目的groupId，形成一个新分组的“根”
-        val rootClip = clip.copy(id = newId, groupId = newId)
-        upsertClip(rootClip)
+        // 先尝试查找旧数据
+        val existingClip = getClipByContent(clip.content)
+
+        if (existingClip != null) {
+            // === 情况 A：数据库有相同 content ===
+            // 使用 newClip 的所有数据，但覆盖回旧数据的 id 和 groupId
+            val clipToUpdate = clip.copy(
+                id = existingClip.id,
+                groupId = existingClip.groupId,
+            )
+            // 执行更新
+            upsertClip(clipToUpdate)
+        } else {
+            // 1. 先插入条目，此时groupId是临时的（通常为0或默认值）
+            val newId = upsertClip(clip.copy(id = 0)) // 确保是插入操作
+            // 2. 使用新生成的ID更新该条目的groupId，形成一个新分组的“根”
+            val rootClip = clip.copy(id = newId, groupId = newId)
+            upsertClip(rootClip)
+        }
     }
 
     /**
