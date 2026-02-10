@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "e6d29e62611a7bae8ef8e4cde69399e2",
+    "identityHash": "b1739b1e1998f331abaff863ad670574",
     "entities": [
       {
         "tableName": "clips",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `group_id` INTEGER NOT NULL, `is_latest` INTEGER NOT NULL DEFAULT 1, `content` TEXT NOT NULL, `timestamp` INTEGER NOT NULL, `is_pinned` INTEGER NOT NULL DEFAULT 0, `color_tag` TEXT, `link_title` TEXT, `link_description` TEXT, `link_image_url` TEXT, `link_site_name` TEXT, `source_app_package` TEXT, `source_app_name` TEXT, `source_app_icon_path` TEXT)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `group_id` INTEGER NOT NULL, `is_latest` INTEGER NOT NULL DEFAULT 1, `content` TEXT NOT NULL, `timestamp` INTEGER NOT NULL, `is_pinned` INTEGER NOT NULL DEFAULT 0, `link_title` TEXT, `link_description` TEXT, `link_image_url` TEXT, `link_site_name` TEXT, `source_app_package` TEXT)",
         "fields": [
           {
             "fieldPath": "id",
@@ -47,11 +47,6 @@
             "defaultValue": "0"
           },
           {
-            "fieldPath": "colorTag",
-            "columnName": "color_tag",
-            "affinity": "TEXT"
-          },
-          {
             "fieldPath": "linkTitle",
             "columnName": "link_title",
             "affinity": "TEXT"
@@ -74,16 +69,6 @@
           {
             "fieldPath": "sourceAppPackage",
             "columnName": "source_app_package",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "sourceAppName",
-            "columnName": "source_app_name",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "sourceAppIconPath",
-            "columnName": "source_app_icon_path",
             "affinity": "TEXT"
           }
         ],
@@ -122,22 +107,13 @@
             "createSql": "CREATE INDEX IF NOT EXISTS `index_clips_is_latest` ON `${TABLE_NAME}` (`is_latest`)"
           },
           {
-            "name": "index_clips_color_tag",
+            "name": "index_clips_source_app_package",
             "unique": false,
             "columnNames": [
-              "color_tag"
+              "source_app_package"
             ],
             "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_clips_color_tag` ON `${TABLE_NAME}` (`color_tag`)"
-          },
-          {
-            "name": "index_clips_source_app_name",
-            "unique": false,
-            "columnNames": [
-              "source_app_name"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_clips_source_app_name` ON `${TABLE_NAME}` (`source_app_name`)"
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_clips_source_app_package` ON `${TABLE_NAME}` (`source_app_package`)"
           },
           {
             "name": "index_clips_content",
@@ -161,7 +137,7 @@
       },
       {
         "tableName": "clips_fts",
-        "createSql": "CREATE VIRTUAL TABLE IF NOT EXISTS `${TABLE_NAME}` USING FTS4(`content` TEXT NOT NULL, `link_title` TEXT, `link_description` TEXT, `link_site_name` TEXT, `source_app_name` TEXT, `source_app_package` TEXT, content=`clips`)",
+        "createSql": "CREATE VIRTUAL TABLE IF NOT EXISTS `${TABLE_NAME}` USING FTS4(`content` TEXT NOT NULL, `link_title` TEXT, `link_description` TEXT, `link_site_name` TEXT, `source_app_package` TEXT, content=`clips`)",
         "fields": [
           {
             "fieldPath": "content",
@@ -182,11 +158,6 @@
           {
             "fieldPath": "linkSiteName",
             "columnName": "link_site_name",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "sourceAppName",
-            "columnName": "source_app_name",
             "affinity": "TEXT"
           },
           {
@@ -213,14 +184,59 @@
         "contentSyncTriggers": [
           "CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_clips_fts_BEFORE_UPDATE BEFORE UPDATE ON `clips` BEGIN DELETE FROM `clips_fts` WHERE `docid`=OLD.`rowid`; END",
           "CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_clips_fts_BEFORE_DELETE BEFORE DELETE ON `clips` BEGIN DELETE FROM `clips_fts` WHERE `docid`=OLD.`rowid`; END",
-          "CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_clips_fts_AFTER_UPDATE AFTER UPDATE ON `clips` BEGIN INSERT INTO `clips_fts`(`docid`, `content`, `link_title`, `link_description`, `link_site_name`, `source_app_name`, `source_app_package`) VALUES (NEW.`rowid`, NEW.`content`, NEW.`link_title`, NEW.`link_description`, NEW.`link_site_name`, NEW.`source_app_name`, NEW.`source_app_package`); END",
-          "CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_clips_fts_AFTER_INSERT AFTER INSERT ON `clips` BEGIN INSERT INTO `clips_fts`(`docid`, `content`, `link_title`, `link_description`, `link_site_name`, `source_app_name`, `source_app_package`) VALUES (NEW.`rowid`, NEW.`content`, NEW.`link_title`, NEW.`link_description`, NEW.`link_site_name`, NEW.`source_app_name`, NEW.`source_app_package`); END"
+          "CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_clips_fts_AFTER_UPDATE AFTER UPDATE ON `clips` BEGIN INSERT INTO `clips_fts`(`docid`, `content`, `link_title`, `link_description`, `link_site_name`, `source_app_package`) VALUES (NEW.`rowid`, NEW.`content`, NEW.`link_title`, NEW.`link_description`, NEW.`link_site_name`, NEW.`source_app_package`); END",
+          "CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_clips_fts_AFTER_INSERT AFTER INSERT ON `clips` BEGIN INSERT INTO `clips_fts`(`docid`, `content`, `link_title`, `link_description`, `link_site_name`, `source_app_package`) VALUES (NEW.`rowid`, NEW.`content`, NEW.`link_title`, NEW.`link_description`, NEW.`link_site_name`, NEW.`source_app_package`); END"
+        ]
+      },
+      {
+        "tableName": "source_apps",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`package_name` TEXT NOT NULL, `app_name` TEXT NOT NULL, `icon_path` TEXT, `primary_color` INTEGER, PRIMARY KEY(`package_name`))",
+        "fields": [
+          {
+            "fieldPath": "packageName",
+            "columnName": "package_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "appName",
+            "columnName": "app_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "iconPath",
+            "columnName": "icon_path",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "primaryColor",
+            "columnName": "primary_color",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "package_name"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_source_apps_package_name",
+            "unique": false,
+            "columnNames": [
+              "package_name"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_source_apps_package_name` ON `${TABLE_NAME}` (`package_name`)"
+          }
         ]
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'e6d29e62611a7bae8ef8e4cde69399e2')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'b1739b1e1998f331abaff863ad670574')"
     ]
   }
 }

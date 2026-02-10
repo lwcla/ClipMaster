@@ -1,10 +1,14 @@
 package com.cla.clip.master.ui.screen.main
 
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
 import androidx.lifecycle.viewModelScope
-import com.cla.clip.base.general.entity.ClipData
+import com.cla.clip.base.general.entity.ClipEntity
 import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.master.BaseViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -21,8 +25,8 @@ import javax.inject.Inject
  * @param isLoading 是否正在加载初始数据。
  */
 data class MainUiState(
-    val pinnedClips: List<ClipData> = emptyList(),
-    val latestClips: List<ClipData> = emptyList(),
+    val pinnedClips: List<ClipEntity> = emptyList(),
+    val latestClips: List<ClipEntity> = emptyList(),
     val isLoading: Boolean = true
 )
 
@@ -34,8 +38,11 @@ data class MainUiState(
  */
 @HiltViewModel
 class MainViewModel @Inject constructor(
+    @param:ApplicationContext private val context: Context,
     private val repository: ClipRepository
 ) : BaseViewModel() {
+
+    private val clipboardManager by lazy { context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager }
 
     // 使用 combine 操作符将两个Flow（置顶列表和普通列表）合并成一个单一的UI状态。
     private val _uiState = combine(
@@ -64,9 +71,9 @@ class MainViewModel @Inject constructor(
      * 删除一个完整的剪贴板分组（包括其所有历史记录）。
      * @param clip 要删除的分组中的任何一个Clip条目。
      */
-    fun deleteClipGroup(clip: ClipData) {
+    fun deleteClipGroup(clip: ClipEntity) {
         viewModelScope.launch {
-            repository.deleteClipGroup(clip.groupId)
+//            repository.deleteClipGroup(clip.groupId)
         }
     }
 
@@ -75,9 +82,20 @@ class MainViewModel @Inject constructor(
      * 可用于切换置顶状态、修改颜色等。
      * @param clip 更新后的Clip对象。
      */
-    fun updateClip(clip: ClipData) {
+    fun updateClip(clip: ClipEntity) {
         viewModelScope.launch {
-            repository.upsertClip(clip)
+//            repository.upsertClip(clip)
+        }
+    }
+
+    fun copyToClipboard(clip: ClipEntity) {
+        val clipData = android.content.ClipData.newPlainText("ClipMaster", clip.content)
+        clipboardManager.setPrimaryClip(clipData)
+
+        if (clip.content.length > 10) {
+            Toast.makeText(context, "已复制:${clip.content.take(10)}...", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "已复制:${clip.content}", Toast.LENGTH_SHORT).show()
         }
     }
 }

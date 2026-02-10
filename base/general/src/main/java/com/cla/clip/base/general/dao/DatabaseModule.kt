@@ -46,4 +46,17 @@ object DatabaseModule {
     fun provideClipDao(appDatabase: AppDatabase): ClipDao {
         return appDatabase.clipDao()
     }
+
+    /**
+     * 提供SourceAppDao的单例。
+     * Hilt会自动解决它的依赖——AppDatabase。
+     *
+     * @param appDatabase 由上面的provideAppDatabase方法提供的数据库实例。
+     * @return SourceAppDao的唯一实例。
+     */
+    @Provides
+    @Singleton
+    fun provideSourceAppDao(appDatabase: AppDatabase): SourceAppDao {
+        return appDatabase.sourceAppDao()
+    }
 }

@@ -1,6 +1,8 @@
 package com.cla.clip.base.general.repository
 
-import com.cla.clip.base.general.entity.ClipData
+import com.cla.clip.base.general.dao.data.ClipData
+import com.cla.clip.base.general.entity.ClipCaptureEntity
+import com.cla.clip.base.general.entity.ClipEntity
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -12,37 +14,32 @@ interface ClipRepository {
     /**
      * 获取主屏幕上显示的、未置顶的最新剪贴板条目。
      */
-    fun getLatestClips(): Flow<List<ClipData>>
+    fun getLatestClips(): Flow<List<ClipEntity>>
 
     /**
      * 获取所有置顶的最新剪贴板条目。
      */
-    fun getPinnedClips(): Flow<List<ClipData>>
+    fun getPinnedClips(): Flow<List<ClipEntity>>
 
     /**
      * 根据查询词搜索所有剪贴板条目（包括历史记录）。
      */
-    fun searchAllClips(query: String): Flow<List<ClipData>>
+    fun searchAllClips(query: String): Flow<List<ClipEntity>>
 
     /**
      * 根据分组ID获取一个条目的所有历史版本。
      */
-    suspend fun getHistoryForGroup(groupId: Long): List<ClipData>
+    suspend fun getHistoryForGroup(groupId: Long): List<ClipEntity>
 
     /**
      * 新增一个全新的剪贴板条目。
      */
-    suspend fun addNewClip(clip: ClipData)
+    suspend fun addNewClip(captureEntity: ClipCaptureEntity): Long
 
     /**
      * 为一个现有的剪贴板条目创建一个新的编辑历史版本。
      */
-    suspend fun createNewVersionForClip(newVersionClip: ClipData)
-
-    /**
-     * 更新或插入单个Clip条目。主要用于置顶、修改颜色等单一属性的更新。
-     */
-    suspend fun upsertClip(clip: ClipData): Long
+    suspend fun createNewVersionForClip(newVersionClip: ClipData): Long
 
     /**
      * 删除一个分组下的所有历史记录。
@@ -55,5 +52,5 @@ interface ClipRepository {
     suspend fun clearAll()
 
     /** 获取最新的剪贴板条目（无论是否置顶）。这个方法主要用于监听剪贴板变化时，快速获取最新内容以进行去重或预处理。 */
-    suspend fun getLatestClip(): ClipData?
+    suspend fun getLatestClip(): ClipEntity?
 }

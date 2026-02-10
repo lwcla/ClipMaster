@@ -14,13 +14,12 @@ import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
-import android.util.Log
 import android.view.View
 import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.FileProvider
 import androidx.palette.graphics.Palette
-import com.cla.clip.base.general.entity.ClipData
+import com.cla.clip.base.general.entity.ClipCaptureEntity
 import com.cla.clip.base.general.logD
 import com.cla.clip.base.general.logI
 import com.cla.clip.base.general.repository.ClipRepository
@@ -189,8 +188,8 @@ class ClipboardService : Service() {
 
     private fun doClipboard(packageName: String, appName: String?, appIcon: Bitmap?) {
         clipboardManager.primaryClip?.let { clipData ->
-            logD(TAG) { "读取到剪贴板内容：$clipData" }
             val clip = runCatching { clipData.getItemAt(0) }.getOrNull() ?: return@let
+            logD(TAG) { "读取到剪贴板内容：${clip.text}" }
 
             serviceScope.launch(Dispatchers.IO) {
                 processClip(clip, packageName, appName, appIcon)
@@ -261,32 +260,29 @@ class ClipboardService : Service() {
                 // 提取图标的主色调作为标签颜色
                 runCatching {
                     val palette = Palette.from(appIcon).generate()
-                    val color = palette.getDominantColor(0xFF000000.toInt()) // 默认黑色
-                    // 只保留 RGB 信息，去除透明度，生成 #RRGGBB 格式
-                    String.format("#%06X", 0xFFFFFF and color)
+                    palette.getDominantColor(0xFF000000.toInt()) // 默认黑色
                 }.getOrNull()
             } else {
                 null
             }
 
-            // 创建新的Clip对象
-            val newClip = ClipData(
-                id = 0, // Room会自动生成ID
-                groupId = 0, // 在Repository中设置为id
-                isLatest = true,
+            val captureEntity = ClipCaptureEntity(
                 content = clipContent,
                 timestamp = System.currentTimeMillis(),
-                isPinned = false,
-                colorTag = color,
-                sourceAppPackage = packageName,
-                sourceAppName = appName,
-                sourceAppIconPath = saveAppIcon(packageName, appIcon)
+                sourcePackage = packageName,
+                sourceAppName = appName ?: "unknown",
+                sourceAppIconPath = saveAppIcon(packageName, appIcon),
+                sourcePrimaryColor = color,
+                linkTitle = null,
+                linkDescription = null,
+                linkImageUrl = null,
+                linkSiteName = null,
             )
 
-            Log.i("lwl", "ClipboardService processClip: newClip=$newClip")
+            logI(TAG) { "processClip: captureEntity=$captureEntity" }
 
             // 保存到数据库
-            clipRepository.addNewClip(newClip)
+            clipRepository.addNewClip(captureEntity)
 
             withContext(Dispatchers.Main) {
                 ensureForeground(
@@ -314,12 +310,11 @@ class ClipboardService : Service() {
 
         val iconFile = File(iconDir, "$packageName.png")
         return try {
-
             FileOutputStream(iconFile).use { out ->
                 icon.compress(Bitmap.CompressFormat.PNG, 100, out)
             }
 
-            "$APP_ICONS_DIR/$packageName.png"
+            iconFile.absolutePath
         } catch (e: IOException) {
             e.printStackTrace()
             null
