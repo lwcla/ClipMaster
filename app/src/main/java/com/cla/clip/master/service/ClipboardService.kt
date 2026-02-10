@@ -2,6 +2,7 @@ package com.cla.clip.master.service
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.ClipboardManager
 import android.content.ComponentName
@@ -365,11 +366,20 @@ class ClipboardService : Service() {
             is ShizukuStatus.Disconnect.NotGranted -> applicationContext.getString(R.string.host_shizuku_not_granted)
         }
 
+        // 1. 获取启动 App 的 Intent
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+
+        // 2. 创建 PendingIntent
+        val pendingIntent = if (launchIntent != null) {
+            PendingIntent.getActivity(this, 0, launchIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        } else null
+
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title ?: applicationContext.getString(R.string.host_clipboard_assistant))
             .setContentText(contentText)
             .setSmallIcon(R.drawable.ic_launcher_foreground) // 确保资源存在，或者使用 android.R.drawable.ic_menu_save
             .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setContentIntent(pendingIntent) // 3. 设置点击行为
             .setOngoing(true)
             .build()
 
