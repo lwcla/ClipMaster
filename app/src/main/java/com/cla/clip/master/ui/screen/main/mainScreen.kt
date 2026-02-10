@@ -151,7 +151,7 @@ private fun ClipCard(
 ) {
     val context = LocalContext.current
 
-    val borderColor = (clip.appColor ?: MaterialTheme.colorScheme.outlineVariant).copy(alpha = 0.2f)
+    val borderColor = clip.appColor ?: MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
     // 提取形状变量，确保外层卡片和内层裁剪使用相同的圆角
     val cardShape = RoundedCornerShape(12.dp)
 

@@ -4,6 +4,9 @@ import android.icu.text.RelativeDateTimeFormatter
 import android.text.format.DateUtils
 import android.text.format.DateUtils.SECOND_IN_MILLIS
 import androidx.compose.ui.graphics.Color
+import androidx.core.graphics.blue
+import androidx.core.graphics.green
+import androidx.core.graphics.red
 import com.cla.clip.base.general.dao.data.ClipWithSourceApp
 
 data class ClipEntity(
@@ -27,7 +30,8 @@ fun ClipWithSourceApp.toUi(): ClipEntity {
     // 2. 颜色转换逻辑 (例如处理默认色)
     val color = runCatching {
         val primaryColor = app?.primaryColor
-        if (primaryColor != null) Color(primaryColor) else null
+        // 如果 primaryColor 不为 null，创建一个 20%透明度 的 Color 对象，否则返回 null
+        if (primaryColor != null) Color(primaryColor.red, primaryColor.green, primaryColor.blue, alpha = 51) else null
     }.getOrNull()
 
     // 3. 时间格式化
@@ -46,7 +50,7 @@ fun ClipWithSourceApp.toUi(): ClipEntity {
     return ClipEntity(
         id = clip.id,
         content = clip.content,
-        formattedTime = timeStr.toString(),
+        formattedTime = timeStr,
         // 如果关联不到 App，显示默认名
         appName = app?.appName ?: "unknown",
         appIconPath = app?.iconPath,
