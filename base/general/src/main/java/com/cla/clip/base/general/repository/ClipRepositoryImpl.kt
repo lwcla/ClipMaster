@@ -54,4 +54,8 @@ class ClipRepositoryImpl @Inject constructor(
     override suspend fun clearAll() = withContext(Dispatchers.IO) {
         clipDao.clearAll()
     }
+
+    override suspend fun getLatestClip(): ClipData? = withContext(Dispatchers.IO) {
+        clipDao.getLatestClip()
+    }
 }

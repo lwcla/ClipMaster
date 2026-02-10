@@ -53,4 +53,7 @@ interface ClipRepository {
      * 清空所有剪贴板数据。
      */
     suspend fun clearAll()
+
+    /** 获取最新的剪贴板条目（无论是否置顶）。这个方法主要用于监听剪贴板变化时，快速获取最新内容以进行去重或预处理。 */
+    suspend fun getLatestClip(): ClipData?
 }

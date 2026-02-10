@@ -11,15 +11,9 @@ espressoCore = "3.7.0"
 lifecycleRuntimeKtx = "2.10.0"
 activityCompose = "1.12.3"
 composeBom = "2026.01.01"
-material = "1.13.0"
 appcompat = "1.7.1"
 # Hilt与Jetpack Navigation Compose的集成库版本，提供hiltViewModel()函数
 hiltNavigationCompose = "1.2.0"
-# Jetpack Compose Material图标扩展库的版本，应与项目中其他Compose库版本保持一致
-# 提供了例如 PushPin (图钉) 等不包含在核心库中的图标
-composeMaterialIcons = "1.7.8"
-# 瀑布流版本
-foundation = "1.8.3"
 
 shizuku = "13.1.5"
 hiddenApiBypass = "6.1"
@@ -37,31 +31,31 @@ coil = "3.3.0"
 paletteKtx = "1.0.0"
 
 [libraries]
+androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
-androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
-androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
-androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
-androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
-androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
-androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
-androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
-androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
-androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
-material = { group = "com.google.android.material", name = "material", version.ref = "material" }
-androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 
+# --- Jetpack Compose ---
+# Compose BOM (Bill of Materials) 用于管理Jetpack Compose相关库的版本一致
+androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
+activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
+compose-ui = { group = "androidx.compose.ui", name = "ui" }
+compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
+compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
+compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
+compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
+compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+# 瀑布流
+compose-foundation = { group = "androidx.compose.foundation", name = "foundation" }
+# Jetpack Compose Material图标扩展库
+# 包含了Material Design图标的完整集合
+material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
 # Hilt与Jetpack Navigation Compose的集成库
 # 允许在Composable函数中通过 hiltViewModel() 轻松获取Hilt注入的ViewModel
 hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "hiltNavigationCompose" }
-# Jetpack Compose Material图标扩展库
-# 包含了Material Design图标的完整集合
-compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended", version.ref = "composeMaterialIcons" }
-# 瀑布流
-androidx-compose-foundation = { group = "androidx.compose.foundation", name = "foundation", version.ref = "foundation" }
 
 # shizuku - 用于在非root环境下访问系统API
 shizuku-api = { group = "dev.rikka.shizuku", name = "api", version.ref = "shizuku" }
@@ -98,6 +92,12 @@ io-coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.r
 io-coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil" }
 # palette - 用于从图片中提取颜色信息，提供了Kotlin扩展函数，简化了使用流程
 androidx-palette-ktx = { group = "androidx.palette", name = "palette-ktx", version.ref = "paletteKtx" }
+
+[bundles]
+compose = ["activity-compose", "compose-ui", "compose-ui-tooling-preview", "compose-material3", "compose-foundation", "material-icons-extended", "hilt-navigation-compose"]
+compose-debug = ["compose-ui-tooling", "compose-ui-test-manifest"]
+io-coil = ["io-coil-compose", "io-coil-network-okhttp"]
+shizuku = ["shizuku-api", "shizuku-provider"]
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -238,6 +238,13 @@ class ClipboardService : Service() {
                 return
             }
 
+            val lastClip = clipRepository.getLatestClip()
+            if (lastClip != null && lastClip.content == clipContent) {
+                // 内容未变化，不处理
+                logD(TAG) { "processClip: 内容跟上条数据一样，不要重复保存" }
+                return
+            }
+
             // 对于链接类型，启动链接解析任务
 //            if (clipType == ClipType.LINK) {
 //                // TODO: 实现链接解析逻辑

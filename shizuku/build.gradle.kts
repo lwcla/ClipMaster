@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.refine)
 }
 
@@ -54,6 +55,7 @@ android {
     buildFeatures {
         buildConfig = true
         aidl = true
+        compose = true
     }
 }
 
@@ -61,9 +63,12 @@ dependencies {
     implementation(project(":base:general"))
     implementation(project(":base:hidden-api"))
 
+    val composeBom = platform(libs.androidx.compose.bom)
+    implementation(composeBom)
+    implementation(libs.bundles.compose)
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
-    implementation(libs.material)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -71,8 +76,7 @@ dependencies {
     implementation(libs.refine.runtime)
     implementation(libs.hideen.api.bypass)
 
-    api(libs.shizuku.api)
-    api(libs.shizuku.provider)
+    api(libs.bundles.shizuku)
 }
 
 val org.gradle.api.Project.androidApp: com.android.build.gradle.AppExtension

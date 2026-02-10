@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "d5080d59e9bf3128b9d8c5bdeb779273",
+    "identityHash": "e6d29e62611a7bae8ef8e4cde69399e2",
     "entities": [
       {
         "tableName": "clips",
@@ -147,6 +147,15 @@
             ],
             "orders": [],
             "createSql": "CREATE INDEX IF NOT EXISTS `index_clips_content` ON `${TABLE_NAME}` (`content`)"
+          },
+          {
+            "name": "index_clips_is_pinned",
+            "unique": false,
+            "columnNames": [
+              "is_pinned"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_clips_is_pinned` ON `${TABLE_NAME}` (`is_pinned`)"
           }
         ]
       },
@@ -211,7 +220,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'd5080d59e9bf3128b9d8c5bdeb779273')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'e6d29e62611a7bae8ef8e4cde69399e2')"
     ]
   }
 }

@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.google.devtools.ksp)                 // 应用KSP插件，用于代码生成
     alias(libs.plugins.google.dagger.hilt.android)                // 应用Hilt插件，用于依赖注入
 }
@@ -37,6 +38,7 @@ android {
 
     buildFeatures {
         buildConfig = true
+        compose = true
     }
 }
 
@@ -46,9 +48,12 @@ ksp {
 }
 
 dependencies {
+    val composeBom = platform(libs.androidx.compose.bom)
+    implementation(composeBom)
+    implementation(libs.bundles.compose)
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
-    implementation(libs.material)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

@@ -115,6 +115,10 @@ interface ClipDao {
      */
     @Query("DELETE FROM clips")
     suspend fun clearAll()
+
+    /** 获取最新的一条剪贴板记录 */
+    @Query("SELECT * FROM clips WHERE is_latest = 1 ORDER BY timestamp DESC LIMIT 1")
+    suspend fun getLatestClip(): ClipData?
 }
 
 ///**

@@ -48,33 +48,22 @@ dependencies {
     implementation(project(":base:general"))
     implementation(project(":shizuku"))
 
+    val composeBom = platform(libs.androidx.compose.bom)
+    implementation(composeBom)
+    debugImplementation(composeBom)
+    androidTestImplementation(composeBom)
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation(libs.androidx.activity.compose)
-    implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.androidx.compose.ui)
-    implementation(libs.androidx.compose.ui.graphics)
-    implementation(libs.androidx.compose.ui.tooling.preview)
-    implementation(libs.androidx.compose.material3)
+    implementation(libs.bundles.compose)
+    debugImplementation(libs.bundles.compose.debug)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
-    androidTestImplementation(platform(libs.androidx.compose.bom))
-    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
-    debugImplementation(libs.androidx.compose.ui.tooling)
-    debugImplementation(libs.androidx.compose.ui.test.manifest)
-
-    // Hilt与Jetpack Navigation Compose的集成，用于在Compose中获取ViewModel
-    implementation(libs.hilt.navigation.compose)
-    // Material Design 扩展图标库，用于提供额外的图标资源
-    implementation(libs.compose.material.icons.extended)
-
-    // 瀑布流
-    implementation(libs.androidx.compose.foundation)
+    androidTestImplementation(libs.compose.ui.test.junit4)
 
     // Coil3依赖项
-    implementation(libs.io.coil.compose)
-    implementation(libs.io.coil.network.okhttp)
+    implementation(libs.bundles.io.coil)
 
     // Hilt依赖注入，用于解耦代码，方便管理对象实例
     implementation(libs.hilt.android)

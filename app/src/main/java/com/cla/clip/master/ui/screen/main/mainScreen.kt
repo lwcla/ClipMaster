@@ -210,9 +210,11 @@ private fun LoadingScreen(modifier: Modifier = Modifier) {
 @Composable
 private fun EmptyScreen(modifier: Modifier = Modifier) {
     Box(
-        modifier = modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 32.dp), // 1. 在这里添加左右边距 (数值可自定义),
+        contentAlignment = Alignment.Center,
     ) {
-        Text("No clips yet. Copy something to get started!")
+        Text("还没有数据哦，快去复制点什么吧！", style = MaterialTheme.typography.bodyMedium)
     }
 }
