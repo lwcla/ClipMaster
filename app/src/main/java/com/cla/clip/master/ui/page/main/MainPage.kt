@@ -200,7 +200,7 @@ private fun ClipCard(
 
                 if (clip.isPinned) {
                     Icon(
-                        painterResource(R.drawable.icon_pinned),
+                        painterResource(R.drawable.host_icon_pinned),
                         contentDescription = null,
                         modifier = Modifier
                             .fillMaxWidth(0.25f) // 只占据卡片宽度的三分之一，避免过度覆盖内容
