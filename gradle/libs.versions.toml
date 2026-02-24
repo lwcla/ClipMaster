@@ -30,6 +30,9 @@ coil = "3.3.0"
 # palette - 用于从图片中提取颜色信息，提供了Kotlin扩展函数，简化了使用流程
 paletteKtx = "1.0.0"
 
+# paging 版本 - 用于实现分页加载功能，特别适用于处理大量数据的列表，如聊天记录
+paging_version = "3.4.1"
+
 [libraries]
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -74,6 +77,7 @@ refine-runtime = { group = "dev.rikka.tools.refine", name = "runtime", version.r
 room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
 # Room的Kotlin扩展库，提供了对协程(Flow)和挂起函数的支持
 room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
+room-paging = { group = "androidx.room", name = "room-paging", version.ref = "room" }
 # Room的编译器，通过KSP在编译时生成DAO和数据库实现的模板代码
 room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 
@@ -93,11 +97,18 @@ io-coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okht
 # palette - 用于从图片中提取颜色信息，提供了Kotlin扩展函数，简化了使用流程
 androidx-palette-ktx = { group = "androidx.palette", name = "palette-ktx", version.ref = "paletteKtx" }
 
+# paging - 用于实现分页加载功能，特别适用于处理大量数据的列表，如聊天记录
+paging-runtime = { group = "androidx.paging", name = "paging-runtime", version.ref = "paging_version" }
+paging-compose = { group = "androidx.paging", name = "paging-compose", version.ref = "paging_version" }
+paging-common = { group = "androidx.paging", name = "paging-common", version.ref = "paging_version" }
+
 [bundles]
 compose = ["activity-compose", "compose-ui", "compose-ui-tooling-preview", "compose-material3", "compose-foundation", "material-icons-extended", "hilt-navigation-compose"]
 compose-debug = ["compose-ui-tooling", "compose-ui-test-manifest"]
 io-coil = ["io-coil-compose", "io-coil-network-okhttp"]
 shizuku = ["shizuku-api", "shizuku-provider"]
+paging = ["paging-runtime", "paging-compose"]
+room = ["room-runtime", "room-ktx", "room-paging"]
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

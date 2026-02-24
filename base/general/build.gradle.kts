@@ -59,11 +59,14 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
 
     // Room数据库，用于本地持久化存储剪贴板数据
-    implementation(libs.room.runtime)
-    implementation(libs.room.ktx) // 提供协程支持
+    implementation(libs.bundles.room)
     ksp(libs.room.compiler)       // 使用KSP生成代码
 
     // Hilt依赖注入，用于解耦代码，方便管理对象实例
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
+
+    // Paging3库，用于高效加载和显示大量数据
+    implementation(libs.bundles.paging)
+    testImplementation(libs.paging.common)
 }

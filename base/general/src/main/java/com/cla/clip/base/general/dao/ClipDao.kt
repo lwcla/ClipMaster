@@ -1,5 +1,6 @@
 package com.cla.clip.base.general.dao
 
+import androidx.paging.PagingSource
 import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Upsert
@@ -18,7 +19,12 @@ interface ClipDao {
     @Upsert
     suspend fun upsertClip(clip: ClipData): Long
 
-    // 1. 基础查询：查找是否存在相同内容
+    /**
+     * Get 基础查询：查找是否存在相同内容的最新条目。这是去重逻辑的核心查询，必须高效。
+     *
+     * @param content 要查询的内容。FTS5会自动处理分词和匹配，所以这里直接传入原始内容即可。
+     * @return
+     */
     @Query("SELECT * FROM clips WHERE content = :content AND is_latest = 1 LIMIT 1")
     suspend fun getClipByContent(content: String): ClipData?
 
@@ -63,11 +69,24 @@ interface ClipDao {
     fun searchAllClips(query: String): Flow<List<ClipWithSourceApp>>
 
     /**
-     * 删除一个分组下的所有历史记录。
-     * @param groupId 要删除的分组ID。
+     * 删除一个具体的剪贴板条目。
+     * @param id 要删除的Clip id。
      */
-    @Query("DELETE FROM clips WHERE group_id = :groupId")
-    suspend fun deleteClipGroup(groupId: Long)
+    @Query("DELETE FROM clips WHERE id = :id")
+    suspend fun deleteClipById(id: Long)
+
+    /** 更新置顶状态 */
+    @Query("UPDATE clips SET is_pinned = :isPinned WHERE id = :id")
+    suspend fun updatePinStatus(id: Long, isPinned: Boolean)
+
+    /**
+     * 加载所有的剪贴板数据，供分页使用。这个方法会被 PagingSource 调用，返回一个 PagingSource 对象。
+     * 排序规则：置顶在前，其余按时间倒序。
+     *
+     * @return
+     */
+    @Query("SELECT * FROM clips WHERE is_latest = 1 ORDER BY is_pinned DESC, timestamp DESC")
+    fun loadAllClips(): PagingSource<Int, ClipWithSourceApp>
 
     /**
      * 清空所有剪贴板数据。

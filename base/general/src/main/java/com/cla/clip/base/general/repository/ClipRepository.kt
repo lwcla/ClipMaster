@@ -1,6 +1,8 @@
 package com.cla.clip.base.general.repository
 
+import androidx.paging.PagingSource
 import com.cla.clip.base.general.dao.data.ClipData
+import com.cla.clip.base.general.dao.data.ClipWithSourceApp
 import com.cla.clip.base.general.entity.ClipCaptureEntity
 import com.cla.clip.base.general.entity.ClipEntity
 import kotlinx.coroutines.flow.Flow
@@ -42,9 +44,20 @@ interface ClipRepository {
     suspend fun createNewVersionForClip(newVersionClip: ClipData): Long
 
     /**
-     * 删除一个分组下的所有历史记录。
+     * 删除一个剪贴板内容
+     *
+     * @param clip
      */
-    suspend fun deleteClipGroup(groupId: Long)
+    suspend fun deleteClip(clip: ClipEntity)
+
+    /** 更新置顶状态 */
+    suspend fun updatePinStatus(clipId: Long, isPinned: Boolean)
+
+    /**
+     * 加载所有的剪贴板数据，供分页使用。这个方法会被 PagingSource 调用，返回一个 PagingSource 对象。
+     * 排序规则：置顶在前，其余按时间倒序。
+     */
+    fun loadAllClips(): PagingSource<Int, ClipWithSourceApp>
 
     /**
      * 清空所有剪贴板数据。

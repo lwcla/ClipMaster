@@ -77,4 +77,8 @@ dependencies {
 
     // AndroidX Palette KTX，用于从图片中提取主色调，实现动态主题功能
     implementation(libs.androidx.palette.ktx)
+
+    // Paging3库，用于高效加载和显示大量数据
+    implementation(libs.bundles.paging)
+    testImplementation(libs.paging.common)
 }

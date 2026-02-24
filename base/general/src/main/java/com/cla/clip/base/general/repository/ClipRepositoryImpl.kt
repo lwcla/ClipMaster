@@ -1,10 +1,13 @@
 package com.cla.clip.base.general.repository
 
+import androidx.paging.PagingSource
 import com.cla.clip.base.general.dao.ClipDao
 import com.cla.clip.base.general.dao.SourceAppDao
 import com.cla.clip.base.general.dao.data.ClipData
+import com.cla.clip.base.general.dao.data.ClipWithSourceApp
 import com.cla.clip.base.general.dao.data.SourceApp
 import com.cla.clip.base.general.entity.ClipCaptureEntity
+import com.cla.clip.base.general.entity.ClipEntity
 import com.cla.clip.base.general.entity.toUi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
@@ -85,8 +88,16 @@ class ClipRepositoryImpl @Inject constructor(
         clipDao.upsertClip(newVersionClip.copy(id = 0)) // 确保是插入操作
     }
 
-    override suspend fun deleteClipGroup(groupId: Long) = withContext(Dispatchers.IO) {
-        clipDao.deleteClipGroup(groupId)
+    override suspend fun deleteClip(clip: ClipEntity) {
+        clipDao.deleteClipById(clip.id)
+    }
+
+    override suspend fun updatePinStatus(clipId: Long, isPinned: Boolean) {
+        clipDao.updatePinStatus(clipId, isPinned)
+    }
+
+    override fun loadAllClips(): PagingSource<Int, ClipWithSourceApp> {
+        return clipDao.loadAllClips()
     }
 
     override suspend fun clearAll() = withContext(Dispatchers.IO) {

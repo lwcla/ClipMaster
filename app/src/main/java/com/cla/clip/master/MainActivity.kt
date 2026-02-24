@@ -3,7 +3,6 @@ package com.cla.clip.master
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
@@ -17,7 +16,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import com.cla.clip.master.ui.screen.main.MainScreen
+import com.cla.clip.master.ui.page.main.MainPage
 import com.cla.clip.master.ui.theme.LwlDemoTheme
 import com.cla.clip.master.ui.widget.ShizukuServiceUnavailableTip
 import dagger.hilt.android.AndroidEntryPoint
@@ -47,7 +46,7 @@ class MainActivity : ComponentActivity() {
                 ) { innerPadding ->
                     Column(modifier = Modifier.padding(innerPadding)) {
                         ShizukuServiceUnavailableTip()
-                        MainScreen()
+                        MainPage()
                     }
                 }
             }
