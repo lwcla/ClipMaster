@@ -205,7 +205,7 @@ private fun ClipCard(
                         modifier = Modifier
                             .fillMaxWidth(0.25f) // 只占据卡片宽度的三分之一，避免过度覆盖内容
                             .align(Alignment.TopEnd)
-                            .alpha(0.6f), // 关键：对齐到右上角
+                            .alpha(0.5f), // 关键：对齐到右上角
                         tint = appColor
                     )
                 }
