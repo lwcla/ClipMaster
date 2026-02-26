@@ -14,34 +14,14 @@ import kotlinx.coroutines.flow.Flow
 interface ClipRepository {
 
     /**
-     * 获取主屏幕上显示的、未置顶的最新剪贴板条目。
-     */
-    fun getLatestClips(): Flow<List<ClipEntity>>
-
-    /**
-     * 获取所有置顶的最新剪贴板条目。
-     */
-    fun getPinnedClips(): Flow<List<ClipEntity>>
-
-    /**
      * 根据查询词搜索所有剪贴板条目（包括历史记录）。
      */
     fun searchAllClips(query: String): Flow<List<ClipEntity>>
 
     /**
-     * 根据分组ID获取一个条目的所有历史版本。
-     */
-    suspend fun getHistoryForGroup(groupId: Long): List<ClipEntity>
-
-    /**
      * 新增一个全新的剪贴板条目。
      */
     suspend fun addNewClip(captureEntity: ClipCaptureEntity): Long
-
-    /**
-     * 为一个现有的剪贴板条目创建一个新的编辑历史版本。
-     */
-    suspend fun createNewVersionForClip(newVersionClip: ClipData): Long
 
     /**
      * 删除一个剪贴板内容

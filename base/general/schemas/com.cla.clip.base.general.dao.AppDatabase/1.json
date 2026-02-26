@@ -2,30 +2,17 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "b1739b1e1998f331abaff863ad670574",
+    "identityHash": "b1e5340ff1f3bea2fcd64304456ac8c1",
     "entities": [
       {
         "tableName": "clips",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `group_id` INTEGER NOT NULL, `is_latest` INTEGER NOT NULL DEFAULT 1, `content` TEXT NOT NULL, `timestamp` INTEGER NOT NULL, `is_pinned` INTEGER NOT NULL DEFAULT 0, `link_title` TEXT, `link_description` TEXT, `link_image_url` TEXT, `link_site_name` TEXT, `source_app_package` TEXT)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `content` TEXT NOT NULL, `timestamp` INTEGER NOT NULL, `pinned_time` INTEGER NOT NULL, `link_title` TEXT, `link_description` TEXT, `link_image_url` TEXT, `link_site_name` TEXT, `source_app_package` TEXT)",
         "fields": [
           {
             "fieldPath": "id",
             "columnName": "id",
             "affinity": "INTEGER",
             "notNull": true
-          },
-          {
-            "fieldPath": "groupId",
-            "columnName": "group_id",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "isLatest",
-            "columnName": "is_latest",
-            "affinity": "INTEGER",
-            "notNull": true,
-            "defaultValue": "1"
           },
           {
             "fieldPath": "content",
@@ -40,11 +27,10 @@
             "notNull": true
           },
           {
-            "fieldPath": "isPinned",
-            "columnName": "is_pinned",
+            "fieldPath": "pinnedTime",
+            "columnName": "pinned_time",
             "affinity": "INTEGER",
-            "notNull": true,
-            "defaultValue": "0"
+            "notNull": true
           },
           {
             "fieldPath": "linkTitle",
@@ -89,24 +75,6 @@
             "createSql": "CREATE INDEX IF NOT EXISTS `index_clips_timestamp` ON `${TABLE_NAME}` (`timestamp`)"
           },
           {
-            "name": "index_clips_group_id",
-            "unique": false,
-            "columnNames": [
-              "group_id"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_clips_group_id` ON `${TABLE_NAME}` (`group_id`)"
-          },
-          {
-            "name": "index_clips_is_latest",
-            "unique": false,
-            "columnNames": [
-              "is_latest"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_clips_is_latest` ON `${TABLE_NAME}` (`is_latest`)"
-          },
-          {
             "name": "index_clips_source_app_package",
             "unique": false,
             "columnNames": [
@@ -125,13 +93,13 @@
             "createSql": "CREATE INDEX IF NOT EXISTS `index_clips_content` ON `${TABLE_NAME}` (`content`)"
           },
           {
-            "name": "index_clips_is_pinned",
+            "name": "index_clips_pinned_time",
             "unique": false,
             "columnNames": [
-              "is_pinned"
+              "pinned_time"
             ],
             "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_clips_is_pinned` ON `${TABLE_NAME}` (`is_pinned`)"
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_clips_pinned_time` ON `${TABLE_NAME}` (`pinned_time`)"
           }
         ]
       },
@@ -236,7 +204,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'b1739b1e1998f331abaff863ad670574')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'b1e5340ff1f3bea2fcd64304456ac8c1')"
     ]
   }
 }

@@ -31,22 +31,29 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -59,6 +66,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.flowWithLifecycle
 import androidx.paging.LoadState
+import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
@@ -66,12 +74,14 @@ import coil3.compose.AsyncImage
 import com.cla.clip.base.general.entity.ClipEntity
 import com.cla.clip.base.general.logD
 import com.cla.clip.master.R
+import kotlinx.coroutines.launch
 
 /**
  * 主屏幕的入口Composable。
  *
  * @param viewModel Hilt自动注入的MainViewModel实例。
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainPage(
     viewModel: MainViewModel = hiltViewModel()
@@ -82,7 +92,81 @@ fun MainPage(
         viewModel.pagedClips.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
     }.collectAsLazyPagingItems()
 
+    // --- BottomSheet 状态管理 ---
+    // 保存当前长按选中的 Clip，如果为 null 则不显示 Sheet
+    var selectedClipForSheet by remember { mutableStateOf<ClipEntity?>(null) }
+    val sheetState = rememberModalBottomSheetState()
+    val scope = rememberCoroutineScope()
+
+    // 关闭 Sheet 的辅助函数
+    fun closeSheet() {
+        scope.launch { sheetState.hide() }.invokeOnCompletion {
+            if (!sheetState.isVisible) {
+                selectedClipForSheet = null
+            }
+        }
+    }
+
     logD("MainPage", { "MainPage: pagedClips itemCount = ${pagedClips.itemCount}, loadState = ${pagedClips.loadState}" })
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+
+        ClipList(
+            viewModel = viewModel,
+            pagedClips = pagedClips,
+            onLongClick = { clip ->
+                // 长按时，设置选中的 Clip，触发 BottomSheet 显示
+                selectedClipForSheet = clip
+            }
+        )
+
+        // --- Bottom Sheet UI ---
+        val clip = selectedClipForSheet
+        if (clip != null) {
+            ModalBottomSheet(
+                onDismissRequest = { selectedClipForSheet = null },
+                sheetState = sheetState
+            ) {
+                // BottomSheet 的内容
+                Column(
+                    modifier = Modifier.padding(bottom = 32.dp) // 底部留白
+                ) {
+
+                    // 选项1: 置顶/取消置顶
+                    ListItem(
+                        headlineContent = { Text(if (clip.isPinned) "取消置顶" else "置顶") },
+                        leadingContent = {
+                            Icon(Icons.Filled.PushPin, contentDescription = null)
+                        },
+                        modifier = Modifier.clickable {
+                            viewModel.updatePinStatus(clip, !clip.isPinned)
+                            closeSheet()
+                        }
+                    )
+
+                    // 选项2: 删除
+                    ListItem(
+                        headlineContent = { Text("删除", color = MaterialTheme.colorScheme.error) },
+                        leadingContent = {
+                            Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                        },
+                        modifier = Modifier.clickable {
+                            viewModel.deleteClipGroup(clip)
+                            closeSheet()
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ClipList(
+    viewModel: MainViewModel,
+    pagedClips: LazyPagingItems<ClipEntity>,
+    onLongClick: (ClipEntity) -> Unit
+) {
 
     if (pagedClips.loadState.refresh is LoadState.NotLoading && pagedClips.itemCount == 0) {
         EmptyScreen()
@@ -118,7 +202,8 @@ fun MainPage(
                             },
                             onClick = {
                                 viewModel.copyToClipboard(it)
-                            }
+                            },
+                            onLongClick = onLongClick
                         )
                     } else {
                         // 如果开启了 placeholders (占位符)，数据加载中 clip 可能为 null
@@ -163,6 +248,7 @@ fun MainPage(
             }
         }
     }
+
 }
 
 /**
@@ -175,6 +261,7 @@ private fun ClipCard(
     onPinToggle: (ClipEntity) -> Unit,
     onDelete: (ClipEntity) -> Unit,
     onClick: (ClipEntity) -> Unit,
+    onLongClick: (ClipEntity) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -197,8 +284,8 @@ private fun ClipCard(
         ) {
 
             Box {
-
                 if (clip.isPinned) {
+                    // 显示置顶标签
                     Icon(
                         painterResource(R.drawable.host_icon_pinned),
                         contentDescription = null,
@@ -218,7 +305,8 @@ private fun ClipCard(
                             onClick = { onClick(clip) },
                             onLongClick = {
                                 // 2. 长按时显示菜单
-                                showMenu = true
+//                                showMenu = true
+                                onLongClick(clip)
                             }
                         )
                         .clip(cardShape)
@@ -230,7 +318,7 @@ private fun ClipCard(
                     Text(
                         text = clip.content,
                         style = MaterialTheme.typography.bodyLarge,
-                        maxLines = 5,
+                        maxLines = 7,
                         overflow = TextOverflow.Ellipsis
                     )
 
@@ -302,8 +390,11 @@ private fun ClipCard(
 
                     // 左侧按钮：置顶/取消置顶
                     MenuItemButton(
-                        text = if (clip.isPinned) "取消置顶" else "置顶",
-                        icon = Icons.Default.PushPin,
+                        text = if (clip.isPinned) {
+                            stringResource(com.cla.clip.base.general.R.string.base_general_unpinned)
+                        } else {
+                            stringResource(com.cla.clip.base.general.R.string.base_general_pinned)
+                        },
                         color = MaterialTheme.colorScheme.primary,
                         onClick = {
                             onPinToggle(clip)
@@ -321,8 +412,7 @@ private fun ClipCard(
 
                     // 右侧按钮：删除
                     MenuItemButton(
-                        text = "删除",
-                        icon = Icons.Default.Delete,
+                        text = stringResource(com.cla.clip.base.general.R.string.base_general_delete),
                         color = MaterialTheme.colorScheme.error,
                         onClick = {
                             onDelete(clip)
@@ -341,8 +431,7 @@ private fun ClipCard(
 @Composable
 private fun MenuItemButton(
     text: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    color: androidx.compose.ui.graphics.Color,
+    color: Color,
     onClick: () -> Unit
 ) {
     Text(
@@ -372,7 +461,7 @@ private fun ClipCardPreview() {
         isPinned = true
     )
 
-    ClipCard(clip, onPinToggle = {}, onDelete = {}, onClick = {})
+    ClipCard(clip, onPinToggle = {}, onDelete = {}, onClick = {}, onLongClick = {})
 }
 
 /**

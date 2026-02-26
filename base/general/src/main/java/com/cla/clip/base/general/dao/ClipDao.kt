@@ -25,40 +25,8 @@ interface ClipDao {
      * @param content 要查询的内容。FTS5会自动处理分词和匹配，所以这里直接传入原始内容即可。
      * @return
      */
-    @Query("SELECT * FROM clips WHERE content = :content AND is_latest = 1 LIMIT 1")
+    @Query("SELECT * FROM clips WHERE content = :content LIMIT 1")
     suspend fun getClipByContent(content: String): ClipData?
-
-    /**
-     * 将指定分组中的所有条目的 isLatest 标志设置为 false。
-     * 这是在插入新版本之前必须调用的步骤。
-     * @param groupId 要重置的分组ID。
-     */
-    @Query("UPDATE clips SET is_latest = 0 WHERE group_id = :groupId")
-    suspend fun resetLatestFlagForGroup(groupId: Long)
-
-    /**
-     * 获取主屏幕上显示的剪贴板列表。
-     * 只获取每个分组中最新的、未被置顶的条目，按时间戳降序排列。
-     * @return 一个可观察的Clip列表Flow。
-     */
-    @Query("SELECT * FROM clips WHERE is_latest = 1 AND is_pinned = 0 ORDER BY timestamp DESC")
-    fun getLatestClips(): Flow<List<ClipWithSourceApp>>
-
-    /**
-     * 获取所有置顶的剪贴板列表。
-     * 只获取每个分组中最新的、被置顶的条目，按时间戳降序排列。
-     * @return 一个可观察的置顶Clip列表Flow。
-     */
-    @Query("SELECT * FROM clips WHERE is_latest = 1 AND is_pinned = 1 ORDER BY timestamp DESC")
-    fun getPinnedClips(): Flow<List<ClipWithSourceApp>>
-
-    /**
-     * 根据分组ID获取一个条目的所有历史版本（包括最新版），按时间戳降序排列。
-     * @param groupId 要查询的分组ID。
-     * @return 该分组的所有历史记录列表。
-     */
-    @Query("SELECT * FROM clips WHERE group_id = :groupId ORDER BY timestamp DESC")
-    suspend fun getHistoryForGroup(groupId: Long): List<ClipWithSourceApp>
 
     /**
      * 核心搜索功能：在FTS虚拟表中进行全文检索。
@@ -76,16 +44,23 @@ interface ClipDao {
     suspend fun deleteClipById(id: Long)
 
     /** 更新置顶状态 */
-    @Query("UPDATE clips SET is_pinned = :isPinned WHERE id = :id")
-    suspend fun updatePinStatus(id: Long, isPinned: Boolean)
+    @Query("UPDATE clips SET pinned_time = :pinnedTime WHERE id = :id")
+    suspend fun updatePinStatus(id: Long, pinnedTime: Long)
 
     /**
-     * 加载所有的剪贴板数据，供分页使用。这个方法会被 PagingSource 调用，返回一个 PagingSource 对象。
-     * 排序规则：置顶在前，其余按时间倒序。
-     *
-     * @return
+     * 加载所有的剪贴板数据，供分页使用。这个方法会被 PagingSource 调用。
+     * 排序规则：
+     * 1. 按照 是否置顶 (pinned_time > 0) 降序排列，保证置顶在前。
+     * 2. 如果置顶了，按照 pinned_time 倒序排列（新置顶的在前）。
+     * 3. 如果没置顶，按照 timestamp 倒序排列（新复制的在前）。
      */
-    @Query("SELECT * FROM clips WHERE is_latest = 1 ORDER BY is_pinned DESC, timestamp DESC")
+    @Query("""
+        SELECT * FROM clips 
+        ORDER BY 
+          CASE WHEN pinned_time > 0 THEN 1 ELSE 0 END DESC, 
+          pinned_time DESC, 
+          timestamp DESC
+    """)
     fun loadAllClips(): PagingSource<Int, ClipWithSourceApp>
 
     /**
@@ -95,6 +70,6 @@ interface ClipDao {
     suspend fun clearAll()
 
     /** 获取最新的一条剪贴板记录 */
-    @Query("SELECT * FROM clips WHERE is_latest = 1 ORDER BY timestamp DESC LIMIT 1")
+    @Query("SELECT * FROM clips ORDER BY timestamp DESC LIMIT 1")
     suspend fun getLatestClip(): ClipWithSourceApp?
 }

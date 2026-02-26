@@ -59,7 +59,7 @@ fun ClipWithSourceApp.toUi(): ClipEntity {
         borderColor = color,
         hasLinkPreview = !clip.linkTitle.isNullOrEmpty(),
         linkTitle = clip.linkTitle,
-        isPinned = clip.isPinned
+        isPinned = clip.pinnedTime != 0L
     )
 }
 

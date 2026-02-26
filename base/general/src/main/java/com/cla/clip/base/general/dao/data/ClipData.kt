@@ -47,10 +47,9 @@ data class SourceApp(
  * 当该列作为外键使用时，添加索引可以避免在父表更新或删除时导致的子表全表扫描，从而防止性能下降甚至死锁。
  *
  * @param id 每条记录的唯一ID。
- * @param groupId 分组ID。用于将一条剪贴板的多个历史版本关联起来。对于一个全新的条目，它的 groupId 等于它自己的 id。
  * @param content 核心内容（文本、图片URI、链接URL）。
  * @param timestamp “最后修改”时间戳。
- * @param isPinned 是否置顶。
+ * @param pinnedTime 置顶的时间戳。
  * @param linkTitle 链接预览的标题。
  * @param linkDescription 链接预览的描述。
  * @param linkImageUrl 链接预览的图片URL。
@@ -61,26 +60,20 @@ data class SourceApp(
     tableName = "clips",
     indices = [
         Index(value = ["timestamp"]),
-        Index(value = ["group_id"]),
-        Index(value = ["is_latest"]),
         Index(value = ["source_app_package"]),
         Index(value = ["content"]),
-        Index(value = ["is_pinned"]),
+        Index(value = ["pinned_time"]),
     ]
 )
 data class ClipData(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
-    @ColumnInfo(name = "group_id")
-    val groupId: Long,
-    @ColumnInfo(name = "is_latest", defaultValue = "1")
-    val isLatest: Boolean = true,
     @ColumnInfo(name = "content")
     val content: String,
     @ColumnInfo(name = "timestamp")
     val timestamp: Long,
-    @ColumnInfo(name = "is_pinned", defaultValue = "0")
-    val isPinned: Boolean = false,
+    @ColumnInfo(name = "pinned_time")
+    val pinnedTime: Long = 0,
     @ColumnInfo(name = "link_title")
     val linkTitle: String? = null,
     @ColumnInfo(name = "link_description")
