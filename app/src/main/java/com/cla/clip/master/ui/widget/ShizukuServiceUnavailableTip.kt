@@ -43,7 +43,7 @@ fun ShizukuServiceUnavailableTip() {
     // 1. 使用 remember 将 status 转换为可变状态，这样修改它时会触发 UI 重组
     var status by remember { mutableStateOf(ShizukuUtils.checkStatus(context)) }
 
-    logI("ShizukuServiceUnavailableTip") { "shizuku状态 $status" }
+    logI("shizuku") { "shizuku状态 $status" }
 
     // 2. 使用 DisposableEffect 监听生命周期
     DisposableEffect(owner) {
@@ -51,7 +51,7 @@ fun ShizukuServiceUnavailableTip() {
             if (event == Lifecycle.Event.ON_RESUME) {
                 // 在 onResume 时检查 Shizuku 状态
                 val new = ShizukuUtils.checkStatus(context)
-                logI("ShizukuServiceUnavailableTip") { "ON_RESUME shizuku状态 $new" }
+                logI("shizuku") { "ON_RESUME shizuku状态 $new" }
                 status = new
             }
         }
@@ -126,11 +126,11 @@ fun ShizukuServiceUnavailableTip() {
             // 2. 如果希望背景点击效果也遵循圆角，需要 clip
             .clip(RoundedCornerShape(10.dp))
             .clickable(true, onClick = {
-                logD("ShizukuServiceUnavailableTip") { "去连接 Shizuku，当前状态：$status" }
+                logD("shizuku") { "去连接 Shizuku，当前状态：$status" }
                 when (status) {
                     is ShizukuStatus.Connected -> {
                         // 已经处于连接状态
-                        logI("ShizukuServiceUnavailableTip") { "toConnect: Shizuku 已经连接，无需操作" }
+                        logI("shizuku") { "toConnect: Shizuku 已经连接，无需操作" }
                     }
 
                     is ShizukuStatus.Disconnect.NotInstalled,
