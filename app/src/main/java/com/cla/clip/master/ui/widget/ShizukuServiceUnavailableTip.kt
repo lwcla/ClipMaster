@@ -1,6 +1,5 @@
 package com.cla.clip.master.ui.widget
 
-import android.util.Log
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.padding
@@ -27,8 +26,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.cla.clip.base.general.logD
+import com.cla.clip.base.general.logI
 import com.cla.clip.master.R
-import com.cla.clip.master.ui.theme.LwlDemoTheme
+import com.cla.clip.master.ui.theme.ClipMaterTheme
 import com.cla.clip.shizuku.ShizukuStatus
 import com.cla.clip.shizuku.ShizukuUtils
 import rikka.shizuku.Shizuku
@@ -42,8 +43,7 @@ fun ShizukuServiceUnavailableTip() {
     // 1. 使用 remember 将 status 转换为可变状态，这样修改它时会触发 UI 重组
     var status by remember { mutableStateOf(ShizukuUtils.checkStatus(context)) }
 
-
-    Log.i("shizuku", "ShizukuServiceUnavailableTip: shizuku状态 $status")
+    logI("ShizukuServiceUnavailableTip") { "shizuku状态 $status" }
 
     // 2. 使用 DisposableEffect 监听生命周期
     DisposableEffect(owner) {
@@ -51,7 +51,7 @@ fun ShizukuServiceUnavailableTip() {
             if (event == Lifecycle.Event.ON_RESUME) {
                 // 在 onResume 时检查 Shizuku 状态
                 val new = ShizukuUtils.checkStatus(context)
-                Log.i("shizuku", "ShizukuServiceUnavailableTip: ON_RESUME shizuku状态 $new")
+                logI("ShizukuServiceUnavailableTip") { "ON_RESUME shizuku状态 $new" }
                 status = new
             }
         }
@@ -126,11 +126,11 @@ fun ShizukuServiceUnavailableTip() {
             // 2. 如果希望背景点击效果也遵循圆角，需要 clip
             .clip(RoundedCornerShape(10.dp))
             .clickable(true, onClick = {
-                Log.d("shizuku", "ShizukuUtils toConnect: 去连接 Shizuku，当前状态：$status")
+                logD("ShizukuServiceUnavailableTip") { "去连接 Shizuku，当前状态：$status" }
                 when (status) {
                     is ShizukuStatus.Connected -> {
                         // 已经处于连接状态
-                        Log.i("shizuku", "ShizukuUtils toConnect: 已经连接，无需操作")
+                        logI("ShizukuServiceUnavailableTip") { "toConnect: Shizuku 已经连接，无需操作" }
                     }
 
                     is ShizukuStatus.Disconnect.NotInstalled,
@@ -156,7 +156,7 @@ fun ShizukuServiceUnavailableTip() {
 @Preview(showBackground = true)
 @Composable
 fun ShizukuServiceUnavailableTipPreview() {
-    LwlDemoTheme {
+    ClipMaterTheme {
         ShizukuServiceUnavailableTip()
     }
 }

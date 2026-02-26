@@ -1,6 +1,5 @@
 <resources>
-    <string name="host_app_name">lwldemo</string>
-    <string name="host_clipboard_assistant">剪贴板助手</string>
+    <string name="host_app_name">剪贴板助手</string>
     <string name="host_clipboard_service">剪贴板服务</string>
     <string name="host_service_is_running">服务正在运行中</string>
     <string name="host_listen_for_changes_in_the_clipboard_content">监听剪贴板内容变化</string>

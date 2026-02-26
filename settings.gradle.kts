@@ -19,7 +19,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "LwlDemo"
+rootProject.name = "ClipMaster"
 include(":app")
 include(":base")
 include(":base:general")

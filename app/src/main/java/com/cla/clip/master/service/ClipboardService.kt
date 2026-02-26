@@ -375,7 +375,7 @@ class ClipboardService : Service() {
         } else null
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle(title ?: applicationContext.getString(R.string.host_clipboard_assistant))
+            .setContentTitle(title ?: applicationContext.getString(R.string.host_app_name))
             .setContentText(contentText)
             .setSmallIcon(R.drawable.host_ic_launcher_foreground) // 确保资源存在，或者使用 android.R.drawable.ic_menu_save
             .setPriority(NotificationCompat.PRIORITY_LOW)

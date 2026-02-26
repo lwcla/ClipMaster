@@ -39,7 +39,7 @@ import com.cla.clip.base.general.hasPermission
 import com.cla.clip.base.general.toPermissionSetting
 import com.cla.clip.master.R
 import com.cla.clip.master.service.ClipboardService
-import com.cla.clip.master.ui.theme.LwlDemoTheme
+import com.cla.clip.master.ui.theme.ClipMaterTheme
 
 /**
  * 通知权限处理组件
@@ -179,7 +179,7 @@ fun HandleNotificationPermission(trigger: Boolean) {
 @Preview
 @Composable
 fun PreviewHandleNotificationPermission() {
-    LwlDemoTheme {
+    ClipMaterTheme {
         HandleNotificationPermission(trigger = true)
     }
 }

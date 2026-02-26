@@ -24,13 +24,13 @@
         android:label="@string/host_app_name"
         android:roundIcon="@mipmap/host_ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.LwlDemo">
+        android:theme="@style/Theme.ClipMaster">
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/host_app_name"
-            android:theme="@style/Theme.LwlDemo">
+            android:theme="@style/Theme.ClipMaster">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
