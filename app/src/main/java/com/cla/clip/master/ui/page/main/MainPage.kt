@@ -299,11 +299,7 @@ private fun ClipCard(
                         // 2. 再添加点击事件：水波纹会绘制在裁剪区域内
                         .combinedClickable(
                             onClick = { onClick(clip) },
-                            onLongClick = {
-                                // 2. 长按时显示菜单
-//                                showMenu = true
-                                onLongClick(clip)
-                            }
+                            onLongClick = { onLongClick(clip) }
                         )
                         .clip(cardShape)
                         .border(1.dp, borderColor, cardShape)
@@ -327,7 +323,6 @@ private fun ClipCard(
                         ConstraintLayout(modifier = Modifier.fillMaxWidth()) {
                             // 创建引用
                             val (iconRef, nameRef, timeRef) = createRefs()
-
                             // 1. App Icon: 始终固定在最左侧
                             AsyncImage(
                                 model = clip.appIconPath,
@@ -389,7 +384,6 @@ private fun ClipCard(
                                         width = Dimension.fillToConstraints
                                     }
                             )
-
                         }
                     }
 
@@ -403,9 +397,7 @@ private fun ClipCard(
                     )
 
                     // 核心修改：使用 Row 将两个选项横向排列
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
 
                         // 左侧按钮：置顶/取消置顶
                         Box(
@@ -436,6 +428,7 @@ private fun ClipCard(
                                 .height(18.dp)
                                 .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                         )
+                        
                         // 右侧按钮：删除
                         Box(
                             modifier = Modifier
