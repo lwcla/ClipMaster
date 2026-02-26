@@ -14,6 +14,7 @@ composeBom = "2026.01.01"
 appcompat = "1.7.1"
 # Hilt与Jetpack Navigation Compose的集成库版本，提供hiltViewModel()函数
 hiltNavigationCompose = "1.2.0"
+constraintLayoutCompose = "1.1.1"
 
 shizuku = "13.1.5"
 hiddenApiBypass = "6.1"
@@ -59,6 +60,8 @@ material-icons-extended = { group = "androidx.compose.material", name = "materia
 # Hilt与Jetpack Navigation Compose的集成库
 # 允许在Composable函数中通过 hiltViewModel() 轻松获取Hilt注入的ViewModel
 hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "hiltNavigationCompose" }
+# constraintlayout
+constraintlayout-compose = { group = "androidx.constraintlayout", name = "constraintlayout-compose", version.ref = "constraintLayoutCompose" }
 
 # shizuku - 用于在非root环境下访问系统API
 shizuku-api = { group = "dev.rikka.shizuku", name = "api", version.ref = "shizuku" }
@@ -103,7 +106,7 @@ paging-compose = { group = "androidx.paging", name = "paging-compose", version.r
 paging-common = { group = "androidx.paging", name = "paging-common", version.ref = "paging_version" }
 
 [bundles]
-compose = ["activity-compose", "compose-ui", "compose-ui-tooling-preview", "compose-material3", "compose-foundation", "material-icons-extended", "hilt-navigation-compose"]
+compose = ["activity-compose", "compose-ui", "compose-ui-tooling-preview", "compose-material3", "compose-foundation", "material-icons-extended", "hilt-navigation-compose", "constraintlayout-compose"]
 compose-debug = ["compose-ui-tooling", "compose-ui-test-manifest"]
 io-coil = ["io-coil-compose", "io-coil-network-okhttp"]
 shizuku = ["shizuku-api", "shizuku-provider"]

@@ -1,6 +1,5 @@
 package com.cla.clip.master.ui.page.main
 
-import android.text.format.DateUtils
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,9 +26,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -39,6 +38,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,19 +48,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.constraintlayout.compose.ConstraintLayout
+import androidx.constraintlayout.compose.Dimension
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -108,6 +107,8 @@ fun MainPage(
     }
 
     logD("MainPage", { "MainPage: pagedClips itemCount = ${pagedClips.itemCount}, loadState = ${pagedClips.loadState}" })
+
+
 
     Box(modifier = Modifier.fillMaxWidth()) {
 
@@ -264,11 +265,6 @@ private fun ClipCard(
     onLongClick: (ClipEntity) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
-
-    // 1. 控制菜单显示的状态
-    var showMenu by remember { mutableStateOf(false) }
-
     val appColor = clip.appColor ?: MaterialTheme.colorScheme.outlineVariant
     val borderColor = clip.borderColor ?: MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
     // 提取形状变量，确保外层卡片和内层裁剪使用相同的圆角
@@ -313,136 +309,154 @@ private fun ClipCard(
                         .border(1.dp, borderColor, cardShape)
                         // 1. 先进行裁剪：确保水波纹被限制在圆角内 (这只会裁剪 Column 自身，不会裁剪父级 Card 的阴影)
                         // 3. 最后添加内边距：这样文字内容会有边距，但点击区域（水波纹）是铺满卡片的
-                        .padding(12.dp))
+                        .padding(start = 12.dp, end = 12.dp, top = 12.dp))
                 {
                     Text(
                         text = clip.content,
                         style = MaterialTheme.typography.bodyLarge,
-                        maxLines = 7,
+                        maxLines = 6,
                         overflow = TextOverflow.Ellipsis
                     )
 
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(8.dp))
 
-                    // 时间戳和来源
-                    Text(
-                        text = clip.formattedTime,
-                        style = MaterialTheme.typography.bodySmall
-                    )
+                    // 获取当前的密度信息
+                    val currentDensity = LocalDensity.current
+                    // 创建一个新的 Density，强制 fontScale 为 1f (不缩放)，不响应系统字体大小设置
+                    CompositionLocalProvider(LocalDensity provides Density(density = currentDensity.density, fontScale = 1f)) {
+                        ConstraintLayout(modifier = Modifier.fillMaxWidth()) {
+                            // 创建引用
+                            val (iconRef, nameRef, timeRef) = createRefs()
 
-                    Spacer(Modifier.height(4.dp))
+                            // 1. App Icon: 始终固定在最左侧
+                            AsyncImage(
+                                model = clip.appIconPath,
+                                contentDescription = "App Icon",
+                                placeholder = rememberVectorPainter(Icons.Filled.Image),
+                                error = rememberVectorPainter(Icons.Filled.Image),
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(14.dp)
+                                    .constrainAs(iconRef) {
+                                        start.linkTo(parent.start)
+                                        top.linkTo(parent.top)
+                                        bottom.linkTo(parent.bottom)
+                                    }
+                            )
 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        AsyncImage(
-                            model = clip.appIconPath,
-                            contentDescription = "App Icon",
-                            placeholder = rememberVectorPainter(Icons.Filled.Image),
-                            error = rememberVectorPainter(Icons.Filled.Image),
-                            modifier = Modifier.size(14.dp),
-                            contentScale = ContentScale.Crop
-                        )
+                            // 2. Formatted Time: 始终固定在最右侧
+                            // 关键点：我们即使文本很长，也让它优先展示，但需要设置一个最大宽度限制（比如80%），
+                            // 防止极端情况下把左边的 Icon 都覆盖了。
+                            Text(
+                                text = clip.formattedTime,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 8.sp,
+                                textAlign = TextAlign.End,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .constrainAs(timeRef) {
+                                        end.linkTo(parent.end)
+                                        top.linkTo(parent.top)
+                                        bottom.linkTo(parent.bottom)
+                                        // 限制宽度，防止极端超长文本覆盖 Icon
+                                        // preferredWrapContent 表示优先包裹内容，但在空间不足时会听从约束
+                                        width = Dimension.preferredWrapContent
+                                        horizontalBias = 1f
+                                        // 强制 Time 的左边不能超过 Icon 的右边（留点 padding）
+                                        start.linkTo(iconRef.end, margin = 45.dp)
+                                        // 这里的 constrainedWidth = true 配合 start.linkTo 保证了如果有必要，Time 也会被压缩
+                                        // 但通常情况下，因为它只是 wrapContent，它会把压力传导给中间的 AppName
+                                    }
+                            )
 
-                        Spacer(modifier = Modifier.width(4.dp)) // 建议加一点间距
+                            // 3. App Name: 填充剩余空间
+                            Text(
+                                text = clip.appName,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .constrainAs(nameRef) {
+                                        // 左边接 Icon
+                                        start.linkTo(iconRef.end, margin = 2.dp)
+                                        // 右边接 Time
+                                        end.linkTo(timeRef.start)
+                                        top.linkTo(parent.top)
+                                        bottom.linkTo(parent.bottom)
+                                        // 关键：填满 Icon 和 Time 之间的空隙
+                                        width = Dimension.fillToConstraints
+                                    }
+                            )
 
-                        Text(
-                            text = clip.appName,
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                // 可选：如果觉得文字偏下，可以尝试禁用字体上下的默认留白
-                                platformStyle = PlatformTextStyle(includeFontPadding = false)
-                            ),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            }
-        }
-
-        // 3. 弹出式菜单
-        MaterialTheme(
-            // 方法1：如果你想改变菜单的圆角，最彻底的方法是覆盖 Shape
-            shapes = MaterialTheme.shapes.copy(extraSmall = RoundedCornerShape(16.dp))
-        ) {
-            DropdownMenu(
-                expanded = showMenu,
-                onDismissRequest = { showMenu = false },
-                // 自定义背景色
-                containerColor = MaterialTheme.colorScheme.surfaceContainer, // 或者 Color.White
-                // 自定义整个菜单的阴影和边框
-                modifier = Modifier
-                    .background(
-                        color = MaterialTheme.colorScheme.surfaceContainer,
-                        shape = RoundedCornerShape(16.dp)
-                    )
-                    .border(
-                        width = 1.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f),
-                        shape = RoundedCornerShape(16.dp)
-                    ),
-                // 调整菜单出现的偏移位置 (x, y)
-                offset = DpOffset(x = 10.dp, y = (-10).dp)
-            ) {
-                // 核心修改：使用 Row 将两个选项横向排列
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-
-                    // 左侧按钮：置顶/取消置顶
-                    MenuItemButton(
-                        text = if (clip.isPinned) {
-                            stringResource(com.cla.clip.base.general.R.string.base_general_unpinned)
-                        } else {
-                            stringResource(com.cla.clip.base.general.R.string.base_general_pinned)
-                        },
-                        color = MaterialTheme.colorScheme.primary,
-                        onClick = {
-                            onPinToggle(clip)
-                            showMenu = false
                         }
-                    )
+                    }
 
                     // 中间竖线分割（可选，为了美观）
                     Box(
                         modifier = Modifier
-                            .width(1.dp)
-                            .height(24.dp)
+                            .padding(top = 8.dp)
+                            .fillMaxWidth()
+                            .height(1.dp)
                             .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     )
 
-                    // 右侧按钮：删除
-                    MenuItemButton(
-                        text = stringResource(com.cla.clip.base.general.R.string.base_general_delete),
-                        color = MaterialTheme.colorScheme.error,
-                        onClick = {
-                            onDelete(clip)
-                            showMenu = false
+                    // 核心修改：使用 Row 将两个选项横向排列
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+
+                        // 左侧按钮：置顶/取消置顶
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable(onClick = { onPinToggle(clip) })
+                        ) {
+                            Icon(
+                                if (clip.isPinned) {
+                                    painterResource(R.drawable.host_icon_unpinned)
+                                } else {
+                                    painterResource(R.drawable.host_icon_to_pinned)
+                                },
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .align(Alignment.Center)
+                                    .size(30.dp)
+                                    .padding(8.dp)
+
+                            )
                         }
-                    )
+
+                        // 中间竖线分割（可选，为了美观）
+                        Box(
+                            modifier = Modifier
+                                .width(1.dp)
+                                .height(18.dp)
+                                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                        )
+                        // 右侧按钮：删除
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable(onClick = { onDelete(clip) })
+                        ) {
+                            Icon(
+                                Icons.Outlined.Delete,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier
+                                    .align(Alignment.Center)
+                                    .size(30.dp)
+                                    .padding(8.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
     }
-}
-
-/**
- * 提取出来的自定义横向菜单按钮组件
- */
-@Composable
-private fun MenuItemButton(
-    text: String,
-    color: Color,
-    onClick: () -> Unit
-) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.bodyMedium,
-        color = color,
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp)) // 点击时的圆角效果
-            .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 6.dp), // 点击区域内的内边距
-    )
 }
 
 @Preview(widthDp = 150, heightDp = 300)
@@ -450,15 +464,16 @@ private fun MenuItemButton(
 private fun ClipCardPreview() {
     val clip = ClipEntity(
         id = 1L,
-        content = "这是一个示例剪贴板内容，用于预览ClipCard组件的显示效果。",
-        formattedTime = DateUtils.getRelativeTimeSpanString(System.currentTimeMillis()).toString(), // 伪代码：转换为 "刚刚"
-        appName = "飞书",
+        content = "这是一个示例剪贴板内容，用于预览ClipCard组件的显示效果。用于预览ClipCard组件的显示效果。",
+//        formattedTime = DateUtils.getRelativeTimeSpanString(System.currentTimeMillis()).toString(), // 伪代码：转换为 "刚刚"
+        formattedTime = "刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚", // 伪代码：转换为 "刚刚"
+        appName = "飞书飞书飞书飞书",
         appIconPath = "https://img2.baidu.com/it/u=3546907450,5411894&fm=253&fmt=auto&app=120&f=JPEG?w=500&h=500",
         appColor = MaterialTheme.colorScheme.error,
         borderColor = MaterialTheme.colorScheme.error.copy(alpha = 0.3f),
         hasLinkPreview = false,
         linkTitle = null,
-        isPinned = true
+        isPinned = false
     )
 
     ClipCard(clip, onPinToggle = {}, onDelete = {}, onClick = {}, onLongClick = {})
