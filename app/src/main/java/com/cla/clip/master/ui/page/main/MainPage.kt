@@ -21,18 +21,17 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -108,8 +107,6 @@ fun MainPage(
 
     logD("MainPage", { "MainPage: pagedClips itemCount = ${pagedClips.itemCount}, loadState = ${pagedClips.loadState}" })
 
-
-
     Box(modifier = Modifier.fillMaxWidth()) {
 
         ClipList(
@@ -129,32 +126,16 @@ fun MainPage(
                 sheetState = sheetState
             ) {
                 // BottomSheet 的内容
-                Column(
-                    modifier = Modifier.padding(bottom = 32.dp) // 底部留白
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        // 添加垂直滚动修饰符
+                        .verticalScroll(rememberScrollState())
+                        .padding(start = 20.dp, end = 20.dp, bottom = 20.dp)
                 ) {
-
-                    // 选项1: 置顶/取消置顶
-                    ListItem(
-                        headlineContent = { Text(if (clip.isPinned) "取消置顶" else "置顶") },
-                        leadingContent = {
-                            Icon(Icons.Filled.PushPin, contentDescription = null)
-                        },
-                        modifier = Modifier.clickable {
-                            viewModel.updatePinStatus(clip, !clip.isPinned)
-                            closeSheet()
-                        }
-                    )
-
-                    // 选项2: 删除
-                    ListItem(
-                        headlineContent = { Text("删除", color = MaterialTheme.colorScheme.error) },
-                        leadingContent = {
-                            Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                        },
-                        modifier = Modifier.clickable {
-                            viewModel.deleteClipGroup(clip)
-                            closeSheet()
-                        }
+                    Text(
+                        text = clip.content,
+                        style = MaterialTheme.typography.bodyLarge,
                     )
                 }
             }
@@ -195,15 +176,9 @@ private fun ClipList(
                     if (clip != null) {
                         ClipCard(
                             clip = clip,
-                            onPinToggle = {
-                                viewModel.updatePinStatus(it, !it.isPinned)
-                            },
-                            onDelete = {
-                                viewModel.deleteClipGroup(it)
-                            },
-                            onClick = {
-                                viewModel.copyToClipboard(it)
-                            },
+                            onPinToggle = { viewModel.updatePinStatus(it, !it.isPinned) },
+                            onDelete = { viewModel.deleteClipGroup(it) },
+                            onClick = { viewModel.copyToClipboard(it) },
                             onLongClick = onLongClick
                         )
                     } else {

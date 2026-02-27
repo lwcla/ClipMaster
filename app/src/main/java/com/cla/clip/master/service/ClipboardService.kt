@@ -155,13 +155,14 @@ class ClipboardService : Service() {
         // 关键：每次调用 startForegroundService 后，必须再次调用 startForeground，
         // 否则在 API 26+ 设备上可能会因为“未能在规定时间内进入前台”而崩溃。
         logI(TAG) { "onStartCommand: " }
-
         ensureForeground()
+        
         return START_STICKY
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        logI(TAG) { "onDestroy : " }
         serviceJob.cancel()
         Shizuku.removeBinderReceivedListener(binderReceivedListener)
         Shizuku.removeBinderDeadListener(binderDeadListener)
