@@ -428,7 +428,7 @@ private fun ClipCard(
                                 .height(18.dp)
                                 .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                         )
-                        
+
                         // 右侧按钮：删除
                         Box(
                             modifier = Modifier
