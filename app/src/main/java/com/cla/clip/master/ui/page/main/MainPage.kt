@@ -41,7 +41,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,6 +48,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
@@ -57,8 +57,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.constraintlayout.compose.ConstraintLayout
-import androidx.constraintlayout.compose.Dimension
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -72,7 +70,8 @@ import coil3.compose.AsyncImage
 import com.cla.clip.base.general.entity.ClipEntity
 import com.cla.clip.base.general.logD
 import com.cla.clip.master.R
-import kotlinx.coroutines.launch
+import com.cla.clip.master.ui.widget.rememberFormattedTime
+import kotlin.math.max
 
 /**
  * 主屏幕的入口Composable。
@@ -94,16 +93,6 @@ fun MainPage(
     // 保存当前长按选中的 Clip，如果为 null 则不显示 Sheet
     var selectedClipForSheet by remember { mutableStateOf<ClipEntity?>(null) }
     val sheetState = rememberModalBottomSheetState()
-    val scope = rememberCoroutineScope()
-
-    // 关闭 Sheet 的辅助函数
-    fun closeSheet() {
-        scope.launch { sheetState.hide() }.invokeOnCompletion {
-            if (!sheetState.isVisible) {
-                selectedClipForSheet = null
-            }
-        }
-    }
 
     logD("MainPage", { "MainPage: pagedClips itemCount = ${pagedClips.itemCount}, loadState = ${pagedClips.loadState}" })
 
@@ -295,70 +284,85 @@ private fun ClipCard(
                     val currentDensity = LocalDensity.current
                     // 创建一个新的 Density，强制 fontScale 为 1f (不缩放)，不响应系统字体大小设置
                     CompositionLocalProvider(LocalDensity provides Density(density = currentDensity.density, fontScale = 1f)) {
-                        ConstraintLayout(modifier = Modifier.fillMaxWidth()) {
-                            // 创建引用
-                            val (iconRef, nameRef, timeRef) = createRefs()
-                            // 1. App Icon: 始终固定在最左侧
-                            AsyncImage(
-                                model = clip.appIconPath,
-                                contentDescription = "App Icon",
-                                placeholder = rememberVectorPainter(Icons.Filled.Image),
-                                error = rememberVectorPainter(Icons.Filled.Image),
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .size(14.dp)
-                                    .constrainAs(iconRef) {
-                                        start.linkTo(parent.start)
-                                        top.linkTo(parent.top)
-                                        bottom.linkTo(parent.bottom)
-                                    }
+                        // 使用自定义 Layout 来替代 Row
+                        Layout(
+                            content = {
+                                // -------------------------------------------------------------
+                                // [组件 0] 左侧部分: Icon + AppName
+                                // -------------------------------------------------------------
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    AsyncImage(
+                                        model = clip.appIconPath,
+                                        contentDescription = "App Icon",
+                                        placeholder = rememberVectorPainter(Icons.Filled.Image),
+                                        error = rememberVectorPainter(Icons.Filled.Image),
+                                        modifier = Modifier.size(14.dp),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = clip.appName,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+
+                                // -------------------------------------------------------------
+                                // [组件 1] 右侧部分: formattedTime
+                                // -------------------------------------------------------------
+                                Text(
+                                    text = clip.rememberFormattedTime(),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontSize = 10.sp,
+                                    textAlign = TextAlign.End,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { measurables, constraints ->
+                            // 1. 先把两个组件提取出来
+                            val leftNode = measurables[0]
+                            val rightNode = measurables[1]
+
+                            // 2. 策略：优先测量右边的 Time，但限制它最大只能占 75% 的宽度
+                            // 这样保证左边至少有 25% 的空间展示 Icon
+                            val maxTimeWidth = (constraints.maxWidth * 0.5f).toInt()
+
+                            // 测量右边 (Time)
+                            val rightPlaceable = rightNode.measure(
+                                constraints.copy(
+                                    minWidth = 0,
+                                    maxWidth = maxTimeWidth
+                                )
                             )
 
-                            // 2. Formatted Time: 始终固定在最右侧
-                            // 关键点：我们即使文本很长，也让它优先展示，但需要设置一个最大宽度限制（比如80%），
-                            // 防止极端情况下把左边的 Icon 都覆盖了。
-                            Text(
-                                text = clip.formattedTime,
-                                style = MaterialTheme.typography.bodySmall,
-                                fontSize = 8.sp,
-                                textAlign = TextAlign.End,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier
-                                    .constrainAs(timeRef) {
-                                        end.linkTo(parent.end)
-                                        top.linkTo(parent.top)
-                                        bottom.linkTo(parent.bottom)
-                                        // 限制宽度，防止极端超长文本覆盖 Icon
-                                        // preferredWrapContent 表示优先包裹内容，但在空间不足时会听从约束
-                                        width = Dimension.preferredWrapContent
-                                        horizontalBias = 1f
-                                        // 强制 Time 的左边不能超过 Icon 的右边（留点 padding）
-                                        start.linkTo(iconRef.end, margin = 45.dp)
-                                        // 这里的 constrainedWidth = true 配合 start.linkTo 保证了如果有必要，Time 也会被压缩
-                                        // 但通常情况下，因为它只是 wrapContent，它会把压力传导给中间的 AppName
-                                    }
+                            // 3. 计算左边剩余的空间
+                            // 至少给左边留 gap (4.dp approx 10px) 的空间，这里简单处理直接用剩余宽度
+                            val remainingWidth = constraints.maxWidth - rightPlaceable.width - 8.dp.roundToPx()
+                            val leftMaxWidth = max(0, remainingWidth)
+
+                            // 测量左边 (Icon + Name)
+                            val leftPlaceable = leftNode.measure(
+                                constraints.copy(
+                                    minWidth = 0,
+                                    maxWidth = leftMaxWidth
+                                )
                             )
 
-                            // 3. App Name: 填充剩余空间
-                            Text(
-                                text = clip.appName,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier
-                                    .constrainAs(nameRef) {
-                                        // 左边接 Icon
-                                        start.linkTo(iconRef.end, margin = 2.dp)
-                                        // 右边接 Time
-                                        end.linkTo(timeRef.start)
-                                        top.linkTo(parent.top)
-                                        bottom.linkTo(parent.bottom)
-                                        // 关键：填满 Icon 和 Time 之间的空隙
-                                        width = Dimension.fillToConstraints
-                                    }
-                            )
+                            // 4. 计算高度 (取两者最高)
+                            val height = max(leftPlaceable.height, rightPlaceable.height)
+
+                            // 5. 布局放置
+                            layout(constraints.maxWidth, height) {
+                                // 左侧靠左放
+                                leftPlaceable.placeRelative(0, (height - leftPlaceable.height) / 2) // 垂直居中
+
+                                // 右侧靠右放
+                                rightPlaceable.placeRelative(constraints.maxWidth - rightPlaceable.width, (height - rightPlaceable.height) / 2) // 垂直居中
+                            }
                         }
                     }
 
@@ -390,8 +394,8 @@ private fun ClipCard(
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier
                                     .align(Alignment.Center)
-                                    .size(30.dp)
-                                    .padding(8.dp)
+                                    .size(35.dp)
+                                    .padding(top = 8.dp, bottom = 12.dp)
 
                             )
                         }
@@ -416,8 +420,8 @@ private fun ClipCard(
                                 tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier
                                     .align(Alignment.Center)
-                                    .size(30.dp)
-                                    .padding(8.dp)
+                                    .size(35.dp)
+                                    .padding(top = 8.dp, bottom = 12.dp)
                             )
                         }
                     }
@@ -434,6 +438,7 @@ private fun ClipCardPreview() {
         id = 1L,
         content = "这是一个示例剪贴板内容，用于预览ClipCard组件的显示效果。用于预览ClipCard组件的显示效果。",
 //        formattedTime = DateUtils.getRelativeTimeSpanString(System.currentTimeMillis()).toString(), // 伪代码：转换为 "刚刚"
+        timestamp = System.currentTimeMillis(),
         formattedTime = "刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚", // 伪代码：转换为 "刚刚"
         appName = "飞书飞书飞书飞书",
         appIconPath = "https://img2.baidu.com/it/u=3546907450,5411894&fm=253&fmt=auto&app=120&f=JPEG?w=500&h=500",
