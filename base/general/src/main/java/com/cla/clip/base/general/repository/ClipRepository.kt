@@ -33,6 +33,9 @@ interface ClipRepository {
     /** 更新置顶状态 */
     suspend fun updatePinStatus(clipId: Long, isPinned: Boolean)
 
+    /** 更新时间戳 */
+    suspend fun updateTimestamp(clipId: Long)
+
     /**
      * 加载所有的剪贴板数据，供分页使用。这个方法会被 PagingSource 调用，返回一个 PagingSource 对象。
      * 排序规则：置顶在前，其余按时间倒序。

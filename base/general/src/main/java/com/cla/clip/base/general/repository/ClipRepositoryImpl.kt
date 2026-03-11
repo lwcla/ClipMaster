@@ -78,6 +78,12 @@ class ClipRepositoryImpl @Inject constructor(
         clipDao.updatePinStatus(clipId, pinnedTime)
     }
 
+    override suspend fun updateTimestamp(clipId: Long) {
+        val currentTime = System.currentTimeMillis()
+        // 这里直接调用 upsertClip 来更新 timestamp，保持逻辑一致性
+        clipDao.updateTimestamp(clipId, currentTime)
+    }
+
     override fun loadAllClips(): PagingSource<Int, ClipWithSourceApp> {
         return clipDao.loadAllClips()
     }

@@ -47,6 +47,10 @@ interface ClipDao {
     @Query("UPDATE clips SET pinned_time = :pinnedTime WHERE id = :id")
     suspend fun updatePinStatus(id: Long, pinnedTime: Long)
 
+    /** 更新时间戳 */
+    @Query("UPDATE clips SET timestamp = :timestamp WHERE id = :id")
+    suspend fun updateTimestamp(id: Long, timestamp: Long)
+
     /**
      * 加载所有的剪贴板数据，供分页使用。这个方法会被 PagingSource 调用。
      * 排序规则：
@@ -54,13 +58,15 @@ interface ClipDao {
      * 2. 如果置顶了，按照 pinned_time 倒序排列（新置顶的在前）。
      * 3. 如果没置顶，按照 timestamp 倒序排列（新复制的在前）。
      */
-    @Query("""
+    @Query(
+        """
         SELECT * FROM clips 
         ORDER BY 
           CASE WHEN pinned_time > 0 THEN 1 ELSE 0 END DESC, 
           pinned_time DESC, 
           timestamp DESC
-    """)
+    """
+    )
     fun loadAllClips(): PagingSource<Int, ClipWithSourceApp>
 
     /**

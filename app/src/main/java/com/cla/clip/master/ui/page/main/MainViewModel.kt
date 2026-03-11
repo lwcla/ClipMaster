@@ -10,7 +10,6 @@ import androidx.paging.cachedIn
 import androidx.paging.map
 import com.cla.clip.base.general.entity.ClipEntity
 import com.cla.clip.base.general.entity.toUi
-import com.cla.clip.base.general.logD
 import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.master.BaseViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -44,11 +43,7 @@ class MainViewModel @Inject constructor(
         )
     ) {
         repository.loadAllClips()
-    }.flow.map { it.map { data ->
-        data.toUi() .also {
-            logD("MainViewModel") { "pagedClips toUi: $it" }
-        }
-    } }.cachedIn(
+    }.flow.map { it.map { data -> data.toUi() } }.cachedIn(
         CoroutineScope(viewModelScope.coroutineContext + Dispatchers.IO)
     )
 
@@ -80,6 +75,10 @@ class MainViewModel @Inject constructor(
      * @param clip
      */
     fun copyToClipboard(clip: ClipEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.updateTimestamp(clip.id)
+        }
+
         val clipData = android.content.ClipData.newPlainText("ClipMaster", clip.content)
         clipboardManager.setPrimaryClip(clipData)
 
