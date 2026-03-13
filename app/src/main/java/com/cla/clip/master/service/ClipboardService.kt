@@ -169,6 +169,11 @@ class ClipboardService : Service() {
         if (Shizuku.pingBinder()) Shizuku.unbindUserService(userServiceArgs, userServiceConnection, true)
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        logI(TAG) { "onTaskRemoved: " }
+    }
+
     override fun onBind(intent: Intent): IBinder? {
         return null
     }
