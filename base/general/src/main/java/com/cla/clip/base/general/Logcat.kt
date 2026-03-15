@@ -4,7 +4,7 @@ import android.util.Log
 
 const val LOG_TAG = "cla_clip_master" // 定义自己的日志TAG
 
-val LOG_DEBUG = BuildConfig.DEBUG || Log.isLoggable(LOG_TAG, Log.INFO) // 日志开关
+val LOG_DEBUG get() = BuildConfig.DEBUG || Log.isLoggable(LOG_TAG, Log.INFO) // 日志开关
 
 inline fun logV(tag: String, info: () -> String) {
     if (LOG_DEBUG) {

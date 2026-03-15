@@ -296,13 +296,13 @@ private fun ClipCard(
                                         contentDescription = "App Icon",
                                         placeholder = rememberVectorPainter(Icons.Filled.Image),
                                         error = rememberVectorPainter(Icons.Filled.Image),
-                                        modifier = Modifier.size(14.dp),
+                                        modifier = Modifier.size(15.dp),
                                         contentScale = ContentScale.Crop
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
                                         text = clip.appName,
-                                        style = MaterialTheme.typography.bodySmall,
+                                        style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
@@ -314,8 +314,8 @@ private fun ClipCard(
                                 // -------------------------------------------------------------
                                 Text(
                                     text = clip.rememberFormattedTime(),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontSize = 10.sp,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontSize = 11.sp,
                                     textAlign = TextAlign.End,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
@@ -394,7 +394,7 @@ private fun ClipCard(
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier
                                     .align(Alignment.Center)
-                                    .size(35.dp)
+                                    .size(38.dp)
                                     .padding(top = 8.dp, bottom = 12.dp)
 
                             )
@@ -420,7 +420,7 @@ private fun ClipCard(
                                 tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier
                                     .align(Alignment.Center)
-                                    .size(35.dp)
+                                    .size(38.dp)
                                     .padding(top = 8.dp, bottom = 12.dp)
                             )
                         }
