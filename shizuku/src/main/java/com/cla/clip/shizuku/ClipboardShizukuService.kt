@@ -27,7 +27,7 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
 
     private lateinit var appOpsManager: AppOpsManager
     private lateinit var packageManager: PackageManager
-    private lateinit var shizukuCallback: ShizukuCallback
+//    private lateinit var shizukuCallback: ShizukuCallback
     private lateinit var opNotedListener: AppOpsManagerHidden.OnOpNotedListener
 
     override fun exit() {
@@ -92,7 +92,7 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
     }
 
     override fun addCallback(shizukuCallback: ShizukuCallback) {
-        this.shizukuCallback = shizukuCallback
+//        this.shizukuCallback = shizukuCallback
     }
 
     private fun inset(packageName: String, name: String, bitmap: ByteArray?) {

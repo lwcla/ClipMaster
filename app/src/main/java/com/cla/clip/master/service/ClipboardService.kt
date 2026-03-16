@@ -11,6 +11,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -24,6 +25,7 @@ import com.cla.clip.base.general.entity.ClipCaptureEntity
 import com.cla.clip.base.general.logD
 import com.cla.clip.base.general.logI
 import com.cla.clip.base.general.repository.ClipRepository
+import com.cla.clip.base.general.utils.ApplicationScope
 import com.cla.clip.master.BuildConfig
 import com.cla.clip.master.R
 import com.cla.clip.shizuku.ClipboardShizukuService
@@ -62,9 +64,19 @@ class ClipboardService : Service() {
             RegexOption.IGNORE_CASE
         )
 
-        fun start(context: Context) {
+        fun start(
+            context: Context,
+            packageName: String,
+            appName: String?,
+            appIcon: ByteArray?
+        ) {
             logI(TAG) { "start" }
             val serviceIntent = Intent(context, ClipboardService::class.java)
+
+            serviceIntent.putExtra("packageName", packageName)
+            serviceIntent.putExtra("appName", appName)
+            serviceIntent.putExtra("appIcon", appIcon)
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(serviceIntent)
             } else {
@@ -81,6 +93,10 @@ class ClipboardService : Service() {
 
     @Inject
     lateinit var clipRepository: ClipRepository
+
+    @Inject
+    @ApplicationScope
+    lateinit var scope: CoroutineScope
 
     private val manager by lazy { getSystemService(NotificationManager::class.java) }
     private val clipboardManager by lazy { getSystemService(ClipboardManager::class.java) }
@@ -116,7 +132,7 @@ class ClipboardService : Service() {
                             """.trimIndent()
                         }
 
-                        magic(packageName, appName, appIcon)
+//                        magic(packageName, appName, appIcon)
                     }
                 })
                 ensureForeground()
@@ -144,7 +160,7 @@ class ClipboardService : Service() {
         super.onCreate()
         // 服务创建时，立即尝试提升为前台服务
         logI(TAG) { "onCreate: " }
-        ensureForeground()
+//        ensureForeground()
 
 //        Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
 //        Shizuku.addBinderDeadListener(binderDeadListener)
@@ -154,9 +170,20 @@ class ClipboardService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // 关键：每次调用 startForegroundService 后，必须再次调用 startForeground，
         // 否则在 API 26+ 设备上可能会因为“未能在规定时间内进入前台”而崩溃。
-        logI(TAG) { "onStartCommand: " }
-        ensureForeground()
-        
+
+        scope.launch(Dispatchers.IO) {
+
+            val packageName = intent?.getStringExtra("packageName") ?: "unknown"
+            val appName = intent?.getStringExtra("appName") ?: "unknown"
+            val appIconBytes = intent?.getByteArrayExtra("appIcon")
+            val bitmap = appIconBytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+
+            logI(TAG) { "onStartCommand: packageName=$packageName appName=$appName icon=${appIconBytes?.size} bitmap=${bitmap?.width} x ${bitmap?.height}" }
+            magic(packageName, appName, bitmap)
+        }
+
+//        ensureForeground()
+
         return START_STICKY
     }
 
@@ -178,27 +205,25 @@ class ClipboardService : Service() {
         return null
     }
 
-    private fun magic(packageName: String, appName: String?, appIcon: Bitmap?) {
+    private suspend fun magic(packageName: String, appName: String?, appIcon: Bitmap?) = withContext(Dispatchers.Main) {
         // 通过添加一个不可见的 View 来触发系统读取剪贴板内容，从而获取最新的剪贴板数据
-        handler.post {
-            val view = View(applicationContext)
-            windowManager.addView(view, WindowManager.LayoutParams(-2, -2, 2038, 32, -3).apply {
-                x = 0
-                y = 0
-                width = 0
-                height = 0
-            })
-            doClipboard(packageName, appName, appIcon)
-            windowManager.removeView(view)
-        }
+        val view = View(applicationContext)
+        windowManager.addView(view, WindowManager.LayoutParams(-2, -2, 2038, 32, -3).apply {
+            x = 0
+            y = 0
+            width = 0
+            height = 0
+        })
+        doClipboard(packageName, appName, appIcon)
+        windowManager.removeView(view)
     }
 
-    private fun doClipboard(packageName: String, appName: String?, appIcon: Bitmap?) {
+    private suspend fun doClipboard(packageName: String, appName: String?, appIcon: Bitmap?) {
         clipboardManager.primaryClip?.let { clipData ->
             val clip = runCatching { clipData.getItemAt(0) }.getOrNull() ?: return@let
             logD(TAG) { "读取到剪贴板内容：${clip.text}" }
 
-            serviceScope.launch(Dispatchers.IO) {
+            withContext(Dispatchers.IO) {
                 processClip(clip, packageName, appName, appIcon)
             }
         }

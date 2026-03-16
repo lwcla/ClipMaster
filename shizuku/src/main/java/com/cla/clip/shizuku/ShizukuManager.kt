@@ -44,7 +44,12 @@ class ShizukuManager @Inject constructor(
             // 连接成功之后，更新通知
             logD(TAG) { "onServiceConnected: " }
             serviceConnected.set(true)
-            updateNotification()
+            if (binder != null && binder.pingBinder()) {
+                val service = IClipboardShizukuService.Stub.asInterface(binder)
+                service.start()
+            } else {
+                updateNotification()
+            }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {

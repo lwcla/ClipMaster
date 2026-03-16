@@ -5,6 +5,8 @@ import android.content.ContentValues
 import android.database.Cursor
 import android.net.Uri
 import com.cla.clip.base.general.dao.ClipDao
+import com.cla.clip.base.general.logE
+import com.cla.clip.master.service.ClipboardService
 import com.cla.clip.master.utils.ContentProviderEntryPoint
 import dagger.hilt.android.EntryPointAccessors
 
@@ -12,6 +14,10 @@ import dagger.hilt.android.EntryPointAccessors
  * 提供给shizuku中的service写入剪贴板数据的ContentProvider。
  */
 class ClipDataProvider : ContentProvider() {
+
+    companion object {
+        private const val TAG = "ClipDataProvider"
+    }
 
     @Volatile
     private var cachedClipDao: ClipDao? = null
@@ -46,10 +52,16 @@ class ClipDataProvider : ContentProvider() {
 
         // 读取三个数据 packageName、appName、iconBitmap
         val packageName = values.getAsString("packageName") ?: "unknown"
-        val name = values.getAsString("appName") ?: "unknown"
+        val appName = values.getAsString("appName") ?: "unknown"
         val iconBitmap = values.getAsByteArray("iconBitmap")
 
+        val ctx = context
+        if (ctx == null) {
+            logE(TAG) { "insert: context is null, cannot insert clip data" }
+            return null
+        }
 
+        ClipboardService.start(ctx, packageName, appName, iconBitmap)
         return null
     }
 
