@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="base_general_app_name">剪贴板助手</string>
+
     <string name="base_general_to_install">去安装</string>
     <string name="base_general_to_activate">去激活</string>
     <string name="base_general_to_update">去更新</string>
@@ -9,4 +11,13 @@
     <string name="base_general_pinned">置顶</string>
     <string name="base_general_unpinned">取消置顶</string>
     <string name="base_general_delete">删除</string>
+
+    <string name="base_general_clipboard_service">剪贴板服务</string>
+    <string name="base_general_service_is_running">服务正在运行中</string>
+    <string name="base_general_listen_for_changes_in_the_clipboard_content">监听剪贴板内容变化</string>
+    <string name="base_general_waiting_for_shizuku_connection">等待shizuku连接..</string>
+    <string name="base_general_shizuku_not_install">shizuku未安装</string>
+    <string name="base_general_shizuku_service_not_alive">shizuku服务未存活</string>
+    <string name="base_general_shizuku_version_too_low">shizuku版本过低</string>
+    <string name="base_general_shizuku_not_granted">shizuku未授权</string>
 </resources>

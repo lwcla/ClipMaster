@@ -2,7 +2,6 @@ package com.cla.clip.master.ui.widget
 
 import android.Manifest
 import android.os.Build
-import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.border
@@ -36,6 +35,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.cla.clip.base.general.PermissionUtils
 import com.cla.clip.base.general.hasPermission
+import com.cla.clip.base.general.logD
+import com.cla.clip.base.general.logI
 import com.cla.clip.base.general.toPermissionSetting
 import com.cla.clip.master.R
 import com.cla.clip.master.service.ClipboardService
@@ -53,6 +54,8 @@ fun HandleNotificationPermission(trigger: Boolean) {
     // 如果触发条件不满足（比如 Shizuku 还没连上），直接退出，不浪费资源
     if (!trigger) return
 
+    val tag = "通知权限"
+
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
 
@@ -64,7 +67,7 @@ fun HandleNotificationPermission(trigger: Boolean) {
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
                 // 在 onResume 时检查权限状态
                 val new = context.hasPermission(permission)
-                Log.i("通知权限", "HandleNotificationPermission: ON_RESUME 通知权限状态 $new")
+                logI(tag) { "HandleNotificationPermission: ON_RESUME 通知权限状态 $new" }
                 hasPermission = new
             }
         }
@@ -75,7 +78,7 @@ fun HandleNotificationPermission(trigger: Boolean) {
 
     if (hasPermission) {
         // 已经有权限，直接退出
-        Log.i("通知权限", "HandleNotificationPermission: 已经有通知权限了")
+        logI(tag) { "HandleNotificationPermission: 已经有通知权限了" }
         // 有通知权限了，需要去拉起前台服务
         ClipboardService.start(context)
         return
@@ -88,7 +91,7 @@ fun HandleNotificationPermission(trigger: Boolean) {
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
         onResult = { isGranted ->
-            Log.d("通知权限", "通知权限是否授予: $isGranted")
+            logD(tag) { "HandleNotificationPermission: 通知权限是否授予: $isGranted" }
             if (isGranted) {
                 hasPermission = true
                 return@rememberLauncherForActivityResult
@@ -96,7 +99,7 @@ fun HandleNotificationPermission(trigger: Boolean) {
 
             // 这是一个系统 API，如果用户之前点了“不再询问”，这个方法会返回 false
             val curTime = System.currentTimeMillis()
-            Log.d("通知权限", "HandleNotificationPermission: 通知权限是否被永久拒绝 takeTime=${curTime - requestTime}")
+            logD(tag) { "HandleNotificationPermission: 通知权限是否被永久拒绝 takeTime=${curTime - requestTime}" }
 
             if (curTime - requestTime < PermissionUtils.DENIED_FOREVER_TAKE_TIME) {
                 // 被永久拒绝，显示解释弹窗
@@ -112,7 +115,7 @@ fun HandleNotificationPermission(trigger: Boolean) {
     // 3. 监听触发信号，执行初次检查与请求
     LaunchedEffect(owner) { // Key 使用 Unit，配合外层的 if (!trigger) return，确保只在组件进入组合且 satisfied 时运行一次
         if (!hasAutoRequested && !context.hasPermission(permission)) {
-            Log.d("通知权限", "触发条件满足，正在请求通知权限...")
+            logD(tag) { "触发条件满足，正在请求通知权限..." }
             requestTime = System.currentTimeMillis()
             // 标记位设为 true，下次重建 Activity 时这里依然是 true
             hasAutoRequested = true
@@ -168,7 +171,7 @@ fun HandleNotificationPermission(trigger: Boolean) {
             // 2. 如果希望背景点击效果也遵循圆角，需要 clip
             .clip(RoundedCornerShape(10.dp))
             .clickable(true, onClick = {
-                Log.d("通知权限", "手动点击，去请求通知权限")
+                logD(tag) { "手动点击，去请求通知权限" }
                 requestTime = System.currentTimeMillis()
                 notificationPermissionLauncher.launch(permission)
             })

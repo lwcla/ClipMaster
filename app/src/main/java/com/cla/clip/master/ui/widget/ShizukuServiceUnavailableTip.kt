@@ -23,12 +23,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.cla.clip.base.general.logD
 import com.cla.clip.base.general.logI
 import com.cla.clip.master.R
+import com.cla.clip.master.ui.page.main.MainViewModel
 import com.cla.clip.master.ui.theme.ClipMaterTheme
 import com.cla.clip.shizuku.ShizukuStatus
 import com.cla.clip.shizuku.ShizukuUtils
@@ -36,14 +38,18 @@ import rikka.shizuku.Shizuku
 
 /** shizuku 服务不可用提示 */
 @Composable
-fun ShizukuServiceUnavailableTip() {
+fun ShizukuServiceUnavailableTip(
+    viewModel: MainViewModel = hiltViewModel()
+) {
+    val tag = "shizuku状态提示"
+
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
 
     // 1. 使用 remember 将 status 转换为可变状态，这样修改它时会触发 UI 重组
     var status by remember { mutableStateOf(ShizukuUtils.checkStatus(context)) }
 
-    logI("shizuku") { "shizuku状态 $status" }
+    logI(tag) { "shizuku状态 $status" }
 
     // 2. 使用 DisposableEffect 监听生命周期
     DisposableEffect(owner) {
@@ -51,13 +57,19 @@ fun ShizukuServiceUnavailableTip() {
             if (event == Lifecycle.Event.ON_RESUME) {
                 // 在 onResume 时检查 Shizuku 状态
                 val new = ShizukuUtils.checkStatus(context)
-                logI("shizuku") { "ON_RESUME shizuku状态 $new" }
+                logI(tag) { "ON_RESUME shizuku状态 $new" }
                 status = new
             }
         }
 
         val shizukuPermissionListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
             status = ShizukuUtils.checkStatus(context)
+
+            logD(tag) { "shizuku 状态结果回调: requestCode=$requestCode, grantResult=$grantResult, 新状态=$status" }
+
+            if (status is ShizukuStatus.Connected) {
+                viewModel.shizukuManager.get().bindService()
+            }
         }
 
         owner.lifecycle.addObserver(observer)
@@ -83,19 +95,19 @@ fun ShizukuServiceUnavailableTip() {
         }
 
         is ShizukuStatus.Disconnect.NotInstalled -> {
-            stringResource(id = R.string.host_shizuku_not_install) to stringResource(com.cla.clip.base.general.R.string.base_general_to_install)
+            stringResource(id = com.cla.clip.base.general.R.string.base_general_shizuku_not_install) to stringResource(com.cla.clip.base.general.R.string.base_general_to_install)
         }
 
         is ShizukuStatus.Disconnect.ServiceNotAlive -> {
-            stringResource(id = R.string.host_shizuku_service_not_alive) to stringResource(com.cla.clip.base.general.R.string.base_general_to_activate)
+            stringResource(id = com.cla.clip.base.general.R.string.base_general_shizuku_service_not_alive) to stringResource(com.cla.clip.base.general.R.string.base_general_to_activate)
         }
 
         is ShizukuStatus.Disconnect.VersionTooLow -> {
-            stringResource(id = R.string.host_shizuku_version_too_low) to stringResource(com.cla.clip.base.general.R.string.base_general_to_update)
+            stringResource(id = com.cla.clip.base.general.R.string.base_general_shizuku_version_too_low) to stringResource(com.cla.clip.base.general.R.string.base_general_to_update)
         }
 
         is ShizukuStatus.Disconnect.NotGranted -> {
-            stringResource(id = R.string.host_shizuku_not_granted) to stringResource(com.cla.clip.base.general.R.string.base_general_to_authorize)
+            stringResource(id = com.cla.clip.base.general.R.string.base_general_shizuku_not_granted) to stringResource(com.cla.clip.base.general.R.string.base_general_to_authorize)
         }
     }
 
@@ -126,11 +138,11 @@ fun ShizukuServiceUnavailableTip() {
             // 2. 如果希望背景点击效果也遵循圆角，需要 clip
             .clip(RoundedCornerShape(10.dp))
             .clickable(true, onClick = {
-                logD("shizuku") { "去连接 Shizuku，当前状态：$status" }
+                logD(tag) { "去连接 Shizuku，当前状态：$status" }
                 when (status) {
                     is ShizukuStatus.Connected -> {
                         // 已经处于连接状态
-                        logI("shizuku") { "toConnect: Shizuku 已经连接，无需操作" }
+                        logI(tag) { "toConnect: Shizuku 已经连接，无需操作" }
                     }
 
                     is ShizukuStatus.Disconnect.NotInstalled,

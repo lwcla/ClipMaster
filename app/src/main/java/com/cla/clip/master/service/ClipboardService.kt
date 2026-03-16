@@ -146,9 +146,9 @@ class ClipboardService : Service() {
         logI(TAG) { "onCreate: " }
         ensureForeground()
 
-        Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
-        Shizuku.addBinderDeadListener(binderDeadListener)
-        Shizuku.bindUserService(userServiceArgs, userServiceConnection)
+//        Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
+//        Shizuku.addBinderDeadListener(binderDeadListener)
+//        Shizuku.bindUserService(userServiceArgs, userServiceConnection)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -164,9 +164,9 @@ class ClipboardService : Service() {
         super.onDestroy()
         logI(TAG) { "onDestroy : " }
         serviceJob.cancel()
-        Shizuku.removeBinderReceivedListener(binderReceivedListener)
-        Shizuku.removeBinderDeadListener(binderDeadListener)
-        if (Shizuku.pingBinder()) Shizuku.unbindUserService(userServiceArgs, userServiceConnection, true)
+//        Shizuku.removeBinderReceivedListener(binderReceivedListener)
+//        Shizuku.removeBinderDeadListener(binderDeadListener)
+//        if (Shizuku.pingBinder()) Shizuku.unbindUserService(userServiceArgs, userServiceConnection, true)
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
@@ -365,11 +365,11 @@ class ClipboardService : Service() {
         createNotificationChannel()
 
         val contentText = content ?: when (ShizukuUtils.checkStatus(applicationContext).also { logD(TAG) { "ensureForeground: Shizuku 状态：$it" } }) {
-            is ShizukuStatus.Connected -> applicationContext.getString(R.string.host_service_is_running)
-            is ShizukuStatus.Disconnect.NotInstalled -> applicationContext.getString(R.string.host_shizuku_not_install)
-            is ShizukuStatus.Disconnect.ServiceNotAlive -> applicationContext.getString(R.string.host_shizuku_service_not_alive)
-            is ShizukuStatus.Disconnect.VersionTooLow -> applicationContext.getString(R.string.host_shizuku_version_too_low)
-            is ShizukuStatus.Disconnect.NotGranted -> applicationContext.getString(R.string.host_shizuku_not_granted)
+            is ShizukuStatus.Connected -> applicationContext.getString(com.cla.clip.base.general.R.string.base_general_service_is_running)
+            is ShizukuStatus.Disconnect.NotInstalled -> applicationContext.getString(com.cla.clip.base.general.R.string.base_general_shizuku_not_install)
+            is ShizukuStatus.Disconnect.ServiceNotAlive -> applicationContext.getString(com.cla.clip.base.general.R.string.base_general_shizuku_service_not_alive)
+            is ShizukuStatus.Disconnect.VersionTooLow -> applicationContext.getString(com.cla.clip.base.general.R.string.base_general_shizuku_version_too_low)
+            is ShizukuStatus.Disconnect.NotGranted -> applicationContext.getString(com.cla.clip.base.general.R.string.base_general_shizuku_not_granted)
         }
 
         // 1. 获取启动 App 的 Intent
@@ -381,7 +381,7 @@ class ClipboardService : Service() {
         } else null
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle(title ?: applicationContext.getString(R.string.host_app_name))
+            .setContentTitle(title ?: applicationContext.getString(com.cla.clip.base.general.R.string.base_general_app_name))
             .setContentText(contentText)
             .setSmallIcon(R.drawable.host_ic_launcher_foreground) // 确保资源存在，或者使用 android.R.drawable.ic_menu_save
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -411,10 +411,10 @@ class ClipboardService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val serviceChannel = NotificationChannel(
                 CHANNEL_ID,
-                applicationContext.getString(R.string.host_clipboard_service),
+                applicationContext.getString(com.cla.clip.base.general.R.string.base_general_clipboard_service),
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = applicationContext.getString(R.string.host_listen_for_changes_in_the_clipboard_content)
+                description = applicationContext.getString(com.cla.clip.base.general.R.string.base_general_listen_for_changes_in_the_clipboard_content)
             }
             manager.createNotificationChannel(serviceChannel)
         }

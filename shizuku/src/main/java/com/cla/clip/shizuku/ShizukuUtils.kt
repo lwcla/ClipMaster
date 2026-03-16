@@ -13,9 +13,7 @@ object ShizukuUtils {
 
     const val REQUEST_CODE = 1
 
-    /** Shizuku 是否已连接 */
-    val isConnected get() = Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-
+    /** Shizuku 状态 */
     fun checkStatus(context: Context): ShizukuStatus {
         if (!isShizukuInstalled(context)) {
             return ShizukuStatus.Disconnect.NotInstalled
@@ -29,11 +27,17 @@ object ShizukuUtils {
             return ShizukuStatus.Disconnect.VersionTooLow
         }
 
+        val isConnected = runCatching { Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED }.getOrNull() ?: false
         if (isConnected) {
             return ShizukuStatus.Connected
         }
 
         return ShizukuStatus.Disconnect.NotGranted
+    }
+
+    /** shizuku 是否已经连接 */
+    fun isConnected(context: Context): Boolean {
+        return checkStatus(context) is ShizukuStatus.Connected
     }
 
     fun toConnect() {

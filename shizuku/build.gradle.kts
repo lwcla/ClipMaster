@@ -3,6 +3,8 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.refine)
+    alias(libs.plugins.google.devtools.ksp)                 // 应用KSP插件，用于代码生成
+    alias(libs.plugins.google.dagger.hilt.android)                // 应用Hilt插件，用于依赖注入
 }
 
 android {
@@ -35,6 +37,12 @@ android {
                 "String",
                 "APPLICATION_ID",
                 "\"${rootProject.project(":app").androidApp.defaultConfig.applicationId}\""
+            )
+
+            buildConfigField(
+                "int",
+                "VERSION_CODE",
+                "${rootProject.project(":app").androidApp.defaultConfig.versionCode}"
             )
         }
         release {
@@ -75,6 +83,10 @@ dependencies {
 
     implementation(libs.refine.runtime)
     implementation(libs.hideen.api.bypass)
+
+    // Hilt依赖注入，用于解耦代码，方便管理对象实例
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
 
     api(libs.bundles.shizuku)
 }

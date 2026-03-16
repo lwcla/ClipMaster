@@ -30,9 +30,9 @@ inline fun logW(tag: String, info: () -> String) {
     }
 }
 
-inline fun logE(tag: String, info: () -> String) {
+inline fun logE(tag: String, tr: Throwable? = null, info: () -> String) {
     if (LOG_DEBUG) {
-        Log.e(LOG_TAG, "$tag--> ${info()}")
+        Log.e(LOG_TAG, "$tag--> ${info()}", tr)
     }
 }
 

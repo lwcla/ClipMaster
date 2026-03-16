@@ -1,13 +1,4 @@
 <resources>
-    <string name="host_app_name">剪贴板助手</string>
-    <string name="host_clipboard_service">剪贴板服务</string>
-    <string name="host_service_is_running">服务正在运行中</string>
-    <string name="host_listen_for_changes_in_the_clipboard_content">监听剪贴板内容变化</string>
-    <string name="host_waiting_for_shizuku_connection">等待shizuku连接..</string>
-    <string name="host_shizuku_not_install">shizuku未安装</string>
-    <string name="host_shizuku_service_not_alive">shizuku服务未存活</string>
-    <string name="host_shizuku_version_too_low">shizuku版本过低</string>
-    <string name="host_shizuku_not_granted">shizuku未授权</string>
     <string name="host_shizuku_service_require">在后台复制剪贴板的内容需要依赖 Shizuku 的服务</string>
     <string name="host_notification_permission_is_required">需要通知权限</string>
     <string name="host_notification_permission_tip">为了让您及时收到剪贴板的处理结果，App 需要申请通知权限去创建一个前台服务。</string>
