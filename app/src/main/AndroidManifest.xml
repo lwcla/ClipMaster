@@ -54,11 +54,12 @@
 
         <provider
             android:name=".provider.ClipDataProvider"
-            android:authorities="${applicationId}.clip.data"
+            android:authorities="com.cla.clip.master.clip.data"
             android:enabled="true"
             android:exported="true"
             android:multiprocess="false"
             tools:ignore="ExportedContentProvider" />
+
         <provider
             android:name="rikka.shizuku.ShizukuProvider"
             android:authorities="${applicationId}.shizuku"

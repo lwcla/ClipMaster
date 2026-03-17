@@ -4,7 +4,6 @@ import android.app.AppOpsManager
 import android.app.AppOpsManagerHidden
 import android.content.ContentValues
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -19,7 +18,8 @@ import com.cla.clip.base.general.logI
 import com.cla.clip.base.general.utils.toByteArray
 import dev.rikka.tools.refine.Refine
 import org.lsposed.hiddenapibypass.HiddenApiBypass
-import java.io.ByteArrayOutputStream
+import rikka.shizuku.Shizuku
+import kotlin.io.inputStream
 
 @Keep
 class ClipboardShizukuService(private val context: Context) : IClipboardShizukuService.Stub() {
@@ -78,8 +78,11 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
             """.trimIndent()
             }
 
-//            inset(packageName, name, bitmapBytes)
-            shizukuCallback.onOpNoted(packageName, name, bitmap)
+            inset(packageName, name, bitmapBytes)
+
+//            if (::shizukuCallback.isInitialized) {
+//                shizukuCallback.onOpNoted(packageName, name, bitmap)
+//            }
         }
         // Allow self to draw floating window
         Refine.unsafeCast<AppOpsManagerHidden>(appOpsManager)
@@ -99,14 +102,55 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
     }
 
     private fun inset(packageName: String, appName: String, bitmap: ByteArray?) {
-        logI(TAG){"packageName=${BuildConfig.APPLICATION_ID} action=${BuildConfig.APPLICATION_ID}.ACTION_CLIP_CHANGED"}
-        val intent = Intent("${BuildConfig.APPLICATION_ID}.ACTION_CLIP_CHANGED").apply {
-            setPackage(BuildConfig.APPLICATION_ID) // 推荐：限制到本 app，避免外部 app 收到
-            putExtra("packageName", packageName)
-            putExtra("appName", appName)
-            putExtra("iconBitmap", bitmap)
-        }
-        context.sendBroadcast(intent)
+        logI(TAG) { "context=${context.applicationInfo.packageName} uid=${context.applicationInfo.uid} packageName=${BuildConfig.APPLICATION_ID} action=${BuildConfig.APPLICATION_ID}.ACTION_CLIP_CHANGED" }
+//        val intent = Intent("${BuildConfig.APPLICATION_ID}.ACTION_CLIP_CHANGED").apply {
+//            setPackage(BuildConfig.APPLICATION_ID) // 推荐：限制到本 app，避免外部 app 收到
+//            putExtra("packageName", packageName)
+//            putExtra("appName", appName)
+//            putExtra("iconBitmap", bitmap)
+//        }
+//        context.sendBroadcast(intent)
+
+
+//        val cr = context.contentResolver
+//        val uri = "content://com.cla.clip.master.clip.data".toUri()
+//
+//        val values = ContentValues().apply {
+//            put("packageName", packageName)
+//            put("appName", appName)
+//            put("iconBitmap", bitmap)
+//        }
+//
+//        cr.insert(uri, values)
+
+
+//        val cmd = buildString {
+//            append("am broadcast ")
+//            append("-a ").append(shellEscape("${BuildConfig.APPLICATION_ID}.ACTION_CLIP_CHANGED")).append(" ")
+//            append("-p ").append(shellEscape(BuildConfig.APPLICATION_ID)).append(" ")
+//            append("--es packageName ").append(shellEscape(packageName ?: "")).append(" ")
+//            append("--es appName ").append(shellEscape(appName)).append(" ")
+//            if (bitmap != null) {
+//                val b64 = android.util.Base64.encodeToString(bitmap, android.util.Base64.NO_WRAP)
+//                append("--es iconBitmapBase64 ").append(shellEscape(b64))
+//            }
+//        }.trim()
+
+//        try {
+//            val process = Shizuku.newProcess(arrayOf("sh", "-c", cmd), null, null)
+//            val stdout = process.inputStream.bufferedReader().use { it.readText() }
+//            val stderr = process.errorStream.bufferedReader().use { it.readText() }
+//            val code = process.waitFor()
+//            logI(TAG) { "broadcast exit=$code, out=$stdout, err=$stderr" }
+//        } catch (e: Exception) {
+//            logI(TAG) { "broadcast failed: ${e.message}" }
+//        }
+
+    }
+
+
+    private fun shellEscape(s: String): String {
+        return "'" + s.replace("'", "'\\''") + "'"
     }
 
     // 辅助方法：将 Drawable 转为压缩后的 byte[]
