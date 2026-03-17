@@ -80,7 +80,7 @@ fun HandleNotificationPermission(trigger: Boolean) {
         // 已经有权限，直接退出
         logI(tag) { "HandleNotificationPermission: 已经有通知权限了" }
         // 有通知权限了，需要去拉起前台服务
-//        ClipboardService.start(context)
+        ClipboardService.start(context)
         return
     }
 

@@ -3,12 +3,21 @@ package com.cla.clip.shizuku
 import android.content.ComponentName
 import android.content.Context
 import android.content.ServiceConnection
+import android.graphics.Bitmap
 import android.os.IBinder
 import com.cla.clip.base.general.logD
 import com.cla.clip.base.general.logE
 import com.cla.clip.base.general.logI
+import com.cla.clip.base.general.logW
+import com.cla.clip.base.general.utils.ApplicationScope
 import com.cla.clip.base.general.utils.NotificationManager
+import com.cla.clip.base.general.utils.clipDataFlow
+import com.cla.clip.base.general.utils.toByteArray
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import rikka.shizuku.Shizuku
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
@@ -17,7 +26,8 @@ import javax.inject.Singleton
 @Singleton
 class ShizukuManager @Inject constructor(
     @param:ApplicationContext private val applicationContext: Context,
-    private val notificationManager: NotificationManager
+    private val notificationManager: NotificationManager,
+    @param:ApplicationScope private val scope: CoroutineScope
 ) {
 
     companion object {
@@ -25,8 +35,6 @@ class ShizukuManager @Inject constructor(
         private const val TAG = "ShizukuManager"
 
         private const val name = "shizuku"
-
-
     }
 
     private val packageName get() = BuildConfig.APPLICATION_ID
@@ -47,6 +55,19 @@ class ShizukuManager @Inject constructor(
             if (binder != null && binder.pingBinder()) {
                 val service = IClipboardShizukuService.Stub.asInterface(binder)
                 service.start()
+
+                service.addCallback(object : ShizukuCallback.Stub() {
+                    override fun onOpNoted(packageName: String?, appName: String?, appIcon: Bitmap?) {
+                        if (packageName.isNullOrBlank()) {
+                            return
+                        }
+
+                        scope.launch(Dispatchers.IO) {
+                            clipDataFlow.update { Triple(packageName, appName, appIcon?.toByteArray()) }
+                        }
+                    }
+                })
+
             } else {
                 updateNotification()
             }
@@ -75,17 +96,23 @@ class ShizukuManager @Inject constructor(
             Shizuku.removeBinderReceivedListener(binderReceivedListener)
             Shizuku.removeBinderDeadListener(binderDeadListener)
             runCatching { Shizuku.unbindUserService(userServiceArgs, userServiceConnection, false) }.getOrElse {
-                logE(TAG, it) { "unbindUserService 失败: ${it.message}" }
+                logW(TAG, it) { "unbindUserService 失败: ${it.message}" }
             }
         }
 
         if (ShizukuUtils.isConnected(applicationContext)) {
-            logI(TAG) { "Shizuku 已连接，正在绑定服务" }
 
             if (!serviceConnected.get()) {
                 Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
                 Shizuku.addBinderDeadListener(binderDeadListener)
-                Shizuku.bindUserService(userServiceArgs, userServiceConnection)
+
+                val result = Shizuku.peekUserService(userServiceArgs, userServiceConnection)
+                if (result == -1) {
+                    logI(TAG) { "绑定 shizuku 远程服务成功" }
+                    Shizuku.bindUserService(userServiceArgs, userServiceConnection)
+                } else {
+                    logI(TAG) { "连接 shizuku 远程服务成功" }
+                }
             }
         } else {
             logE(TAG) { "Shizuku 未连接，不绑定服务" }

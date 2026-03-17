@@ -5,10 +5,13 @@ import android.os.Build
 import com.cla.clip.base.general.BaseApplication
 import com.cla.clip.base.general.logD
 import com.cla.clip.base.general.utils.ApplicationScope
+import com.cla.clip.base.general.utils.clipDataFlow
+import com.cla.clip.master.service.ClipboardService
 import com.cla.clip.shizuku.ShizukuManager
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -36,6 +39,12 @@ class App : BaseApplication() {
                 delay(1000)
                 logD(TAG) { "开始绑定 Shizuku 服务" }
                 shizukuManager.get().bindService()
+            }
+
+            scope.launch {
+                clipDataFlow.filterNotNull().collect {
+                    ClipboardService.start(context, it.first, it.second, it.third)
+                }
             }
         }
     }

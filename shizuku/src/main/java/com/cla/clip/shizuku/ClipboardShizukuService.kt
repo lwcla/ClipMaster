@@ -4,6 +4,7 @@ import android.app.AppOpsManager
 import android.app.AppOpsManagerHidden
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -14,6 +15,8 @@ import androidx.annotation.Keep
 import androidx.core.graphics.createBitmap
 import androidx.core.net.toUri
 import com.cla.clip.base.general.logD
+import com.cla.clip.base.general.logI
+import com.cla.clip.base.general.utils.toByteArray
 import dev.rikka.tools.refine.Refine
 import org.lsposed.hiddenapibypass.HiddenApiBypass
 import java.io.ByteArrayOutputStream
@@ -27,7 +30,7 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
 
     private lateinit var appOpsManager: AppOpsManager
     private lateinit var packageManager: PackageManager
-//    private lateinit var shizukuCallback: ShizukuCallback
+    private lateinit var shizukuCallback: ShizukuCallback
     private lateinit var opNotedListener: AppOpsManagerHidden.OnOpNotedListener
 
     override fun exit() {
@@ -75,8 +78,8 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
             """.trimIndent()
             }
 
-            inset(packageName, name, bitmapBytes)
-//            shizukuCallback.onOpNoted(packageName, name, bitmap)
+//            inset(packageName, name, bitmapBytes)
+            shizukuCallback.onOpNoted(packageName, name, bitmap)
         }
         // Allow self to draw floating window
         Refine.unsafeCast<AppOpsManagerHidden>(appOpsManager)
@@ -92,20 +95,18 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
     }
 
     override fun addCallback(shizukuCallback: ShizukuCallback) {
-//        this.shizukuCallback = shizukuCallback
+        this.shizukuCallback = shizukuCallback
     }
 
-    private fun inset(packageName: String, name: String, bitmap: ByteArray?) {
-        val cr = context.contentResolver
-        val uri = "content://com.cla.clip.master.clip.data".toUri()
-
-        val values = ContentValues().apply {
-            put("packageName", packageName)
-            put("appName", name)
-            put("iconBitmap", bitmap)
+    private fun inset(packageName: String, appName: String, bitmap: ByteArray?) {
+        logI(TAG){"packageName=${BuildConfig.APPLICATION_ID} action=${BuildConfig.APPLICATION_ID}.ACTION_CLIP_CHANGED"}
+        val intent = Intent("${BuildConfig.APPLICATION_ID}.ACTION_CLIP_CHANGED").apply {
+            setPackage(BuildConfig.APPLICATION_ID) // 推荐：限制到本 app，避免外部 app 收到
+            putExtra("packageName", packageName)
+            putExtra("appName", appName)
+            putExtra("iconBitmap", bitmap)
         }
-
-        cr.insert(uri, values)
+        context.sendBroadcast(intent)
     }
 
     // 辅助方法：将 Drawable 转为压缩后的 byte[]
@@ -128,12 +129,5 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         drawable.setBounds(0, 0, canvas.width, canvas.height)
         drawable.draw(canvas)
         return bitmap
-    }
-
-    /** 辅助方法：将 Bitmap 压缩为 PNG 格式的 byte[]，以便通过 Binder 传输。 */
-    private fun Bitmap.toByteArray(): ByteArray {
-        val outputStream = ByteArrayOutputStream()
-        compress(Bitmap.CompressFormat.PNG, 100, outputStream)
-        return outputStream.toByteArray()
     }
 }

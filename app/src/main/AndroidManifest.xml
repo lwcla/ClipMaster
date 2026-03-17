@@ -7,6 +7,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" /> <!-- 添加 queries 标签 -->
     <queries>
+
         <!-- 声明你需要查询 Shizuku 管理器的包名 -->
         <package android:name="moe.shizuku.privileged.api" />
     </queries>
@@ -21,6 +22,18 @@
         android:roundIcon="@mipmap/host_ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.ClipMaster">
+
+        <receiver
+            android:name=".ClipDataReceiver"
+            android:enabled="true"
+            android:exported="true"
+            tools:ignore="ExportedReceiver">
+
+            <intent-filter>
+                <action android:name="com.cla.clip.master.ACTION_CLIP_CHANGED" />
+            </intent-filter>
+
+        </receiver>
 
         <activity
             android:name=".MainActivity"
@@ -46,7 +59,6 @@
             android:exported="true"
             android:multiprocess="false"
             tools:ignore="ExportedContentProvider" />
-
         <provider
             android:name="rikka.shizuku.ShizukuProvider"
             android:authorities="${applicationId}.shizuku"
@@ -54,7 +66,6 @@
             android:exported="true"
             android:multiprocess="false"
             android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
-
     </application>
 
 </manifest>

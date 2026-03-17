@@ -24,9 +24,9 @@ inline fun logD(tag: String, info: () -> String) {
     }
 }
 
-inline fun logW(tag: String, info: () -> String) {
+inline fun logW(tag: String, tr: Throwable? = null, info: () -> String) {
     if (LOG_DEBUG) {
-        Log.w(LOG_TAG, "$tag--> ${info()}")
+        Log.w(LOG_TAG, "$tag--> ${info()}", tr)
     }
 }
 

@@ -64,12 +64,6 @@ fun ShizukuServiceUnavailableTip(
 
         val shizukuPermissionListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
             status = ShizukuUtils.checkStatus(context)
-
-            logD(tag) { "shizuku 状态结果回调: requestCode=$requestCode, grantResult=$grantResult, 新状态=$status" }
-
-            if (status is ShizukuStatus.Connected) {
-                viewModel.shizukuManager.get().bindService()
-            }
         }
 
         owner.lifecycle.addObserver(observer)
@@ -91,6 +85,7 @@ fun ShizukuServiceUnavailableTip(
 
     val tip = when (status) {
         is ShizukuStatus.Connected -> {
+            viewModel.shizukuManager.get().bindService()
             return
         }
 

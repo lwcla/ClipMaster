@@ -66,11 +66,24 @@ class ClipboardService : Service() {
 
         fun start(
             context: Context,
+        ) {
+            logI(TAG) { "start" }
+            val serviceIntent = Intent(context, ClipboardService::class.java)
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(serviceIntent)
+            } else {
+                context.startService(serviceIntent)
+            }
+        }
+
+        fun start(
+            context: Context,
             packageName: String,
             appName: String?,
             appIcon: ByteArray?
         ) {
-            logI(TAG) { "start" }
+            logI(TAG) { "start packageName=$packageName appName=$appName appIcon=${appIcon?.size}" }
             val serviceIntent = Intent(context, ClipboardService::class.java)
 
             serviceIntent.putExtra("packageName", packageName)
@@ -160,7 +173,7 @@ class ClipboardService : Service() {
         super.onCreate()
         // 服务创建时，立即尝试提升为前台服务
         logI(TAG) { "onCreate: " }
-//        ensureForeground()
+        ensureForeground()
 
 //        Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
 //        Shizuku.addBinderDeadListener(binderDeadListener)
@@ -172,9 +185,20 @@ class ClipboardService : Service() {
         // 否则在 API 26+ 设备上可能会因为“未能在规定时间内进入前台”而崩溃。
 
         scope.launch(Dispatchers.IO) {
-
-            val packageName = intent?.getStringExtra("packageName") ?: "unknown"
-            val appName = intent?.getStringExtra("appName") ?: "unknown"
+            val packageName = intent?.getStringExtra("packageName").let {
+                if (it.isNullOrBlank()) {
+                    "unknown"
+                } else {
+                    it
+                }
+            }
+            val appName = intent?.getStringExtra("appName").let {
+                if (it.isNullOrBlank()) {
+                    "unknown"
+                } else {
+                    it
+                }
+            }
             val appIconBytes = intent?.getByteArrayExtra("appIcon")
             val bitmap = appIconBytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
 
@@ -183,7 +207,6 @@ class ClipboardService : Service() {
         }
 
 //        ensureForeground()
-
         return START_STICKY
     }
 
