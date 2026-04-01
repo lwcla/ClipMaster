@@ -2,7 +2,6 @@ package com.cla.clip.shizuku
 
 import android.app.AppOpsManager
 import android.app.AppOpsManagerHidden
-import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -12,14 +11,10 @@ import android.graphics.drawable.Drawable
 import android.os.Build
 import androidx.annotation.Keep
 import androidx.core.graphics.createBitmap
-import androidx.core.net.toUri
 import com.cla.clip.base.general.logD
-import com.cla.clip.base.general.logI
-import com.cla.clip.base.general.utils.toByteArray
+import com.cla.clip.base.general.logE
 import dev.rikka.tools.refine.Refine
 import org.lsposed.hiddenapibypass.HiddenApiBypass
-import rikka.shizuku.Shizuku
-import kotlin.io.inputStream
 
 @Keep
 class ClipboardShizukuService(private val context: Context) : IClipboardShizukuService.Stub() {
@@ -64,7 +59,6 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
             // 获取图标 Drawable
             // Android 的 Bitmap 类实现了 Parcelable，并且针对 Binder 传输做了特殊优化（会将大图片数据放在 Ashmem 匿名共享内存中，而不是 Binder 缓冲区，只传递文件描述符）
             val bitmap = getIconBitmap(packageInfo?.applicationInfo?.loadIcon(packageManager))
-            val bitmapBytes = bitmap?.toByteArray()
 
             logD(TAG) {
                 """
@@ -73,16 +67,11 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
                 uid=$uid
                 name=$name
                 bitmap=${bitmap?.width} x ${bitmap?.height}
-                bitmapBytes=${bitmapBytes?.size}
                 result=$result
             """.trimIndent()
             }
 
-            inset(packageName, name, bitmapBytes)
-
-//            if (::shizukuCallback.isInitialized) {
-//                shizukuCallback.onOpNoted(packageName, name, bitmap)
-//            }
+            insert(packageName, name, bitmap)
         }
         // Allow self to draw floating window
         Refine.unsafeCast<AppOpsManagerHidden>(appOpsManager)
@@ -101,8 +90,8 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         this.shizukuCallback = shizukuCallback
     }
 
-    private fun inset(packageName: String, appName: String, bitmap: ByteArray?) {
-        logI(TAG) { "context=${context.applicationInfo.packageName} uid=${context.applicationInfo.uid} packageName=${BuildConfig.APPLICATION_ID} action=${BuildConfig.APPLICATION_ID}.ACTION_CLIP_CHANGED" }
+    private fun insert(packageName: String, appName: String, bitmap: Bitmap?) {
+        logD(TAG) { "insert context=${context.applicationInfo.packageName} uid=${context.applicationInfo.uid} packageName=${BuildConfig.APPLICATION_ID} action=${BuildConfig.APPLICATION_ID}.ACTION_CLIP_CHANGED" }
 //        val intent = Intent("${BuildConfig.APPLICATION_ID}.ACTION_CLIP_CHANGED").apply {
 //            setPackage(BuildConfig.APPLICATION_ID) // 推荐：限制到本 app，避免外部 app 收到
 //            putExtra("packageName", packageName)
@@ -146,6 +135,32 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
 //            logI(TAG) { "broadcast failed: ${e.message}" }
 //        }
 
+        logD(TAG){"starting service via am startservice..."}
+
+        runCatching {
+            val cmd = "am start-foreground-service --user 0 ${BuildConfig.APPLICATION_ID}/.service.ClipboardService"
+            val process = ProcessBuilder(
+                "am",
+                "start-foreground-service",
+                "--user",
+                "0",
+                "${BuildConfig.APPLICATION_ID}/.service.ClipboardService"
+            )
+                .redirectErrorStream(true)
+                .start()
+
+            val output = process.inputStream.bufferedReader().use { it.readText() }
+
+            logD(TAG) { "startservice  output=$output" }
+            val exitCode = process.waitFor()
+            logD(TAG) { "startservice  exit=$exitCode" }
+
+//            if (::shizukuCallback.isInitialized) {
+//                shizukuCallback.onOpNoted(packageName, appName, bitmap)
+//            }
+        }.getOrElse {
+            logE(TAG, it) { "startservice failed: " }
+        }
     }
 
 
