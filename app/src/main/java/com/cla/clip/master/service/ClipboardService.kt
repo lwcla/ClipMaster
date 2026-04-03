@@ -103,6 +103,7 @@ class ClipboardService : Service() {
         .processNameSuffix("shizuku")
         .debuggable(BuildConfig.DEBUG)
         .version(BuildConfig.VERSION_CODE)
+        .tag(BuildConfig.APPLICATION_ID + TAG)
 
     private val userServiceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {

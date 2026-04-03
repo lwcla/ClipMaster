@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import org.lsposed.hiddenapibypass.HiddenApiBypass
+import java.util.concurrent.atomic.AtomicBoolean
 
 @Keep
 class ClipboardShizukuService(private val context: Context) : IClipboardShizukuService.Stub() {
@@ -41,14 +42,13 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
     private val appOpsManager by lazy { context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager }
 
     private val packageManager by lazy { context.packageManager }
+    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob() + exceptionHandler)
+    private var callFlow = MutableStateFlow<ShizukuCallback?>(null)
+    private var isRunning = AtomicBoolean(false)
 
     private var opNotedListener: AppOpsManagerHidden.OnOpNotedListener? = null
 
-    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob() + exceptionHandler)
-
     private var job: Job? = null
-
-    private var callFlow = MutableStateFlow<ShizukuCallback?>(null)
 
     override fun exit() {
         logD(TAG) { "exit" }
@@ -57,13 +57,19 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
 
     override fun destroy() {
         logD(TAG) { "destroy" }
+        isRunning.set(false)
         removeListener()
     }
 
     override fun start() {
         logD(TAG) { "start" }
-        removeListener()
+        if (isRunning.get()) {
+            logD(TAG) { "Service already running, skip" }
+            return
+        }
+        isRunning.set(true)
 
+        removeListener()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             HiddenApiBypass.addHiddenApiExemptions("Landroid/app")
         }
@@ -152,7 +158,7 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         logI(TAG) { "callBack已经失活，尝试启动前台服务 okCmd=${okCmd}" }
         if (okCmd) {
             // 3) 等待 callback 重连（务必加超时，防止永久挂起）
-            val rebound = withTimeoutOrNull(5_000) {
+            val rebound = withTimeoutOrNull(2_000) {
                 callFlow.filterNotNull().first()
             }
 
