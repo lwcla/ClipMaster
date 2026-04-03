@@ -35,17 +35,17 @@ class App : BaseApplication() {
 
         if (isMainProcess()) {
             // 只有主进程需要绑定 Shizuku 服务，其他进程不需要，以避免重复绑定和资源浪费。
-            scope.launch {
-                delay(1000)
-                logD(TAG) { "开始绑定 Shizuku 服务" }
-                shizukuManager.get().bindService()
-            }
+//            scope.launch {
+//                delay(1000)
+//                logD(TAG) { "开始绑定 Shizuku 服务" }
+//                shizukuManager.get().bindService()
+//            }
 
-            scope.launch {
-                clipDataFlow.filterNotNull().collect {
-                    ClipboardService.start(context, it.first, it.second, it.third)
-                }
-            }
+//            scope.launch {
+//                clipDataFlow.filterNotNull().collect {
+//                    ClipboardService.start(context, it.first, it.second, it.third)
+//                }
+//            }
         }
     }
 

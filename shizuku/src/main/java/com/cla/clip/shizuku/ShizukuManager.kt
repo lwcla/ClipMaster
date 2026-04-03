@@ -56,7 +56,7 @@ class ShizukuManager @Inject constructor(
                 val service = IClipboardShizukuService.Stub.asInterface(binder)
                 service.start()
 
-                service.addCallback(object : ShizukuCallback.Stub() {
+                service.setCallback(object : ShizukuCallback.Stub() {
                     override fun onOpNoted(packageName: String?, appName: String?, appIcon: Bitmap?) {
                         if (packageName.isNullOrBlank()) {
                             return

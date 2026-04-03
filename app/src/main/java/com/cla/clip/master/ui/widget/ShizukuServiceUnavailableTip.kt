@@ -85,7 +85,6 @@ fun ShizukuServiceUnavailableTip(
 
     val tip = when (status) {
         is ShizukuStatus.Connected -> {
-            viewModel.shizukuManager.get().bindService()
             return
         }
 

@@ -11,10 +11,8 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
-import android.os.Handler
 import android.os.IBinder
 import android.view.View
 import android.view.WindowManager
@@ -23,6 +21,7 @@ import androidx.core.content.FileProvider
 import androidx.palette.graphics.Palette
 import com.cla.clip.base.general.entity.ClipCaptureEntity
 import com.cla.clip.base.general.logD
+import com.cla.clip.base.general.logE
 import com.cla.clip.base.general.logI
 import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.base.general.utils.ApplicationScope
@@ -37,7 +36,6 @@ import dagger.hilt.android.AndroidEntryPoint
 import jakarta.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
@@ -114,47 +112,54 @@ class ClipboardService : Service() {
     private val manager by lazy { getSystemService(NotificationManager::class.java) }
     private val clipboardManager by lazy { getSystemService(ClipboardManager::class.java) }
     private val windowManager by lazy { getSystemService(WindowManager::class.java) as WindowManager }
-    private val handler by lazy { Handler(mainLooper) }
 
-    private val serviceJob = SupervisorJob()
-    private val serviceScope = CoroutineScope(Dispatchers.Main + serviceJob)
+    private var shizukuService: IClipboardShizukuService? = null
 
     private val userServiceArgs = Shizuku.UserServiceArgs(ComponentName(BuildConfig.APPLICATION_ID, ClipboardShizukuService::class.java.name))
-        .daemon(false)
-        .processNameSuffix("cla_clip_master_shizuku")
+        .daemon(true) // 守护进程，确保服务在后台持续运行
+        .processNameSuffix("shizuku")
         .debuggable(BuildConfig.DEBUG)
         .version(BuildConfig.VERSION_CODE)
 
     private val userServiceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+            logI(TAG) { "userServiceConnection : 已经连接 pingBinder=${binder?.pingBinder()}" }
+
             if (binder != null && binder.pingBinder()) {
-                val service = IClipboardShizukuService.Stub.asInterface(binder)
-                service.start()
-                service.addCallback(object : ShizukuCallback.Stub() {
-                    override fun onOpNoted(packageName: String, appName: String?, appIcon: Bitmap?) {
-                        if (packageName == BuildConfig.APPLICATION_ID) {
-                            return
-                        }
+                shizukuService = IClipboardShizukuService.Stub.asInterface(binder).also { service ->
+                    service.start()
+                    service.setCallback(object : ShizukuCallback.Stub() {
+                        override fun onOpNoted(packageName: String, appName: String?, appIcon: Bitmap?) {
+                            if (packageName == BuildConfig.APPLICATION_ID) {
+                                // 自己复制的内容，不处理
+                                return
+                            }
 
-                        logD(TAG) {
-                            """
-                            剪贴板有更新了：
-                            packageName=$packageName
-                            appName=$appName
-                            appIcon=${appIcon?.width} x ${appIcon?.height}
+                            logD(TAG) {
+                                """
+                                剪贴板有更新了：
+                                packageName=$packageName
+                                appName=$appName
+                                appIcon=${appIcon?.width} x ${appIcon?.height}
                             """.trimIndent()
-                        }
+                            }
 
-//                        magic(packageName, appName, appIcon)
-                    }
-                })
+                            scope.launch(Dispatchers.IO) {
+                                magic(packageName, appName, appIcon)
+                            }
+                        }
+                    })
+                }
                 ensureForeground()
             } else {
+                shizukuService?.setCallback(null)
                 ensureForeground()
             }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
+            logE(TAG) { "userServiceConnection: 断开连接" }
+            shizukuService?.setCallback(null)
             ensureForeground()
         }
     }
@@ -175,51 +180,47 @@ class ClipboardService : Service() {
         logI(TAG) { "onCreate: " }
         ensureForeground()
 
-//        Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
-//        Shizuku.addBinderDeadListener(binderDeadListener)
-//        Shizuku.bindUserService(userServiceArgs, userServiceConnection)
+        Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
+        Shizuku.addBinderDeadListener(binderDeadListener)
+
+        val result = Shizuku.peekUserService(userServiceArgs, userServiceConnection)
+        if (result == -1) {
+            logI(TAG) { "绑定 shizuku 远程服务成功" }
+            Shizuku.bindUserService(userServiceArgs, userServiceConnection)
+        } else {
+            logI(TAG) { "连接 shizuku 远程服务成功" }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // 关键：每次调用 startForegroundService 后，必须再次调用 startForeground，
         // 否则在 API 26+ 设备上可能会因为“未能在规定时间内进入前台”而崩溃。
-
-        scope.launch(Dispatchers.IO) {
-            val packageName = intent?.getStringExtra("packageName").let {
-                if (it.isNullOrBlank()) {
-                    "unknown"
-                } else {
-                    it
-                }
-            }
-            val appName = intent?.getStringExtra("appName").let {
-                if (it.isNullOrBlank()) {
-                    "unknown"
-                } else {
-                    it
-                }
-            }
-            val appIconBytes = intent?.getByteArrayExtra("appIcon")
-            val bitmap = appIconBytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
-
-            logI(TAG) { "onStartCommand: packageName=$packageName appName=$appName icon=${appIconBytes?.size} bitmap=${bitmap?.width} x ${bitmap?.height}" }
-            magic(packageName, appName, bitmap)
-        }
-
-//        ensureForeground()
+        ensureForeground()
         return START_STICKY
     }
 
     override fun onDestroy() {
-        super.onDestroy()
         logI(TAG) { "onDestroy : " }
-        serviceJob.cancel()
-//        Shizuku.removeBinderReceivedListener(binderReceivedListener)
-//        Shizuku.removeBinderDeadListener(binderDeadListener)
-//        if (Shizuku.pingBinder()) Shizuku.unbindUserService(userServiceArgs, userServiceConnection, true)
+        shizukuService?.setCallback(null)
+        Shizuku.removeBinderReceivedListener(binderReceivedListener)
+        Shizuku.removeBinderDeadListener(binderDeadListener)
+        runCatching {
+            Shizuku.unbindUserService(userServiceArgs, userServiceConnection, false)
+        }.getOrElse {
+            logE(TAG, it) { "unbindUserService 失败" }
+        }
+        super.onDestroy()
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
+        shizukuService?.setCallback(null)
+        Shizuku.removeBinderReceivedListener(binderReceivedListener)
+        Shizuku.removeBinderDeadListener(binderDeadListener)
+        runCatching {
+            Shizuku.unbindUserService(userServiceArgs, userServiceConnection, false)
+        }.getOrElse {
+            logE(TAG, it) { "unbindUserService 失败" }
+        }
         super.onTaskRemoved(rootIntent)
         logI(TAG) { "onTaskRemoved: " }
     }
@@ -237,15 +238,14 @@ class ClipboardService : Service() {
             width = 0
             height = 0
         })
-        doClipboard(packageName, appName, appIcon)
+
+        // 读取剪贴板内容
+        val clipData = clipboardManager.primaryClip
+        val clip = clipData?.let { runCatching { it.getItemAt(0) }.getOrNull() }
+
         windowManager.removeView(view)
-    }
 
-    private suspend fun doClipboard(packageName: String, appName: String?, appIcon: Bitmap?) {
-        clipboardManager.primaryClip?.let { clipData ->
-            val clip = runCatching { clipData.getItemAt(0) }.getOrNull() ?: return@let
-            logD(TAG) { "读取到剪贴板内容：${clip.text}" }
-
+        if (clip != null) {
             withContext(Dispatchers.IO) {
                 processClip(clip, packageName, appName, appIcon)
             }
