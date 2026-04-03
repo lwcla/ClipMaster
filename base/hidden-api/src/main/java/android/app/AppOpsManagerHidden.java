@@ -1,6 +1,5 @@
 package android.app;
 
-import android.app.AppOpsManager;
 import android.content.Context;
 
 import dev.rikka.tools.refine.RefineAs;
@@ -56,10 +55,6 @@ public class AppOpsManagerHidden {
          * @param flags           The flags of this op
          * @param result          The result of the note.
          */
-        default void onOpNoted(String op, int uid, String packageName, String attributionTag, int virtualDeviceId, int flags, int result) {
-            if (virtualDeviceId == Context.DEVICE_ID_DEFAULT) {
-                onOpNoted(op, uid, packageName, attributionTag, flags, result);
-            }
-        }
+        void onOpNoted(String op, int uid, String packageName, String attributionTag, int virtualDeviceId, int flags, int result);
     }
 }

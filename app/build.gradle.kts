@@ -43,7 +43,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true          // 开启 R8（代码压缩/优化/混淆）
+            isShrinkResources = true        // 可选：开启资源压缩（依赖 minify）
             signingConfig = signingConfigs.getByName("release")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
@@ -89,7 +90,7 @@ dependencies {
     ksp(libs.hilt.compiler)
 
     // Google ML Kit，用于实现图片OCR功能
-    implementation(libs.mlkit.ocr)
+//    implementation(libs.mlkit.ocr)
 
     // Jsoup，用于解析HTML，实现链接预览功能
     implementation(libs.jsoup)

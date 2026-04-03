@@ -112,7 +112,7 @@ class ClipboardService : Service() {
                 shizukuService = IClipboardShizukuService.Stub.asInterface(binder).also { service ->
                     service.start()
                     service.setCallback(object : ShizukuCallback.Stub() {
-                        override fun onOpNoted(packageName: String, appName: String?, appIcon: Bitmap?) {
+                        override fun onOpNoted(packageName: String?, appName: String?, appIcon: Bitmap?) {
                             if (packageName == BuildConfig.APPLICATION_ID) {
                                 // 自己复制的内容，不处理
                                 return
@@ -142,7 +142,7 @@ class ClipboardService : Service() {
 
         override fun onServiceDisconnected(name: ComponentName?) {
             logE(TAG) { "userServiceConnection: 断开连接" }
-            shizukuService?.setCallback(null)
+            runCatching { shizukuService?.setCallback(null) }
             startForeground()
         }
     }
@@ -184,7 +184,7 @@ class ClipboardService : Service() {
 
     override fun onDestroy() {
         logI(TAG) { "onDestroy : " }
-        shizukuService?.setCallback(null)
+        runCatching { shizukuService?.setCallback(null) }
         Shizuku.removeBinderReceivedListener(binderReceivedListener)
         Shizuku.removeBinderDeadListener(binderDeadListener)
         runCatching {
@@ -196,7 +196,7 @@ class ClipboardService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        shizukuService?.setCallback(null)
+        runCatching { shizukuService?.setCallback(null) }
         Shizuku.removeBinderReceivedListener(binderReceivedListener)
         Shizuku.removeBinderDeadListener(binderDeadListener)
         runCatching {
@@ -212,7 +212,7 @@ class ClipboardService : Service() {
         return null
     }
 
-    private suspend fun magic(packageName: String, appName: String?, appIcon: Bitmap?) = withContext(Dispatchers.Main) {
+    private suspend fun magic(packageName: String?, appName: String?, appIcon: Bitmap?) = withContext(Dispatchers.Main) {
         // 检查当前有没有悬浮窗权限
         if (!appContext.hasOverlayPermission()) {
             return@withContext
@@ -245,7 +245,7 @@ class ClipboardService : Service() {
      */
     private suspend fun processClip(
         item: android.content.ClipData.Item,
-        packageName: String,
+        packageName: String?,
         appName: String?,
         appIcon: Bitmap?
     ) {
@@ -312,7 +312,7 @@ class ClipboardService : Service() {
             val captureEntity = ClipCaptureEntity(
                 content = clipContent,
                 timestamp = System.currentTimeMillis(),
-                sourcePackage = packageName,
+                sourcePackage = packageName ?: "",
                 sourceAppName = appName ?: "unknown",
                 sourceAppIconPath = saveAppIcon(packageName, appIcon),
                 sourcePrimaryColor = color,
@@ -341,7 +341,11 @@ class ClipboardService : Service() {
     /**
      * 保存应用图标到内部存储，并返回保存路径
      */
-    private fun saveAppIcon(packageName: String, icon: Bitmap?): String? {
+    private fun saveAppIcon(packageName: String?, icon: Bitmap?): String? {
+        if (packageName.isNullOrBlank()) {
+            return null
+        }
+
         if (icon == null) {
             return null
         }

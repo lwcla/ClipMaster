@@ -8,7 +8,6 @@ import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.os.Build
-import androidx.annotation.Keep
 import androidx.core.graphics.createBitmap
 import com.cla.clip.base.general.hasOverlayPermission
 import com.cla.clip.base.general.logD
@@ -32,7 +31,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.lsposed.hiddenapibypass.HiddenApiBypass
 import java.util.concurrent.atomic.AtomicBoolean
 
-@Keep
 class ClipboardShizukuService(private val context: Context) : IClipboardShizukuService.Stub() {
 
     companion object {
@@ -85,33 +83,19 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
             )
 
         // DO NOT convert it to lambda due to R8 will break it down
-        opNotedListener = AppOpsManagerHidden.OnOpNotedListener { op, uid, packageName, attributionTag, flags, result ->
-            if (op.isNullOrBlank() || op != "android:write_clipboard" || packageName == BuildConfig.APPLICATION_ID) {
-                return@OnOpNotedListener
+        opNotedListener = object : AppOpsManagerHidden.OnOpNotedListener {
+            override fun onOpNoted(op: String?, uid: Int, packageName: String?, attributionTag: String?, flags: Int, result: Int) {
+                if (op.isNullOrBlank() || op != "android:write_clipboard" || packageName == BuildConfig.APPLICATION_ID) {
+                    return
+                }
+
+                handleOpNoted(packageName)
             }
 
-            if (!context.hasOverlayPermission()) {
-                // 开启悬浮窗权限
-                Refine.unsafeCast<AppOpsManagerHidden>(appOpsManager)
-                    .setMode(
-                        AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW,
-                        packageManager.getPackageUid(BuildConfig.APPLICATION_ID, 0),
-                        BuildConfig.APPLICATION_ID,
-                        AppOpsManager.MODE_ALLOWED
-                    )
-            }
-
-            job?.cancel()
-            job = serviceScope.launch {
-                delay(100) // 防抖
-                val packageInfo = packageManager.getPackageInfo(packageName, 0)
-                val name = packageInfo?.applicationInfo?.loadLabel(packageManager)?.toString().takeUnless { it.isNullOrBlank() } ?: "Unknown"
-                // 获取图标 Drawable
-                // Android 的 Bitmap 类实现了 Parcelable，并且针对 Binder 传输做了特殊优化（会将大图片数据放在 Ashmem 匿名共享内存中，而不是 Binder 缓冲区，只传递文件描述符）
-                val bitmap = getIconBitmap(packageInfo?.applicationInfo?.loadIcon(packageManager))
-
-                logD(TAG) { "OnOpNotedListener packageName=${packageName} name=$name bitmap=${bitmap?.width} x ${bitmap?.height}" }
-                insert(packageName, name, bitmap)
+            override fun onOpNoted(op: String?, uid: Int, packageName: String?, attributionTag: String?, virtualDeviceId: Int, flags: Int, result: Int) {
+                if (virtualDeviceId == Context.DEVICE_ID_DEFAULT) {
+                    onOpNoted(op, uid, packageName, attributionTag, flags, result)
+                }
             }
         }
 
@@ -121,6 +105,32 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
 
     override fun setCallback(shizukuCallback: ShizukuCallback) {
         callFlow.update { shizukuCallback }
+    }
+
+    private fun handleOpNoted(packageName: String?) {
+        if (!context.hasOverlayPermission()) {
+            // 开启悬浮窗权限
+            Refine.unsafeCast<AppOpsManagerHidden>(appOpsManager)
+                .setMode(
+                    AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW,
+                    packageManager.getPackageUid(BuildConfig.APPLICATION_ID, 0),
+                    BuildConfig.APPLICATION_ID,
+                    AppOpsManager.MODE_ALLOWED
+                )
+        }
+
+        job?.cancel()
+        job = serviceScope.launch {
+            delay(100) // 防抖
+            val packageInfo = packageName?.let { packageManager.getPackageInfo(it, 0) }
+            val name = packageInfo?.applicationInfo?.loadLabel(packageManager)?.toString().takeUnless { it.isNullOrBlank() } ?: "Unknown"
+            // 获取图标 Drawable
+            // Android 的 Bitmap 类实现了 Parcelable，并且针对 Binder 传输做了特殊优化（会将大图片数据放在 Ashmem 匿名共享内存中，而不是 Binder 缓冲区，只传递文件描述符）
+            val bitmap = getIconBitmap(packageInfo?.applicationInfo?.loadIcon(packageManager))
+
+            logD(TAG) { "OnOpNotedListener packageName=${packageName} name=$name bitmap=${bitmap?.width} x ${bitmap?.height}" }
+            insert(packageName, name, bitmap)
+        }
     }
 
     private fun removeListener() {
@@ -134,7 +144,7 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         opNotedListener = null
     }
 
-    private suspend fun insert(packageName: String, appName: String, bitmap: Bitmap?) {
+    private suspend fun insert(packageName: String?, appName: String, bitmap: Bitmap?) {
         // 1) fast path: 先试一次
         val cb = callFlow.value
         if (cb != null) {
