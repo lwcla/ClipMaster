@@ -12,7 +12,6 @@ import com.cla.clip.base.general.entity.ClipEntity
 import com.cla.clip.base.general.entity.toUi
 import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.master.BaseViewModel
-import com.cla.clip.shizuku.ShizukuManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -32,7 +31,6 @@ import javax.inject.Inject
 class MainViewModel @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val repository: ClipRepository,
-    val shizukuManager: dagger.Lazy<ShizukuManager>
 ) : BaseViewModel() {
 
     private val clipboardManager by lazy { context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager }

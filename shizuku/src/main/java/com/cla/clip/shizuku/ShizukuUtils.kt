@@ -73,5 +73,4 @@ object ShizukuUtils {
             false
         }
     }
-
 }

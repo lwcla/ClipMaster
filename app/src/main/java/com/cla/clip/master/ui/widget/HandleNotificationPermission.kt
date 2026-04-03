@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -29,18 +30,16 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.cla.clip.base.general.PermissionUtils
-import com.cla.clip.base.general.hasPermission
+import com.cla.clip.base.general.hasNotificationPermission
 import com.cla.clip.base.general.logD
 import com.cla.clip.base.general.logI
 import com.cla.clip.base.general.toPermissionSetting
 import com.cla.clip.master.R
 import com.cla.clip.master.service.ClipboardService
-import com.cla.clip.master.ui.theme.ClipMaterTheme
 
 /**
  * 通知权限处理组件
@@ -59,14 +58,18 @@ fun HandleNotificationPermission(trigger: Boolean) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
 
-    val permission = Manifest.permission.POST_NOTIFICATIONS
-    var hasPermission by remember { mutableStateOf(context.hasPermission(permission)) }
+    var hasPermission by remember { mutableStateOf(context.hasNotificationPermission()) }
+    var showRationaleDialog by rememberSaveable { mutableStateOf(false) }
+    var requestTime by rememberSaveable { mutableLongStateOf(0L) }
+    // --- 新增代码：使用 rememberSaveable 记录是否已经自动触发过 ---
+    // 这样即使切换主题导致 Activity 重建，这个变量依然会保持为 true，从而阻止 LaunchedEffect 内部逻辑再次运行
+    var hasAutoRequested by rememberSaveable { mutableStateOf(false) }
 
     DisposableEffect(owner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
                 // 在 onResume 时检查权限状态
-                val new = context.hasPermission(permission)
+                val new = context.hasNotificationPermission()
                 logI(tag) { "HandleNotificationPermission: ON_RESUME 通知权限状态 $new" }
                 hasPermission = new
             }
@@ -80,12 +83,10 @@ fun HandleNotificationPermission(trigger: Boolean) {
         // 已经有权限，直接退出
         logI(tag) { "HandleNotificationPermission: 已经有通知权限了" }
         // 有通知权限了，需要去拉起前台服务
+        // 为了确保ClipboardService是存活状态，这里每次都去拉起它
         ClipboardService.start(context)
         return
     }
-
-    var showRationaleDialog by remember { mutableStateOf(false) }
-    var requestTime = 0L
 
     // 2. 注册权限回调
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -108,13 +109,10 @@ fun HandleNotificationPermission(trigger: Boolean) {
         }
     )
 
-    // --- 新增代码：使用 rememberSaveable 记录是否已经自动触发过 ---
-    // 这样即使切换主题导致 Activity 重建，这个变量依然会保持为 true，从而阻止 LaunchedEffect 内部逻辑再次运行
-    var hasAutoRequested by rememberSaveable { mutableStateOf(false) }
-
+    val permission = Manifest.permission.POST_NOTIFICATIONS
     // 3. 监听触发信号，执行初次检查与请求
     LaunchedEffect(owner) { // Key 使用 Unit，配合外层的 if (!trigger) return，确保只在组件进入组合且 satisfied 时运行一次
-        if (!hasAutoRequested && !context.hasPermission(permission)) {
+        if (!hasAutoRequested && !context.hasNotificationPermission()) {
             logD(tag) { "触发条件满足，正在请求通知权限..." }
             requestTime = System.currentTimeMillis()
             // 标记位设为 true，下次重建 Activity 时这里依然是 true
@@ -177,12 +175,4 @@ fun HandleNotificationPermission(trigger: Boolean) {
             })
             .padding(horizontal = 16.dp, vertical = 12.dp),
     )
-}
-
-@Preview
-@Composable
-fun PreviewHandleNotificationPermission() {
-    ClipMaterTheme {
-        HandleNotificationPermission(trigger = true)
-    }
 }

@@ -1,10 +1,13 @@
 package com.cla.clip.base.general
 
 import android.Manifest
+import android.app.AppOpsManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
+import android.os.Process
 import android.provider.Settings
 import androidx.core.content.ContextCompat
 
@@ -21,12 +24,22 @@ object PermissionUtils {
 /** 检查某个权限是否被授予 */
 fun Context.hasPermission(permission: String) = ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 
+/** 是否已经有通知权限了 */
+fun Context.hasNotificationPermission() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+    hasPermission(Manifest.permission.POST_NOTIFICATIONS)
+} else {
+    // Android 13 以下默认有通知权限
+    true
+}
+
+/** 检查悬浮窗权限 */
+fun Context.hasOverlayPermission() = Settings.canDrawOverlays(this)
+
 /** 跳转到应用的权限设置页面 */
 fun Context.toPermissionSetting(permission: String) {
-
     fun newIntent(): Intent {
         if (permission == Manifest.permission.POST_NOTIFICATIONS) {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 return Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
                     putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
                     // 部分机型可能还需要 EXTRA_CHANNEL_ID，如果只需要总开关页面，传包名通常足够

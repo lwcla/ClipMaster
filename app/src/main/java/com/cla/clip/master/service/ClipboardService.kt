@@ -20,19 +20,21 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.FileProvider
 import androidx.palette.graphics.Palette
 import com.cla.clip.base.general.entity.ClipCaptureEntity
+import com.cla.clip.base.general.hasOverlayPermission
 import com.cla.clip.base.general.logD
 import com.cla.clip.base.general.logE
 import com.cla.clip.base.general.logI
 import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.base.general.utils.ApplicationScope
 import com.cla.clip.master.BuildConfig
-import com.cla.clip.master.R
+import com.cla.clip.master.MainActivity
 import com.cla.clip.shizuku.ClipboardShizukuService
 import com.cla.clip.shizuku.IClipboardShizukuService
 import com.cla.clip.shizuku.ShizukuCallback
 import com.cla.clip.shizuku.ShizukuStatus
 import com.cla.clip.shizuku.ShizukuUtils
 import dagger.hilt.android.AndroidEntryPoint
+import dagger.hilt.android.qualifiers.ApplicationContext
 import jakarta.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -51,8 +53,11 @@ class ClipboardService : Service() {
     companion object {
         private const val TAG = "ClipboardService"
 
-        private const val CHANNEL_ID = "clipboard_service_channel"
-        private const val NOTIFICATION_ID = 1001
+        private const val STATUS_CHANNEL_ID = "clipboard_status_channel"
+        private const val CLIP_CHANNEL_ID = "clipboard_update_channel"
+
+        private const val STATUS_NOTIFICATION_ID = 1001   // 仅前台服务用，固定
+        private const val CLIP_NOTIFICATION_ID = 2001     // 剪贴板更新通知用
 
         private const val APP_ICONS_DIR = "app_icons"
 
@@ -74,32 +79,6 @@ class ClipboardService : Service() {
                 context.startService(serviceIntent)
             }
         }
-
-        fun start(
-            context: Context,
-            packageName: String,
-            appName: String?,
-            appIcon: ByteArray?
-        ) {
-            logI(TAG) { "start packageName=$packageName appName=$appName appIcon=${appIcon?.size}" }
-            val serviceIntent = Intent(context, ClipboardService::class.java)
-
-            serviceIntent.putExtra("packageName", packageName)
-            serviceIntent.putExtra("appName", appName)
-            serviceIntent.putExtra("appIcon", appIcon)
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(serviceIntent)
-            } else {
-                context.startService(serviceIntent)
-            }
-        }
-
-        fun stop(context: Context) {
-            logI(TAG) { "stop" }
-            val serviceIntent = Intent(context, ClipboardService::class.java)
-            context.stopService(serviceIntent)
-        }
     }
 
     @Inject
@@ -108,6 +87,10 @@ class ClipboardService : Service() {
     @Inject
     @ApplicationScope
     lateinit var scope: CoroutineScope
+
+    @Inject
+    @ApplicationContext
+    lateinit var appContext: Context
 
     private val manager by lazy { getSystemService(NotificationManager::class.java) }
     private val clipboardManager by lazy { getSystemService(ClipboardManager::class.java) }
@@ -124,7 +107,6 @@ class ClipboardService : Service() {
     private val userServiceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             logI(TAG) { "userServiceConnection : 已经连接 pingBinder=${binder?.pingBinder()}" }
-
             if (binder != null && binder.pingBinder()) {
                 shizukuService = IClipboardShizukuService.Stub.asInterface(binder).also { service ->
                     service.start()
@@ -150,42 +132,42 @@ class ClipboardService : Service() {
                         }
                     })
                 }
-                ensureForeground()
             } else {
                 shizukuService?.setCallback(null)
-                ensureForeground()
             }
+
+            startForeground()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
             logE(TAG) { "userServiceConnection: 断开连接" }
             shizukuService?.setCallback(null)
-            ensureForeground()
+            startForeground()
         }
     }
 
     private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
         logD(TAG) { "binderReceivedListener: " }
-        ensureForeground()
+        startForeground()
     }
     private val binderDeadListener = Shizuku.OnBinderDeadListener {
         logD(TAG) { "binderDeadListener: " }
-        ensureForeground()
+        startForeground()
     }
-
 
     override fun onCreate() {
         super.onCreate()
         // 服务创建时，立即尝试提升为前台服务
         logI(TAG) { "onCreate: " }
-        ensureForeground()
+        createNotificationChannels()
+        startForeground()
 
         Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
         Shizuku.addBinderDeadListener(binderDeadListener)
 
         val result = Shizuku.peekUserService(userServiceArgs, userServiceConnection)
         if (result == -1) {
-            logI(TAG) { "绑定 shizuku 远程服务成功" }
+            logI(TAG) { "去绑定 shizuku 远程服务" }
             Shizuku.bindUserService(userServiceArgs, userServiceConnection)
         } else {
             logI(TAG) { "连接 shizuku 远程服务成功" }
@@ -195,7 +177,7 @@ class ClipboardService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // 关键：每次调用 startForegroundService 后，必须再次调用 startForeground，
         // 否则在 API 26+ 设备上可能会因为“未能在规定时间内进入前台”而崩溃。
-        ensureForeground()
+        startForeground()
         return START_STICKY
     }
 
@@ -230,8 +212,13 @@ class ClipboardService : Service() {
     }
 
     private suspend fun magic(packageName: String, appName: String?, appIcon: Bitmap?) = withContext(Dispatchers.Main) {
+        // 检查当前有没有悬浮窗权限
+        if (!appContext.hasOverlayPermission()) {
+            return@withContext
+        }
+
         // 通过添加一个不可见的 View 来触发系统读取剪贴板内容，从而获取最新的剪贴板数据
-        val view = View(applicationContext)
+        val view = View(appContext)
         windowManager.addView(view, WindowManager.LayoutParams(-2, -2, 2038, 32, -3).apply {
             x = 0
             y = 0
@@ -340,9 +327,9 @@ class ClipboardService : Service() {
             clipRepository.addNewClip(captureEntity)
 
             withContext(Dispatchers.Main) {
-                ensureForeground(
-                    title = "$appName 写入了剪切板",
-                    content = "内容：${clipContent}"
+                notifyClipUpdated(
+                    title = "$appName ${appContext.getString(com.cla.clip.base.general.R.string.base_general_it_was_written_into_the_clipboard)}",
+                    content = "${appContext.getString(com.cla.clip.base.general.R.string.base_general_content)}${clipContent}"
                 )
             }
         } catch (e: Exception) {
@@ -398,7 +385,7 @@ class ClipboardService : Service() {
             // 返回ContentProvider URI，确保应用内可访问
             val fileUri = FileProvider.getUriForFile(
                 this@ClipboardService,
-                "${applicationContext.packageName}.fileprovider",
+                "${appContext.packageName}.fileprovider",
                 imageFile
             )
 
@@ -409,29 +396,38 @@ class ClipboardService : Service() {
         }
     }
 
-    private fun ensureForeground(title: String? = null, content: String? = null) {
-        createNotificationChannel()
-
-        val contentText = content ?: when (ShizukuUtils.checkStatus(applicationContext).also { logD(TAG) { "ensureForeground: Shizuku 状态：$it" } }) {
-            is ShizukuStatus.Connected -> applicationContext.getString(com.cla.clip.base.general.R.string.base_general_service_is_running)
-            is ShizukuStatus.Disconnect.NotInstalled -> applicationContext.getString(com.cla.clip.base.general.R.string.base_general_shizuku_not_install)
-            is ShizukuStatus.Disconnect.ServiceNotAlive -> applicationContext.getString(com.cla.clip.base.general.R.string.base_general_shizuku_service_not_alive)
-            is ShizukuStatus.Disconnect.VersionTooLow -> applicationContext.getString(com.cla.clip.base.general.R.string.base_general_shizuku_version_too_low)
-            is ShizukuStatus.Disconnect.NotGranted -> applicationContext.getString(com.cla.clip.base.general.R.string.base_general_shizuku_not_granted)
+    private fun startForeground() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val serviceChannel = NotificationChannel(
+                STATUS_CHANNEL_ID,
+                appContext.getString(com.cla.clip.base.general.R.string.base_general_clipboard_service),
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = appContext.getString(com.cla.clip.base.general.R.string.base_general_listen_for_changes_in_the_clipboard_content)
+            }
+            manager.createNotificationChannel(serviceChannel)
         }
 
+        val status = ShizukuUtils.checkStatus(appContext)
+        logD(TAG) { "ensureForeground: Shizuku状态：$status" }
+        val statusText = when (status) {
+            is ShizukuStatus.Connected -> appContext.getString(com.cla.clip.base.general.R.string.base_general_service_is_running)
+            is ShizukuStatus.Disconnect.NotInstalled -> appContext.getString(com.cla.clip.base.general.R.string.base_general_shizuku_not_install)
+            is ShizukuStatus.Disconnect.ServiceNotAlive -> appContext.getString(com.cla.clip.base.general.R.string.base_general_shizuku_service_not_alive)
+            is ShizukuStatus.Disconnect.VersionTooLow -> appContext.getString(com.cla.clip.base.general.R.string.base_general_shizuku_version_too_low)
+            is ShizukuStatus.Disconnect.NotGranted -> appContext.getString(com.cla.clip.base.general.R.string.base_general_shizuku_not_granted)
+        }
         // 1. 获取启动 App 的 Intent
-        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
-
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageName) ?: Intent(appContext, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
         // 2. 创建 PendingIntent
-        val pendingIntent = if (launchIntent != null) {
-            PendingIntent.getActivity(this, 0, launchIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        } else null
+        val pendingIntent = PendingIntent.getActivity(appContext, 0, launchIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
 
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle(title ?: applicationContext.getString(com.cla.clip.base.general.R.string.base_general_app_name))
-            .setContentText(contentText)
-            .setSmallIcon(R.drawable.host_ic_launcher_foreground) // 确保资源存在，或者使用 android.R.drawable.ic_menu_save
+        val notification = NotificationCompat.Builder(this, STATUS_CHANNEL_ID)
+            .setContentTitle(appContext.getString(com.cla.clip.base.general.R.string.base_general_app_name))
+            .setContentText(statusText)
+            .setSmallIcon(com.cla.clip.base.general.R.drawable.icon_app) // 确保资源存在，或者使用 android.R.drawable.ic_menu_save
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(pendingIntent) // 3. 设置点击行为
             .setOngoing(true)
@@ -441,31 +437,74 @@ class ClipboardService : Service() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 // Android 14 (API 34) 强制要求指定前台服务类型
                 startForeground(
-                    NOTIFICATION_ID,
+                    STATUS_NOTIFICATION_ID,
                     notification,
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
                 )
             } else {
-                startForeground(NOTIFICATION_ID, notification)
+                startForeground(STATUS_NOTIFICATION_ID, notification)
             }
         } catch (e: Exception) {
             // 如果 Manifest 中缺少 foregroundServiceType 属性，可能会抛出异常
             // 此时尝试不带 type 启动作为兜底
-            startForeground(NOTIFICATION_ID, notification)
+            startForeground(STATUS_NOTIFICATION_ID, notification)
         }
     }
 
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val serviceChannel = NotificationChannel(
-                CHANNEL_ID,
-                applicationContext.getString(com.cla.clip.base.general.R.string.base_general_clipboard_service),
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = applicationContext.getString(com.cla.clip.base.general.R.string.base_general_listen_for_changes_in_the_clipboard_content)
+    private fun notifyClipUpdated(title: String, content: String) {
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+            ?: Intent(appContext, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             }
-            manager.createNotificationChannel(serviceChannel)
-        }
+
+        val pendingIntent = PendingIntent.getActivity(
+            appContext, 1, launchIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val notification = NotificationCompat.Builder(this, CLIP_CHANNEL_ID)
+            .setSmallIcon(com.cla.clip.base.general.R.drawable.icon_app)
+            .setContentTitle(title)
+            .setContentText(content)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(content))
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)          // 简单直接
+            .setDefaults(0)           // 不用默认铃声/震动/灯
+            .setVibrate(longArrayOf(0L))
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+
+        manager.notify(CLIP_NOTIFICATION_ID, notification) // 固定ID=覆盖上一条；若想每条都保留可用递增ID
     }
 
+    private fun createNotificationChannels() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+
+        val statusChannel = NotificationChannel(
+            STATUS_CHANNEL_ID,
+            appContext.getString(com.cla.clip.base.general.R.string.base_general_clipboard_service),
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            enableVibration(false) // 关闭震动
+            vibrationPattern = longArrayOf(0L)
+            setSound(null, null) // 关闭铃声
+            description = appContext.getString(com.cla.clip.base.general.R.string.base_general_listen_for_changes_in_the_clipboard_content)
+        }
+
+        val clipChannel = NotificationChannel(
+            CLIP_CHANNEL_ID,
+            appContext.getString(com.cla.clip.base.general.R.string.base_general_clipboard_update),
+            NotificationManager.IMPORTANCE_DEFAULT
+        ).apply {
+            enableVibration(false) // 关闭震动
+            vibrationPattern = longArrayOf(0L)
+            setSound(null, null) // 关闭铃声
+            description = appContext.getString(com.cla.clip.base.general.R.string.base_general_display_clipboard_content_updates)
+        }
+
+        manager.createNotificationChannel(statusChannel)
+        manager.createNotificationChannel(clipChannel)
+    }
 }

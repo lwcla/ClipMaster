@@ -5,9 +5,10 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" /> <!-- 添加 queries 标签 -->
-    <queries>
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
+    <!-- 添加 queries 标签 -->
+    <queries>
         <!-- 声明你需要查询 Shizuku 管理器的包名 -->
         <package android:name="moe.shizuku.privileged.api" />
     </queries>
@@ -22,18 +23,6 @@
         android:roundIcon="@mipmap/host_ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.ClipMaster">
-
-        <receiver
-            android:name=".ClipDataReceiver"
-            android:enabled="true"
-            android:exported="true"
-            tools:ignore="ExportedReceiver">
-
-            <intent-filter>
-                <action android:name="com.cla.clip.master.ACTION_CLIP_CHANGED" />
-            </intent-filter>
-
-        </receiver>
 
         <activity
             android:name=".MainActivity"
@@ -50,15 +39,8 @@
             android:name=".service.ClipboardService"
             android:enabled="true"
             android:exported="true"
-            android:foregroundServiceType="dataSync" />
-
-        <provider
-            android:name=".provider.ClipDataProvider"
-            android:authorities="com.cla.clip.master.clip.data"
-            android:enabled="true"
-            android:exported="true"
-            android:multiprocess="false"
-            tools:ignore="ExportedContentProvider" />
+            android:foregroundServiceType="dataSync"
+            tools:ignore="ExportedService" />
 
         <provider
             android:name="rikka.shizuku.ShizukuProvider"

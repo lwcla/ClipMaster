@@ -5,14 +5,8 @@ import android.os.Build
 import com.cla.clip.base.general.BaseApplication
 import com.cla.clip.base.general.logD
 import com.cla.clip.base.general.utils.ApplicationScope
-import com.cla.clip.base.general.utils.clipDataFlow
-import com.cla.clip.master.service.ClipboardService
-import com.cla.clip.shizuku.ShizukuManager
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltAndroidApp
@@ -24,29 +18,11 @@ class App : BaseApplication() {
     }
 
     @Inject
-    lateinit var shizukuManager: dagger.Lazy<ShizukuManager>
-
-    @Inject
     @ApplicationScope
     lateinit var scope: CoroutineScope
 
     override fun onCreate() {
         super.onCreate()
-
-        if (isMainProcess()) {
-            // 只有主进程需要绑定 Shizuku 服务，其他进程不需要，以避免重复绑定和资源浪费。
-//            scope.launch {
-//                delay(1000)
-//                logD(TAG) { "开始绑定 Shizuku 服务" }
-//                shizukuManager.get().bindService()
-//            }
-
-//            scope.launch {
-//                clipDataFlow.filterNotNull().collect {
-//                    ClipboardService.start(context, it.first, it.second, it.third)
-//                }
-//            }
-        }
     }
 
     private fun isMainProcess(): Boolean {

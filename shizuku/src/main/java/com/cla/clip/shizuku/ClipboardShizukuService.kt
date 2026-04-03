@@ -10,10 +10,10 @@ import android.graphics.drawable.Drawable
 import android.os.Build
 import androidx.annotation.Keep
 import androidx.core.graphics.createBitmap
+import com.cla.clip.base.general.hasOverlayPermission
 import com.cla.clip.base.general.logD
 import com.cla.clip.base.general.logE
 import com.cla.clip.base.general.logI
-import com.cla.clip.base.general.logV
 import com.cla.clip.base.general.utils.exceptionHandler
 import dev.rikka.tools.refine.Refine
 import kotlinx.coroutines.CoroutineScope
@@ -21,6 +21,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.filterNotNull
@@ -37,11 +38,13 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         const val TAG = "ClipboardShizukuService"
     }
 
-    private var appOpsManager: AppOpsManager? = null
-    private lateinit var opNotedListener: AppOpsManagerHidden.OnOpNotedListener
+    private val appOpsManager by lazy { context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager }
 
-    private val serviceJob = SupervisorJob()
-    private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob + exceptionHandler)
+    private val packageManager by lazy { context.packageManager }
+
+    private var opNotedListener: AppOpsManagerHidden.OnOpNotedListener? = null
+
+    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob() + exceptionHandler)
 
     private var job: Job? = null
 
@@ -54,48 +57,18 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
 
     override fun destroy() {
         logD(TAG) { "destroy" }
-        appOpsManager?.let {
-            Refine.unsafeCast<AppOpsManagerHidden>(appOpsManager).stopWatchingNoted(opNotedListener)
-        }
+        removeListener()
     }
 
     override fun start() {
         logD(TAG) { "start" }
+        removeListener()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             HiddenApiBypass.addHiddenApiExemptions("Landroid/app")
         }
 
-        val appOpsManager = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
-        this.appOpsManager = appOpsManager
-        val packageManager = context.packageManager
-        // DO NOT convert it to lambda due to R8 will break it down
-        opNotedListener = AppOpsManagerHidden.OnOpNotedListener { op, uid, packageName, attributionTag, flags, result ->
-            if (op.isNullOrBlank() || op != "android:write_clipboard" || packageName == BuildConfig.APPLICATION_ID) {
-                return@OnOpNotedListener
-            }
-
-            job?.cancel()
-            job = serviceScope.launch {
-                val packageInfo = packageName?.let { packageManager.getPackageInfo(it, 0) }
-                val name = packageInfo?.applicationInfo?.loadLabel(packageManager)?.toString().takeUnless { it.isNullOrBlank() } ?: "Unknown"
-                // 获取图标 Drawable
-                // Android 的 Bitmap 类实现了 Parcelable，并且针对 Binder 传输做了特殊优化（会将大图片数据放在 Ashmem 匿名共享内存中，而不是 Binder 缓冲区，只传递文件描述符）
-                val bitmap = getIconBitmap(packageInfo?.applicationInfo?.loadIcon(packageManager))
-
-                logD(TAG) {
-                    """
-                    op=$op
-                    packageName=${packageName} 
-                    uid=$uid
-                    name=$name
-                    bitmap=${bitmap?.width} x ${bitmap?.height}
-                    result=$result
-                """.trimIndent()
-                }
-                insert(packageName, name, bitmap)
-            }
-        }
+        // 先去授予悬浮窗权限，之后添加监听，否则剪贴板回调之后，发现还没有悬浮窗权限，就没办法读取剪贴板数据
         // 开启悬浮窗权限
         Refine.unsafeCast<AppOpsManagerHidden>(appOpsManager)
             .setMode(
@@ -104,6 +77,38 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
                 BuildConfig.APPLICATION_ID,
                 AppOpsManager.MODE_ALLOWED
             )
+
+        // DO NOT convert it to lambda due to R8 will break it down
+        opNotedListener = AppOpsManagerHidden.OnOpNotedListener { op, uid, packageName, attributionTag, flags, result ->
+            if (op.isNullOrBlank() || op != "android:write_clipboard" || packageName == BuildConfig.APPLICATION_ID) {
+                return@OnOpNotedListener
+            }
+
+            if (!context.hasOverlayPermission()) {
+                // 开启悬浮窗权限
+                Refine.unsafeCast<AppOpsManagerHidden>(appOpsManager)
+                    .setMode(
+                        AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW,
+                        packageManager.getPackageUid(BuildConfig.APPLICATION_ID, 0),
+                        BuildConfig.APPLICATION_ID,
+                        AppOpsManager.MODE_ALLOWED
+                    )
+            }
+
+            job?.cancel()
+            job = serviceScope.launch {
+                delay(100) // 防抖
+                val packageInfo = packageManager.getPackageInfo(packageName, 0)
+                val name = packageInfo?.applicationInfo?.loadLabel(packageManager)?.toString().takeUnless { it.isNullOrBlank() } ?: "Unknown"
+                // 获取图标 Drawable
+                // Android 的 Bitmap 类实现了 Parcelable，并且针对 Binder 传输做了特殊优化（会将大图片数据放在 Ashmem 匿名共享内存中，而不是 Binder 缓冲区，只传递文件描述符）
+                val bitmap = getIconBitmap(packageInfo?.applicationInfo?.loadIcon(packageManager))
+
+                logD(TAG) { "OnOpNotedListener packageName=${packageName} name=$name bitmap=${bitmap?.width} x ${bitmap?.height}" }
+                insert(packageName, name, bitmap)
+            }
+        }
+
         // 监听剪贴板事件
         Refine.unsafeCast<AppOpsManagerHidden>(appOpsManager).startWatchingNoted(intArrayOf(30), opNotedListener)
     }
@@ -112,62 +117,92 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         callFlow.update { shizukuCallback }
     }
 
-    private suspend fun insert(packageName: String, appName: String, bitmap: Bitmap?) {
+    private fun removeListener() {
+        opNotedListener?.let { listener ->
+            runCatching {
+                Refine.unsafeCast<AppOpsManagerHidden>(appOpsManager).stopWatchingNoted(listener)
+            }.getOrElse {
+                logE(TAG, it) { "停止监听剪贴板事件失败" }
+            }
+        }
+        opNotedListener = null
+    }
 
+    private suspend fun insert(packageName: String, appName: String, bitmap: Bitmap?) {
         // 1) fast path: 先试一次
         val cb = callFlow.value
         if (cb != null) {
             try {
-                logD(TAG) { "insert : 尝试第一次发送剪贴板信息" }
                 cb.onOpNoted(packageName, appName, bitmap)
-                logD(TAG) { "insert : 尝试第一次发送剪贴板信息 成功" }
+                logD(TAG) { "第一次发送剪贴板信息 成功" }
                 return
             } catch (e: android.os.DeadObjectException) {
-                logE(TAG) { "insert : 第一次发送失败 DeadObjectException" }
-                callFlow.update { current ->
-                    if (current === cb) null else current
-                }
+                callFlow.update { current -> if (current === cb) null else current }
+                logE(TAG) { "第一次发送失败 DeadObjectException" }
             } catch (e: android.os.RemoteException) {
-                logE(TAG) { "insert : 第一次发送失败 RemoteException" }
-                callFlow.update { current ->
-                    if (current === cb) null else current
+                callFlow.update { current -> if (current === cb) null else current }
+                logE(TAG) { "第一次发送失败 RemoteException" }
+            } catch (tr: Throwable) {
+                logE(TAG, tr) { "第一次发送失败" }
+            }
+        }
+
+        // 2) 发送失败，可能是 callback 进程被系统杀死了，尝试启动前台服务唤醒它（部分 Android 12+ 设备可能对 start-foreground-service 有额外限制，但对 startservice 没有）
+        val okCmd = startForegroundService()
+        logI(TAG) { "callBack已经失活，尝试启动前台服务 okCmd=${okCmd}" }
+        if (okCmd) {
+            // 3) 等待 callback 重连（务必加超时，防止永久挂起）
+            val rebound = withTimeoutOrNull(5_000) {
+                callFlow.filterNotNull().first()
+            }
+
+            logD(TAG) { "等待前台服务重连，结果 rebound=${rebound != null}" }
+            if (rebound != null) {
+                currentCoroutineContext().ensureActive()
+                // 4) 再投递一次
+                try {
+                    rebound.onOpNoted(packageName, appName, bitmap)
+                    logD(TAG) { "第二次发送剪贴板信息 成功" }
+                    return
+                } catch (e: android.os.DeadObjectException) {
+                    callFlow.update { current -> if (current === rebound) null else current }
+                    logE(TAG, e) { "重连后回调仍断开" }
+                } catch (e: android.os.RemoteException) {
+                    callFlow.update { current -> if (current === rebound) null else current }
+                    logE(TAG, e) { "重连后回调失败" }
+                } catch (tr: Throwable) {
+                    logE(TAG, tr) { "重连后回调失败" }
                 }
             }
         }
 
-        logI(TAG) { "callBack已经失活，需要去启动ClipboardService" }
+        logE(TAG) { "前台服务启动失败或者启动超时，启动普通服务" }
+        // 5) 兼容方案：启动普通服务（部分 Android 12+ 设备可能对 start-foreground-service 有额外限制，但对 startservice 没有）
+        val okCompat = startService()
+        logI(TAG) { "启动普通服务 okCompat=${okCompat}" }
 
-        // 2) 拉起 app/service
-        startClipboardServiceCompat()
-
-        // 3) 等待 callback 重连（务必加超时，防止永久挂起）
         val rebound = withTimeoutOrNull(5_000) {
             callFlow.filterNotNull().first()
-        } ?: run {
-            logE(TAG) { "等待 ShizukuCallback 超时" }
-            return
         }
 
-        currentCoroutineContext().ensureActive()
-        // 4) 再投递一次
-        try {
-            logV(TAG) { "准备调用回调函数通知剪贴板事件" }
-            rebound.onOpNoted(packageName, appName, bitmap)
-            logV(TAG) { "调用回调函数通知剪贴板事件完成---->" }
-        } catch (e: android.os.DeadObjectException) {
-            callFlow.update { current ->
-                if (current === rebound) null else current
+        logD(TAG) { "等待普通服务重连，结果 rebound=${rebound != null}" }
+        if (rebound != null) {
+            currentCoroutineContext().ensureActive()
+            try {
+                rebound.onOpNoted(packageName, appName, bitmap)
+                logD(TAG) { "第三次发送剪贴板信息 成功" }
+            } catch (e: android.os.DeadObjectException) {
+                callFlow.update { current -> if (current === rebound) null else current }
+                logE(TAG, e) { "兼容方案重连后回调仍断开" }
+            } catch (e: android.os.RemoteException) {
+                callFlow.update { current -> if (current === rebound) null else current }
+                logE(TAG, e) { "兼容方案重连后回调失败" }
             }
-            logE(TAG, e) { "重连后回调仍断开" }
-        } catch (e: android.os.RemoteException) {
-            callFlow.update { current ->
-                if (current === rebound) null else current
-            }
-            logE(TAG, e) { "重连后回调失败" }
         }
     }
 
-    private fun startClipboardServiceCompat(){
+    /** 启动前台服务 */
+    private fun startForegroundService(): Boolean {
         val process = ProcessBuilder(
             "am",
             "start-foreground-service",
@@ -179,29 +214,25 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         val output = process.inputStream.bufferedReader().use { it.readText() }
         logD(TAG) { "start-foreground-service  exit=$exitCode  output=$output" }
 
-        val okCmd = (exitCode == 0) && !output.contains("Error:", ignoreCase = true)
-        if (!okCmd) {
-            logE(TAG) { "尝试使用 start-foreground-service 兼容方案失败，准备使用 startservice 兼容方案" }
-            // 命令执行失败，可能是 Android 12+ 的限制导致的，尝试使用 startservice 作为兼容方案
-            val process = ProcessBuilder(
-                "am",
-                "startservice",
-                "--user", "0",
-                "-n", "${BuildConfig.APPLICATION_ID}/.service.ClipboardService"
-            ).redirectErrorStream(true).start()
-
-            val exitCode = process.waitFor()
-            val output = process.inputStream.bufferedReader().use { it.readText() }
-            logD(TAG) { "startservice  exit=$exitCode  output=$output" }
-
-            val okStartServiceCmd = (exitCode == 0) && !output.contains("Error:", ignoreCase = true)
-            if (!okStartServiceCmd) {
-                logE(TAG) { "尝试使用 startservice 兼容方案失败，无法启动 ClipboardService，剪贴板事件将无法正常通知到前台服务" }
-                return
-            }
-        }
+        return (exitCode == 0) && !output.contains("Error:", ignoreCase = true)
     }
 
+    /** 启动普通服务 */
+    private fun startService(): Boolean {
+        // 命令执行失败，可能是 Android 12+ 的限制导致的，尝试使用 startservice 作为兼容方案
+        val process = ProcessBuilder(
+            "am",
+            "startservice",
+            "--user", "0",
+            "-n", "${BuildConfig.APPLICATION_ID}/.service.ClipboardService"
+        ).redirectErrorStream(true).start()
+
+        val exitCode = process.waitFor()
+        val output = process.inputStream.bufferedReader().use { it.readText() }
+        logD(TAG) { "startservice  exit=$exitCode  output=$output" }
+
+        return (exitCode == 0) && !output.contains("Error:", ignoreCase = true)
+    }
 
     // 辅助方法：将 Drawable 转为 Bitmap，并限制最大尺寸为 72x72
     private fun getIconBitmap(drawable: Drawable?): Bitmap? = runCatching {

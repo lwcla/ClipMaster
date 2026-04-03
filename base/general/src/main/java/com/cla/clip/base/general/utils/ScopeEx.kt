@@ -9,7 +9,6 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.MutableStateFlow
 import javax.inject.Singleton
 
 annotation class ApplicationScope
@@ -29,5 +28,3 @@ object ScopeModule {
         return CoroutineScope(SupervisorJob() + Dispatchers.Default + exceptionHandler)
     }
 }
-
-val clipDataFlow = MutableStateFlow<Triple<String, String?, ByteArray?>?>(null)
