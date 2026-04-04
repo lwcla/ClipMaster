@@ -146,11 +146,11 @@ private fun ClipList(
             // 设置两列 (也可以用 StaggeredGridCells.Adaptive(150.dp) 做自适应)
             columns = StaggeredGridCells.Fixed(2),
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
+            contentPadding = PaddingValues(10.dp),
             // 列与列之间的间距
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             // 上下 Item 之间的间距
-            verticalItemSpacing = 16.dp
+            verticalItemSpacing = 10.dp
         ) {
 
             if (pagedClips.itemCount > 0) {
@@ -252,7 +252,7 @@ private fun ClipCard(
                         modifier = Modifier
                             .fillMaxWidth(0.25f) // 只占据卡片宽度的三分之一，避免过度覆盖内容
                             .align(Alignment.TopEnd)
-                            .alpha(0.5f), // 关键：对齐到右上角
+                            .alpha(0.6f), // 关键：对齐到右上角
                         tint = appColor
                     )
                 }

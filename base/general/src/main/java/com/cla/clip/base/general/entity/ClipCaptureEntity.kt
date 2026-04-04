@@ -8,6 +8,7 @@ package com.cla.clip.base.general.entity
  * @param sourcePackage 来源应用的包名。
  * @param sourceAppName 来源应用的名称。
  * @param sourceAppIconPath 来源应用图标的路径（可选）。
+ * @param sourceAppIconHash 来源影音图标的hash
  * @param sourcePrimaryColor 来源应用的主色调（可选）。
  */
 data class ClipCaptureEntity(
@@ -17,7 +18,9 @@ data class ClipCaptureEntity(
     val sourcePackage: String,
     val sourceAppName: String,
     val sourceAppIconPath: String?,
+    val sourceAppIconHash: String?,
     val sourcePrimaryColor: Int?,
+    val link: String?,
     val linkTitle: String?,
     val linkDescription: String?,
     val linkImageUrl: String?,

@@ -2,9 +2,6 @@ package com.cla.clip.base.general.dao
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
-import com.cla.clip.base.general.dao.data.ClipData
-import com.cla.clip.base.general.dao.data.ClipFts
-import com.cla.clip.base.general.dao.data.SourceApp
 
 /**
  * 应用的Room数据库主类。
@@ -18,7 +15,8 @@ import com.cla.clip.base.general.dao.data.SourceApp
     entities = [
         ClipData::class,
         ClipFts::class,
-        SourceApp::class
+        SourceAppData::class,
+        LinkPreviewData::class
     ],
     version = 1, // 当前是初始版本 1
     exportSchema = true, // 必须设为true以支持自动迁移
@@ -46,4 +44,11 @@ abstract class AppDatabase : RoomDatabase() {
      * @return SourceAppDao的实例。
      */
     abstract fun sourceAppDao(): SourceAppDao
+
+    /**
+     * 提供对LinkPreviewDao的抽象访问方法。
+     * Room会自动为我们生成这个方法的具体实现。
+     * @return LinkPreviewDao的实例。
+     */
+    abstract fun linkPreviewDao(): LinkPreviewDao
 }

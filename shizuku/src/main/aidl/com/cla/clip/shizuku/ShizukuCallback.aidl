@@ -4,5 +4,5 @@ package com.cla.clip.shizuku;
 import android.graphics.Bitmap;
 
 interface ShizukuCallback {
-    void onOpNoted(String packageName,String appName,in Bitmap appIcon);
+    void onOpNoted(String packageName,String appName,in Bitmap appIcon,String appIconHash);
 }

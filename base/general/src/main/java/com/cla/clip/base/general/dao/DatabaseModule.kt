@@ -59,4 +59,17 @@ object DatabaseModule {
     fun provideSourceAppDao(appDatabase: AppDatabase): SourceAppDao {
         return appDatabase.sourceAppDao()
     }
+
+    /**
+     * 提供LinkPreviewDao的单例。
+     * Hilt会自动解决它的依赖——AppDatabase。
+     *
+     * @param appDatabase 由上面的provideAppDatabase方法提供的数据库实例。
+     * @return LinkPreviewDao的唯一实例。
+     */
+    @Provides
+    @Singleton
+    fun provideLinkPreviewDao(appDatabase: AppDatabase): LinkPreviewDao {
+        return appDatabase.linkPreviewDao()
+    }
 }

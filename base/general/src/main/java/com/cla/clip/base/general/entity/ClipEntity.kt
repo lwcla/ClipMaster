@@ -4,7 +4,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.core.graphics.blue
 import androidx.core.graphics.green
 import androidx.core.graphics.red
-import com.cla.clip.base.general.dao.data.ClipWithSourceApp
+import com.cla.clip.base.general.dao.data.ClipDetail
 import com.cla.clip.base.general.utils.toRelativeTimeSpanString
 
 data class ClipEntity(
@@ -22,9 +22,10 @@ data class ClipEntity(
     val isPinned: Boolean
 )
 
-fun ClipWithSourceApp.toUi(): ClipEntity {
+fun ClipDetail.toUi(): ClipEntity {
     // 1. 处理空安全
     val app = this.sourceApp
+    val link = this.linkPreview
     val clip = this.clip
 
     // 2. 颜色转换逻辑 (例如处理默认色)
@@ -47,10 +48,10 @@ fun ClipWithSourceApp.toUi(): ClipEntity {
         appIconPath = app?.iconPath,
         appColor = app?.primaryColor?.let { Color(it.red, it.green, it.blue) },
         borderColor = color,
-        hasLinkPreview = !clip.linkTitle.isNullOrEmpty(),
-        linkTitle = clip.linkTitle,
+        hasLinkPreview = link?.link.isNullOrBlank().not(),
+        linkTitle = link?.title,
         isPinned = clip.pinnedTime != 0L
     )
 }
 
-fun List<ClipWithSourceApp>.toUi() = this.map { it.toUi() }
+fun List<ClipDetail>.toUi() = this.map { it.toUi() }

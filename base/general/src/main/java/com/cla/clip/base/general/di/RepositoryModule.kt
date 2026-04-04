@@ -1,7 +1,7 @@
 package com.cla.clip.base.general.di
 
-import com.cla.clip.base.general.repository.ClipRepository
-import com.cla.clip.base.general.repository.ClipRepositoryImpl
+import com.cla.clip.base.general.repository.ClipDao
+import com.cla.clip.base.general.repository.ClipDaoImpl
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -23,5 +23,5 @@ abstract class RepositoryModule {
      */
     @Binds
     @Singleton
-    abstract fun bindClipRepository(clipRepositoryImpl: ClipRepositoryImpl): ClipRepository
+    abstract fun bindClipRepository(clipDaoImpl: ClipDaoImpl): ClipDao
 }

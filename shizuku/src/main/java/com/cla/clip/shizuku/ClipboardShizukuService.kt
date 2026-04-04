@@ -4,16 +4,14 @@ import android.app.AppOpsManager
 import android.app.AppOpsManagerHidden
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.drawable.BitmapDrawable
-import android.graphics.drawable.Drawable
 import android.os.Build
-import androidx.core.graphics.createBitmap
 import com.cla.clip.base.general.hasOverlayPermission
 import com.cla.clip.base.general.logD
 import com.cla.clip.base.general.logE
 import com.cla.clip.base.general.logI
 import com.cla.clip.base.general.utils.exceptionHandler
+import com.cla.clip.base.general.utils.iconBitmap
+import com.cla.clip.base.general.utils.toStableHash
 import dev.rikka.tools.refine.Refine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -112,10 +110,12 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
             val name = packageInfo?.applicationInfo?.loadLabel(packageManager)?.toString().takeUnless { it.isNullOrBlank() } ?: "Unknown"
             // 获取图标 Drawable
             // Android 的 Bitmap 类实现了 Parcelable，并且针对 Binder 传输做了特殊优化（会将大图片数据放在 Ashmem 匿名共享内存中，而不是 Binder 缓冲区，只传递文件描述符）
-            val bitmap = getIconBitmap(packageInfo?.applicationInfo?.loadIcon(packageManager))
 
-            logD(TAG) { "OnOpNotedListener packageName=${packageName} name=$name bitmap=${bitmap?.width} x ${bitmap?.height}" }
-            insert(packageName, name, bitmap)
+            val bitmap = packageInfo?.applicationInfo?.loadIcon(packageManager).iconBitmap()
+            val iconHash = bitmap?.toStableHash()
+
+            logD(TAG) { "OnOpNotedListener packageName=${packageName} name=$name bitmap=${bitmap?.width} x ${bitmap?.height} iconHash=$iconHash" }
+            insert(packageName, name, bitmap, iconHash)
         }
     }
 
@@ -130,12 +130,12 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         opNotedListener = null
     }
 
-    private suspend fun insert(packageName: String?, appName: String, bitmap: Bitmap?) {
+    private suspend fun insert(packageName: String?, appName: String, bitmap: Bitmap?, iconHash: String?) {
         // 1) fast path: 先试一次
         val cb = callFlow.value
         if (cb != null) {
             try {
-                cb.onOpNoted(packageName, appName, bitmap)
+                cb.onOpNoted(packageName, appName, bitmap, iconHash)
                 logD(TAG) { "第一次发送剪贴板信息 成功" }
                 return
             } catch (e: android.os.DeadObjectException) {
@@ -163,7 +163,7 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
                 currentCoroutineContext().ensureActive()
                 // 4) 再投递一次
                 try {
-                    rebound.onOpNoted(packageName, appName, bitmap)
+                    rebound.onOpNoted(packageName, appName, bitmap, iconHash)
                     logD(TAG) { "第二次发送剪贴板信息 成功" }
                     return
                 } catch (e: android.os.DeadObjectException) {
@@ -191,7 +191,7 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         if (rebound != null) {
             currentCoroutineContext().ensureActive()
             try {
-                rebound.onOpNoted(packageName, appName, bitmap)
+                rebound.onOpNoted(packageName, appName, bitmap, iconHash)
                 logD(TAG) { "第三次发送剪贴板信息 成功" }
             } catch (e: android.os.DeadObjectException) {
                 callFlow.update { current -> if (current === rebound) null else current }
@@ -236,25 +236,4 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         return (exitCode == 0) && !output.contains("Error:", ignoreCase = true)
     }
 
-    // 辅助方法：将 Drawable 转为 Bitmap，并限制最大尺寸为 72x72
-    private fun getIconBitmap(drawable: Drawable?): Bitmap? = runCatching {
-        drawable ?: return null
-
-        val size = 72
-
-        val width = if (drawable.intrinsicWidth > size) size else drawable.intrinsicWidth
-        val height = if (drawable.intrinsicHeight > size) size else drawable.intrinsicHeight
-
-        // 如果本身就是合适大小的 BitmapDrawable，直接复用
-        if (drawable is BitmapDrawable && drawable.bitmap.width <= size && drawable.bitmap.height <= size) {
-            return drawable.bitmap
-        }
-
-        // 否则绘制一个新的 Bitmap
-        val bitmap = createBitmap(width, height)
-        val canvas = Canvas(bitmap)
-        drawable.setBounds(0, 0, canvas.width, canvas.height)
-        drawable.draw(canvas)
-        return bitmap
-    }.getOrNull()
 }

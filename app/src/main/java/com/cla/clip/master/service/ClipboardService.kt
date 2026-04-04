@@ -18,16 +18,19 @@ import android.view.View
 import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.FileProvider
-import androidx.palette.graphics.Palette
 import com.cla.clip.base.general.entity.ClipCaptureEntity
 import com.cla.clip.base.general.hasOverlayPermission
 import com.cla.clip.base.general.logD
 import com.cla.clip.base.general.logE
 import com.cla.clip.base.general.logI
-import com.cla.clip.base.general.repository.ClipRepository
+import com.cla.clip.base.general.repository.ClipDao
 import com.cla.clip.base.general.utils.ApplicationScope
+import com.cla.clip.base.general.utils.LinkUtils
+import com.cla.clip.base.general.utils.extractUsableColor
 import com.cla.clip.master.BuildConfig
 import com.cla.clip.master.MainActivity
+import com.cla.clip.master.utils.LinkMeta
+import com.cla.clip.master.utils.LinkMetaParser
 import com.cla.clip.shizuku.ClipboardShizukuService
 import com.cla.clip.shizuku.IClipboardShizukuService
 import com.cla.clip.shizuku.ShizukuCallback
@@ -61,12 +64,6 @@ class ClipboardService : Service() {
 
         private const val APP_ICONS_DIR = "app_icons"
 
-        /** URL正则表达式，用于检测内容是否为链接 */
-        private val URL_PATTERN = Regex(
-            "^(https?|ftp|file)://[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[-a-zA-Z0-9+&@#/%=~_|]",
-            RegexOption.IGNORE_CASE
-        )
-
         fun start(
             context: Context,
         ) {
@@ -82,7 +79,7 @@ class ClipboardService : Service() {
     }
 
     @Inject
-    lateinit var clipRepository: ClipRepository
+    lateinit var clipDao: ClipDao
 
     @Inject
     @ApplicationScope
@@ -112,7 +109,7 @@ class ClipboardService : Service() {
                 shizukuService = IClipboardShizukuService.Stub.asInterface(binder).also { service ->
                     service.start()
                     service.setCallback(object : ShizukuCallback.Stub() {
-                        override fun onOpNoted(packageName: String?, appName: String?, appIcon: Bitmap?) {
+                        override fun onOpNoted(packageName: String?, appName: String?, appIcon: Bitmap?, iconHash: String?) {
                             if (packageName == BuildConfig.APPLICATION_ID) {
                                 // 自己复制的内容，不处理
                                 return
@@ -127,14 +124,16 @@ class ClipboardService : Service() {
                             """.trimIndent()
                             }
 
-                            scope.launch(Dispatchers.IO) {
-                                magic(packageName, appName, appIcon)
+                            scope.launch(Dispatchers.Main) {
+                                magic(packageName, appName, appIcon, iconHash)
                             }
                         }
                     })
                 }
             } else {
-                shizukuService?.setCallback(null)
+                runCatching { shizukuService?.setCallback(null) }.getOrElse {
+                    logE(TAG, it) { "callback 置空出错 1" }
+                }
             }
 
             startForeground()
@@ -142,7 +141,9 @@ class ClipboardService : Service() {
 
         override fun onServiceDisconnected(name: ComponentName?) {
             logE(TAG) { "userServiceConnection: 断开连接" }
-            runCatching { shizukuService?.setCallback(null) }
+            runCatching { shizukuService?.setCallback(null) }.getOrElse {
+                logE(TAG, it) { "callback 置空出错 2" }
+            }
             startForeground()
         }
     }
@@ -184,19 +185,20 @@ class ClipboardService : Service() {
 
     override fun onDestroy() {
         logI(TAG) { "onDestroy : " }
-        runCatching { shizukuService?.setCallback(null) }
-        Shizuku.removeBinderReceivedListener(binderReceivedListener)
-        Shizuku.removeBinderDeadListener(binderDeadListener)
-        runCatching {
-            Shizuku.unbindUserService(userServiceArgs, userServiceConnection, false)
-        }.getOrElse {
-            logE(TAG, it) { "unbindUserService 失败" }
-        }
+        removeListener()
         super.onDestroy()
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        runCatching { shizukuService?.setCallback(null) }
+        logI(TAG) { "onTaskRemoved: " }
+        removeListener()
+        super.onTaskRemoved(rootIntent)
+    }
+
+    private fun removeListener() {
+        runCatching { shizukuService?.setCallback(null) }.getOrElse {
+            logE(TAG, it) { "callback 置空出错 3" }
+        }
         Shizuku.removeBinderReceivedListener(binderReceivedListener)
         Shizuku.removeBinderDeadListener(binderDeadListener)
         runCatching {
@@ -204,15 +206,14 @@ class ClipboardService : Service() {
         }.getOrElse {
             logE(TAG, it) { "unbindUserService 失败" }
         }
-        super.onTaskRemoved(rootIntent)
-        logI(TAG) { "onTaskRemoved: " }
     }
 
-    override fun onBind(intent: Intent): IBinder? {
-        return null
-    }
-
-    private suspend fun magic(packageName: String?, appName: String?, appIcon: Bitmap?) = withContext(Dispatchers.Main) {
+    private suspend fun magic(
+        packageName: String?,
+        appName: String?,
+        appIcon: Bitmap?,
+        iconHash: String?
+    ) = withContext(Dispatchers.Main.immediate) {
         // 检查当前有没有悬浮窗权限
         if (!appContext.hasOverlayPermission()) {
             return@withContext
@@ -235,63 +236,36 @@ class ClipboardService : Service() {
 
         if (clip != null) {
             withContext(Dispatchers.IO) {
-                processClip(clip, packageName, appName, appIcon)
+                processClip(clip, packageName, appName, appIcon, iconHash)
             }
         }
     }
 
-    /**
-     * 处理新的剪贴板内容
-     */
+    /** 处理新的剪贴板内容 */
     private suspend fun processClip(
         item: android.content.ClipData.Item,
         packageName: String?,
         appName: String?,
-        appIcon: Bitmap?
+        appIcon: Bitmap?,
+        iconHash: String?
     ) {
         try {
             // 保存剪贴板内容
             val contentUri = item.uri
             val contentText = item.text?.toString()
 
-            // 确定内容类型和实际内容
-//            val clipType: ClipType
             val clipContent = when {
                 // 处理图片类型
                 contentUri != null && contentUri.toString().startsWith("content://") -> {
-                    //                    clipType = ClipType.IMAGE
                     saveImageAndGetPath(contentUri)
                 }
-                // 处理链接类型
-                contentText != null && URL_PATTERN.matches(contentText) -> {
-                    //                    clipType = ClipType.LINK
-                    contentText
-                }
-                // 处理文本类型
-                contentText != null -> {
-                    //                    clipType = ClipType.TEXT
-                    contentText
-                }
-                // 未知类型，忽略
-                else -> null
+
+                else -> contentText
             }?.trim()
 
             if (clipContent.isNullOrBlank()) {
                 return
             }
-
-            val lastClip = clipRepository.getLatestClip()
-            if (lastClip != null && lastClip.content == clipContent) {
-                // 内容未变化，不处理
-                logD(TAG) { "processClip: 内容跟上条数据一样，不要重复保存" }
-                return
-            }
-
-            // 对于链接类型，启动链接解析任务
-//            if (clipType == ClipType.LINK) {
-//                // TODO: 实现链接解析逻辑
-//                // LinkParserWorker.enqueue(this@ClipboardService, clipContent, newClip.id)
-//            }
 
             // 对于图片类型，启动OCR任务
 //            if (clipType == ClipType.IMAGE) {
@@ -299,12 +273,32 @@ class ClipboardService : Service() {
 //                // OcrProcessingWorker.enqueue(this@ClipboardService, clipContent, newClip.id)
 //            }
 
-            val color = if (appIcon != null) {
-                // 提取图标的主色调作为标签颜色
-                runCatching {
-                    val palette = Palette.from(appIcon).generate()
-                    palette.getDominantColor(0xFF000000.toInt()) // 默认黑色
-                }.getOrNull()
+            val sourceAppData = packageName?.let { clipDao.loadSourceAppByPackageName(it) }
+            val appColor: Int?
+            val appIconPath: String?
+
+            if (sourceAppData?.iconHash == iconHash) {
+                logD(TAG) { "processClip 使用数据库中的应用数据" }
+                appColor = sourceAppData?.primaryColor
+                appIconPath = sourceAppData?.iconPath
+            } else {
+                logD(TAG) { "processClip 去提取应用图标的颜色和保存图标到本地" }
+                // 提取图标里的颜色后续用来做边框的颜色
+                appColor = appIcon?.extractUsableColor()
+                appIconPath = saveAppIcon(packageName, appIcon)
+            }
+
+            val extractedLink = LinkUtils.extractFirstPreviewableUrl(contentText)
+            val linkMeta = if (!extractedLink.isNullOrBlank()) {
+                val history = clipDao.loadLinkPreviewByLink(extractedLink)
+                if (!history?.imageUrl.isNullOrBlank()) {
+                    logD(TAG) { "processClip 使用数据库中的链接数据 extractedLink=$extractedLink" }
+                    // 避免重复解析链接
+                    LinkMeta(history.title, history.description, history.imageUrl, history.siteName)
+                } else {
+                    logD(TAG) { "processClip 去解析链接 extractedLink=$extractedLink" }
+                    LinkMetaParser.parse(extractedLink)
+                }
             } else {
                 null
             }
@@ -314,18 +308,20 @@ class ClipboardService : Service() {
                 timestamp = System.currentTimeMillis(),
                 sourcePackage = packageName ?: "",
                 sourceAppName = appName ?: "unknown",
-                sourceAppIconPath = saveAppIcon(packageName, appIcon),
-                sourcePrimaryColor = color,
-                linkTitle = null,
-                linkDescription = null,
-                linkImageUrl = null,
-                linkSiteName = null,
+                sourceAppIconPath = appIconPath,
+                sourcePrimaryColor = appColor,
+                sourceAppIconHash = iconHash,
+                link = extractedLink,
+                linkTitle = linkMeta?.title,
+                linkDescription = linkMeta?.description,
+                linkImageUrl = linkMeta?.imageUrl,
+                linkSiteName = linkMeta?.siteName,
             )
 
-            logI(TAG) { "processClip: captureEntity=$captureEntity" }
+            logI(TAG) { "processClip: isLink=${!extractedLink.isNullOrBlank()} captureEntity=$captureEntity" }
 
             // 保存到数据库
-            clipRepository.addNewClip(captureEntity)
+            clipDao.addNewClip(captureEntity)
 
             withContext(Dispatchers.Main) {
                 notifyClipUpdated(
@@ -402,17 +398,6 @@ class ClipboardService : Service() {
     }
 
     private fun startForeground() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val serviceChannel = NotificationChannel(
-                STATUS_CHANNEL_ID,
-                appContext.getString(com.cla.clip.base.general.R.string.base_general_clipboard_service),
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = appContext.getString(com.cla.clip.base.general.R.string.base_general_listen_for_changes_in_the_clipboard_content)
-            }
-            manager.createNotificationChannel(serviceChannel)
-        }
-
         val status = ShizukuUtils.checkStatus(appContext)
         logD(TAG) { "ensureForeground: Shizuku状态：$status" }
         val statusText = when (status) {
@@ -512,4 +497,14 @@ class ClipboardService : Service() {
         manager.createNotificationChannel(statusChannel)
         manager.createNotificationChannel(clipChannel)
     }
+
+    override fun onBind(intent: Intent): IBinder? {
+        return null
+    }
+
+    data class NoteEntity(
+        val packageName: String?,
+        val appName: String?,
+        val appIcon: Bitmap?
+    )
 }

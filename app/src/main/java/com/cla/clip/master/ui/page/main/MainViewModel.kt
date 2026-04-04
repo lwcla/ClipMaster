@@ -10,7 +10,7 @@ import androidx.paging.cachedIn
 import androidx.paging.map
 import com.cla.clip.base.general.entity.ClipEntity
 import com.cla.clip.base.general.entity.toUi
-import com.cla.clip.base.general.repository.ClipRepository
+import com.cla.clip.base.general.repository.ClipDao
 import com.cla.clip.master.BaseViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -30,7 +30,7 @@ import javax.inject.Inject
 @HiltViewModel
 class MainViewModel @Inject constructor(
     @param:ApplicationContext private val context: Context,
-    private val repository: ClipRepository,
+    private val repository: ClipDao,
 ) : BaseViewModel() {
 
     private val clipboardManager by lazy { context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager }
