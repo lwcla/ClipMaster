@@ -83,7 +83,7 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
             )
 
         // DO NOT convert it to lambda due to R8 will break it down
-        opNotedListener = ClipboardOpNotedListener(this)
+        opNotedListener = ClipboardListener(this)
 
         // 监听剪贴板事件
         Refine.unsafeCast<AppOpsManagerHidden>(appOpsManager).startWatchingNoted(intArrayOf(30), opNotedListener)

@@ -4,7 +4,7 @@ import android.app.AppOpsManagerHidden
 import androidx.annotation.Keep
 
 @Keep
-class ClipboardOpNotedListener(
+class ClipboardListener(
     private val owner: ClipboardShizukuService
 ) : AppOpsManagerHidden.OnOpNotedListener {
 
