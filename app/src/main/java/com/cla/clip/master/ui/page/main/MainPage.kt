@@ -26,7 +26,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
@@ -67,7 +66,7 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
 import coil3.compose.AsyncImage
-import com.cla.clip.base.general.entity.ClipEntity
+import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.logD
 import com.cla.clip.master.R
 import com.cla.clip.master.ui.widget.rememberFormattedTime
@@ -83,7 +82,6 @@ import kotlin.math.max
 fun MainPage(
     viewModel: MainViewModel = hiltViewModel()
 ) {
-
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val pagedClips = remember(viewModel.pagedClips, lifecycle) {
         viewModel.pagedClips.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
@@ -91,13 +89,12 @@ fun MainPage(
 
     // --- BottomSheet 状态管理 ---
     // 保存当前长按选中的 Clip，如果为 null 则不显示 Sheet
-    var selectedClipForSheet by remember { mutableStateOf<ClipEntity?>(null) }
+    var selectedClipForSheet by remember { mutableStateOf<ClipShowEntity?>(null) }
     val sheetState = rememberModalBottomSheetState()
 
     logD("MainPage", { "MainPage: pagedClips itemCount = ${pagedClips.itemCount}, loadState = ${pagedClips.loadState}" })
 
     Box(modifier = Modifier.fillMaxWidth()) {
-
         ClipList(
             viewModel = viewModel,
             pagedClips = pagedClips,
@@ -107,7 +104,7 @@ fun MainPage(
             }
         )
 
-        // --- Bottom Sheet UI ---
+        // 底部弹出窗口
         val clip = selectedClipForSheet
         if (clip != null) {
             ModalBottomSheet(
@@ -135,10 +132,9 @@ fun MainPage(
 @Composable
 private fun ClipList(
     viewModel: MainViewModel,
-    pagedClips: LazyPagingItems<ClipEntity>,
-    onLongClick: (ClipEntity) -> Unit
+    pagedClips: LazyPagingItems<ClipShowEntity>,
+    onLongClick: (ClipShowEntity) -> Unit
 ) {
-
     if (pagedClips.loadState.refresh is LoadState.NotLoading && pagedClips.itemCount == 0) {
         EmptyScreen()
     } else {
@@ -152,7 +148,6 @@ private fun ClipList(
             // 上下 Item 之间的间距
             verticalItemSpacing = 10.dp
         ) {
-
             if (pagedClips.itemCount > 0) {
                 // 使用 items 扩展函数
                 items(
@@ -167,7 +162,8 @@ private fun ClipList(
                             clip = clip,
                             onPinToggle = { viewModel.updatePinStatus(it, !it.isPinned) },
                             onDelete = { viewModel.deleteClipGroup(it) },
-                            onClick = { viewModel.copyToClipboard(it) },
+                            onCopy = { viewModel.copyToClipboard(it) },
+                            onClick = {},
                             onLongClick = onLongClick
                         )
                     } else {
@@ -222,11 +218,12 @@ private fun ClipList(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ClipCard(
-    clip: ClipEntity,
-    onPinToggle: (ClipEntity) -> Unit,
-    onDelete: (ClipEntity) -> Unit,
-    onClick: (ClipEntity) -> Unit,
-    onLongClick: (ClipEntity) -> Unit,
+    clip: ClipShowEntity,
+    onPinToggle: (ClipShowEntity) -> Unit,
+    onDelete: (ClipShowEntity) -> Unit,
+    onCopy: (ClipShowEntity) -> Unit,
+    onClick: (ClipShowEntity) -> Unit,
+    onLongClick: (ClipShowEntity) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val appColor = clip.appColor ?: MaterialTheme.colorScheme.outlineVariant
@@ -271,100 +268,10 @@ private fun ClipCard(
                         // 3. 最后添加内边距：这样文字内容会有边距，但点击区域（水波纹）是铺满卡片的
                         .padding(start = 12.dp, end = 12.dp, top = 12.dp))
                 {
-                    Text(
-                        text = clip.content,
-                        style = MaterialTheme.typography.bodyLarge,
-                        maxLines = 6,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    ClipContent(clip)
 
                     Spacer(Modifier.height(8.dp))
-
-                    // 获取当前的密度信息
-                    val currentDensity = LocalDensity.current
-                    // 创建一个新的 Density，强制 fontScale 为 1f (不缩放)，不响应系统字体大小设置
-                    CompositionLocalProvider(LocalDensity provides Density(density = currentDensity.density, fontScale = 1f)) {
-                        // 使用自定义 Layout 来替代 Row
-                        Layout(
-                            content = {
-                                // -------------------------------------------------------------
-                                // [组件 0] 左侧部分: Icon + AppName
-                                // -------------------------------------------------------------
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    AsyncImage(
-                                        model = clip.appIconPath,
-                                        contentDescription = "App Icon",
-                                        placeholder = rememberVectorPainter(Icons.Filled.Image),
-                                        error = rememberVectorPainter(Icons.Filled.Image),
-                                        modifier = Modifier.size(15.dp),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = clip.appName,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-
-                                // -------------------------------------------------------------
-                                // [组件 1] 右侧部分: formattedTime
-                                // -------------------------------------------------------------
-                                Text(
-                                    text = clip.rememberFormattedTime(),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontSize = 11.sp,
-                                    textAlign = TextAlign.End,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) { measurables, constraints ->
-                            // 1. 先把两个组件提取出来
-                            val leftNode = measurables[0]
-                            val rightNode = measurables[1]
-
-                            // 2. 策略：优先测量右边的 Time，但限制它最大只能占 75% 的宽度
-                            // 这样保证左边至少有 25% 的空间展示 Icon
-                            val maxTimeWidth = (constraints.maxWidth * 0.5f).toInt()
-
-                            // 测量右边 (Time)
-                            val rightPlaceable = rightNode.measure(
-                                constraints.copy(
-                                    minWidth = 0,
-                                    maxWidth = maxTimeWidth
-                                )
-                            )
-
-                            // 3. 计算左边剩余的空间
-                            // 至少给左边留 gap (4.dp approx 10px) 的空间，这里简单处理直接用剩余宽度
-                            val remainingWidth = constraints.maxWidth - rightPlaceable.width - 8.dp.roundToPx()
-                            val leftMaxWidth = max(0, remainingWidth)
-
-                            // 测量左边 (Icon + Name)
-                            val leftPlaceable = leftNode.measure(
-                                constraints.copy(
-                                    minWidth = 0,
-                                    maxWidth = leftMaxWidth
-                                )
-                            )
-
-                            // 4. 计算高度 (取两者最高)
-                            val height = max(leftPlaceable.height, rightPlaceable.height)
-
-                            // 5. 布局放置
-                            layout(constraints.maxWidth, height) {
-                                // 左侧靠左放
-                                leftPlaceable.placeRelative(0, (height - leftPlaceable.height) / 2) // 垂直居中
-
-                                // 右侧靠右放
-                                rightPlaceable.placeRelative(constraints.maxWidth - rightPlaceable.width, (height - rightPlaceable.height) / 2) // 垂直居中
-                            }
-                        }
-                    }
+                    SourceAppNameWithTime(clip)
 
                     // 中间竖线分割（可选，为了美观）
                     Box(
@@ -374,59 +281,238 @@ private fun ClipCard(
                             .height(1.dp)
                             .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     )
-
-                    // 核心修改：使用 Row 将两个选项横向排列
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-
-                        // 左侧按钮：置顶/取消置顶
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable(onClick = { onPinToggle(clip) })
-                        ) {
-                            Icon(
-                                if (clip.isPinned) {
-                                    painterResource(R.drawable.host_icon_unpinned)
-                                } else {
-                                    painterResource(R.drawable.host_icon_to_pinned)
-                                },
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier
-                                    .align(Alignment.Center)
-                                    .size(38.dp)
-                                    .padding(top = 8.dp, bottom = 12.dp)
-
-                            )
-                        }
-
-                        // 中间竖线分割（可选，为了美观）
-                        Box(
-                            modifier = Modifier
-                                .width(1.dp)
-                                .height(18.dp)
-                                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                        )
-
-                        // 右侧按钮：删除
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable(onClick = { onDelete(clip) })
-                        ) {
-                            Icon(
-                                Icons.Outlined.Delete,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier
-                                    .align(Alignment.Center)
-                                    .size(38.dp)
-                                    .padding(top = 8.dp, bottom = 12.dp)
-                            )
-                        }
-                    }
+                    CardButtonContainer(clip, onPinToggle, onDelete, onCopy)
                 }
             }
+        }
+    }
+}
+
+/** 剪贴数据的内容显示 */
+@Composable
+private fun ClipContent(clip: ClipShowEntity, modifier: Modifier = Modifier) {
+    val imagUrl = clip.linkImgUrl
+    if (imagUrl.isNullOrBlank()) {
+        Text(
+            text = clip.content,
+            style = MaterialTheme.typography.bodyLarge,
+            maxLines = 7,
+            overflow = TextOverflow.Ellipsis
+        )
+    } else {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AsyncImage(
+                    model = imagUrl,
+                    contentDescription = "Link Preview Image",
+                    modifier = Modifier
+                        .size(55.dp)
+                        .clip(RoundedCornerShape(8.dp)),
+                    contentScale = ContentScale.Crop
+                )
+
+                val title = clip.linkTitle
+                if (title.isNullOrBlank().not()) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = clip.content,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 6,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+/** 剪贴数据来源app和写入剪贴板的时间 */
+@Composable
+private fun SourceAppNameWithTime(clip: ClipShowEntity, modifier: Modifier = Modifier) {
+// 获取当前的密度信息
+    val currentDensity = LocalDensity.current
+    // 创建一个新的 Density，强制 fontScale 为 1f (不缩放)，不响应系统字体大小设置
+    CompositionLocalProvider(LocalDensity provides Density(density = currentDensity.density, fontScale = 1f)) {
+        // 使用自定义 Layout 来替代 Row
+        Layout(
+            content = {
+                // -------------------------------------------------------------
+                // [组件 0] 左侧部分: Icon + AppName
+                // -------------------------------------------------------------
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AsyncImage(
+                        model = clip.appIconPath,
+                        contentDescription = "App Icon",
+                        placeholder = rememberVectorPainter(Icons.Filled.Image),
+                        error = rememberVectorPainter(Icons.Filled.Image),
+                        modifier = Modifier.size(15.dp),
+                        contentScale = ContentScale.Crop
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = clip.appName,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+
+                // -------------------------------------------------------------
+                // [组件 1] 右侧部分: formattedTime
+                // -------------------------------------------------------------
+                Text(
+                    text = clip.rememberFormattedTime(),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontSize = 11.sp,
+                    textAlign = TextAlign.End,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) { measurables, constraints ->
+            // 1. 先把两个组件提取出来
+            val leftNode = measurables[0]
+            val rightNode = measurables[1]
+
+            // 2. 策略：优先测量右边的 Time，但限制它最大只能占 75% 的宽度
+            // 这样保证左边至少有 25% 的空间展示 Icon
+            val maxTimeWidth = (constraints.maxWidth * 0.5f).toInt()
+
+            // 测量右边 (Time)
+            val rightPlaceable = rightNode.measure(
+                constraints.copy(
+                    minWidth = 0,
+                    maxWidth = maxTimeWidth
+                )
+            )
+
+            // 3. 计算左边剩余的空间
+            // 至少给左边留 gap (4.dp approx 10px) 的空间，这里简单处理直接用剩余宽度
+            val remainingWidth = constraints.maxWidth - rightPlaceable.width - 8.dp.roundToPx()
+            val leftMaxWidth = max(0, remainingWidth)
+
+            // 测量左边 (Icon + Name)
+            val leftPlaceable = leftNode.measure(
+                constraints.copy(
+                    minWidth = 0,
+                    maxWidth = leftMaxWidth
+                )
+            )
+
+            // 4. 计算高度 (取两者最高)
+            val height = max(leftPlaceable.height, rightPlaceable.height)
+
+            // 5. 布局放置
+            layout(constraints.maxWidth, height) {
+                // 左侧靠左放
+                leftPlaceable.placeRelative(0, (height - leftPlaceable.height) / 2) // 垂直居中
+
+                // 右侧靠右放
+                rightPlaceable.placeRelative(constraints.maxWidth - rightPlaceable.width, (height - rightPlaceable.height) / 2) // 垂直居中
+            }
+        }
+    }
+}
+
+/** 底部按钮 */
+@Composable
+private fun CardButtonContainer(
+    clip: ClipShowEntity,
+    onPinToggle: (ClipShowEntity) -> Unit,
+    onDelete: (ClipShowEntity) -> Unit,
+    onCopy: (ClipShowEntity) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    // 核心修改：使用 Row 将两个选项横向排列
+    Row(verticalAlignment = Alignment.CenterVertically) {
+
+        // 置顶/取消置顶
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .clickable(onClick = { onPinToggle(clip) })
+        ) {
+            Icon(
+                if (clip.isPinned) {
+                    painterResource(R.drawable.host_icon_unpinned)
+                } else {
+                    painterResource(R.drawable.host_icon_to_pinned)
+                },
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.tertiary,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(38.dp)
+                    .padding(top = 8.dp, bottom = 12.dp)
+
+            )
+        }
+
+        // 中间竖线分割（可选，为了美观）
+        Box(
+            modifier = Modifier
+                .width(1.dp)
+                .height(18.dp)
+                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        )
+
+        // 删除按钮
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .clickable(onClick = { onDelete(clip) })
+        ) {
+            Icon(
+                painterResource(R.drawable.host_icon_delete),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(38.dp)
+                    .padding(top = 8.dp, bottom = 12.dp)
+            )
+        }
+
+        // 中间竖线分割（可选，为了美观）
+        Box(
+            modifier = Modifier
+                .width(1.dp)
+                .height(18.dp)
+                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        )
+
+        // 复制
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .clickable(onClick = { onCopy(clip) })
+        ) {
+            Icon(
+                painterResource(R.drawable.host_icon_copy),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(38.dp)
+                    .padding(top = 8.dp, bottom = 12.dp)
+            )
         }
     }
 }
@@ -434,7 +520,7 @@ private fun ClipCard(
 @Preview(widthDp = 150, heightDp = 300)
 @Composable
 private fun ClipCardPreview() {
-    val clip = ClipEntity(
+    val clip = ClipShowEntity(
         id = 1L,
         content = "这是一个示例剪贴板内容，用于预览ClipCard组件的显示效果。用于预览ClipCard组件的显示效果。",
 //        formattedTime = DateUtils.getRelativeTimeSpanString(System.currentTimeMillis()).toString(), // 伪代码：转换为 "刚刚"
@@ -444,12 +530,13 @@ private fun ClipCardPreview() {
         appIconPath = "https://img2.baidu.com/it/u=3546907450,5411894&fm=253&fmt=auto&app=120&f=JPEG?w=500&h=500",
         appColor = MaterialTheme.colorScheme.error,
         borderColor = MaterialTheme.colorScheme.error.copy(alpha = 0.3f),
-        hasLinkPreview = false,
-        linkTitle = null,
-        isPinned = false
+        isPinned = false,
+        link = "https://www.wanandroid.com/",
+        linkImgUrl = "https://img0.baidu.com/it/u=2280054277,2128244139&fm=253&fmt=auto&app=138&f=JPEG?w=973&h=304",
+        linkTitle = "这是链接的标题这是链接的标题这是链接的标题"
     )
 
-    ClipCard(clip, onPinToggle = {}, onDelete = {}, onClick = {}, onLongClick = {})
+    ClipCard(clip, onPinToggle = {}, onDelete = {}, onCopy = {}, onClick = {}, onLongClick = {})
 }
 
 /**

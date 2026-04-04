@@ -5,7 +5,7 @@ import com.cla.clip.base.general.dao.LinkPreviewData
 import com.cla.clip.base.general.dao.SourceAppData
 import com.cla.clip.base.general.dao.data.ClipDetail
 import com.cla.clip.base.general.entity.ClipCaptureEntity
-import com.cla.clip.base.general.entity.ClipEntity
+import com.cla.clip.base.general.entity.ClipShowEntity
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -17,7 +17,7 @@ interface ClipDao {
     /**
      * 根据查询词搜索所有剪贴板条目（包括历史记录）。
      */
-    fun searchAllClips(userInput: String): Flow<List<ClipEntity>>
+    fun searchAllClips(userInput: String): Flow<List<ClipShowEntity>>
 
     /**
      * 新增一个全新的剪贴板条目。
@@ -29,7 +29,7 @@ interface ClipDao {
      *
      * @param clip
      */
-    suspend fun deleteClip(clip: ClipEntity)
+    suspend fun deleteClip(clip: ClipShowEntity)
 
     /** 更新置顶状态 */
     suspend fun updatePinStatus(clipId: Long, isPinned: Boolean)

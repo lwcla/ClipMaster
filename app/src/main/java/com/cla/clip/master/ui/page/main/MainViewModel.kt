@@ -8,7 +8,7 @@ import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.cachedIn
 import androidx.paging.map
-import com.cla.clip.base.general.entity.ClipEntity
+import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.entity.toUi
 import com.cla.clip.base.general.repository.ClipDao
 import com.cla.clip.master.BaseViewModel
@@ -51,7 +51,7 @@ class MainViewModel @Inject constructor(
      * 删除一个完整的剪贴板分组（包括其所有历史记录）。
      * @param clip 要删除的分组中的任何一个Clip条目。
      */
-    fun deleteClipGroup(clip: ClipEntity) {
+    fun deleteClipGroup(clip: ClipShowEntity) {
         viewModelScope.launch(Dispatchers.IO) {
             repository.deleteClip(clip)
         }
@@ -63,7 +63,7 @@ class MainViewModel @Inject constructor(
      * @param clip
      * @param isPinned 是否置顶
      */
-    fun updatePinStatus(clip: ClipEntity, isPinned: Boolean) {
+    fun updatePinStatus(clip: ClipShowEntity, isPinned: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
             repository.updatePinStatus(clip.id, isPinned)
         }
@@ -74,7 +74,7 @@ class MainViewModel @Inject constructor(
      *
      * @param clip
      */
-    fun copyToClipboard(clip: ClipEntity) {
+    fun copyToClipboard(clip: ClipShowEntity) {
         viewModelScope.launch(Dispatchers.IO) {
             repository.updateTimestamp(clip.id)
         }

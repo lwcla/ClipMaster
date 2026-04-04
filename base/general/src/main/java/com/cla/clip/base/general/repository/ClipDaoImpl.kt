@@ -9,7 +9,7 @@ import com.cla.clip.base.general.dao.SourceAppDao
 import com.cla.clip.base.general.dao.SourceAppData
 import com.cla.clip.base.general.dao.data.ClipDetail
 import com.cla.clip.base.general.entity.ClipCaptureEntity
-import com.cla.clip.base.general.entity.ClipEntity
+import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.entity.toUi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -30,7 +30,7 @@ class ClipDaoImpl @Inject constructor(
 
     // 使用 withContext(Dispatchers.IO) 确保所有数据库写操作都在IO线程上执行。
     // Flow 本身是异步的，Room会自动处理其线程，所以读操作不需要显式切换。
-    override fun searchAllClips(userInput: String): Flow<List<ClipEntity>> {
+    override fun searchAllClips(userInput: String): Flow<List<ClipShowEntity>> {
         val trimmed = userInput.trim()
 
         // FTS 查询：逐字分词，用于模糊匹配
@@ -116,7 +116,7 @@ class ClipDaoImpl @Inject constructor(
         }
     }
 
-    override suspend fun deleteClip(clip: ClipEntity) {
+    override suspend fun deleteClip(clip: ClipShowEntity) {
         clipDao.deleteClipById(clip.id)
     }
 

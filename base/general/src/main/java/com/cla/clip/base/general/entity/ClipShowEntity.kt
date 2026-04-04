@@ -7,7 +7,7 @@ import androidx.core.graphics.red
 import com.cla.clip.base.general.dao.data.ClipDetail
 import com.cla.clip.base.general.utils.toRelativeTimeSpanString
 
-data class ClipEntity(
+data class ClipShowEntity(
     val id: Long,
     val content: String,
     val timestamp: Long,
@@ -16,16 +16,16 @@ data class ClipEntity(
     val appIconPath: String?,
     val appColor: Color?,
     val borderColor: Color?,
-    // 链接预览相关 (如果没有连接预览，UImodel里可以用密封接口更高级的处理，这里简单处理)
-    val hasLinkPreview: Boolean,
+    val isPinned: Boolean,
+    val linkImgUrl: String?,
+    val link: String?,
     val linkTitle: String?,
-    val isPinned: Boolean
 )
 
-fun ClipDetail.toUi(): ClipEntity {
+fun ClipDetail.toUi(): ClipShowEntity {
     // 1. 处理空安全
     val app = this.sourceApp
-    val link = this.linkPreview
+    val linkPreview = this.linkPreview
     val clip = this.clip
 
     // 2. 颜色转换逻辑 (例如处理默认色)
@@ -38,7 +38,7 @@ fun ClipDetail.toUi(): ClipEntity {
     // 3. 时间格式化
     val timeStr = clip.timestamp.toRelativeTimeSpanString()
 
-    return ClipEntity(
+    return ClipShowEntity(
         id = clip.id,
         content = clip.content,
         timestamp = clip.timestamp,
@@ -48,9 +48,10 @@ fun ClipDetail.toUi(): ClipEntity {
         appIconPath = app?.iconPath,
         appColor = app?.primaryColor?.let { Color(it.red, it.green, it.blue) },
         borderColor = color,
-        hasLinkPreview = link?.link.isNullOrBlank().not(),
-        linkTitle = link?.title,
-        isPinned = clip.pinnedTime != 0L
+        isPinned = clip.pinnedTime != 0L,
+        link = linkPreview?.link,
+        linkImgUrl = linkPreview?.imageUrl,
+        linkTitle = linkPreview?.title
     )
 }
 
