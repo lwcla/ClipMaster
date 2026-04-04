@@ -2,6 +2,9 @@ package android.app;
 
 import android.content.Context;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+
 import dev.rikka.tools.refine.RefineAs;
 
 @RefineAs(AppOpsManager.class)
@@ -34,7 +37,7 @@ public class AppOpsManagerHidden {
          * @param flags          The flags of this op
          * @param result         The result of the note.
          */
-        void onOpNoted(String op, int uid, String packageName, String attributionTag, int flags, int result);
+        void onOpNoted(@NonNull String op, int uid, @NonNull String packageName, @Nullable String attributionTag, int flags, int result);
 
         /**
          * Similar to {@link #onOpNoted(String, int, String, String, int, int, int)},
@@ -55,6 +58,18 @@ public class AppOpsManagerHidden {
          * @param flags           The flags of this op
          * @param result          The result of the note.
          */
-        void onOpNoted(String op, int uid, String packageName, String attributionTag, int virtualDeviceId, int flags, int result);
+        default void onOpNoted(
+                @NonNull String op,
+                int uid,
+                @NonNull String packageName,
+                @Nullable String attributionTag,
+                int virtualDeviceId,
+                int flags,
+                int result
+        ) {
+            if (virtualDeviceId == Context.DEVICE_ID_DEFAULT) {
+                onOpNoted(op, uid, packageName, attributionTag, flags, result);
+            }
+        }
     }
 }

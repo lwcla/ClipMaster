@@ -83,21 +83,7 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
             )
 
         // DO NOT convert it to lambda due to R8 will break it down
-        opNotedListener = object : AppOpsManagerHidden.OnOpNotedListener {
-            override fun onOpNoted(op: String?, uid: Int, packageName: String?, attributionTag: String?, flags: Int, result: Int) {
-                if (op.isNullOrBlank() || op != "android:write_clipboard" || packageName == BuildConfig.APPLICATION_ID) {
-                    return
-                }
-
-                handleOpNoted(packageName)
-            }
-
-            override fun onOpNoted(op: String?, uid: Int, packageName: String?, attributionTag: String?, virtualDeviceId: Int, flags: Int, result: Int) {
-                if (virtualDeviceId == Context.DEVICE_ID_DEFAULT) {
-                    onOpNoted(op, uid, packageName, attributionTag, flags, result)
-                }
-            }
-        }
+        opNotedListener = ClipboardOpNotedListener(this)
 
         // 监听剪贴板事件
         Refine.unsafeCast<AppOpsManagerHidden>(appOpsManager).startWatchingNoted(intArrayOf(30), opNotedListener)
@@ -107,7 +93,7 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         callFlow.update { shizukuCallback }
     }
 
-    private fun handleOpNoted(packageName: String?) {
+    fun handleOpNoted(packageName: String?) {
         if (!context.hasOverlayPermission()) {
             // 开启悬浮窗权限
             Refine.unsafeCast<AppOpsManagerHidden>(appOpsManager)
