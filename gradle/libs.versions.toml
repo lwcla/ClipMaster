@@ -52,6 +52,8 @@ compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling
 compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose" }
+
 # 瀑布流
 compose-foundation = { group = "androidx.compose.foundation", name = "foundation" }
 # Jetpack Compose Material图标扩展库
@@ -106,7 +108,17 @@ paging-compose = { group = "androidx.paging", name = "paging-compose", version.r
 paging-common = { group = "androidx.paging", name = "paging-common", version.ref = "paging_version" }
 
 [bundles]
-compose = ["activity-compose", "compose-ui", "compose-ui-tooling-preview", "compose-material3", "compose-foundation", "material-icons-extended", "hilt-navigation-compose", "constraintlayout-compose"]
+compose = [
+    "activity-compose",
+    "compose-ui",
+    "compose-ui-tooling-preview",
+    "compose-material3",
+    "compose-foundation",
+    "material-icons-extended",
+    "hilt-navigation-compose",
+    "constraintlayout-compose",
+    "androidx-navigation-compose"
+]
 compose-debug = ["compose-ui-tooling", "compose-ui-test-manifest"]
 io-coil = ["io-coil-compose", "io-coil-network-okhttp"]
 shizuku = ["shizuku-api", "shizuku-provider"]

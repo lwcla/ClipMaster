@@ -80,7 +80,8 @@ import kotlin.math.max
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainPage(
-    viewModel: MainViewModel = hiltViewModel()
+    viewModel: MainViewModel = hiltViewModel(),
+    onNavigateToDetail: (Long) -> Unit  // 跳转到详情页
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val pagedClips = remember(viewModel.pagedClips, lifecycle) {
@@ -101,7 +102,8 @@ fun MainPage(
             onLongClick = { clip ->
                 // 长按时，设置选中的 Clip，触发 BottomSheet 显示
                 selectedClipForSheet = clip
-            }
+            },
+            onNavigateToDetail = onNavigateToDetail
         )
 
         // 底部弹出窗口
@@ -133,7 +135,8 @@ fun MainPage(
 private fun ClipList(
     viewModel: MainViewModel,
     pagedClips: LazyPagingItems<ClipShowEntity>,
-    onLongClick: (ClipShowEntity) -> Unit
+    onLongClick: (ClipShowEntity) -> Unit,
+    onNavigateToDetail: (Long) -> Unit,
 ) {
     if (pagedClips.loadState.refresh is LoadState.NotLoading && pagedClips.itemCount == 0) {
         EmptyScreen()
@@ -163,7 +166,7 @@ private fun ClipList(
                             onPinToggle = { viewModel.updatePinStatus(it, !it.isPinned) },
                             onDelete = { viewModel.deleteClipGroup(it) },
                             onCopy = { viewModel.copyToClipboard(it) },
-                            onClick = {},
+                            onClick = { onNavigateToDetail(it.id) },
                             onLongClick = onLongClick
                         )
                     } else {
