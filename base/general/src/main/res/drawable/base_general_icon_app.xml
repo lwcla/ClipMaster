@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item
+        android:bottom="40dp"
+        android:drawable="@drawable/base_general_icon_clipboard"
+        android:end="40dp"
+        android:start="40dp"
+        android:top="40dp" />
+
+</layer-list>
