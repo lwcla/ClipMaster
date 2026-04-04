@@ -417,7 +417,7 @@ class ClipboardService : Service() {
         val notification = NotificationCompat.Builder(this, STATUS_CHANNEL_ID)
             .setContentTitle(appContext.getString(com.cla.clip.base.general.R.string.base_general_app_name))
             .setContentText(statusText)
-            .setSmallIcon(com.cla.clip.base.general.R.drawable.icon_app) // 确保资源存在，或者使用 android.R.drawable.ic_menu_save
+            .setSmallIcon(com.cla.clip.base.general.R.drawable.base_general_icon_clipboard) // 确保资源存在，或者使用 android.R.drawable.ic_menu_save
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(pendingIntent) // 3. 设置点击行为
             .setOngoing(true)
@@ -453,7 +453,7 @@ class ClipboardService : Service() {
         )
 
         val notification = NotificationCompat.Builder(this, CLIP_CHANNEL_ID)
-            .setSmallIcon(com.cla.clip.base.general.R.drawable.icon_app)
+            .setSmallIcon(com.cla.clip.base.general.R.drawable.base_general_icon_clipboard)
             .setContentTitle(title)
             .setContentText(content)
             .setStyle(NotificationCompat.BigTextStyle().bigText(content))
