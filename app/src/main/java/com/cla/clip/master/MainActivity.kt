@@ -11,7 +11,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.rememberNavController
 import com.cla.clip.master.ui.navigation.AppNavigation
-import com.cla.clip.master.ui.page.main.MainPage
 import com.cla.clip.master.ui.theme.ClipMaterTheme
 import com.cla.clip.master.ui.widget.ShizukuServiceUnavailableTip
 import dagger.hilt.android.AndroidEntryPoint

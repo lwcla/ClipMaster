@@ -56,7 +56,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.flowWithLifecycle
@@ -69,6 +69,8 @@ import coil3.compose.AsyncImage
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.logD
 import com.cla.clip.master.R
+import com.cla.clip.master.ui.navigation.DetailRoute
+import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.widget.rememberFormattedTime
 import kotlin.math.max
 
@@ -81,7 +83,7 @@ import kotlin.math.max
 @Composable
 fun MainPage(
     viewModel: MainViewModel = hiltViewModel(),
-    onNavigateToDetail: (Long) -> Unit  // 跳转到详情页
+    onNavigate: (Route) -> Unit  // 跳转页面
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val pagedClips = remember(viewModel.pagedClips, lifecycle) {
@@ -103,7 +105,7 @@ fun MainPage(
                 // 长按时，设置选中的 Clip，触发 BottomSheet 显示
                 selectedClipForSheet = clip
             },
-            onNavigateToDetail = onNavigateToDetail
+            onNavigate = onNavigate
         )
 
         // 底部弹出窗口
@@ -136,7 +138,7 @@ private fun ClipList(
     viewModel: MainViewModel,
     pagedClips: LazyPagingItems<ClipShowEntity>,
     onLongClick: (ClipShowEntity) -> Unit,
-    onNavigateToDetail: (Long) -> Unit,
+    onNavigate: (Route) -> Unit,
 ) {
     if (pagedClips.loadState.refresh is LoadState.NotLoading && pagedClips.itemCount == 0) {
         EmptyScreen()
@@ -166,7 +168,7 @@ private fun ClipList(
                             onPinToggle = { viewModel.updatePinStatus(it, !it.isPinned) },
                             onDelete = { viewModel.deleteClipGroup(it) },
                             onCopy = { viewModel.copyToClipboard(it) },
-                            onClick = { onNavigateToDetail(it.id) },
+                            onClick = { onNavigate(DetailRoute(it.id)) },
                             onLongClick = onLongClick
                         )
                     } else {
@@ -242,21 +244,7 @@ private fun ClipCard(
             modifier = modifier.fillMaxWidth(),
             elevation = CardDefaults.cardElevation(2.dp)
         ) {
-
             Box {
-                if (clip.isPinned) {
-                    // 显示置顶标签
-                    Icon(
-                        painterResource(R.drawable.host_icon_pinned),
-                        contentDescription = null,
-                        modifier = Modifier
-                            .fillMaxWidth(0.25f) // 只占据卡片宽度的三分之一，避免过度覆盖内容
-                            .align(Alignment.TopEnd)
-                            .alpha(0.6f), // 关键：对齐到右上角
-                        tint = appColor
-                    )
-                }
-
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -285,6 +273,19 @@ private fun ClipCard(
                             .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     )
                     CardButtonContainer(clip, onPinToggle, onDelete, onCopy)
+                }
+
+                if (clip.isPinned) {
+                    // 显示置顶标签
+                    Icon(
+                        painterResource(R.drawable.host_icon_pinned),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxWidth(0.25f) // 只占据卡片宽度的三分之一，避免过度覆盖内容
+                            .align(Alignment.TopEnd)
+                            .alpha(0.6f), // 关键：对齐到右上角
+                        tint = appColor
+                    )
                 }
             }
         }

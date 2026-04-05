@@ -273,7 +273,7 @@ class ClipboardService : Service() {
 //                // OcrProcessingWorker.enqueue(this@ClipboardService, clipContent, newClip.id)
 //            }
 
-            val sourceAppData = packageName?.let { clipDao.loadSourceAppByPackageName(it) }
+            val sourceAppData = packageName?.let { clipDao.loadSourceApp(it) }
             val appColor: Int?
             val appIconPath: String?
 
@@ -290,7 +290,7 @@ class ClipboardService : Service() {
 
             val extractedLink = LinkUtils.extractFirstPreviewableUrl(contentText)
             val linkMeta = if (!extractedLink.isNullOrBlank()) {
-                val history = clipDao.loadLinkPreviewByLink(extractedLink)
+                val history = clipDao.loadLinkPreview(extractedLink)
                 if (!history?.imageUrl.isNullOrBlank()) {
                     logD(TAG) { "processClip 使用数据库中的链接数据 extractedLink=$extractedLink" }
                     // 避免重复解析链接
@@ -417,7 +417,7 @@ class ClipboardService : Service() {
         val notification = NotificationCompat.Builder(this, STATUS_CHANNEL_ID)
             .setContentTitle(appContext.getString(com.cla.clip.base.general.R.string.base_general_app_name))
             .setContentText(statusText)
-            .setSmallIcon(com.cla.clip.base.general.R.drawable.base_general_icon_clipboard) // 确保资源存在，或者使用 android.R.drawable.ic_menu_save
+            .setSmallIcon(com.cla.clip.base.general.R.drawable.base_general_icon_app_name) // 确保资源存在，或者使用 android.R.drawable.ic_menu_save
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(pendingIntent) // 3. 设置点击行为
             .setOngoing(true)
@@ -453,7 +453,7 @@ class ClipboardService : Service() {
         )
 
         val notification = NotificationCompat.Builder(this, CLIP_CHANNEL_ID)
-            .setSmallIcon(com.cla.clip.base.general.R.drawable.base_general_icon_clipboard)
+            .setSmallIcon(com.cla.clip.base.general.R.drawable.base_general_icon_app_name)
             .setContentTitle(title)
             .setContentText(content)
             .setStyle(NotificationCompat.BigTextStyle().bigText(content))

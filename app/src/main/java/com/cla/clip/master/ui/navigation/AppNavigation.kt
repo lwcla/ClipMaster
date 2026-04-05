@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.toRoute
 import com.cla.clip.master.ui.page.detail.DetailPage
 import com.cla.clip.master.ui.page.main.MainPage
 
@@ -11,20 +12,20 @@ import com.cla.clip.master.ui.page.main.MainPage
 fun AppNavigation(navController: NavHostController) {
     NavHost(
         navController = navController,
-        startDestination = "main"
+        startDestination = MainRoute
     ) {
-        composable("main") {
+        composable<MainRoute> {
             MainPage(
-                onNavigateToDetail = { clipId ->
-                    navController.navigate("detail/$clipId")
+                onNavigate = { route ->
+                    navController.navigate(route)
                 }
             )
         }
 
-        composable("detail/{clipId}") { backStackEntry ->
-            val clipId = backStackEntry.arguments?.getString("clipId")?.toLong() ?: 0L
+        composable<DetailRoute> { backStackEntry ->
+            val route = backStackEntry.toRoute<DetailRoute>()
             DetailPage(
-                clipId = clipId,
+                clipId = route.clipId,
                 onBack = { navController.popBackStack() }
             )
         }

@@ -99,7 +99,7 @@ class ClipDaoImpl @Inject constructor(
         sourceAppDao.upsert(sourceApp)
 
         // 先根据content尝试查找旧数据
-        val existingClip = clipDao.loadClipWithSourceByContent(newClip.content, sourceApp.packageName)
+        val existingClip = clipDao.loadClipDetail(newClip.content, sourceApp.packageName)
         if (existingClip != null) {
             // === 情况 A：数据库有相同 content ===
             // 使用 newClip 的所有数据，但覆盖回旧数据的 id 和 groupId
@@ -139,11 +139,15 @@ class ClipDaoImpl @Inject constructor(
         clipDao.clearAll()
     }
 
-    override suspend fun loadSourceAppByPackageName(packageName: String) = withContext(Dispatchers.IO) {
+    override suspend fun loadSourceApp(packageName: String) = withContext(Dispatchers.IO) {
         sourceAppDao.loadByPackageName(packageName)
     }
 
-    override suspend fun loadLinkPreviewByLink(link: String) = withContext(Dispatchers.IO) {
+    override suspend fun loadLinkPreview(link: String) = withContext(Dispatchers.IO) {
         linkPreviewDao.loadByLink(link)
+    }
+
+    override suspend fun loadClipDetail(id: Long) = withContext(Dispatchers.IO) {
+        clipDao.loadClipDetail(id)?.toUi()
     }
 }

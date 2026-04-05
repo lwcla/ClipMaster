@@ -7,9 +7,12 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
 
     <!-- 添加 queries 标签 -->
     <queries>
+
         <!-- 声明你需要查询 Shizuku 管理器的包名 -->
         <package android:name="moe.shizuku.privileged.api" />
     </queries>
@@ -42,6 +45,12 @@
             android:exported="true"
             android:foregroundServiceType="dataSync"
             tools:ignore="ExportedService" />
+
+        <service
+            android:name=".service.DownloadVideoService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <provider
             android:name="rikka.shizuku.ShizukuProvider"

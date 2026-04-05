@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <string name="base_general_app_name">剪贴板助手</string>
 
     <string name="base_general_to_install">去安装</string>
@@ -25,4 +25,7 @@
 
     <string name="base_general_it_was_written_into_the_clipboard">写入了剪切板</string>
     <string name="base_general_content">内容：</string>
+    <string name="base_general_loading" tools:ignore="TypographyEllipsis">加载中...</string>
+    <string name="base_general_clip_not_found">剪贴板内容不存在</string>
+    <string name="base_general_clip_detail">详情</string>
 </resources>

@@ -96,6 +96,9 @@ dependencies {
 
     // AndroidX Palette KTX，用于从图片中提取主色调，实现动态主题功能
     implementation(libs.androidx.palette.ktx)
+
+    // okhttp
+    api(libs.okhttp.client)
 }
 
 val org.gradle.api.Project.androidApp: com.android.build.gradle.AppExtension

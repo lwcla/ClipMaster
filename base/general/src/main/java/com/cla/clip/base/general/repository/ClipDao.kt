@@ -47,8 +47,11 @@ interface ClipDao {
     suspend fun clearAll()
 
     /** 根据包名和剪贴板内容获取来源app信息 */
-    suspend fun loadSourceAppByPackageName(packageName: String): SourceAppData?
+    suspend fun loadSourceApp(packageName: String): SourceAppData?
 
     /** 根据链接查找历史数据 */
-    suspend fun loadLinkPreviewByLink(link: String): LinkPreviewData?
+    suspend fun loadLinkPreview(link: String): LinkPreviewData?
+
+    /** 根据id查找剪贴数据 */
+    suspend fun loadClipDetail(id: Long): ClipShowEntity?
 }

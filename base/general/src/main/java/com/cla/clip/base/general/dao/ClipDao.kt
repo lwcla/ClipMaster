@@ -88,7 +88,11 @@ interface ClipDao {
      * @return
      */
     @Query("SELECT * FROM clips WHERE content = :content AND source_app_package=:packageName LIMIT 1")
-    suspend fun loadClipWithSourceByContent(content: String, packageName: String): ClipDetail?
+    suspend fun loadClipDetail(content: String, packageName: String): ClipDetail?
+
+    /** 根据id查询剪贴数据 */
+    @Query("SELECT * FROM clips WHERE id = :id LIMIT 1")
+    suspend fun loadClipDetail(id: Long): ClipDetail?
 
     /**
      * 核心搜索功能：在FTS虚拟表中进行全文检索。
