@@ -4,8 +4,8 @@ import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.entity.ClipShowEntity
-import com.cla.clip.base.general.logD
-import com.cla.clip.base.general.logE
+import com.cla.clip.base.general.utils.logD
+import com.cla.clip.base.general.utils.logE
 import com.cla.clip.master.BaseViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineScope

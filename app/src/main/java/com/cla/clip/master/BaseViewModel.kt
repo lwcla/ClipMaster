@@ -39,13 +39,18 @@ abstract class BaseViewModel : ViewModel() {
             clipDao.updateTimestamp(clip.id)
         }
 
-        val clipData = android.content.ClipData.newPlainText("ClipMaster", clip.content)
+        copyToClipboard(clip.content)
+    }
+
+    /** 复制到剪贴板 */
+    fun copyToClipboard(content: String) {
+        val clipData = android.content.ClipData.newPlainText("ClipMaster", content)
         clipboardManager.setPrimaryClip(clipData)
 
-        val text = if (clip.content.length > 10) {
-            clip.content.take(10) + "..."
+        val text = if (content.length > 10) {
+            content.take(10) + "..."
         } else {
-            clip.content
+            content
         }
 
         Toast.makeText(appContext, "${appContext.getString(R.string.base_general_copied)}${text}", Toast.LENGTH_SHORT).show()

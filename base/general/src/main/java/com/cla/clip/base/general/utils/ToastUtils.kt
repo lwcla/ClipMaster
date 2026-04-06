@@ -5,8 +5,6 @@ import android.content.Context
 import android.view.Gravity
 import android.widget.Toast
 import androidx.annotation.StringRes
-import com.cla.clip.base.general.logE
-import com.cla.clip.base.general.logStack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.lang.ref.WeakReference

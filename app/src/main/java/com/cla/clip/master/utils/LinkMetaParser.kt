@@ -1,6 +1,6 @@
 package com.cla.clip.master.utils
 
-import com.cla.clip.base.general.logE
+import com.cla.clip.base.general.utils.logE
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup

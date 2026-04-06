@@ -1,6 +1,7 @@
-package com.cla.clip.base.general
+package com.cla.clip.base.general.utils
 
 import android.util.Log
+import com.cla.clip.base.general.BuildConfig
 
 const val LOG_TAG = "cla_clip_master" // 定义自己的日志TAG
 

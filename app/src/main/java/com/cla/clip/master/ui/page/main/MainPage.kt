@@ -67,7 +67,7 @@ import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
 import coil3.compose.AsyncImage
 import com.cla.clip.base.general.entity.ClipShowEntity
-import com.cla.clip.base.general.logD
+import com.cla.clip.base.general.utils.logD
 import com.cla.clip.master.R
 import com.cla.clip.master.ui.navigation.DetailRoute
 import com.cla.clip.master.ui.navigation.Route

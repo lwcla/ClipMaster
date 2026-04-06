@@ -33,11 +33,11 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.cla.clip.base.general.PermissionUtils
-import com.cla.clip.base.general.hasNotificationPermission
-import com.cla.clip.base.general.logD
-import com.cla.clip.base.general.logI
-import com.cla.clip.base.general.toPermissionSetting
+import com.cla.clip.base.general.utils.PermissionUtils
+import com.cla.clip.base.general.utils.hasNotificationPermission
+import com.cla.clip.base.general.utils.logD
+import com.cla.clip.base.general.utils.logI
+import com.cla.clip.base.general.utils.toPermissionSetting
 import com.cla.clip.master.R
 import com.cla.clip.master.service.ClipboardService
 

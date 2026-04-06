@@ -3,7 +3,7 @@ package com.cla.clip.master
 import android.app.ActivityManager
 import android.os.Build
 import com.cla.clip.base.general.BaseApplication
-import com.cla.clip.base.general.logD
+import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.ApplicationScope
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope

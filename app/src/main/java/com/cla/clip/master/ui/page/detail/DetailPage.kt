@@ -24,6 +24,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -131,19 +136,38 @@ fun DetailPage(
                 ) {
                     val link = clip.link
                     if (link.isNullOrBlank().not()) {
+                        val tipText = buildAnnotatedString {
+                            append(stringResource(R.string.base_general_videos_or_pictures_from_web_pages_can_be_extracted_1))
+                            withLink(
+                                LinkAnnotation.Clickable(
+                                    tag = "LINK",
+                                    styles = TextLinkStyles(
+                                        style = SpanStyle(color = MaterialTheme.colorScheme.error)
+                                    )
+                                ) {
+                                    // 只点击 link 这段时触发
+                                    detailVm.copyToClipboard(link)
+                                }
+                            ) {
+                                append(link)
+                            }
 
+                            append(stringResource(R.string.base_general_videos_or_pictures_from_web_pages_can_be_extracted_2))
+                        }
                         Text(
-                            text = stringResource(R.string.base_general_videos_or_pictures_from_web_pages_can_be_extracted),
+                            text = tipText,
                             style = MaterialTheme.typography.bodySmall
                         )
 
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Button(
                                 modifier = Modifier.weight(1f),
                                 onClick = {
-                                    onNavigate(VideoExtractRoute(link))
+//                                    onNavigate(VideoExtractRoute(link))
+                                    // todo 提取视频测试用
+                                    onNavigate(VideoExtractRoute("https://v.douyin.com/bzLHPnkAbhs/"))
                                 }
                             ) {
                                 Text(stringResource(R.string.base_general_video_extract))
@@ -161,7 +185,7 @@ fun DetailPage(
                     }
 
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Button(
                             modifier = Modifier.weight(1f),

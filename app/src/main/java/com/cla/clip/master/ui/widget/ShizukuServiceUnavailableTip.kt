@@ -27,8 +27,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.cla.clip.base.general.logD
-import com.cla.clip.base.general.logI
+import com.cla.clip.base.general.utils.logD
+import com.cla.clip.base.general.utils.logI
 import com.cla.clip.master.R
 import com.cla.clip.master.ui.page.main.MainViewModel
 import com.cla.clip.master.ui.theme.ClipMaterTheme

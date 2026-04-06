@@ -5,10 +5,10 @@ import android.app.AppOpsManagerHidden
 import android.content.Context
 import android.graphics.Bitmap
 import android.os.Build
-import com.cla.clip.base.general.hasOverlayPermission
-import com.cla.clip.base.general.logD
-import com.cla.clip.base.general.logE
-import com.cla.clip.base.general.logI
+import com.cla.clip.base.general.utils.hasOverlayPermission
+import com.cla.clip.base.general.utils.logD
+import com.cla.clip.base.general.utils.logE
+import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.exceptionHandler
 import com.cla.clip.base.general.utils.iconBitmap
 import com.cla.clip.base.general.utils.toStableHash

@@ -1,36 +1,34 @@
 package com.cla.clip.master.service
 
-import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
-import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import android.view.View
 import android.view.WindowManager
-import androidx.core.app.NotificationCompat
 import androidx.core.content.FileProvider
 import com.cla.clip.base.general.entity.ClipCaptureEntity
-import com.cla.clip.base.general.hasOverlayPermission
-import com.cla.clip.base.general.logD
-import com.cla.clip.base.general.logE
-import com.cla.clip.base.general.logI
 import com.cla.clip.base.general.repository.ClipDao
 import com.cla.clip.base.general.utils.ApplicationScope
 import com.cla.clip.base.general.utils.LinkUtils
 import com.cla.clip.base.general.utils.extractUsableColor
+import com.cla.clip.base.general.utils.hasOverlayPermission
+import com.cla.clip.base.general.utils.logD
+import com.cla.clip.base.general.utils.logE
+import com.cla.clip.base.general.utils.logI
 import com.cla.clip.master.BuildConfig
-import com.cla.clip.master.MainActivity
 import com.cla.clip.master.utils.LinkMeta
 import com.cla.clip.master.utils.LinkMetaParser
+import com.cla.clip.master.utils.NotificationHelper
+import com.cla.clip.master.utils.NotificationHelper.Companion.CLIP_CHANNEL_ID
+import com.cla.clip.master.utils.NotificationHelper.Companion.CLIP_NOTIFICATION_ID
 import com.cla.clip.shizuku.ClipboardShizukuService
 import com.cla.clip.shizuku.IClipboardShizukuService
 import com.cla.clip.shizuku.ShizukuCallback
@@ -56,11 +54,6 @@ class ClipboardService : Service() {
     companion object {
         private const val TAG = "ClipboardService"
 
-        private const val STATUS_CHANNEL_ID = "clipboard_status_channel"
-        private const val CLIP_CHANNEL_ID = "clipboard_update_channel"
-
-        private const val STATUS_NOTIFICATION_ID = 1001   // 仅前台服务用，固定
-        private const val CLIP_NOTIFICATION_ID = 2001     // 剪贴板更新通知用
 
         private const val APP_ICONS_DIR = "app_icons"
 
@@ -88,6 +81,9 @@ class ClipboardService : Service() {
     @Inject
     @ApplicationContext
     lateinit var appContext: Context
+
+    @Inject
+    lateinit var notificationHelper: NotificationHelper
 
     private val manager by lazy { getSystemService(NotificationManager::class.java) }
     private val clipboardManager by lazy { getSystemService(ClipboardManager::class.java) }
@@ -161,7 +157,7 @@ class ClipboardService : Service() {
         super.onCreate()
         // 服务创建时，立即尝试提升为前台服务
         logI(TAG) { "onCreate: " }
-        createNotificationChannels()
+        notificationHelper.createChannels()
         startForeground()
 
         Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
@@ -407,104 +403,24 @@ class ClipboardService : Service() {
             is ShizukuStatus.Disconnect.VersionTooLow -> appContext.getString(com.cla.clip.base.general.R.string.base_general_shizuku_version_too_low)
             is ShizukuStatus.Disconnect.NotGranted -> appContext.getString(com.cla.clip.base.general.R.string.base_general_shizuku_not_granted)
         }
-        // 1. 获取启动 App 的 Intent
-        val launchIntent = packageManager.getLaunchIntentForPackage(packageName) ?: Intent(appContext, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        // 2. 创建 PendingIntent
-        val pendingIntent = PendingIntent.getActivity(appContext, 0, launchIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
 
-        val notification = NotificationCompat.Builder(this, STATUS_CHANNEL_ID)
-            .setContentTitle(appContext.getString(com.cla.clip.base.general.R.string.base_general_app_name))
-            .setContentText(statusText)
-            .setSmallIcon(com.cla.clip.base.general.R.drawable.base_general_icon_app_name) // 确保资源存在，或者使用 android.R.drawable.ic_menu_save
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setContentIntent(pendingIntent) // 3. 设置点击行为
-            .setOngoing(true)
-            .build()
-
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                // Android 14 (API 34) 强制要求指定前台服务类型
-                startForeground(
-                    STATUS_NOTIFICATION_ID,
-                    notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-                )
-            } else {
-                startForeground(STATUS_NOTIFICATION_ID, notification)
-            }
-        } catch (e: Exception) {
-            // 如果 Manifest 中缺少 foregroundServiceType 属性，可能会抛出异常
-            // 此时尝试不带 type 启动作为兜底
-            startForeground(STATUS_NOTIFICATION_ID, notification)
-        }
+        notificationHelper.startForeground(
+            this,
+            appContext.getString(com.cla.clip.base.general.R.string.base_general_app_name),
+            statusText
+        )
     }
 
     private fun notifyClipUpdated(title: String, content: String) {
-        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
-            ?: Intent(appContext, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            }
-
-        val pendingIntent = PendingIntent.getActivity(
-            appContext, 1, launchIntent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
-        val notification = NotificationCompat.Builder(this, CLIP_CHANNEL_ID)
-            .setSmallIcon(com.cla.clip.base.general.R.drawable.base_general_icon_app_name)
-            .setContentTitle(title)
-            .setContentText(content)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(content))
-            .setContentIntent(pendingIntent)
-            .setAutoCancel(true)
-            .setOnlyAlertOnce(true)
-            .setSilent(true)          // 简单直接
-            .setDefaults(0)           // 不用默认铃声/震动/灯
-            .setVibrate(longArrayOf(0L))
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
-
-        manager.notify(CLIP_NOTIFICATION_ID, notification) // 固定ID=覆盖上一条；若想每条都保留可用递增ID
-    }
-
-    private fun createNotificationChannels() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-
-        val statusChannel = NotificationChannel(
-            STATUS_CHANNEL_ID,
-            appContext.getString(com.cla.clip.base.general.R.string.base_general_clipboard_service),
-            NotificationManager.IMPORTANCE_LOW
-        ).apply {
-            enableVibration(false) // 关闭震动
-            vibrationPattern = longArrayOf(0L)
-            setSound(null, null) // 关闭铃声
-            description = appContext.getString(com.cla.clip.base.general.R.string.base_general_listen_for_changes_in_the_clipboard_content)
-        }
-
-        val clipChannel = NotificationChannel(
+        notificationHelper.notifyNormalMessage(
+            title,
+            content,
             CLIP_CHANNEL_ID,
-            appContext.getString(com.cla.clip.base.general.R.string.base_general_clipboard_update),
-            NotificationManager.IMPORTANCE_DEFAULT
-        ).apply {
-            enableVibration(false) // 关闭震动
-            vibrationPattern = longArrayOf(0L)
-            setSound(null, null) // 关闭铃声
-            description = appContext.getString(com.cla.clip.base.general.R.string.base_general_display_clipboard_content_updates)
-        }
-
-        manager.createNotificationChannel(statusChannel)
-        manager.createNotificationChannel(clipChannel)
+            CLIP_NOTIFICATION_ID
+        )
     }
 
     override fun onBind(intent: Intent): IBinder? {
         return null
     }
-
-    data class NoteEntity(
-        val packageName: String?,
-        val appName: String?,
-        val appIcon: Bitmap?
-    )
 }

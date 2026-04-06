@@ -1,6 +1,5 @@
 package com.cla.clip.base.general.utils
 
-import com.cla.clip.base.general.logE
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
