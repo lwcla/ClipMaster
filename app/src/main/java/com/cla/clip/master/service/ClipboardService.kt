@@ -85,7 +85,6 @@ class ClipboardService : Service() {
     @Inject
     lateinit var notificationHelper: NotificationHelper
 
-    private val manager by lazy { getSystemService(NotificationManager::class.java) }
     private val clipboardManager by lazy { getSystemService(ClipboardManager::class.java) }
     private val windowManager by lazy { getSystemService(WindowManager::class.java) as WindowManager }
 

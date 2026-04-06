@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cla.clip.base.general.R
+import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.navigation.VideoExtractRoute
 import com.cla.clip.master.ui.widget.TitleBar
@@ -130,100 +131,97 @@ fun DetailPage(
                     }
                 }
 
-                Column(
-                    modifier = Modifier.padding(start = 12.dp, top = 0.dp, end = 12.dp, bottom = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    val link = clip.link
-                    if (link.isNullOrBlank().not()) {
-                        val tipText = buildAnnotatedString {
-                            append(stringResource(R.string.base_general_videos_or_pictures_from_web_pages_can_be_extracted_1))
-                            withLink(
-                                LinkAnnotation.Clickable(
-                                    tag = "LINK",
-                                    styles = TextLinkStyles(
-                                        style = SpanStyle(color = MaterialTheme.colorScheme.error)
-                                    )
-                                ) {
-                                    // 只点击 link 这段时触发
-                                    detailVm.copyToClipboard(link)
-                                }
-                            ) {
-                                append(link)
-                            }
-
-                            append(stringResource(R.string.base_general_videos_or_pictures_from_web_pages_can_be_extracted_2))
-                        }
-                        Text(
-                            text = tipText,
-                            style = MaterialTheme.typography.bodySmall
-                        )
-
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Button(
-                                modifier = Modifier.weight(1f),
-                                onClick = {
-//                                    onNavigate(VideoExtractRoute(link))
-                                    // todo 提取视频测试用
-                                    onNavigate(VideoExtractRoute("https://v.douyin.com/bzLHPnkAbhs/"))
-                                }
-                            ) {
-                                Text(stringResource(R.string.base_general_video_extract))
-                            }
-
-                            Button(
-                                modifier = Modifier.weight(1f),
-                                onClick = {
-                                    onNavigate(VideoExtractRoute(link))
-                                }
-                            ) {
-                                Text(stringResource(R.string.base_general_image_extract))
-                            }
-                        }
-                    }
-
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Button(
-                            modifier = Modifier.weight(1f),
-                            onClick = {
-                                detailVm.deleteClip(clip, sendEvent = true)
-                            }
-                        ) {
-                            Text(stringResource(R.string.base_general_delete))
-                        }
-
-                        Button(
-                            modifier = Modifier.weight(1f),
-                            onClick = {
-                                detailVm.copyToClipboard(clip)
-                            }
-                        ) {
-                            Text(stringResource(R.string.base_general_copy))
-                        }
-                    }
-                }
+                ButtonContainer(
+                    detailVm = detailVm,
+                    onNavigate = onNavigate,
+                    clip = clip
+                )
             }
         }
     }
 }
 
+/** 详情页底部的按钮的容器 */
 @Composable
-private fun TopPanelText(text: String) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(12.dp)
+private fun ButtonContainer(
+    detailVm: DetailViewModel,
+    onNavigate: (Route) -> Unit,
+    clip: ClipShowEntity
+) {
+    Column(
+        modifier = Modifier.padding(start = 12.dp, top = 0.dp, end = 12.dp, bottom = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(12.dp)
-        )
+        val link = clip.link
+        if (link.isNullOrBlank().not()) {
+            val tipText = buildAnnotatedString {
+                append(stringResource(R.string.base_general_videos_or_pictures_from_web_pages_can_be_extracted_1))
+                withLink(
+                    LinkAnnotation.Clickable(
+                        tag = "LINK",
+                        styles = TextLinkStyles(
+                            style = SpanStyle(color = MaterialTheme.colorScheme.error)
+                        )
+                    ) {
+                        // 只点击 link 这段时触发
+                        detailVm.copyToClipboard(link)
+                    }
+                ) {
+                    append(link)
+                }
+
+                append(stringResource(R.string.base_general_videos_or_pictures_from_web_pages_can_be_extracted_2))
+            }
+            Text(
+                text = tipText,
+                style = MaterialTheme.typography.bodySmall
+            )
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Button(
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+//                                    onNavigate(VideoExtractRoute(link))
+                        // todo 提取视频测试用
+                        onNavigate(VideoExtractRoute("https://v.douyin.com/bzLHPnkAbhs/"))
+                    }
+                ) {
+                    Text(stringResource(R.string.base_general_video_extract))
+                }
+
+                Button(
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        onNavigate(VideoExtractRoute(link))
+                    }
+                ) {
+                    Text(stringResource(R.string.base_general_image_extract))
+                }
+            }
+        }
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Button(
+                modifier = Modifier.weight(1f),
+                onClick = {
+                    detailVm.deleteClip(clip, sendEvent = true)
+                }
+            ) {
+                Text(stringResource(R.string.base_general_delete))
+            }
+
+            Button(
+                modifier = Modifier.weight(1f),
+                onClick = {
+                    detailVm.copyToClipboard(clip)
+                }
+            ) {
+                Text(stringResource(R.string.base_general_copy))
+            }
+        }
     }
 }
-
-
-
