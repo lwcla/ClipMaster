@@ -27,7 +27,6 @@ import androidx.compose.ui.unit.dp
 fun TitleBar(
     title: String,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
 ) {
     Row(
         modifier = Modifier

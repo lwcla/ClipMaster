@@ -11,5 +11,4 @@ open class BaseApplication : Application() {
         super.onCreate()
         context = this
     }
-
 }

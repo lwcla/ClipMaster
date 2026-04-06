@@ -29,7 +29,7 @@ interface ClipDao {
      *
      * @param clip
      */
-    suspend fun deleteClip(clip: ClipShowEntity)
+    suspend fun deleteClip(clip: ClipShowEntity): Boolean
 
     /** 更新置顶状态 */
     suspend fun updatePinStatus(clipId: Long, isPinned: Boolean)

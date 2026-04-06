@@ -139,7 +139,7 @@ interface ClipDao {
      * @param id 要删除的Clip id。
      */
     @Query("DELETE FROM clips WHERE id = :id")
-    suspend fun deleteClipById(id: Long)
+    suspend fun deleteClipById(id: Long): Int
 
     /** 更新置顶状态 */
     @Query("UPDATE clips SET pinned_time = :pinnedTime WHERE id = :id")

@@ -6,7 +6,9 @@ import androidx.core.graphics.green
 import androidx.core.graphics.red
 import com.cla.clip.base.general.dao.data.ClipDetail
 import com.cla.clip.base.general.utils.toRelativeTimeSpanString
+import kotlinx.serialization.Serializable
 
+@Serializable
 data class ClipShowEntity(
     val id: Long,
     val content: String,

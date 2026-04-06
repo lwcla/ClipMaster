@@ -166,7 +166,7 @@ private fun ClipList(
                         ClipCard(
                             clip = clip,
                             onPinToggle = { viewModel.updatePinStatus(it, !it.isPinned) },
-                            onDelete = { viewModel.deleteClipGroup(it) },
+                            onDelete = { viewModel.deleteClip(it) },
                             onCopy = { viewModel.copyToClipboard(it) },
                             onClick = { onNavigate(DetailRoute(it.id)) },
                             onLongClick = onLongClick

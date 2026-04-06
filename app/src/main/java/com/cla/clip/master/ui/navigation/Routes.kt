@@ -11,3 +11,8 @@ data object MainRoute : Route()
 /** 详情页 */
 @Serializable
 data class DetailRoute(val clipId: Long) : Route()
+
+
+/** 视频链接提取 */
+@Serializable
+data class VideoExtractRoute(val url: String) : Route()

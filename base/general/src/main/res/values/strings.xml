@@ -11,6 +11,7 @@
     <string name="base_general_pinned">置顶</string>
     <string name="base_general_unpinned">取消置顶</string>
     <string name="base_general_delete">删除</string>
+    <string name="base_general_copy">复制</string>
 
     <string name="base_general_clipboard_service">剪贴板服务</string>
     <string name="base_general_clipboard_update">剪贴板更新</string>
@@ -28,4 +29,10 @@
     <string name="base_general_loading" tools:ignore="TypographyEllipsis">加载中...</string>
     <string name="base_general_clip_not_found">剪贴板内容不存在</string>
     <string name="base_general_clip_detail">详情</string>
+    <string name="base_general_video_extract">提取视频</string>
+    <string name="base_general_image_extract">提取图片</string>
+    <string name="base_general_not_found_link">没有找到链接</string>
+    <string name="base_general_copied">已复制:</string>
+    <string name="base_general_videos_or_pictures_from_web_pages_can_be_extracted">可以提取网页中的视频或者图片:</string>
+
 </resources>

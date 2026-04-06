@@ -7,6 +7,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
 import com.cla.clip.master.ui.page.detail.DetailPage
 import com.cla.clip.master.ui.page.main.MainPage
+import com.cla.clip.master.ui.page.video.VideoExtractPage
 
 @Composable
 fun AppNavigation(navController: NavHostController) {
@@ -16,16 +17,25 @@ fun AppNavigation(navController: NavHostController) {
     ) {
         composable<MainRoute> {
             MainPage(
-                onNavigate = { route ->
-                    navController.navigate(route)
-                }
+                onNavigate = { route -> navController.navigate(route) }
             )
         }
 
+        // 详情页
         composable<DetailRoute> { backStackEntry ->
             val route = backStackEntry.toRoute<DetailRoute>()
             DetailPage(
                 clipId = route.clipId,
+                onBack = { navController.popBackStack() },
+                onNavigate = { route -> navController.navigate(route) }
+            )
+        }
+
+        // 视频提取页
+        composable<VideoExtractRoute> { backStackEntry ->
+            val route = backStackEntry.toRoute<VideoExtractRoute>()
+            VideoExtractPage(
+                pageUrl = route.url,
                 onBack = { navController.popBackStack() }
             )
         }

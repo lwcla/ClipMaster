@@ -116,8 +116,8 @@ class ClipDaoImpl @Inject constructor(
         }
     }
 
-    override suspend fun deleteClip(clip: ClipShowEntity) {
-        clipDao.deleteClipById(clip.id)
+    override suspend fun deleteClip(clip: ClipShowEntity) = withContext(Dispatchers.IO) {
+        clipDao.deleteClipById(clip.id) > 0
     }
 
     override suspend fun updatePinStatus(clipId: Long, isPinned: Boolean) {
