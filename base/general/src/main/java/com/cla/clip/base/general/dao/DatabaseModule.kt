@@ -72,4 +72,10 @@ object DatabaseModule {
     fun provideLinkPreviewDao(appDatabase: AppDatabase): LinkPreviewDao {
         return appDatabase.linkPreviewDao()
     }
+
+    @Provides
+    @Singleton
+    fun provideDownloadDao(appDatabase: AppDatabase): DownloadDao {
+        return appDatabase.downloadDao()
+    }
 }

@@ -112,6 +112,7 @@ paging-common = { group = "androidx.paging", name = "paging-common", version.ref
 
 #okhttp
 okhttp-client = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+okhttp-logger = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
 
 [bundles]
 compose = [
@@ -130,6 +131,7 @@ io-coil = ["io-coil-compose", "io-coil-network-okhttp"]
 shizuku = ["shizuku-api", "shizuku-provider"]
 paging = ["paging-runtime", "paging-compose"]
 room = ["room-runtime", "room-ktx", "room-paging"]
+okhttp = ["okhttp-client", "okhttp-logger"]
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

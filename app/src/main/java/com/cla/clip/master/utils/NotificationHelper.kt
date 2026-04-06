@@ -40,16 +40,54 @@ class NotificationHelper @Inject constructor(
 
     private val packageName by lazy { appContext.packageName }
 
+    private val pendingIntent: PendingIntent
+        get() {
+            // 1. 获取启动 App 的 Intent
+            val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+                ?: Intent(appContext, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                }
+
+            // 2. 创建 PendingIntent
+            return PendingIntent.getActivity(appContext, 0, launchIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        }
+
+
+    fun downloadForeground(service: Service, title: String, progress: Int) {
+        createChannels()
+
+        val notification = NotificationCompat.Builder(appContext, DOWNLOAD_CHANNEL_ID)
+            .setContentTitle(title)
+            .setSmallIcon(R.drawable.base_general_icon_app_name)
+            .setProgress(100, progress, false)
+            .setSilent(true)          // 简单直接
+            .setDefaults(0)           // 不用默认铃声/震动/灯
+            .setVibrate(longArrayOf(0L))
+            .setOngoing(true)
+            .build()
+
+        service.apply {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    // Android 14 (API 34) 强制要求指定前台服务类型
+                    startForeground(
+                        STATUS_NOTIFICATION_ID,
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                    )
+                } else {
+                    startForeground(STATUS_NOTIFICATION_ID, notification)
+                }
+            } catch (e: Exception) {
+                // 如果 Manifest 中缺少 foregroundServiceType 属性，可能会抛出异常
+                // 此时尝试不带 type 启动作为兜底
+                startForeground(STATUS_NOTIFICATION_ID, notification)
+            }
+        }
+    }
 
     fun startForeground(service: Service, title: String, content: String) {
         createChannels()
-
-        // 1. 获取启动 App 的 Intent
-        val launchIntent = packageManager.getLaunchIntentForPackage(packageName) ?: Intent(appContext, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        // 2. 创建 PendingIntent
-        val pendingIntent = PendingIntent.getActivity(appContext, 0, launchIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
 
         val notification = NotificationCompat.Builder(appContext, STATUS_CHANNEL_ID)
             .setContentTitle(title)
@@ -91,16 +129,6 @@ class NotificationHelper @Inject constructor(
         notificationId: Int
     ) {
         createChannels()
-
-        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
-            ?: Intent(appContext, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            }
-
-        val pendingIntent = PendingIntent.getActivity(
-            appContext, 1, launchIntent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
 
         val notification = NotificationCompat.Builder(appContext, channelId)
             .setSmallIcon(R.drawable.base_general_icon_app_name)

@@ -98,7 +98,7 @@ dependencies {
     implementation(libs.androidx.palette.ktx)
 
     // okhttp
-    api(libs.okhttp.client)
+    api(libs.bundles.okhttp)
 }
 
 val org.gradle.api.Project.androidApp: com.android.build.gradle.AppExtension

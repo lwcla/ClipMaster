@@ -1,7 +1,11 @@
 package com.cla.clip.master.ui.page.video
 
+import android.Manifest
 import android.annotation.SuppressLint
+import android.content.ContentValues
 import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -9,6 +13,7 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -37,6 +42,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,14 +51,19 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.cla.clip.base.general.R
+import com.cla.clip.base.general.dao.DownloadTaskData
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.logW
 import com.cla.clip.master.ui.theme.ClipMaterTheme
 import com.cla.clip.master.ui.widget.TitleBar
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import kotlin.text.compareTo
 
 private const val HIDDEN_PROBE_TIMEOUT_MS = 6_000L
 private const val USER_PLAY_TIMEOUT_MS = 25_000L
@@ -83,6 +94,245 @@ private fun VideoExtractPagePreview() {
     }
 }
 
+// 在 Activity 中
+//private val requestPermissionLauncher = registerForActivityResult(
+//    ActivityResultContracts.RequestPermission()
+//) { isGranted ->
+//    if (isGranted) {
+//        // 用户同意，开始下载
+//        startDownload()
+//    }
+//}
+//
+//// 点击下载时
+//fun startDownload() {
+//    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+//        // Android 13+，申请 READ_EXTERNAL_STORAGE
+//        requestPermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+//    } else {
+//        // Android 12 及以下，申请 WRITE_EXTERNAL_STORAGE
+//        requestPermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+//    }
+//}
+
+
+//private suspend fun downloadVideo(
+//    taskId: String,
+//    videoUrl: String,
+//    referer: String?,
+//    userAgent: String?,
+//    cookie: String?
+//) {
+//    val request = Request.Builder()
+//        .url(videoUrl)
+//        .apply {
+//            if (referer != null) header("Referer", referer)
+//            if (userAgent != null) header("User-Agent", userAgent)
+//            if (cookie != null) header("Cookie", cookie)
+//        }
+//        .build()
+//
+//    val response = okHttpClient.newCall(request).execute()
+//    if (!response.isSuccessful) {
+//        throw Exception("HTTP ${response.code}")
+//    }
+//
+//    val totalSize = response.body?.contentLength() ?: 0L
+//
+//    // 使用 MediaStore 保存到相册
+//    val contentValues = ContentValues().apply {
+//        put(MediaStore.MediaColumns.DISPLAY_NAME, "${taskId}.mp4")
+//        put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
+//
+//        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+//            // Android 10+，保存到 DIRECTORY_MOVIES 或 DIRECTORY_DOWNLOADS
+//            put(MediaStore.MediaColumns.RELATIVE_PATH, "DCIM/Camera")  // 或 "Movies/MyApp"
+//        }
+//    }
+//
+//    // 插入到 MediaStore，得到 Uri
+//    val uri = contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
+//        ?: throw Exception("Failed to insert media")
+//
+//    // 通过 Uri 打开输出流写入数据
+//    val outputStream = contentResolver.openOutputStream(uri)
+//        ?: throw Exception("Failed to open output stream")
+//
+//    response.body?.byteStream()?.use { input ->
+//        outputStream.use { output ->
+//            val buffer = ByteArray(8192)
+//            var downloadedSize = 0L
+//            var bytesRead: Int
+//
+//            while (input.read(buffer).also { bytesRead = it } != -1) {
+//                output.write(buffer, 0, bytesRead)
+//                downloadedSize += bytesRead
+//
+//                val progress = if (totalSize > 0) {
+//                    ((downloadedSize * 100) / totalSize).toInt().coerceIn(0, 100)
+//                } else {
+//                    0
+//                }
+//
+//                downloadRepository.updateProgress(taskId, progress)
+//                startForeground("下载中...", progress)
+//            }
+//        }
+//    }
+//
+//    downloadRepository.markSuccess(taskId, uri.toString())
+//    startForeground("下载完成", 100)
+//}
+
+//// 选项 1：保存到相机相册（用户最常用）
+//put(MediaStore.MediaColumns.RELATIVE_PATH, "DCIM/Camera")
+//
+//// 选项 2：保存到 Movies（电影）
+//put(MediaStore.MediaColumns.RELATIVE_PATH, "Movies/MyApp")
+//
+//// 选项 3：保存到 Pictures（图片）
+//put(MediaStore.MediaColumns.RELATIVE_PATH, "Pictures/MyApp")
+//
+//// 选项 4：保存到 Downloads（下载）
+//put(MediaStore.MediaColumns.RELATIVE_PATH, "Downloads/MyApp")
+
+// 在某个工具类里
+//object PermissionHelper {
+//    fun canWriteExternalStorage(context: Context): Boolean {
+//        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+//            ContextCompat.checkSelfPermission(
+//                context,
+//                Manifest.permission.READ_EXTERNAL_STORAGE
+//            ) == PackageManager.PERMISSION_GRANTED
+//        } else {
+//            ContextCompat.checkSelfPermission(
+//                context,
+//                Manifest.permission.WRITE_EXTERNAL_STORAGE
+//            ) == PackageManager.PERMISSION_GRANTED
+//        }
+//    }
+//}
+
+
+
+// 兼容低版本方案
+//private suspend fun downloadVideo(
+//    taskId: String,
+//    videoUrl: String,
+//    referer: String?,
+//    userAgent: String?,
+//    cookie: String?
+//) {
+//    val request = Request.Builder()
+//        .url(videoUrl)
+//        .apply {
+//            if (referer != null) header("Referer", referer)
+//            if (userAgent != null) header("User-Agent", userAgent)
+//            if (cookie != null) header("Cookie", cookie)
+//        }
+//        .build()
+//
+//    val response = okHttpClient.newCall(request).execute()
+//    if (!response.isSuccessful) {
+//        throw Exception("HTTP ${response.code}")
+//    }
+//
+//    val totalSize = response.body?.contentLength() ?: 0L
+//
+//    // 根据 Android 版本选择不同的保存方式
+//    val (outputStream, filePath) = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+//        // Android 10+：使用 MediaStore API
+//        saveViaMediaStore(taskId)
+//    } else {
+//        // Android 9 及以下：使用传统 File API
+//        saveViaFile(taskId)
+//    }
+//
+//    response.body?.byteStream()?.use { input ->
+//        outputStream.use { output ->
+//            val buffer = ByteArray(8192)
+//            var downloadedSize = 0L
+//            var bytesRead: Int
+//
+//            while (input.read(buffer).also { bytesRead = it } != -1) {
+//                output.write(buffer, 0, bytesRead)
+//                downloadedSize += bytesRead
+//
+//                val progress = if (totalSize > 0) {
+//                    ((downloadedSize * 100) / totalSize).toInt().coerceIn(0, 100)
+//                } else {
+//                    0
+//                }
+//
+//                downloadRepository.updateProgress(taskId, progress)
+//                startForeground("下载中...", progress)
+//            }
+//        }
+//    }
+//
+//    downloadRepository.markSuccess(taskId, filePath)
+//    startForeground("下载完成", 100)
+//}
+//
+///**
+// * Android 10+ 使用 MediaStore
+// */
+//private fun saveViaMediaStore(taskId: String): Pair<OutputStream, String> {
+//    val contentValues = ContentValues().apply {
+//        put(MediaStore.MediaColumns.DISPLAY_NAME, "${taskId}.mp4")
+//        put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
+//        put(MediaStore.MediaColumns.RELATIVE_PATH, "DCIM/Camera")  // 保存到相机相册
+//    }
+//
+//    val uri = contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
+//        ?: throw Exception("Failed to insert media")
+//
+//    val outputStream = contentResolver.openOutputStream(uri)
+//        ?: throw Exception("Failed to open output stream")
+//
+//    return Pair(outputStream, uri.toString())
+//}
+//
+///**
+// * Android 9 及以下使用传统 File API
+// */
+//private fun saveViaFile(taskId: String): Pair<OutputStream, String> {
+//    val downloadDir = File(
+//        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM),
+//        "Camera"
+//    )
+//    downloadDir.mkdirs()
+//
+//    val saveFile = File(downloadDir, "${taskId}.mp4")
+//    val outputStream = saveFile.outputStream()
+//
+//    return Pair(outputStream, saveFile.absolutePath)
+//}
+
+//fun requestStoragePermission() {
+//    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+//        // Android 10 及以下，申请写权限
+//        if (ContextCompat.checkSelfPermission(
+//                this,
+//                Manifest.permission.WRITE_EXTERNAL_STORAGE
+//            ) != PackageManager.PERMISSION_GRANTED
+//        ) {
+//            requestPermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+//        }
+//    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+//        // Android 13+，申请读权限
+//        if (ContextCompat.checkSelfPermission(
+//                this,
+//                Manifest.permission.READ_EXTERNAL_STORAGE
+//            ) != PackageManager.PERMISSION_GRANTED
+//        ) {
+//            requestPermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+//        }
+//    }
+//    // Android 11-12 不需要运行时权限（只需 Manifest 权限）
+//}
+
+
 /** 视频提取页 */
 @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
 @Composable
@@ -96,6 +346,12 @@ fun VideoExtractPage(
     var sessionId by remember { mutableIntStateOf(0) }
     var targetUrl by remember { mutableStateOf<String?>(null) }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
+
+    // 在 VideoExtractPage 函数中
+    var currentTaskId by remember { mutableStateOf<String?>(null) }
+    var downloadTaskState by remember { mutableStateOf<DownloadTaskData?>(null) }
+    val scope = rememberCoroutineScope()
+
 
     // 阶段1超时：后台探测 -> 需要用户播放
     LaunchedEffect(probeState) {
@@ -142,6 +398,38 @@ fun VideoExtractPage(
         webViewRef?.clearHistory()
         webViewRef?.loadUrl(pageUrl)
         logD("视频提取") { "开始探测: session=$sessionId, url=$pageUrl" }
+    }
+
+
+    // 点击下载时
+    fun handleDownload(candidate: VideoCandidate) {
+        // 启动下载并得到 Flow
+        val taskFlow = videoExtractVm.startDownload(
+            videoUrl = candidate.url,
+            referer = candidate.referer,
+            userAgent = candidate.userAgent,
+            cookie = candidate.cookie
+        )
+
+        // 监听状态变化
+        scope.launch {
+            taskFlow.collectLatest { task ->
+                downloadTaskState = task
+                if (task != null) {
+                    when (task.status) {
+                        "downloading" -> probeState = ProbeState.Download(
+                            DownloadResult(task.progress, false, false)
+                        )
+                        "success" -> probeState = ProbeState.Download(
+                            DownloadResult(100, false, true)
+                        )
+                        "failed" -> probeState = ProbeState.Download(
+                            DownloadResult(0, true, false)
+                        )
+                    }
+                }
+            }
+        }
     }
 
     Scaffold(
@@ -230,7 +518,8 @@ fun VideoExtractPage(
                             state.candidate,
                             toDownload = { candidate ->
                                 probeState = ProbeState.Download(DownloadResult(0, isFailed = false, isComplete = false))
-                                // 开始下载视频
+                                // todo 开始下载视频
+                                handleDownload(candidate)
                             }
                         )
                     }
