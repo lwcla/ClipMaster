@@ -71,17 +71,17 @@ class NotificationHelper @Inject constructor(
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     // Android 14 (API 34) 强制要求指定前台服务类型
                     startForeground(
-                        STATUS_NOTIFICATION_ID,
+                        DOWNLOAD_NOTIFICATION_ID,
                         notification,
                         ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
                     )
                 } else {
-                    startForeground(STATUS_NOTIFICATION_ID, notification)
+                    startForeground(DOWNLOAD_NOTIFICATION_ID, notification)
                 }
             } catch (e: Exception) {
                 // 如果 Manifest 中缺少 foregroundServiceType 属性，可能会抛出异常
                 // 此时尝试不带 type 启动作为兜底
-                startForeground(STATUS_NOTIFICATION_ID, notification)
+                startForeground(DOWNLOAD_NOTIFICATION_ID, notification)
             }
         }
     }

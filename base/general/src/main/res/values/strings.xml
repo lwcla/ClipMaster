@@ -47,5 +47,9 @@
     <string name="base_general_without_the_floating_window_permission">没有悬浮窗权限，无法读取剪贴板内容</string>
     <string name="base_general_storage_permission_is_required">需要存储权限</string>
     <string name="base_general_saving_data_to_a_local_folder_requires_storage_permissions">保存数据到本地文件夹中需要存储权限</string>
+    <string name="base_general_initialize_download">初始化下载</string>
+    <string name="base_general_download_failed">下载失败</string>
+    <string name="base_general_download_completed">下载完成</string>
+    <string name="base_general_download_now" tools:ignore="TypographyEllipsis">下载中...</string>
 
 </resources>
