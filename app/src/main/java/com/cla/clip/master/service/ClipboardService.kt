@@ -187,7 +187,7 @@ class ClipboardService : Service() {
     override fun onTaskRemoved(rootIntent: Intent?) {
         logI(TAG) { "onTaskRemoved: " }
         // 不要在这里做清除监听的操作，因为从任务栈移除时，进程并不一定被杀死，前台服务可能还在运行中
-//        removeListener()
+        //removeListener()
         super.onTaskRemoved(rootIntent)
     }
 
