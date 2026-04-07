@@ -28,8 +28,6 @@ import com.cla.clip.master.BuildConfig
 import com.cla.clip.master.utils.LinkMeta
 import com.cla.clip.master.utils.LinkMetaParser
 import com.cla.clip.master.utils.NotificationHelper
-import com.cla.clip.master.utils.NotificationHelper.Companion.CLIP_CHANNEL_ID
-import com.cla.clip.master.utils.NotificationHelper.Companion.CLIP_NOTIFICATION_ID
 import com.cla.clip.shizuku.ClipboardShizukuService
 import com.cla.clip.shizuku.IClipboardShizukuService
 import com.cla.clip.shizuku.ShizukuCallback
@@ -175,6 +173,7 @@ class ClipboardService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // 关键：每次调用 startForegroundService 后，必须再次调用 startForeground，
         // 否则在 API 26+ 设备上可能会因为“未能在规定时间内进入前台”而崩溃。
+        logD(TAG) { "onStartCommand: " }
         startForeground()
         return START_STICKY
     }
@@ -187,7 +186,8 @@ class ClipboardService : Service() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         logI(TAG) { "onTaskRemoved: " }
-        removeListener()
+        // 不要在这里做清除监听的操作，因为从任务栈移除时，进程并不一定被杀死，前台服务可能还在运行中
+//        removeListener()
         super.onTaskRemoved(rootIntent)
     }
 
@@ -319,14 +319,13 @@ class ClipboardService : Service() {
             logI(TAG) { "processClip: isLink=${!extractedLink.isNullOrBlank()} captureEntity=$captureEntity" }
 
             // 保存到数据库
-            clipDao.addNewClip(captureEntity)
+            val clipId = clipDao.addNewClip(captureEntity)
 
-            withContext(Dispatchers.Main) {
-                notifyClipUpdated(
-                    title = "$appName ${appContext.getString(com.cla.clip.base.general.R.string.base_general_it_was_written_into_the_clipboard)}",
-                    content = "${appContext.getString(com.cla.clip.base.general.R.string.base_general_content)}${clipContent}"
-                )
-            }
+            notificationHelper.notifyClipUpdate(
+                title = "$appName ${appContext.getString(com.cla.clip.base.general.R.string.base_general_it_was_written_into_the_clipboard)}",
+                content = "${appContext.getString(com.cla.clip.base.general.R.string.base_general_content)}${clipContent}",
+                clipId = clipId
+            )
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -410,15 +409,6 @@ class ClipboardService : Service() {
             this,
             appContext.getString(com.cla.clip.base.general.R.string.base_general_app_name),
             statusText
-        )
-    }
-
-    private fun notifyClipUpdated(title: String, content: String) {
-        notificationHelper.notifyNormalMessage(
-            title,
-            content,
-            CLIP_CHANNEL_ID,
-            CLIP_NOTIFICATION_ID
         )
     }
 

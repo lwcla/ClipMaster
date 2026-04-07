@@ -87,7 +87,7 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         Refine.unsafeCast<AppOpsManagerHidden>(appOpsManager).startWatchingNoted(intArrayOf(30), opNotedListener)
     }
 
-    override fun setCallback(shizukuCallback: ShizukuCallback) {
+    override fun setCallback(shizukuCallback: ShizukuCallback?) {
         callFlow.update { shizukuCallback }
     }
 

@@ -32,6 +32,19 @@ class NotificationHelper @Inject constructor(
         /** 下载通知 */
         const val DOWNLOAD_CHANNEL_ID = "download_channel_id"
         const val DOWNLOAD_NOTIFICATION_ID = 1003
+
+        /** 从通知跳转到详情页的字段 */
+        const val EXTRA_TARGET = "extra_target"
+        const val EXTRA_CLIP_ID = "extra_clip_id"
+        const val TARGET_DETAIL = "target_detail"
+
+        fun Intent?.extractClipId(): Long? {
+            if (this == null) return null
+            val target = getStringExtra(EXTRA_TARGET)
+            if (target != TARGET_DETAIL) return null
+            if (!hasExtra(EXTRA_CLIP_ID)) return null
+            return getLongExtra(EXTRA_CLIP_ID, -1L).takeIf { it > 0 }
+        }
     }
 
     private val manager by lazy { appContext.getSystemService(NotificationManager::class.java) }
@@ -40,7 +53,7 @@ class NotificationHelper @Inject constructor(
 
     private val packageName by lazy { appContext.packageName }
 
-    private val pendingIntent: PendingIntent
+    private val launchPendingIntent: PendingIntent
         get() {
             // 1. 获取启动 App 的 Intent
             val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
@@ -52,7 +65,7 @@ class NotificationHelper @Inject constructor(
             return PendingIntent.getActivity(appContext, 0, launchIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         }
 
-
+    /** 开启视频下载的前台服务通知 */
     fun downloadForeground(service: Service, title: String, progress: Int) {
         createChannels()
 
@@ -86,6 +99,7 @@ class NotificationHelper @Inject constructor(
         }
     }
 
+    /** 开启剪贴板监听的前台服务通知 */
     fun startForeground(service: Service, title: String, content: String) {
         createChannels()
 
@@ -94,7 +108,7 @@ class NotificationHelper @Inject constructor(
             .setContentText(content)
             .setSmallIcon(R.mipmap.base_general_ic_app) // 确保资源存在，或者使用 android.R.drawable.ic_menu_save
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setContentIntent(pendingIntent) // 3. 设置点击行为
+            .setContentIntent(launchPendingIntent) // 3. 设置点击行为
             .setSilent(true)          // 简单直接
             .setDefaults(0)           // 不用默认铃声/震动/灯
             .setVibrate(longArrayOf(0L))
@@ -121,16 +135,31 @@ class NotificationHelper @Inject constructor(
         }
     }
 
-    /** 普通消息通知 */
-    fun notifyNormalMessage(
+    /** 剪贴数据更新通知 */
+    fun notifyClipUpdate(
         title: String,
         content: String,
-        channelId: String,
-        notificationId: Int
+        clipId: Long
     ) {
         createChannels()
 
-        val notification = NotificationCompat.Builder(appContext, channelId)
+        // 跳转到详情页
+        val intent = Intent(appContext, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra(EXTRA_TARGET, TARGET_DETAIL)
+            putExtra(EXTRA_CLIP_ID, clipId)
+        }
+
+        val pendingIntent = PendingIntent.getActivity(
+            appContext,
+            clipId.hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(appContext, CLIP_CHANNEL_ID)
             .setSmallIcon(R.mipmap.base_general_ic_app)
             .setContentTitle(title)
             .setContentText(content)
@@ -144,7 +173,7 @@ class NotificationHelper @Inject constructor(
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
 
-        manager.notify(notificationId, notification) // 固定ID=覆盖上一条；若想每条都保留可用递增ID
+        manager.notify(CLIP_NOTIFICATION_ID, notification) // 固定ID=覆盖上一条；若想每条都保留可用递增ID
     }
 
     /** 创建渠道 */

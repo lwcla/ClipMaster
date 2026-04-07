@@ -56,7 +56,6 @@ class ClipDaoImpl @Inject constructor(
     }
 
     override suspend fun addNewClip(captureEntity: ClipCaptureEntity) = withContext(Dispatchers.IO) {
-
         // 拼接所有可能需要搜索的内容，用来后续做模糊搜索
         val searchText = captureEntity.content
             .plus(captureEntity.link)

@@ -20,7 +20,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import javax.inject.Inject
@@ -65,7 +64,7 @@ class DownloadVideoService : Service() {
         startForeground(appContext.getString(R.string.base_general_initialize_download), 0)
 
         // 启动协程下载
-        serviceScope.launch {
+        serviceScope.launch(Dispatchers.IO) {
             try {
                 downloadVideo(taskId, videoUrl, referer, userAgent, cookie)
             } catch (e: Exception) {
@@ -138,10 +137,8 @@ class DownloadVideoService : Service() {
 
                     saveVideo.success(appContext, mediaTarget)
                     logI(TAG) { "下载完成 $totalSize bytes filePath=${filePath} " }
-                    serviceScope.launch(Dispatchers.IO) {
-                        downloadRepository.markSuccess(taskId, filePath)
-                        withContext(Dispatchers.Main) { startForeground(appContext.getString(R.string.base_general_download_completed), 100) }
-                    }
+                    downloadRepository.markSuccess(taskId, filePath)
+                    startForeground(appContext.getString(R.string.base_general_download_completed), 100)
                     return
                 }
             }
