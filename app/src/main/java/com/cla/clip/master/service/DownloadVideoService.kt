@@ -166,6 +166,7 @@ class DownloadVideoService : Service() {
         }.getOrElse {
             logE(TAG, it) { "保存文件到本地失败" }
             // 失败处理
+            startForeground(appContext.getString(R.string.base_general_download_failed), 0)
             saveVideo.failure(appContext, mediaTarget)
         }
     }
