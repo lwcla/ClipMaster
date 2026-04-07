@@ -8,6 +8,7 @@ plugins {
     alias(libs.plugins.google.devtools.ksp)                 // 应用KSP插件，用于代码生成
     alias(libs.plugins.google.dagger.hilt.android)                // 应用Hilt插件，用于依赖注入
     alias(libs.plugins.kotlin.serialization) // 新增Kotlin序列化插件，用于数据类的序列化和反序列化
+    id("kotlin-parcelize")
 }
 
 android {

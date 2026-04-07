@@ -56,9 +56,7 @@ class ClipboardService : Service() {
 
         private const val APP_ICONS_DIR = "app_icons"
 
-        fun start(
-            context: Context,
-        ) {
+        fun start(context: Context) {
             logI(TAG) { "start" }
             val serviceIntent = Intent(context, ClipboardService::class.java)
 

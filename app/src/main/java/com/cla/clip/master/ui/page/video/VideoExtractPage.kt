@@ -54,6 +54,7 @@ import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.logW
 import com.cla.clip.base.general.widget.RequestStoragePermission
+import com.cla.clip.master.entity.VideoCandidate
 import com.cla.clip.master.ui.theme.ClipMaterTheme
 import com.cla.clip.master.ui.widget.TitleBar
 import kotlinx.coroutines.delay
@@ -264,34 +265,32 @@ fun VideoExtractPage(
         logD("视频提取") { "开始探测: session=$sessionId, url=$pageUrl" }
     }
 
-
     // 点击下载时
     fun handleDownload(candidate: VideoCandidate) {
         // 启动下载并得到 Flow
-        val taskFlow = videoExtractVm.startDownload(
-            videoUrl = candidate.url,
-            referer = candidate.referer,
-            userAgent = candidate.userAgent,
-            cookie = candidate.cookie
-        )
-
         // 监听状态变化
         scope.launch {
-            taskFlow.collectLatest { task ->
+            videoExtractVm.startDownload(candidate = candidate).collectLatest { task ->
                 downloadTaskState = task
                 if (task != null) {
                     when (task.status) {
-                        "downloading" -> probeState = ProbeState.Download(
-                            DownloadResult(task.progress, false, false)
-                        )
+                        "downloading" -> {
+                            probeState = ProbeState.Download(
+                                DownloadResult(task.progress, false, isComplete = false)
+                            )
+                        }
 
-                        "success" -> probeState = ProbeState.Download(
-                            DownloadResult(100, false, true)
-                        )
+                        "success" -> {
+                            probeState = ProbeState.Download(
+                                DownloadResult(100, false, isComplete = true)
+                            )
+                        }
 
-                        "failed" -> probeState = ProbeState.Download(
-                            DownloadResult(0, true, false)
-                        )
+                        "failed" -> {
+                            probeState = ProbeState.Download(
+                                DownloadResult(0, true, isComplete = false)
+                            )
+                        }
                     }
                 }
             }
@@ -301,7 +300,6 @@ fun VideoExtractPage(
     Scaffold(
         modifier = Modifier.fillMaxSize()
     ) {
-
         pendingCandidate?.let { pending ->
             key(pending.first) {
                 RequestStoragePermission(
@@ -464,8 +462,7 @@ private fun VideoDownload(result: DownloadResult) {
         ) {
             LinearProgressIndicator(
                 progress = { progress.toFloat() / 100 },
-                modifier = Modifier
-                    .weight(1f)
+                modifier = Modifier.weight(1f)
             )
 
             Text(
@@ -672,13 +669,6 @@ private sealed interface ProbeState {
     data object Failed : ProbeState
     data class Download(val result: DownloadResult) : ProbeState
 }
-
-data class VideoCandidate(
-    val url: String,
-    val referer: String?,
-    val userAgent: String?,
-    val cookie: String?,
-)
 
 private data class DownloadResult(
     val progress: Int,

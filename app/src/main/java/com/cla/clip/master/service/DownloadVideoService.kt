@@ -3,6 +3,7 @@ package com.cla.clip.master.service
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.IBinder
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.entity.DownloadRepository
@@ -13,6 +14,7 @@ import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.success
+import com.cla.clip.master.entity.VideoCandidate
 import com.cla.clip.master.utils.NotificationHelper
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -30,6 +32,22 @@ class DownloadVideoService : Service() {
 
     companion object {
         private const val TAG = "DownloadVideoService"
+
+        private const val TASK_ID_KEY = "task_id_key"
+        private const val CANDIDATE_KEY = "candidate_key"
+
+        fun start(context: Context, taskId: String, candidate: VideoCandidate) {
+            logI(TAG) { "start: " }
+            val serviceIntent = Intent(context, DownloadVideoService::class.java)
+            serviceIntent.putExtra(TASK_ID_KEY, taskId)
+            serviceIntent.putExtra(CANDIDATE_KEY, candidate)
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(serviceIntent)
+            } else {
+                context.startService(serviceIntent)
+            }
+        }
     }
 
     @Inject
@@ -55,11 +73,14 @@ class DownloadVideoService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val taskId = intent?.getStringExtra("taskId") ?: return START_NOT_STICKY
-        val videoUrl = intent.getStringExtra("videoUrl") ?: return START_NOT_STICKY
-        val referer = intent.getStringExtra("referer")
-        val userAgent = intent.getStringExtra("userAgent")
-        val cookie = intent.getStringExtra("cookie")
+        val taskId = intent?.getStringExtra(TASK_ID_KEY) ?: return START_NOT_STICKY
+        val candidate = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(CANDIDATE_KEY, VideoCandidate::class.java)
+        } else {
+            intent.getParcelableExtra<VideoCandidate>(CANDIDATE_KEY)
+        } ?: return START_NOT_STICKY
+
+        val (videoUrl, referer, userAgent, cookie) = candidate
 
         startForeground(appContext.getString(R.string.base_general_initialize_download), 0)
 
@@ -74,7 +95,7 @@ class DownloadVideoService : Service() {
             }
         }
 
-        return START_NOT_STICKY
+        return START_STICKY
     }
 
     private suspend fun downloadVideo(
