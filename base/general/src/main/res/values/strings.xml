@@ -44,5 +44,6 @@
     <string name="base_general_video_download_success">视频下载完成</string>
     <string name="base_general_video_download">视频下载</string>
     <string name="base_general_update_the_download_progress_and_status">更新下载进度和状态</string>
+    <string name="base_general_without_the_floating_window_permission">没有悬浮窗权限，无法读取剪贴板内容</string>
 
 </resources>

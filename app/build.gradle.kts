@@ -102,4 +102,7 @@ dependencies {
     // Paging3库，用于高效加载和显示大量数据
     implementation(libs.bundles.paging)
     testImplementation(libs.paging.common)
+
+    // codelocator，用于在调试时定位代码位置，提升调试效率
+    debugImplementation(libs.codelocator.core)
 }

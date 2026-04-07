@@ -1,6 +1,5 @@
 package com.cla.clip.master.service
 
-import android.app.NotificationManager
 import android.app.Service
 import android.content.ClipboardManager
 import android.content.ComponentName
@@ -14,6 +13,7 @@ import android.os.IBinder
 import android.view.View
 import android.view.WindowManager
 import androidx.core.content.FileProvider
+import com.cla.clip.base.general.R
 import com.cla.clip.base.general.entity.ClipCaptureEntity
 import com.cla.clip.base.general.repository.ClipDao
 import com.cla.clip.base.general.utils.ApplicationScope
@@ -23,6 +23,7 @@ import com.cla.clip.base.general.utils.hasOverlayPermission
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
 import com.cla.clip.base.general.utils.logI
+import com.cla.clip.base.general.utils.toast
 import com.cla.clip.master.BuildConfig
 import com.cla.clip.master.utils.LinkMeta
 import com.cla.clip.master.utils.LinkMetaParser
@@ -211,6 +212,8 @@ class ClipboardService : Service() {
     ) = withContext(Dispatchers.Main.immediate) {
         // 检查当前有没有悬浮窗权限
         if (!appContext.hasOverlayPermission()) {
+            appContext.toast(R.string.base_general_without_the_floating_window_permission)
+            logE(TAG) { "没有悬浮窗权限，无法读取剪贴板内容" }
             return@withContext
         }
 

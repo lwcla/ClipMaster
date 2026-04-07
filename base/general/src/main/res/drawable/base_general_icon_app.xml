@@ -2,10 +2,9 @@
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
 
     <item
-        android:bottom="40dp"
+        android:width="25dp"
+        android:height="25dp"
         android:drawable="@drawable/base_general_icon_app_name"
-        android:end="40dp"
-        android:start="40dp"
-        android:top="40dp" />
+        android:gravity="center" />
 
 </layer-list>

@@ -30,12 +30,11 @@ jsoup = "1.22.1"
 coil = "3.4.0"
 # palette - 用于从图片中提取颜色信息，提供了Kotlin扩展函数，简化了使用流程
 paletteKtx = "1.0.0"
-
 # paging 版本 - 用于实现分页加载功能，特别适用于处理大量数据的列表，如聊天记录
 paging_version = "3.4.2"
-
 #okhttp
 okhttp = "5.3.2"
+codelocator = "2.0.4"
 
 [libraries]
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
@@ -113,6 +112,9 @@ paging-common = { group = "androidx.paging", name = "paging-common", version.ref
 #okhttp
 okhttp-client = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 okhttp-logger = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
+
+# codelocator，用于在调试时定位代码位置，提升调试效率 https://github.com/bytedance/CodeLocator
+codelocator-core = { group = "com.bytedance.tools.codelocator", name = "codelocator-core", version.ref = "codelocator" }
 
 [bundles]
 compose = [
