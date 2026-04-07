@@ -1,17 +1,18 @@
 package com.cla.clip.master.service
 
-import android.Manifest
 import android.app.Service
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
+import android.media.MediaScannerConnection
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.os.IBinder
 import android.provider.MediaStore
-import androidx.core.content.ContextCompat
 import com.cla.clip.base.general.entity.DownloadRepository
+import com.cla.clip.base.general.utils.logD
+import com.cla.clip.base.general.utils.logE
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.master.utils.NotificationHelper
 import dagger.hilt.android.AndroidEntryPoint
@@ -20,6 +21,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -77,6 +79,7 @@ class DownloadVideoService : Service() {
             try {
                 downloadVideo(taskId, videoUrl, referer, userAgent, cookie)
             } catch (e: Exception) {
+                logE(TAG, e) { "下载失败" }
                 downloadRepository.markFailed(taskId, e.message ?: "Unknown error")
                 startForeground("下载失败", 0)
             }
@@ -84,7 +87,6 @@ class DownloadVideoService : Service() {
 
         return START_NOT_STICKY
     }
-
 
     private suspend fun downloadVideo(
         taskId: String,
@@ -103,14 +105,18 @@ class DownloadVideoService : Service() {
             .build()
 
         val response = okHttpClient.newCall(request).execute()
+
         if (!response.isSuccessful) {
-            throw Exception("HTTP ${response.code}")
+            logE(TAG) { "下载失败: HTTP ${response.code} - ${response.message}" }
+            startForeground("下载失败", 0)
+            downloadRepository.markFailed(taskId, "HTTP ${response.code}")
+            return
         }
 
         val totalSize = response.body?.contentLength() ?: 0L
 
         // 根据 Android 版本选择不同的保存方式
-        val (outputStream, filePath) = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        val (mediaUri, filePath, outputStream) = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             // Android 10+：使用 MediaStore API
             saveViaMediaStore(taskId)
         } else {
@@ -118,41 +124,76 @@ class DownloadVideoService : Service() {
             saveViaFile(taskId)
         }
 
-        response.body?.byteStream()?.use { input ->
-            outputStream.use { output ->
-                val buffer = ByteArray(8192)
-                var downloadedSize = 0L
-                var bytesRead: Int
+        logD(TAG) { "开始下载，文件总大小: $totalSize bytes, 保存路径: $filePath" }
 
-                while (input.read(buffer).also { bytesRead = it } != -1) {
-                    output.write(buffer, 0, bytesRead)
-                    downloadedSize += bytesRead
+        runCatching {
+            response.body?.byteStream()?.use { input ->
+                outputStream.use { output ->
+                    val buffer = ByteArray(8192)
+                    var downloadedSize = 0L
+                    var bytesRead: Int
 
-                    val progress = if (totalSize > 0) {
-                        ((downloadedSize * 100) / totalSize).toInt().coerceIn(0, 100)
-                    } else {
-                        0
+                    var lastProgress: Int? = null
+
+                    while (input.read(buffer).also { bytesRead = it } != -1) {
+                        output.write(buffer, 0, bytesRead)
+                        downloadedSize += bytesRead
+
+                        val progress = if (totalSize > 0) {
+                            ((downloadedSize * 100) / totalSize).toInt().coerceIn(0, 100)
+                        } else {
+                            0
+                        }
+
+                        if (lastProgress != progress) {
+                            lastProgress = progress
+                            logD(TAG) { "下载进度: $progress% ($downloadedSize / $totalSize bytes)" }
+                            downloadRepository.updateProgress(taskId, progress)
+                            startForeground("下载中...", progress)
+                        }
                     }
 
-                    downloadRepository.updateProgress(taskId, progress)
-                    startForeground("下载中...", progress)
+                    if (mediaUri != null) {
+                        markMediaReady(mediaUri)
+                    }else{
+                        scanVideoFile(filePath)
+                    }
+
+                    logI(TAG) { "下载完成 $totalSize bytes filePath=${filePath} " }
+                    serviceScope.launch(Dispatchers.IO) {
+                        downloadRepository.markSuccess(taskId, filePath)
+                        withContext(Dispatchers.Main) { startForeground("下载完成", 100) }
+                    }
+                    return
                 }
             }
+        }.getOrElse {
+            logE(TAG, it) { "保存文件到本地失败" }
+            // 失败处理
+            if (mediaUri != null) {
+                // 可选1：删除半成品
+                contentResolver.delete(mediaUri, null, null)
+                // 可选2：不删，改 IS_PENDING=0（通常不推荐，可能露出损坏文件）
+            }
         }
-
-        downloadRepository.markSuccess(taskId, filePath)
-        startForeground("下载完成", 100)
     }
 
-    //
-    /**
-     * Android 10+ 使用 MediaStore
-     */
-    private fun saveViaMediaStore(taskId: String): Pair<OutputStream, String> {
+    /** Android 10+ 使用 MediaStore */
+    private fun saveViaMediaStore(taskId: String): MediaStoreTarget {
+        //// 选项 1：保存到相机相册（用户最常用）
+        //put(MediaStore.MediaColumns.RELATIVE_PATH, "DCIM/Camera")
+        //// 选项 2：保存到 Movies（电影）
+        //put(MediaStore.MediaColumns.RELATIVE_PATH, "Movies/MyApp")
+        //// 选项 3：保存到 Pictures（图片）
+        //put(MediaStore.MediaColumns.RELATIVE_PATH, "Pictures/MyApp")
+        //// 选项 4：保存到 Downloads（下载）
+        //put(MediaStore.MediaColumns.RELATIVE_PATH, "Downloads/MyApp")
+
         val contentValues = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, "${taskId}.mp4")
             put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
-            put(MediaStore.MediaColumns.RELATIVE_PATH, "DCIM/Camera")  // 保存到相机相册
+            put(MediaStore.MediaColumns.RELATIVE_PATH, "Movies/clipMaster") // 保存到 Movies/clipMaster/videos 目录下
+            put(MediaStore.MediaColumns.IS_PENDING, 1) // 标记为正在下载，下载完成后再改为 0
         }
 
         val uri = contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
@@ -161,46 +202,50 @@ class DownloadVideoService : Service() {
         val outputStream = contentResolver.openOutputStream(uri)
             ?: throw Exception("Failed to open output stream")
 
-        return Pair(outputStream, uri.toString())
+        return MediaStoreTarget(uri, uri.toString(), outputStream)
+    }
+
+    private fun markMediaReady(uri: Uri) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.IS_PENDING, 0) // 标记下载完成，媒体文件现在可见
+            }
+            logD(TAG) { "下载完成，现在去标记媒体文件可见" }
+            contentResolver.update(uri, values, null, null)
+        }
+    }
+
+    /**
+     * android 10 以下使用传统 File API 后，手动触发媒体扫描让新文件出现在图库等应用中
+     */
+    private fun scanVideoFile(path: String) {
+        MediaScannerConnection.scanFile(
+            this, // Service 本身就是 Context
+            arrayOf(path),
+            arrayOf("video/mp4"), // 也可以传 null，让系统自己判断
+        ) { scannedPath, scannedUri ->
+            if (scannedUri != null) {
+                logI(TAG) { "媒体扫描成功: path=$scannedPath, uri=$scannedUri" }
+            } else {
+                logE(TAG) { "媒体扫描失败: path=$scannedPath" }
+            }
+        }
     }
 
     /**
      * Android 9 及以下使用传统 File API
      */
-    private fun saveViaFile(taskId: String): Pair<OutputStream, String> {
+    private fun saveViaFile(taskId: String): MediaStoreTarget {
         val downloadDir = File(
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM),
-            "Camera"
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES),
+            "clipMaster"
         )
         downloadDir.mkdirs()
 
         val saveFile = File(downloadDir, "${taskId}.mp4")
         val outputStream = saveFile.outputStream()
 
-        return Pair(outputStream, saveFile.absolutePath)
-    }
-
-    fun requestStoragePermission() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-            // Android 10 及以下，申请写权限
-            if (ContextCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.WRITE_EXTERNAL_STORAGE
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-//                requestPermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            }
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            // Android 13+，申请读权限
-            if (ContextCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.READ_EXTERNAL_STORAGE
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-//                requestPermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
-            }
-        }
-        // Android 11-12 不需要运行时权限（只需 Manifest 权限）
+        return MediaStoreTarget(uri = null, saveFile.absolutePath, outputStream)
     }
 
 
@@ -295,4 +340,10 @@ class DownloadVideoService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    data class MediaStoreTarget(
+        val uri: Uri?,
+        val path: String,
+        val outputStream: OutputStream
+    )
 }

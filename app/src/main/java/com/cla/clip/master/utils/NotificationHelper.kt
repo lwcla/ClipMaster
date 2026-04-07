@@ -58,7 +58,7 @@ class NotificationHelper @Inject constructor(
 
         val notification = NotificationCompat.Builder(appContext, DOWNLOAD_CHANNEL_ID)
             .setContentTitle(title)
-            .setSmallIcon(R.drawable.base_general_icon_app_name)
+            .setSmallIcon(R.drawable.base_general_icon_app_name_3)
             .setProgress(100, progress, false)
             .setSilent(true)          // 简单直接
             .setDefaults(0)           // 不用默认铃声/震动/灯
@@ -92,7 +92,7 @@ class NotificationHelper @Inject constructor(
         val notification = NotificationCompat.Builder(appContext, STATUS_CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(content)
-            .setSmallIcon(R.drawable.base_general_icon_app_name) // 确保资源存在，或者使用 android.R.drawable.ic_menu_save
+            .setSmallIcon(R.drawable.base_general_icon_app_name_3) // 确保资源存在，或者使用 android.R.drawable.ic_menu_save
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(pendingIntent) // 3. 设置点击行为
             .setSilent(true)          // 简单直接
@@ -131,7 +131,7 @@ class NotificationHelper @Inject constructor(
         createChannels()
 
         val notification = NotificationCompat.Builder(appContext, channelId)
-            .setSmallIcon(R.drawable.base_general_icon_app_name)
+            .setSmallIcon(R.drawable.base_general_icon_app_name_3)
             .setContentTitle(title)
             .setContentText(content)
             .setStyle(NotificationCompat.BigTextStyle().bigText(content))

@@ -45,5 +45,7 @@
     <string name="base_general_video_download">视频下载</string>
     <string name="base_general_update_the_download_progress_and_status">更新下载进度和状态</string>
     <string name="base_general_without_the_floating_window_permission">没有悬浮窗权限，无法读取剪贴板内容</string>
+    <string name="base_general_storage_permission_is_required">需要存储权限</string>
+    <string name="base_general_saving_data_to_a_local_folder_requires_storage_permissions">保存数据到本地文件夹中需要存储权限</string>
 
 </resources>

@@ -34,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,6 +53,7 @@ import com.cla.clip.base.general.dao.DownloadTaskData
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.logW
+import com.cla.clip.base.general.widget.RequestStoragePermission
 import com.cla.clip.master.ui.theme.ClipMaterTheme
 import com.cla.clip.master.ui.widget.TitleBar
 import kotlinx.coroutines.delay
@@ -177,18 +179,6 @@ private fun VideoExtractPagePreview() {
 //    startForeground("下载完成", 100)
 //}
 
-//// 选项 1：保存到相机相册（用户最常用）
-//put(MediaStore.MediaColumns.RELATIVE_PATH, "DCIM/Camera")
-//
-//// 选项 2：保存到 Movies（电影）
-//put(MediaStore.MediaColumns.RELATIVE_PATH, "Movies/MyApp")
-//
-//// 选项 3：保存到 Pictures（图片）
-//put(MediaStore.MediaColumns.RELATIVE_PATH, "Pictures/MyApp")
-//
-//// 选项 4：保存到 Downloads（下载）
-//put(MediaStore.MediaColumns.RELATIVE_PATH, "Downloads/MyApp")
-
 // 在某个工具类里
 //object PermissionHelper {
 //    fun canWriteExternalStorage(context: Context): Boolean {
@@ -225,6 +215,7 @@ fun VideoExtractPage(
     var downloadTaskState by remember { mutableStateOf<DownloadTaskData?>(null) }
     val scope = rememberCoroutineScope()
 
+    var pendingCandidate by remember { mutableStateOf<Pair<Long, VideoCandidate>?>(null) }
 
     // 阶段1超时：后台探测 -> 需要用户播放
     LaunchedEffect(probeState) {
@@ -265,8 +256,8 @@ fun VideoExtractPage(
     LaunchedEffect(Unit) {
         sessionId += 1
         targetUrl = pageUrl // 这里改成你的真实 link
-//        probeState = ProbeState.HiddenProbing(sessionId)
-        probeState = ProbeState.Success(VideoCandidate("", "", "", ""))
+        probeState = ProbeState.HiddenProbing(sessionId)
+//        probeState = ProbeState.Success(VideoCandidate("", "", "", ""))
         webViewRef?.stopLoading()
         webViewRef?.clearHistory()
         webViewRef?.loadUrl(pageUrl)
@@ -310,21 +301,36 @@ fun VideoExtractPage(
     Scaffold(
         modifier = Modifier.fillMaxSize()
     ) {
+
+        pendingCandidate?.let { pending ->
+            key(pending.first) {
+                RequestStoragePermission(
+                    next = {
+                        pendingCandidate = null
+                        probeState = ProbeState.Download(DownloadResult(0, isFailed = false, isComplete = false))
+                        // todo 开始下载视频
+                        handleDownload(pending.second)
+                    }
+                )
+            }
+        }
+
         Box {
-//            Column {
-//                TitleBar(stringResource(R.string.base_general_video_extract), onBack)
-//                VideoProbeWebViewLayer(
-//                    targetUrl = targetUrl,
-//                    onWebViewReady = { webViewRef = it },
-//                    onVideoCandidate = { candidate ->
-//                        if (probeState is ProbeState.HiddenProbing || probeState is ProbeState.NeedUserPlay) {
-//                            probeState = ProbeState.Success(candidate)
-//                            logI("视频提取") { "抓取成功: $candidate" }
-//                            // TODO 接你的下载逻辑：detailVm.startDownload(candidate)
-//                        }
-//                    }
-//                )
-//            }
+            if (probeState !is ProbeState.Success) {
+                Column {
+                    TitleBar(stringResource(R.string.base_general_video_extract), onBack)
+                    VideoProbeWebViewLayer(
+                        targetUrl = targetUrl,
+                        onWebViewReady = { webViewRef = it },
+                        onVideoCandidate = { candidate ->
+                            if (probeState is ProbeState.HiddenProbing || probeState is ProbeState.NeedUserPlay) {
+                                logI("视频提取") { "抓取成功: $candidate" }
+                                probeState = ProbeState.Success(candidate)
+                            }
+                        }
+                    )
+                }
+            }
 
             // ========== 前景遮罩层：盖住 WebView，并吞掉触摸，让WebView在后面加载页面，等页面加载完成之后，触发视频播放，拦截视频地址 ==========
 //            val hideWebView = probeState is ProbeState.HiddenProbing || probeState is ProbeState.Idle
@@ -392,12 +398,7 @@ fun VideoExtractPage(
                         VideoProbeSuccess(
                             state.candidate,
                             toDownload = { candidate ->
-
-
-
-                                probeState = ProbeState.Download(DownloadResult(0, isFailed = false, isComplete = false))
-                                // todo 开始下载视频
-                                handleDownload(candidate)
+                                pendingCandidate = System.currentTimeMillis() to candidate
                             }
                         )
                     }
@@ -406,7 +407,6 @@ fun VideoExtractPage(
                         VideoDownload(state.result)
                     }
                 }
-//
             }
         }
     }
@@ -673,7 +673,7 @@ private sealed interface ProbeState {
     data class Download(val result: DownloadResult) : ProbeState
 }
 
-private data class VideoCandidate(
+data class VideoCandidate(
     val url: String,
     val referer: String?,
     val userAgent: String?,
