@@ -47,6 +47,7 @@ class VideoDownloadVm @Inject constructor(
         val taskId = downloadRepository.createTask(url, referer, userAgent, cookie)
 
         // 启动前台服务
+        // todo 这里可能会重复触发，需要在service里去判断当前任务是否正在下载，避免重复下载
         withContext(Dispatchers.Main) {
             DownloadVideoService.start(appContext, taskId, candidate)
         }
