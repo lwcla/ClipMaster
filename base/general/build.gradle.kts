@@ -99,6 +99,9 @@ dependencies {
 
     // okhttp
     api(libs.bundles.okhttp)
+
+    // json
+    api(libs.kotlinx.serialization.json)
 }
 
 val org.gradle.api.Project.androidApp: com.android.build.gradle.AppExtension

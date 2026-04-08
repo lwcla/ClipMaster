@@ -9,6 +9,7 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -21,12 +22,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Done
-import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -35,31 +34,29 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.cla.clip.base.general.R
-import com.cla.clip.base.general.dao.DownloadTaskData
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.logW
 import com.cla.clip.base.general.widget.RequestStoragePermission
 import com.cla.clip.master.entity.VideoCandidate
+import com.cla.clip.master.ui.navigation.Route
+import com.cla.clip.master.ui.navigation.VideoDownloadRoute
 import com.cla.clip.master.ui.theme.ClipMaterTheme
 import com.cla.clip.master.ui.widget.TitleBar
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
 
 private const val HIDDEN_PROBE_TIMEOUT_MS = 6_000L
 private const val USER_PLAY_TIMEOUT_MS = 25_000L
@@ -79,153 +76,106 @@ private const val AUTO_PLAY_JS = """
 })();
 """
 
-@Preview
-@Composable
-private fun VideoExtractPagePreview() {
-    ClipMaterTheme {
-        VideoExtractPage(
-            pageUrl = "",
-            onBack = {}
-        )
-    }
-}
 
-/** 视频提取页 */
+/** 视频地址识别页 */
 @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
 @Composable
 fun VideoExtractPage(
     videoExtractVm: VideoExtractVm = hiltViewModel(),
     pageUrl: String,
     onBack: () -> Unit,
+    onNavigate: (route: Route) -> Unit
 ) {
-
-    var probeState by remember { mutableStateOf<ProbeState>(ProbeState.Idle) }
-    var sessionId by remember { mutableIntStateOf(0) }
-    var targetUrl by remember { mutableStateOf<String?>(null) }
+    val tag = "视频地址识别"
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
 
-    // 在 VideoExtractPage 函数中
-    var currentTaskId by remember { mutableStateOf<String?>(null) }
-    var downloadTaskState by remember { mutableStateOf<DownloadTaskData?>(null) }
-    val scope = rememberCoroutineScope()
+    LaunchedEffect(videoExtractVm.probeState) {
+        when (val s = videoExtractVm.probeState) {
+            // 阶段1超时：后台探测 -> 需要用户播放
+            is ProbeState.HiddenProbing -> {
+                delay(HIDDEN_PROBE_TIMEOUT_MS)
+                val cur = videoExtractVm.probeState
+                if (cur is ProbeState.HiddenProbing && cur.sessionId == s.sessionId) {
+                    videoExtractVm.probeState = ProbeState.Success(
+                        VideoCandidate(
+                            url = toPlayUrl(pageUrl),
+                            referer = pageUrl,
+                            userAgent = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Mobile Safari/537.36",
+                            cookie = null
+                        )
+                    )
 
-    var pendingCandidate by remember { mutableStateOf<Pair<Long, VideoCandidate>?>(null) }
+//                    videoExtractVm.probeState = ProbeState.Failed
 
-    // 阶段1超时：后台探测 -> 需要用户播放
-    LaunchedEffect(probeState) {
-        val s = probeState
-        if (s is ProbeState.HiddenProbing) {
-            delay(HIDDEN_PROBE_TIMEOUT_MS)
-            if (probeState is ProbeState.HiddenProbing &&
-                (probeState as ProbeState.HiddenProbing).sessionId == s.sessionId
-            ) {
-                probeState = ProbeState.NeedUserPlay(s.sessionId)
-                webViewRef?.evaluateJavascript(AUTO_PLAY_JS, null)
+                    // todo 这里超时之后要显示webview，并引导用户主动点击视频播放，拦截视频的地址
+//                    videoExtractVm.probeState = ProbeState.NeedUserPlay(s.sessionId)
+//                    webViewRef?.evaluateJavascript(AUTO_PLAY_JS, null)
+                }
             }
+
+            // 阶段2超时：用户播放阶段仍无结果 -> 失败
+            is ProbeState.NeedUserPlay -> {
+                delay(USER_PLAY_TIMEOUT_MS)
+                val cur = videoExtractVm.probeState
+                if (cur is ProbeState.NeedUserPlay && cur.sessionId == s.sessionId) {
+                    videoExtractVm.probeState = ProbeState.Failed
+                }
+            }
+
+            else -> Unit
         }
     }
 
-    // 阶段2超时：用户播放阶段仍无结果 -> 失败
-    LaunchedEffect(probeState) {
-        val s = probeState
-        if (s is ProbeState.NeedUserPlay) {
-            delay(USER_PLAY_TIMEOUT_MS)
-            if (probeState is ProbeState.NeedUserPlay &&
-                (probeState as ProbeState.NeedUserPlay).sessionId == s.sessionId
-            ) {
-                probeState = ProbeState.Failed
-            }
-        }
+    fun clearWebView() {
+        logD(tag) { "clearWebView : " }
+        webViewRef?.webChromeClient = null
+        webViewRef?.stopLoading()
+        webViewRef?.clearHistory()
+        webViewRef?.destroy()
+        webViewRef = null
     }
 
     DisposableEffect(Unit) {
-        onDispose {
-            webViewRef?.stopLoading()
-            webViewRef?.destroy()
-            webViewRef = null
-        }
+        onDispose { clearWebView() }
     }
 
     //    val link = "https://v.douyin.com/bzLHPnkAbhs/"
-    LaunchedEffect(Unit) {
-        sessionId += 1
-        targetUrl = pageUrl // 这里改成你的真实 link
-        probeState = ProbeState.HiddenProbing(sessionId)
-//        probeState = ProbeState.Success(VideoCandidate("", "", "", ""))
+    LaunchedEffect(videoExtractVm.sessionId) {
+        if (videoExtractVm.probeState is ProbeState.Failed || videoExtractVm.probeState is ProbeState.Success) {
+            return@LaunchedEffect
+        }
+
+        videoExtractVm.probeState = ProbeState.HiddenProbing(videoExtractVm.sessionId)
         webViewRef?.stopLoading()
         webViewRef?.clearHistory()
         webViewRef?.loadUrl(pageUrl)
-        logD("视频提取") { "开始探测: session=$sessionId, url=$pageUrl" }
-    }
-
-    // 点击下载时
-    fun handleDownload(candidate: VideoCandidate) {
-        // 启动下载并得到 Flow
-        // 监听状态变化
-        scope.launch {
-            videoExtractVm.startDownload(candidate = candidate).collectLatest { task ->
-                downloadTaskState = task
-                if (task != null) {
-                    when (task.status) {
-                        "downloading" -> {
-                            probeState = ProbeState.Download(
-                                DownloadResult(task.progress, false, isComplete = false)
-                            )
-                        }
-
-                        "success" -> {
-                            probeState = ProbeState.Download(
-                                DownloadResult(100, false, isComplete = true)
-                            )
-                        }
-
-                        "failed" -> {
-                            probeState = ProbeState.Download(
-                                DownloadResult(0, true, isComplete = false)
-                            )
-                        }
-                    }
-                }
-            }
-        }
+        logD(tag) { "开始探测: session=${videoExtractVm.sessionId}, url=$pageUrl" }
     }
 
     Scaffold(
         modifier = Modifier.fillMaxSize()
     ) {
-        pendingCandidate?.let { pending ->
-            key(pending.first) {
-                RequestStoragePermission(
-                    next = {
-                        pendingCandidate = null
-                        probeState = ProbeState.Download(DownloadResult(0, isFailed = false, isComplete = false))
-                        // todo 开始下载视频
-                        handleDownload(pending.second)
-                    }
-                )
-            }
-        }
-
         Box {
-            if (probeState !is ProbeState.Success) {
-                Column {
-                    TitleBar(stringResource(R.string.base_general_video_extract), onBack)
-                    VideoProbeWebViewLayer(
-                        targetUrl = targetUrl,
-                        onWebViewReady = { webViewRef = it },
-                        onVideoCandidate = { candidate ->
-                            if (probeState is ProbeState.HiddenProbing || probeState is ProbeState.NeedUserPlay) {
-                                logI("视频提取") { "抓取成功: $candidate" }
-                                probeState = ProbeState.Success(candidate)
-                            }
-                        }
-                    )
-                }
-            }
+//            if (videoExtractVm.probeState !is ProbeState.Success) {
+//                Column {
+//                    TitleBar(stringResource(R.string.base_general_video_extract), onBack)
+//                    VideoProbeWebViewLayer(
+//                        targetUrl = pageUrl,
+//                        onWebViewReady = { webViewRef = it },
+//                        onVideoCandidate = { candidate ->
+//                            if (videoExtractVm.probeState !is ProbeState.Success) {
+//                                logI(tag) { "抓取成功: $candidate" }
+//                                clearWebView()
+//
+//                                videoExtractVm.probeState = ProbeState.Success(candidate)
+//                            }
+//                        }
+//                    )
+//                }
+//            }
 
             // ========== 前景遮罩层：盖住 WebView，并吞掉触摸，让WebView在后面加载页面，等页面加载完成之后，触发视频播放，拦截视频地址 ==========
-//            val hideWebView = probeState is ProbeState.HiddenProbing || probeState is ProbeState.Idle
-//            if (hideWebView) {
+//            val hideWebView = videoExtractVm.probeState is ProbeState.HiddenProbing || videoExtractVm.probeState is ProbeState.Idle
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -234,68 +184,44 @@ fun VideoExtractPage(
                         indication = null,
                         interactionSource = remember { MutableInteractionSource() }
                     ) {}, // 吞掉触摸，防止点到底层 WebView
-                horizontalAlignment = Alignment.CenterHorizontally,
+
             ) {
                 TitleBar(stringResource(R.string.base_general_video_extract), onBack)
 
-                when (val state = probeState) {
-                    ProbeState.Idle -> {}
+                if (videoExtractVm.probeState !is ProbeState.Success) {
+                    Text("假设这是webView ${videoExtractVm.sessionId}")
+                }
 
-                    is ProbeState.HiddenProbing -> {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(30.dp),
-                                color = MaterialTheme.colorScheme.primary
-                            )
+                Column(
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    when (val state = videoExtractVm.probeState) {
+                        ProbeState.Idle -> {}
 
-                            Text(
-                                text = stringResource(R.string.base_general_extract_the_video_address),
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.padding(12.dp)
+                        is ProbeState.HiddenProbing -> {
+                            Loading()
+                        }
+
+                        is ProbeState.NeedUserPlay -> {
+                            // todo 但这个先不做，因为webView播放视频一直是黑屏的状态，还不清楚是为什么
+                            // NeedUserPlay 时不加全屏遮罩，让用户可直接操作 WebView
+                            Text("请在下方 WebView 中点击播放")
+                        }
+
+                        is ProbeState.Failed -> {
+                            Filed(
+                                retry = { videoExtractVm.sessionId += 1 }
                             )
                         }
-                    }
 
-                    is ProbeState.NeedUserPlay -> {
-                        // todo 但这个先不做，因为webView播放视频一直是黑屏的状态，还不清楚是为什么
-                        // NeedUserPlay 时不加全屏遮罩，让用户可直接操作 WebView
-                        Text("请在下方 WebView 中点击播放")
-                    }
-
-                    is ProbeState.Failed -> {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                painter = rememberVectorPainter(Icons.Default.Error),
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier
-                                    .padding(12.dp)
-                                    .size(24.dp)
-                            )
-                            Text(
-                                stringResource(R.string.base_general_failed_to_extract_the_video_address),
-                                color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.padding(start = 0.dp, top = 12.dp, end = 12.dp, bottom = 12.dp)
+                        is ProbeState.Success -> {
+                            Success(
+                                state.candidate,
+                                toDownload = { candidate -> onNavigate(VideoDownloadRoute(candidate)) }
                             )
                         }
-                    }
-
-                    is ProbeState.Success -> {
-                        VideoProbeSuccess(
-                            state.candidate,
-                            toDownload = { candidate ->
-                                pendingCandidate = System.currentTimeMillis() to candidate
-                            }
-                        )
-                    }
-
-                    is ProbeState.Download -> {
-                        VideoDownload(state.result)
                     }
                 }
             }
@@ -303,17 +229,95 @@ fun VideoExtractPage(
     }
 }
 
-/** 视频地址提取成功 */
+/** 提取失败 */
 @Composable
-private fun VideoProbeSuccess(
+fun Filed(retry: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.clickable(onClick = { retry() })
+    ) {
+        Icon(
+            painter = rememberVectorPainter(Icons.Default.Error),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.error,
+            modifier = Modifier
+                .padding(12.dp)
+                .size(24.dp)
+        )
+        Text(
+            stringResource(R.string.base_general_failed_to_extract_the_video_address),
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(start = 0.dp, top = 12.dp, end = 12.dp, bottom = 12.dp)
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun FailedPreview() {
+    val context = LocalContext.current
+    ClipMaterTheme {
+        Filed(
+            retry = {
+                Toast.makeText(context, "点击重试", Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
+}
+
+/** 加载中状态 */
+@Composable
+private fun Loading() {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(25.dp),
+            color = MaterialTheme.colorScheme.primary
+        )
+
+        Text(
+            text = stringResource(R.string.base_general_extract_the_video_address),
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(12.dp)
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun LoadingPreview() {
+    ClipMaterTheme {
+        Loading()
+    }
+}
+
+/** 视频地址识别成功 */
+@Composable
+private fun Success(
     candidate: VideoCandidate,
     toDownload: (VideoCandidate) -> Unit
 ) {
+    var pendingCandidate by remember { mutableStateOf<Pair<Long, VideoCandidate>?>(null) }
+
     Column(
-        modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
+
+        pendingCandidate?.let { pending ->
+            key(pending.first) {
+                RequestStoragePermission(
+                    next = {
+                        pendingCandidate = null
+                        // 跳转下载页，传递视频地址等信息
+                        toDownload(pending.second)
+                    }
+                )
+            }
+        }
+
         Row(
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -334,90 +338,23 @@ private fun VideoProbeSuccess(
         }
 
         Button(
-            onClick = { toDownload(candidate) }
+            onClick = { pendingCandidate = System.currentTimeMillis() to candidate }
         ) {
             Text(text = stringResource(R.string.base_general_to_download))
         }
     }
 }
 
+@Preview(showBackground = true)
 @Composable
-private fun VideoDownload(result: DownloadResult) {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        val progress = result.progress.coerceIn(0, 100)
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 40.dp)
-        ) {
-            LinearProgressIndicator(
-                progress = { progress.toFloat() / 100 },
-                modifier = Modifier.weight(1f)
-            )
-
-            Text(
-                text = "${progress}%",
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(start = 12.dp)
-            )
-        }
-
-        if (result.isComplete) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    painter = rememberVectorPainter(Icons.Default.DownloadDone),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .padding(12.dp)
-                        .size(24.dp)
-                )
-
-                Text(
-                    text = stringResource(R.string.base_general_video_download_success),
-                    color = MaterialTheme.colorScheme.primary,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(start = 0.dp, top = 12.dp, end = 12.dp, bottom = 12.dp)
-                )
-            }
-        } else if (result.isFailed) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    painter = rememberVectorPainter(Icons.Default.Error),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier
-                        .padding(12.dp)
-                        .size(24.dp)
-                )
-
-                Text(
-                    text = stringResource(R.string.base_general_video_download_failed),
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(start = 0.dp, top = 12.dp, end = 12.dp, bottom = 12.dp)
-                )
-            }
-        }
+private fun SuccessPreview() {
+    ClipMaterTheme {
+        Success(
+            candidate = VideoCandidate("https://example.com/video.mp4", "https://example.com", "Mozilla/5.0", "cookie=value"),
+            toDownload = {}
+        )
     }
 }
-
-@Preview(
-    backgroundColor = 0xFFFFFFFF,
-    showBackground = true
-)
-@Composable
-private fun VideoDownloadPreview() {
-    VideoDownload(DownloadResult(0, false, true))
-}
-
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -426,6 +363,8 @@ private fun VideoProbeWebViewLayer(
     onWebViewReady: (WebView) -> Unit,
     onVideoCandidate: (VideoCandidate) -> Unit,
 ) {
+    val tag = "webView"
+
     AndroidView(
         modifier = Modifier.fillMaxSize(),
         factory = { context ->
@@ -441,8 +380,7 @@ private fun VideoProbeWebViewLayer(
                     databaseEnabled = true
                     loadsImagesAutomatically = true
                     mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                    userAgentString =
-                        "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Mobile Safari/537.36"
+                    userAgentString = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Mobile Safari/537.36"
                     javaScriptCanOpenWindowsAutomatically = true
                     allowContentAccess = true
                     allowFileAccess = true
@@ -466,8 +404,9 @@ private fun VideoProbeWebViewLayer(
                     override fun onPageFinished(view: WebView, url: String?) {
                         super.onPageFinished(view, url)
                         // 尝试自动触发（成功率非100%）
-                        if (view.progress > 99) {
-                            logW("视频提取") { "onPageFinished: 去触发播放" }
+                        val progress = view.progress
+                        if (progress > 99) {
+                            logW(tag) { "onPageFinished: 去触发播放 progress=${progress}" }
                             view.evaluateJavascript(AUTO_PLAY_JS, null)
                         }
                     }
@@ -478,7 +417,7 @@ private fun VideoProbeWebViewLayer(
                     ): WebResourceResponse? {
                         val reqUrl = request.url.toString()
                         val headers = request.requestHeaders.orEmpty()
-//                        logD("视频提取") { "shouldInterceptRequest: reqUrl=$reqUrl" }
+//                        logD("tag) { "shouldInterceptRequest: reqUrl=$reqUrl" }
                         if (isLikelyVideoRequest(request.url, headers)) {
                             val cookie = android.webkit.CookieManager.getInstance().getCookie(reqUrl)
                             val candidate = VideoCandidate(
@@ -487,13 +426,8 @@ private fun VideoProbeWebViewLayer(
                                 userAgent = headers["User-Agent"],
                                 cookie = cookie
                             )
-//                            logD("视频提取") {
-//                                """
-//                                request.url=${request.url}
-//                                candidate=$candidate
-//                            """.trimIndent()
-//                            }
-                            onVideoCandidate(candidate)
+                            logD(tag) { "candidate=$candidate " }
+                            view.post { onVideoCandidate(candidate) }
                         }
                         return super.shouldInterceptRequest(view, request)
                     }
@@ -525,7 +459,7 @@ private fun isLikelyVideoRequest(
             && (path.contains("/playwm/") || path.contains("/play/"))
             && (uri.getQueryParameter("video_id") != null)
     if (isDouyinPlayApi) {
-        logI("视频提取") { "isLikelyVideoRequest: 这是抖音的视频地址 uri=$uri" }
+        logI("视频地址识别") { "isLikelyVideoRequest: 这是抖音的视频地址 uri=$uri" }
         return true
     }
 
@@ -554,17 +488,3 @@ private fun toPlayUrl(url: String): String =
 private fun toPlaywmUrl(url: String): String =
     url.replace("/play/", "/playwm/")
 
-private sealed interface ProbeState {
-    data object Idle : ProbeState
-    data class HiddenProbing(val sessionId: Int) : ProbeState
-    data class NeedUserPlay(val sessionId: Int) : ProbeState
-    data class Success(val candidate: VideoCandidate) : ProbeState
-    data object Failed : ProbeState
-    data class Download(val result: DownloadResult) : ProbeState
-}
-
-private data class DownloadResult(
-    val progress: Int,
-    val isFailed: Boolean,
-    val isComplete: Boolean
-)

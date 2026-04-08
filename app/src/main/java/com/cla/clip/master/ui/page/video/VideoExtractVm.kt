@@ -1,32 +1,31 @@
 package com.cla.clip.master.ui.page.video
 
 import android.content.Context
-import androidx.lifecycle.ViewModel
-import com.cla.clip.base.general.dao.DownloadTaskData
-import com.cla.clip.base.general.entity.DownloadRepository
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import com.cla.clip.master.BaseViewModel
 import com.cla.clip.master.entity.VideoCandidate
-import com.cla.clip.master.service.DownloadVideoService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
+
+sealed interface ProbeState {
+    data object Idle : ProbeState
+    data class HiddenProbing(val sessionId: Int) : ProbeState
+    data class NeedUserPlay(val sessionId: Int) : ProbeState
+    data class Success(val candidate: VideoCandidate) : ProbeState
+    data object Failed : ProbeState
+}
 
 @HiltViewModel
 class VideoExtractVm @Inject constructor(
-    private val downloadRepository: DownloadRepository,
-    @param:ApplicationContext private val appContext: Context
-) : ViewModel() {
+    @param:ApplicationContext override val appContext: Context
+) : BaseViewModel(appContext) {
 
-    suspend fun startDownload(
-        candidate: VideoCandidate
-    ): Flow<DownloadTaskData?> {
-        // 创建任务，得到 taskId
-        val (url, referer, userAgent, cookie) = candidate
-        val taskId = downloadRepository.createTask(url, referer, userAgent, cookie)
-        // 启动前台服务
-        DownloadVideoService.start(appContext, taskId, candidate)
+    var probeState by mutableStateOf<ProbeState>(ProbeState.Idle)
 
-        // 返回观察流（即使 taskId 还在异步赋值，观察仍会生效）
-        return downloadRepository.observeTask(taskId)
-    }
+    var sessionId by mutableIntStateOf(0)
+
 }

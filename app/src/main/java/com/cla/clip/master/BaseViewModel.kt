@@ -2,27 +2,28 @@ package com.cla.clip.master
 
 import android.content.ClipboardManager
 import android.content.Context
-import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.repository.ClipDao
-import dagger.hilt.android.qualifiers.ApplicationContext
+import com.cla.clip.base.general.utils.toast
+import dagger.Lazy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-abstract class BaseViewModel : ViewModel() {
+abstract class BaseViewModel(open val appContext: Context) : ViewModel() {
+
+
+}
+
+abstract class ClipBaseVm(appContext: Context) : BaseViewModel(appContext) {
 
     @Inject
-    @ApplicationContext
-    lateinit var appContext: Context
-
-    @Inject
-    lateinit var clipDao: ClipDao
+    lateinit var clipDao: Lazy<ClipDao>
 
     protected val clipboardManager by lazy { appContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager }
 
@@ -36,7 +37,7 @@ abstract class BaseViewModel : ViewModel() {
      */
     fun copyToClipboard(clip: ClipShowEntity) {
         viewModelScope.launch(Dispatchers.IO) {
-            clipDao.updateTimestamp(clip.id)
+            clipDao.get().updateTimestamp(clip.id)
         }
 
         copyToClipboard(clip.content)
@@ -53,7 +54,9 @@ abstract class BaseViewModel : ViewModel() {
             content
         }
 
-        Toast.makeText(appContext, "${appContext.getString(R.string.base_general_copied)}${text}", Toast.LENGTH_SHORT).show()
+        viewModelScope.launch {
+            appContext.toast("${appContext.getString(R.string.base_general_copied)}${text}")
+        }
     }
 
     /**
@@ -63,7 +66,7 @@ abstract class BaseViewModel : ViewModel() {
      */
     fun deleteClip(clip: ClipShowEntity, sendEvent: Boolean = false) {
         viewModelScope.launch(Dispatchers.IO) {
-            if (clipDao.deleteClip(clip) && sendEvent) {
+            if (clipDao.get().deleteClip(clip) && sendEvent) {
                 _deleteSuccessFlow.emit(clip.id)
             }
         }
@@ -77,7 +80,7 @@ abstract class BaseViewModel : ViewModel() {
      */
     fun updatePinStatus(clip: ClipShowEntity, isPinned: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
-            clipDao.updatePinStatus(clip.id, isPinned)
+            clipDao.get().updatePinStatus(clip.id, isPinned)
         }
     }
 }

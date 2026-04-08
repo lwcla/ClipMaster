@@ -38,9 +38,9 @@
     <string name="base_general_videos_or_pictures_from_web_pages_can_be_extracted_1">识别到网页 </string>
     <string name="base_general_videos_or_pictures_from_web_pages_can_be_extracted_2"> ,可以提取网页中的视频和图片</string>
     <string name="base_general_extract_the_video_address" tools:ignore="TypographyEllipsis">提取视频地址中...</string>
-    <string name="base_general_failed_to_extract_the_video_address">视频地址提取失败</string>
+    <string name="base_general_failed_to_extract_the_video_address">视频地址提取失败，点击重试</string>
     <string name="base_general_extract_the_video_address_success">视频地址提取成功</string>
-    <string name="base_general_video_download_failed">视频下载失败</string>
+    <string name="base_general_video_download_failed">视频下载失败，点击重试</string>
     <string name="base_general_video_download_success">视频下载完成</string>
     <string name="base_general_video_download">视频下载</string>
     <string name="base_general_update_the_download_progress_and_status">更新下载进度和状态</string>
@@ -50,6 +50,9 @@
     <string name="base_general_initialize_download">初始化下载</string>
     <string name="base_general_download_failed">下载失败</string>
     <string name="base_general_download_completed">下载完成</string>
+    <string name="base_general_click_retry">点击重试</string>
+    <string name="base_general_the_download_task_was_not_found">下载任务未找到</string>
+    <string name="base_general_preparing_download" tools:ignore="TypographyEllipsis">下载任务正在初始化...</string>
     <string name="base_general_download_now" tools:ignore="TypographyEllipsis">下载中...</string>
 
 </resources>

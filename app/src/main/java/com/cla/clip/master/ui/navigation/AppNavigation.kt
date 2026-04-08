@@ -5,19 +5,34 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
+import com.cla.clip.master.entity.VideoCandidate
+import com.cla.clip.master.entity.VideoCandidateNavType
 import com.cla.clip.master.ui.page.detail.DetailPage
 import com.cla.clip.master.ui.page.main.MainPage
+import com.cla.clip.master.ui.page.video.VideoDownloadPage
 import com.cla.clip.master.ui.page.video.VideoExtractPage
+import kotlin.reflect.typeOf
 
 @Composable
 fun AppNavigation(navController: NavHostController) {
+
+    val onNavigate = { route: Route ->
+        navController.navigate(route)
+    }
+
+    val onBack = {
+        navController.popBackStack()
+        Unit
+    }
+
+
     NavHost(
         navController = navController,
         startDestination = MainRoute
     ) {
         composable<MainRoute> {
             MainPage(
-                onNavigate = { route -> navController.navigate(route) }
+                onNavigate = onNavigate
             )
         }
 
@@ -26,8 +41,8 @@ fun AppNavigation(navController: NavHostController) {
             val route = backStackEntry.toRoute<DetailRoute>()
             DetailPage(
                 clipId = route.clipId,
-                onBack = { navController.popBackStack() },
-                onNavigate = { route -> navController.navigate(route) }
+                onBack = onBack,
+                onNavigate = onNavigate
             )
         }
 
@@ -36,7 +51,24 @@ fun AppNavigation(navController: NavHostController) {
             val route = backStackEntry.toRoute<VideoExtractRoute>()
             VideoExtractPage(
                 pageUrl = route.url,
-                onBack = { navController.popBackStack() }
+                onBack = onBack,
+                onNavigate = onNavigate
+            )
+        }
+
+        // 视频下载页
+        composable<VideoDownloadRoute>(
+            typeMap = mapOf(typeOf<VideoCandidate>() to VideoCandidateNavType)
+        ) { backStackEntry ->
+            val route = backStackEntry.toRoute<VideoDownloadRoute>()
+            VideoDownloadPage(
+                candidate = route.candidate,
+                onBack = {
+                    // inclusive = true → 连 VideoExtractRoute 自身也从栈里移除
+                    // 等效于：返回时跳过 VideoExtractPage，直接回到它的上一级
+                    // inclusive = true 的含义：弹出到 VideoExtractRoute 这一层，并且把它自身也一起弹出，最终停在 VideoExtractRoute 的上一个目标（即你从哪里进的视频提取页，就回哪里）
+                    navController.popBackStack<VideoExtractRoute>(inclusive = true)
+                }
             )
         }
     }

@@ -28,16 +28,18 @@ fun SaveToFile.createPath(context: Context): MediaStoreTarget {
             is SaveToFile.Video -> "${fileName}.mp4"
         }
 
-        val target = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        val type = when (this@createPath) {
+            is SaveToFile.Video -> "video/mp4"
+        }
 
+        val url = when (this) {
+            is SaveToFile.Video -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        }
+
+        val target = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val contentValues = ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, name)
-
-                val type = when (this@createPath) {
-                    is SaveToFile.Video -> "video/mp4"
-                }
                 put(MediaStore.MediaColumns.MIME_TYPE, type)
-
                 //// 选项 1：保存到相机相册（用户最常用）
                 //put(MediaStore.MediaColumns.RELATIVE_PATH, "DCIM/Camera")
                 //// 选项 2：保存到 Movies（电影）
@@ -46,15 +48,12 @@ fun SaveToFile.createPath(context: Context): MediaStoreTarget {
                 //put(MediaStore.MediaColumns.RELATIVE_PATH, "Pictures/MyApp")
                 //// 选项 4：保存到 Downloads（下载）
                 //put(MediaStore.MediaColumns.RELATIVE_PATH, "Downloads/MyApp")
-                put(MediaStore.MediaColumns.RELATIVE_PATH, "Pictures/clipMaster") // 保存到 Movies/clipMaster/videos 目录下
-
+                // 设置相对路径，文件会自动保存在这个目录下，如果目录不存在会自动创建
+                put(MediaStore.MediaColumns.RELATIVE_PATH, "DCIM/clipMaster")
                 // 标记为正在下载，下载完成后再改为 0
                 put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
 
-            val url = when (this) {
-                is SaveToFile.Video -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-            }
             val uri = context.contentResolver.insert(url, contentValues)
             if (uri == null) {
                 logE(TAG) { "创建文件失败" }
@@ -107,21 +106,26 @@ fun SaveToFile.success(context: Context, target: MediaStoreTarget) {
         }
         logD(TAG) { "下载完成，现在去标记媒体文件可见" }
         context.contentResolver.update(uri, values, null, null)
-    } else {
-        if (path.isBlank()) {
-            return
-        }
+    }
+    // Android 10 以下需要调用 MediaScannerConnection 来扫描新文件，否则它不会出现在相册等媒体库中
+    // 但我们这里不管android版本，统一调用 MediaScannerConnection 来扫描新文件，这样也能兼容一些特殊情况（比如某些设备的媒体库更新不及时等）
+    if (path.isBlank()) {
+        return
+    }
 
-        MediaScannerConnection.scanFile(
-            context, // Service 本身就是 Context
-            arrayOf(path),
-            arrayOf("video/mp4"), // 也可以传 null，让系统自己判断
-        ) { scannedPath, scannedUri ->
-            if (scannedUri != null) {
-                logD(TAG) { "媒体扫描成功: path=$scannedPath, uri=$scannedUri" }
-            } else {
-                logE(TAG) { "媒体扫描失败: path=$scannedPath" }
-            }
+    val type = when (this) {
+        is SaveToFile.Video -> "video/mp4"
+    }
+
+    MediaScannerConnection.scanFile(
+        context, // Service 本身就是 Context
+        arrayOf(path),
+        arrayOf(type), // 也可以传 null，让系统自己判断
+    ) { scannedPath, scannedUri ->
+        if (scannedUri != null) {
+            logD(TAG) { "媒体扫描成功: path=$scannedPath, uri=$scannedUri" }
+        } else {
+            logE(TAG) { "媒体扫描失败: path=$scannedPath" }
         }
     }
 }

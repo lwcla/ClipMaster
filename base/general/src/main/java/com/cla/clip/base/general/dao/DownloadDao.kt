@@ -41,7 +41,7 @@ data class DownloadTaskData(
     val progress: Int = 0,
 
     @ColumnInfo(name = "status")
-    val status: String = "downloading", // downloading, success, failed
+    val status: String = STATUS_DOWNLOADING, // downloading, success, failed
 
     @ColumnInfo(name = "error_msg")
     val errorMsg: String? = null,
@@ -60,7 +60,13 @@ data class DownloadTaskData(
 
     @ColumnInfo(name = "update_time")
     val updateTime: Long = System.currentTimeMillis()
-)
+) {
+    companion object {
+        const val STATUS_DOWNLOADING = "downloading"
+        const val STATUS_SUCCESS = "success"
+        const val STATUS_FAILED = "failed"
+    }
+}
 
 @Dao
 interface DownloadDao {

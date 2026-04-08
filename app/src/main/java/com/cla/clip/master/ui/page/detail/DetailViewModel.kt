@@ -1,13 +1,15 @@
 package com.cla.clip.master.ui.page.detail
 
+import android.content.Context
 import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
-import com.cla.clip.master.BaseViewModel
+import com.cla.clip.master.ClipBaseVm
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -31,7 +33,9 @@ sealed class DetailUiState {
 }
 
 @HiltViewModel
-class DetailViewModel @Inject constructor() : BaseViewModel() {
+class DetailViewModel @Inject constructor(
+    @param:ApplicationContext override val appContext: Context
+) : ClipBaseVm(appContext) {
 
     companion object {
         private const val TAG = "DetailViewModel"
@@ -39,7 +43,7 @@ class DetailViewModel @Inject constructor() : BaseViewModel() {
 
     private val _clipIdFlow = MutableStateFlow<Long?>(null)
     val clipFlow = _clipIdFlow.filterNotNull().transformLatest { id ->
-        val clip = clipDao.loadClipDetail(id)
+        val clip = clipDao.get().loadClipDetail(id)
         currentCoroutineContext().ensureActive()
 
         if (clip == null) {

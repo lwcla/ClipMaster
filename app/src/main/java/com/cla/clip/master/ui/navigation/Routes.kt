@@ -1,5 +1,6 @@
 package com.cla.clip.master.ui.navigation
 
+import com.cla.clip.master.entity.VideoCandidate
 import kotlinx.serialization.Serializable
 
 sealed class Route
@@ -16,3 +17,8 @@ data class DetailRoute(val clipId: Long) : Route()
 /** 视频链接提取 */
 @Serializable
 data class VideoExtractRoute(val url: String) : Route()
+
+
+/** 视频下载 */
+@Serializable
+data class VideoDownloadRoute(val candidate: VideoCandidate) : Route()

@@ -183,9 +183,8 @@ private fun ButtonContainer(
                 Button(
                     modifier = Modifier.weight(1f),
                     onClick = {
-//                                    onNavigate(VideoExtractRoute(link))
-                        // todo 提取视频测试用
-                        onNavigate(VideoExtractRoute("https://v.douyin.com/bzLHPnkAbhs/"))
+                        // https://v.douyin.com/bzLHPnkAbhs/ 这个链接是抖音的一个视频链接，测试用的，实际使用时应该是 clip.link
+                        onNavigate(VideoExtractRoute(link))
                     }
                 ) {
                     Text(stringResource(R.string.base_general_video_extract))
@@ -194,6 +193,7 @@ private fun ButtonContainer(
                 Button(
                     modifier = Modifier.weight(1f),
                     onClick = {
+                        // todo 这里应该要跳转到图片提取页，但目前还没有，所以暂时先跳视频提取页，等图片提取页做好了再改这里
                         onNavigate(VideoExtractRoute(link))
                     }
                 ) {

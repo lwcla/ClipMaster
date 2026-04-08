@@ -2,6 +2,9 @@ package com.cla.clip.base.general.entity
 
 import com.cla.clip.base.general.dao.DownloadDao
 import com.cla.clip.base.general.dao.DownloadTaskData
+import com.cla.clip.base.general.dao.DownloadTaskData.Companion.STATUS_DOWNLOADING
+import com.cla.clip.base.general.dao.DownloadTaskData.Companion.STATUS_FAILED
+import com.cla.clip.base.general.dao.DownloadTaskData.Companion.STATUS_SUCCESS
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
 import javax.inject.Inject
@@ -46,21 +49,21 @@ class DownloadRepository @Inject constructor(
      * 更新进度
      */
     suspend fun updateProgress(taskId: String, progress: Int) {
-        downloadDao.updateProgress(taskId, progress, "downloading")
+        downloadDao.updateProgress(taskId, progress, STATUS_DOWNLOADING)
     }
 
     /**
      * 标记成功
      */
     suspend fun markSuccess(taskId: String, savePath: String) {
-        downloadDao.updateStatus(taskId, "success", savePath = savePath)
+        downloadDao.updateStatus(taskId, STATUS_SUCCESS, savePath = savePath)
     }
 
     /**
      * 标记失败
      */
     suspend fun markFailed(taskId: String, errorMsg: String) {
-        downloadDao.updateStatus(taskId, "failed", errorMsg = errorMsg)
+        downloadDao.updateStatus(taskId, STATUS_FAILED, errorMsg = errorMsg)
     }
 
     /**
