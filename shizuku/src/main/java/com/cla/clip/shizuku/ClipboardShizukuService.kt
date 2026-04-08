@@ -5,12 +5,12 @@ import android.app.AppOpsManagerHidden
 import android.content.Context
 import android.graphics.Bitmap
 import android.os.Build
+import com.cla.clip.base.general.utils.exceptionHandler
 import com.cla.clip.base.general.utils.hasOverlayPermission
+import com.cla.clip.base.general.utils.iconBitmap
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
 import com.cla.clip.base.general.utils.logI
-import com.cla.clip.base.general.utils.exceptionHandler
-import com.cla.clip.base.general.utils.iconBitmap
 import com.cla.clip.base.general.utils.toStableHash
 import dev.rikka.tools.refine.Refine
 import kotlinx.coroutines.CoroutineScope
@@ -55,6 +55,13 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         logD(TAG) { "destroy" }
         isRunning.set(false)
         removeListener()
+
+        if (BuildConfig.DEBUG) {
+            // 这里可能是应用被卸载了，在debug时杀死自己的进程
+            val pid = android.os.Process.myPid()
+            logD(TAG) { "停止监听剪贴板事件，杀死进程 pid=$pid" }
+            android.os.Process.killProcess(pid)
+        }
     }
 
     override fun start() {
@@ -208,7 +215,7 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         val process = ProcessBuilder(
             "am",
             "start-foreground-service",
-            "--user", "0",
+//            "--user", "0", // 这个参数在某些设备上可能会导致权限问题，暂时先不加了，等后续有需要再说
             "-n", "${BuildConfig.APPLICATION_ID}/.service.ClipboardService"
         ).redirectErrorStream(true).start()
 
@@ -225,7 +232,7 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         val process = ProcessBuilder(
             "am",
             "startservice",
-            "--user", "0",
+//            "--user", "0", // 这个参数在某些设备上可能会导致权限问题，暂时先不加了，等后续有需要再说
             "-n", "${BuildConfig.APPLICATION_ID}/.service.ClipboardService"
         ).redirectErrorStream(true).start()
 
@@ -233,7 +240,12 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         val output = process.inputStream.bufferedReader().use { it.readText() }
         logD(TAG) { "startservice  exit=$exitCode  output=$output" }
 
+        //startservice exit=255 output=Starting service: Intent { cmp=com.cla.clip.master/.service.ClipboardService }
+        //Error: app is in background uid null
+
+        //Error: app is in background uid null 的意思是：系统判定目标应用当前在后台，不允许用 startservice 启动普通 Service。
+        //这是 Android 8.0+ 的后台启动限制（你这里是从 Shizuku/shell 侧触发，更容易被 ROM 策略拦截）。
+
         return (exitCode == 0) && !output.contains("Error:", ignoreCase = true)
     }
-
 }

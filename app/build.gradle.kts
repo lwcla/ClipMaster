@@ -50,6 +50,11 @@ android {
             signingConfig = signingConfigs.getByName("release")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
+
+        debug {
+            isMinifyEnabled = false         // 调试包不混淆，方便调试
+            isShrinkResources = false       // 调试包不压缩资源
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
