@@ -117,6 +117,10 @@ class ClipboardService : Service() {
                             }
 
                             scope.launch(Dispatchers.Main) {
+                                // 在这里刷新一次前台服务的通知，因为手机隔了一夜之后，app和shizuku的进程虽然都还在，但没有前台通知，
+                                // 在其他app复制内容到剪贴板时，shizuku的回调能正常触发，但因为没有前台通知，所以无法添加view到windowManager里去读取剪贴板内容，导致无法获取剪贴板数据。
+                                // 通过刷新前台通知，可以让服务重新进入前台，从而恢复添加view的能力。
+                                startForeground()
                                 magic(packageName, appName, appIcon, iconHash)
                             }
                         }
@@ -217,22 +221,41 @@ class ClipboardService : Service() {
 
         // 通过添加一个不可见的 View 来触发系统读取剪贴板内容，从而获取最新的剪贴板数据
         val view = View(appContext)
-        windowManager.addView(view, WindowManager.LayoutParams(-2, -2, 2038, 32, -3).apply {
+
+        windowManager.addView(view, WindowManager.LayoutParams().apply {
+            // 根据 API 版本选择窗口类型
+            type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY  // API 26+
+            } else {
+                WindowManager.LayoutParams.TYPE_PHONE  // API 24-25
+            }
+            format = android.graphics.PixelFormat.TRANSLUCENT
+            flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
             x = 0
             y = 0
-            width = 0
-            height = 0
+            width = 1
+            height = 1
         })
 
-        // 读取剪贴板内容
-        val clipData = clipboardManager.primaryClip
-        val clip = clipData?.let { runCatching { it.getItemAt(0) }.getOrNull() }
+        runCatching {
+            // 读取剪贴板内容
+            val clipData = clipboardManager.primaryClip
+            val clip = clipData?.let { runCatching { it.getItemAt(0) }.getOrNull() }
 
-        windowManager.removeView(view)
+            windowManager.removeView(view)
 
-        if (clip != null) {
-            withContext(Dispatchers.IO) {
-                processClip(clip, packageName, appName, appIcon, iconHash)
+            if (clip != null) {
+                withContext(Dispatchers.IO) {
+                    processClip(clip, packageName, appName, appIcon, iconHash)
+                }
+            }
+        }.getOrElse {
+            logE(TAG, it) { "读取剪贴板内容出错" }
+            // 确保移除 view，避免泄漏
+            runCatching {
+                windowManager.removeView(view)
+            }.getOrElse { tr ->
+                logE(TAG, tr) { "移除悬浮View出错" }
             }
         }
     }
