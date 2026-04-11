@@ -13,18 +13,18 @@
     <string name="base_general_delete">删除</string>
     <string name="base_general_copy">复制</string>
     <string name="base_general_to_download">去下载</string>
-
     <string name="base_general_clipboard_service">剪贴板服务</string>
     <string name="base_general_clipboard_update">剪贴板更新</string>
-    <string name="base_general_display_clipboard_content_updates">显示剪贴板内容更新</string>
+    <string name="base_general_display_clipboard_content_updates">剪贴板更新的通知</string>
     <string name="base_general_service_is_running">服务正在运行中</string>
-    <string name="base_general_listen_for_changes_in_the_clipboard_content">监听剪贴板内容变化</string>
+    <string name="base_general_read_clip_channel">读取剪贴板时的前台服务通知</string>
     <string name="base_general_waiting_for_shizuku_connection">等待shizuku连接..</string>
     <string name="base_general_shizuku_not_install">shizuku未安装</string>
     <string name="base_general_shizuku_service_not_alive">shizuku服务未存活</string>
     <string name="base_general_shizuku_version_too_low">shizuku版本过低</string>
     <string name="base_general_shizuku_not_granted">shizuku未授权</string>
-
+    <string name="base_general_shizuku_status">shizuku状态</string>
+    <string name="base_general_shizuku_status_channel">shizuku状态的通知</string>
     <string name="base_general_it_was_written_into_the_clipboard">写入了剪切板</string>
     <string name="base_general_content">内容：</string>
     <string name="base_general_loading" tools:ignore="TypographyEllipsis">加载中...</string>
@@ -54,5 +54,7 @@
     <string name="base_general_the_download_task_was_not_found">下载任务未找到</string>
     <string name="base_general_preparing_download" tools:ignore="TypographyEllipsis">下载任务正在初始化...</string>
     <string name="base_general_download_now" tools:ignore="TypographyEllipsis">下载中...</string>
+    <string name="base_general_the_clipboard_is_being_read">正在读取剪贴板</string>
+    <string name="base_general_unknow">未知</string>
 
 </resources>

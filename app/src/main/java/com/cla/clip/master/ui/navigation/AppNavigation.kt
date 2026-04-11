@@ -15,7 +15,6 @@ import kotlin.reflect.typeOf
 
 @Composable
 fun AppNavigation(navController: NavHostController) {
-
     val onNavigate = { route: Route ->
         navController.navigate(route)
     }
@@ -24,7 +23,6 @@ fun AppNavigation(navController: NavHostController) {
         navController.popBackStack()
         Unit
     }
-
 
     NavHost(
         navController = navController,

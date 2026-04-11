@@ -11,6 +11,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.cla.clip.base.general.R
 import com.cla.clip.master.MainActivity
+import com.cla.clip.shizuku.ShizukuStatus
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -21,17 +22,17 @@ class NotificationHelper @Inject constructor(
 ) {
 
     companion object {
+        /** 读取剪贴板数据通知 */
+        const val READ_CLIP_CHANNEL_ID = "read_clip_channel"
+        const val READ_CLIP_NOTIFICATION_ID = 1001
+
+        /** 视频下载通知 */
+        const val VIDEO_DOWNLOAD_CHANNEL_ID = "download_channel_id"
+        const val VIDEO_DOWNLOAD_NOTIFICATION_ID = 1002
+
         /** shizuku状态通知 */
-        const val STATUS_CHANNEL_ID = "clipboard_status_channel"
-        const val STATUS_NOTIFICATION_ID = 1001   // 仅前台服务用，固定
-
-        /** 剪贴板数据更新通知 */
-        const val CLIP_CHANNEL_ID = "clipboard_update_channel"
-        const val CLIP_NOTIFICATION_ID = 1002     // 剪贴板更新通知用
-
-        /** 下载通知 */
-        const val DOWNLOAD_CHANNEL_ID = "download_channel_id"
-        const val DOWNLOAD_NOTIFICATION_ID = 1003
+        const val SHIZUKU_STATUS_CHANNEL_ID = "shizuku_status_channel_id"
+        const val SHIZUKU_STATUS_NOTIFICATION_ID = 1003
 
         /** 从通知跳转到详情页的字段 */
         const val EXTRA_TARGET = "extra_target"
@@ -65,11 +66,11 @@ class NotificationHelper @Inject constructor(
             return PendingIntent.getActivity(appContext, 0, launchIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         }
 
-    /** 开启视频下载的前台服务通知 */
+    /** 视频下载进度和状态的前台服务通知 */
     fun downloadForeground(service: Service, title: String, progress: Int) {
         createChannels()
 
-        val notification = NotificationCompat.Builder(appContext, DOWNLOAD_CHANNEL_ID)
+        val notification = NotificationCompat.Builder(appContext, VIDEO_DOWNLOAD_CHANNEL_ID)
             .setContentTitle(title)
             .setSmallIcon(R.mipmap.base_general_ic_app)
             .setProgress(100, progress, false)
@@ -84,35 +85,61 @@ class NotificationHelper @Inject constructor(
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     // Android 14 (API 34) 强制要求指定前台服务类型
                     startForeground(
-                        DOWNLOAD_NOTIFICATION_ID,
+                        VIDEO_DOWNLOAD_NOTIFICATION_ID,
                         notification,
                         ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
                     )
                 } else {
-                    startForeground(DOWNLOAD_NOTIFICATION_ID, notification)
+                    startForeground(VIDEO_DOWNLOAD_NOTIFICATION_ID, notification)
                 }
             } catch (e: Exception) {
                 // 如果 Manifest 中缺少 foregroundServiceType 属性，可能会抛出异常
                 // 此时尝试不带 type 启动作为兜底
-                startForeground(DOWNLOAD_NOTIFICATION_ID, notification)
+                startForeground(VIDEO_DOWNLOAD_NOTIFICATION_ID, notification)
             }
         }
     }
 
-    /** 开启剪贴板监听的前台服务通知 */
-    fun startForeground(service: Service, title: String, content: String) {
+    /** 读取剪贴板的前台服务通知 */
+    fun readClipForeground(
+        service: Service,
+        title: String,
+        content: String,
+        clipId: Long?
+    ) {
         createChannels()
 
-        val notification = NotificationCompat.Builder(appContext, STATUS_CHANNEL_ID)
+        val pendingIntent = if (clipId == null) {
+            launchPendingIntent
+        } else {
+            val intent = Intent(appContext, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putExtra(EXTRA_TARGET, TARGET_DETAIL)
+                putExtra(EXTRA_CLIP_ID, clipId)
+            }
+
+            PendingIntent.getActivity(
+                appContext,
+                clipId.hashCode(),
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        }
+
+        val notification = NotificationCompat.Builder(appContext, READ_CLIP_CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(content)
             .setSmallIcon(R.mipmap.base_general_ic_app) // 确保资源存在，或者使用 android.R.drawable.ic_menu_save
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setContentIntent(launchPendingIntent) // 3. 设置点击行为
+            .setContentIntent(pendingIntent) // 3. 设置点击行为
             .setSilent(true)          // 简单直接
             .setDefaults(0)           // 不用默认铃声/震动/灯
             .setVibrate(longArrayOf(0L))
-            .setOngoing(true)
+            .setAutoCancel(false)
+            .setOnlyAlertOnce(true)  // 更新文案时不重复提示音
+            .setOngoing(clipId == null) // true ：常驻样式（用户通常不能滑掉）
             .build()
 
         service.apply {
@@ -120,81 +147,61 @@ class NotificationHelper @Inject constructor(
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     // Android 14 (API 34) 强制要求指定前台服务类型
                     startForeground(
-                        STATUS_NOTIFICATION_ID,
+                        READ_CLIP_NOTIFICATION_ID,
                         notification,
                         ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
                     )
                 } else {
-                    startForeground(STATUS_NOTIFICATION_ID, notification)
+                    startForeground(READ_CLIP_NOTIFICATION_ID, notification)
                 }
             } catch (e: Exception) {
                 // 如果 Manifest 中缺少 foregroundServiceType 属性，可能会抛出异常
                 // 此时尝试不带 type 启动作为兜底
-                startForeground(STATUS_NOTIFICATION_ID, notification)
+                startForeground(READ_CLIP_NOTIFICATION_ID, notification)
             }
         }
     }
 
-    /** 剪贴数据更新通知 */
-    fun notifyClipUpdate(
-        title: String,
-        content: String,
-        clipId: Long
-    ) {
+    /** shizuku状态通知 */
+    fun notifyShizukuStatus(status: ShizukuStatus) {
         createChannels()
 
-        // 跳转到详情页
-        val intent = Intent(appContext, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP
-            putExtra(EXTRA_TARGET, TARGET_DETAIL)
-            putExtra(EXTRA_CLIP_ID, clipId)
+        if (status is ShizukuStatus.Connected) {
+            cancelShizukuStatus()
+            return
         }
 
-        val pendingIntent = PendingIntent.getActivity(
-            appContext,
-            clipId.hashCode(),
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val notification = NotificationCompat.Builder(appContext, CLIP_CHANNEL_ID)
+        val content = appContext.getString(status.textRes)
+        val notification = NotificationCompat.Builder(appContext, SHIZUKU_STATUS_CHANNEL_ID)
             .setSmallIcon(R.mipmap.base_general_ic_app)
-            .setContentTitle(title)
+            .setContentTitle(appContext.getString(R.string.base_general_clipboard_service))
             .setContentText(content)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(content))
-            .setContentIntent(pendingIntent)
-            .setAutoCancel(true)
-            .setOnlyAlertOnce(true)
+            .setContentIntent(launchPendingIntent)
+            .setOngoing(false)  // true ：常驻样式（用户通常不能滑掉）
+            .setAutoCancel(false)
+            .setOnlyAlertOnce(true)   // 更新文案时不重复提示音
             .setSilent(true)          // 简单直接
             .setDefaults(0)           // 不用默认铃声/震动/灯
             .setVibrate(longArrayOf(0L))
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .build()
 
-        manager.notify(CLIP_NOTIFICATION_ID, notification) // 固定ID=覆盖上一条；若想每条都保留可用递增ID
+        manager.notify(SHIZUKU_STATUS_NOTIFICATION_ID, notification)
+    }
+
+    /** 取消shizuku状态通知 */
+    fun cancelShizukuStatus() {
+        manager.cancel(SHIZUKU_STATUS_NOTIFICATION_ID)
     }
 
     /** 创建渠道 */
     fun createChannels() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
 
-        val statusChannel = NotificationChannel(
-            STATUS_CHANNEL_ID,
+        val readClipChannel = NotificationChannel(
+            READ_CLIP_CHANNEL_ID,
             appContext.getString(R.string.base_general_clipboard_service),
             NotificationManager.IMPORTANCE_LOW
-        ).apply {
-            enableVibration(false) // 关闭震动
-            vibrationPattern = longArrayOf(0L)
-            setSound(null, null) // 关闭铃声
-            description = appContext.getString(R.string.base_general_listen_for_changes_in_the_clipboard_content)
-        }
-
-        val clipChannel = NotificationChannel(
-            CLIP_CHANNEL_ID,
-            appContext.getString(R.string.base_general_clipboard_update),
-            NotificationManager.IMPORTANCE_DEFAULT
         ).apply {
             enableVibration(false) // 关闭震动
             vibrationPattern = longArrayOf(0L)
@@ -202,8 +209,8 @@ class NotificationHelper @Inject constructor(
             description = appContext.getString(R.string.base_general_display_clipboard_content_updates)
         }
 
-        val downloadChannel = NotificationChannel(
-            DOWNLOAD_CHANNEL_ID,
+        val videoDownloadChannel = NotificationChannel(
+            VIDEO_DOWNLOAD_CHANNEL_ID,
             appContext.getString(R.string.base_general_video_download),
             NotificationManager.IMPORTANCE_LOW
         ).apply {
@@ -213,8 +220,19 @@ class NotificationHelper @Inject constructor(
             description = appContext.getString(R.string.base_general_update_the_download_progress_and_status)
         }
 
-        manager.createNotificationChannel(downloadChannel)
-        manager.createNotificationChannel(statusChannel)
-        manager.createNotificationChannel(clipChannel)
+        val shizukuStatusChannel = NotificationChannel(
+            SHIZUKU_STATUS_CHANNEL_ID,
+            appContext.getString(R.string.base_general_shizuku_status),
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            enableVibration(false) // 关闭震动
+            vibrationPattern = longArrayOf(0L)
+            setSound(null, null) // 关闭铃声
+            description = appContext.getString(R.string.base_general_shizuku_status_channel)
+        }
+
+        manager.createNotificationChannel(videoDownloadChannel)
+        manager.createNotificationChannel(readClipChannel)
+        manager.createNotificationChannel(shizukuStatusChannel)
     }
 }

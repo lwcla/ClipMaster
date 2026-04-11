@@ -2,6 +2,7 @@ package com.cla.clip.base.general.utils
 
 import android.content.ContentValues
 import android.content.Context
+import android.graphics.Bitmap
 import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
@@ -10,9 +11,13 @@ import android.provider.MediaStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 import java.io.OutputStream
 
 private const val TAG = "FileUtils"
+
+private const val APP_ICONS_DIR = "app_icons"
 
 sealed class SaveToFile(open val fileName: String) {
     data class Video(override val fileName: String) : SaveToFile(fileName)
@@ -164,3 +169,26 @@ data class MediaStoreTarget(
     val path: String,
     val outputStream: OutputStream
 )
+
+fun Context.saveIcon(packageName: String?, appIcon: Bitmap?): String? {
+    if (appIcon == null || packageName.isNullOrBlank()) {
+        return null
+    }
+
+    val iconDir = File(filesDir, APP_ICONS_DIR)
+    if (!iconDir.exists()) {
+        iconDir.mkdirs()
+    }
+
+    val iconFile = File(iconDir, "$packageName.png")
+    return try {
+        FileOutputStream(iconFile).use { out ->
+            appIcon.compress(Bitmap.CompressFormat.PNG, 100, out)
+        }
+
+        iconFile.absolutePath
+    } catch (e: IOException) {
+        e.printStackTrace()
+        null
+    }
+}

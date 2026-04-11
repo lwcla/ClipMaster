@@ -31,6 +31,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.cla.clip.base.general.utils.PermissionUtils
@@ -39,7 +40,7 @@ import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.toPermissionSetting
 import com.cla.clip.master.R
-import com.cla.clip.master.service.ClipboardService
+import com.cla.clip.master.ui.page.main.MainViewModel
 
 /**
  * 通知权限处理组件
@@ -47,7 +48,10 @@ import com.cla.clip.master.service.ClipboardService
  * 包含完整的“请求 -> 拒绝 -> 弹窗解释 -> 再请求”闭环逻辑。
  */
 @Composable
-fun HandleNotificationPermission(trigger: Boolean) {
+fun HandleNotificationPermission(
+    viewModel: MainViewModel = hiltViewModel(),
+    trigger: Boolean
+) {
     // 1. Android 13 以下不需要动态申请，直接退出
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
     // 如果触发条件不满足（比如 Shizuku 还没连上），直接退出，不浪费资源
@@ -82,9 +86,12 @@ fun HandleNotificationPermission(trigger: Boolean) {
     if (hasPermission) {
         // 已经有权限，直接退出
         logI(tag) { "HandleNotificationPermission: 已经有通知权限了" }
-        // 有通知权限了，需要去拉起前台服务
-        // 为了确保ClipboardService是存活状态，这里每次都去拉起它
-        ClipboardService.start(context)
+        // 前台服务存活时间是有限制的，如果系统判断前台服务的可用时长已经用完，那么这个前台服务就无法启动
+        // 这里只要保证有通知的权限就可以，不能在这就启动前台服务
+        //ClipboardService.start(context)
+
+        // 去连接shizuku进程
+        viewModel.connectShizuku()
         return
     }
 

@@ -8,6 +8,7 @@ import androidx.paging.cachedIn
 import androidx.paging.map
 import com.cla.clip.base.general.entity.toUi
 import com.cla.clip.master.ClipBaseVm
+import com.cla.clip.master.utils.ShizukuConnector
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -21,7 +22,8 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class MainViewModel @Inject constructor(
-    @param:ApplicationContext override val appContext: Context
+    @param:ApplicationContext override val appContext: Context,
+    private val shizukuConnector: ShizukuConnector
 ) : ClipBaseVm(appContext) {
 
     val pagedClips = Pager(
@@ -35,4 +37,8 @@ class MainViewModel @Inject constructor(
     }.flow.map { it.map { data -> data.toUi() } }.cachedIn(
         CoroutineScope(viewModelScope.coroutineContext + Dispatchers.IO)
     )
+
+    fun connectShizuku(){
+        shizukuConnector.connect()
+    }
 }

@@ -25,7 +25,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.ReportGmailerrorred
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
@@ -45,11 +45,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -233,6 +236,7 @@ private fun ClipCard(
 ) {
     val appColor = clip.appColor ?: MaterialTheme.colorScheme.outlineVariant
     val borderColor = clip.borderColor ?: MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+    val lineColor = appColor.copy(alpha = 0.3f)
     // 提取形状变量，确保外层卡片和内层裁剪使用相同的圆角
     val cardShape = RoundedCornerShape(12.dp)
 
@@ -270,9 +274,9 @@ private fun ClipCard(
                             .padding(top = 8.dp)
                             .fillMaxWidth()
                             .height(1.dp)
-                            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                            .background(lineColor)
                     )
-                    CardButtonContainer(clip, onPinToggle, onDelete, onCopy)
+                    CardButtonContainer(clip, lineColor, onPinToggle, onDelete, onCopy)
                 }
 
                 if (clip.isPinned) {
@@ -292,62 +296,9 @@ private fun ClipCard(
     }
 }
 
-/** 剪贴数据的内容显示 */
-@Composable
-private fun ClipContent(clip: ClipShowEntity, modifier: Modifier = Modifier) {
-    val imagUrl = clip.linkImgUrl
-    if (imagUrl.isNullOrBlank()) {
-        Text(
-            text = clip.content,
-            style = MaterialTheme.typography.bodyLarge,
-            maxLines = 7,
-            overflow = TextOverflow.Ellipsis
-        )
-    } else {
-        Column {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .padding(4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                AsyncImage(
-                    model = imagUrl,
-                    contentDescription = "Link Preview Image",
-                    modifier = Modifier
-                        .size(55.dp)
-                        .clip(RoundedCornerShape(8.dp)),
-                    contentScale = ContentScale.Crop
-                )
-
-                val title = clip.linkTitle
-                if (title.isNullOrBlank().not()) {
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.labelMedium,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = clip.content,
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 6,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-}
-
 /** 剪贴数据来源app和写入剪贴板的时间 */
 @Composable
-private fun SourceAppNameWithTime(clip: ClipShowEntity, modifier: Modifier = Modifier) {
+private fun SourceAppNameWithTime(clip: ClipShowEntity) {
 // 获取当前的密度信息
     val currentDensity = LocalDensity.current
     // 创建一个新的 Density，强制 fontScale 为 1f (不缩放)，不响应系统字体大小设置
@@ -362,14 +313,19 @@ private fun SourceAppNameWithTime(clip: ClipShowEntity, modifier: Modifier = Mod
                     AsyncImage(
                         model = clip.appIconPath,
                         contentDescription = "App Icon",
-                        placeholder = rememberVectorPainter(Icons.Filled.Image),
-                        error = rememberVectorPainter(Icons.Filled.Image),
+                        placeholder = rememberVectorPainter(Icons.Filled.ReportGmailerrorred),
+                        error = rememberVectorPainter(Icons.Filled.ReportGmailerrorred),
                         modifier = Modifier.size(15.dp),
-                        contentScale = ContentScale.Crop
+                        contentScale = ContentScale.Crop,
+                        colorFilter = if (clip.appIconPath.isNullOrBlank()) {
+                            ColorFilter.tint(MaterialTheme.colorScheme.error) // 你想要的颜色
+                        } else {
+                            null // 正常加载到真实 app icon 时不着色
+                        }
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = clip.appName,
+                        text = clip.appName ?: stringResource(com.cla.clip.base.general.R.string.base_general_unknow),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -435,18 +391,70 @@ private fun SourceAppNameWithTime(clip: ClipShowEntity, modifier: Modifier = Mod
     }
 }
 
+/** 剪贴数据的内容显示 */
+@Composable
+private fun ClipContent(clip: ClipShowEntity) {
+    val imagUrl = clip.linkImgUrl
+    if (imagUrl.isNullOrBlank()) {
+        Text(
+            text = clip.content,
+            style = MaterialTheme.typography.bodyLarge,
+            maxLines = 7,
+            overflow = TextOverflow.Ellipsis
+        )
+    } else {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AsyncImage(
+                    model = imagUrl,
+                    contentDescription = "Link Preview Image",
+                    modifier = Modifier
+                        .size(55.dp)
+                        .clip(RoundedCornerShape(8.dp)),
+                    contentScale = ContentScale.Crop
+                )
+
+                val title = clip.linkTitle
+                if (title.isNullOrBlank().not()) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = clip.content,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 6,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
 /** 底部按钮 */
 @Composable
 private fun CardButtonContainer(
     clip: ClipShowEntity,
+    lineColor: Color,
     onPinToggle: (ClipShowEntity) -> Unit,
     onDelete: (ClipShowEntity) -> Unit,
     onCopy: (ClipShowEntity) -> Unit,
-    modifier: Modifier = Modifier,
 ) {
     // 核心修改：使用 Row 将两个选项横向排列
     Row(verticalAlignment = Alignment.CenterVertically) {
-
         // 置顶/取消置顶
         Box(
             modifier = Modifier
@@ -474,7 +482,7 @@ private fun CardButtonContainer(
             modifier = Modifier
                 .width(1.dp)
                 .height(18.dp)
-                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                .background(lineColor)
         )
 
         // 删除按钮
@@ -499,7 +507,7 @@ private fun CardButtonContainer(
             modifier = Modifier
                 .width(1.dp)
                 .height(18.dp)
-                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                .background(lineColor)
         )
 
         // 复制

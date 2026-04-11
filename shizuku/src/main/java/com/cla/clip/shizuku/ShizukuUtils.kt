@@ -16,23 +16,23 @@ object ShizukuUtils {
     /** Shizuku 状态 */
     fun checkStatus(context: Context): ShizukuStatus {
         if (!isShizukuInstalled(context)) {
-            return ShizukuStatus.Disconnect.NotInstalled
+            return ShizukuStatus.Disconnect.NotInstalled()
         }
 
         if (!Shizuku.pingBinder()) {
-            return ShizukuStatus.Disconnect.ServiceNotAlive
+            return ShizukuStatus.Disconnect.ServiceNotAlive()
         }
 
         if (Shizuku.isPreV11()) {
-            return ShizukuStatus.Disconnect.VersionTooLow
+            return ShizukuStatus.Disconnect.VersionTooLow()
         }
 
         val isConnected = runCatching { Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED }.getOrNull() ?: false
         if (isConnected) {
-            return ShizukuStatus.Connected
+            return ShizukuStatus.Connected()
         }
 
-        return ShizukuStatus.Disconnect.NotGranted
+        return ShizukuStatus.Disconnect.NotGranted()
     }
 
     /** shizuku 是否已经连接 */

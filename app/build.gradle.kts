@@ -111,4 +111,9 @@ dependencies {
 
     // codelocator，用于在调试时定位代码位置，提升调试效率
     debugImplementation(libs.codelocator.core)
+
+    // work
+    implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.androidx.hilt.work)
+    ksp(libs.androidx.hilt.compiler)
 }

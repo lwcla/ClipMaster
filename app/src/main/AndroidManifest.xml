@@ -3,19 +3,18 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-
+    <uses-permission android:name="android.permission.INTERNET" />
     <!--悬浮窗权限-->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-
-    <uses-permission android:name="android.permission.INTERNET" />
-
     <!-- 保存到相册需要 -->
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
+    <!-- 开机广播需要 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
 
     <!-- 添加 queries 标签 -->
     <queries>
@@ -45,6 +44,33 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--把 androidx.startup.InitializationProvider 下面注册的 WorkManagerInitializer 这条初始化项，从最终合并后的 Manifest 里删掉。-->
+        <!--告诉系统：不要再自动初始化 WorkManager，我自己在 Application 里手动初始化。-->
+       <!-- 否则可能出现 Could not instantiate com.cla.clip.master.work.ShizukuStatusWorker (Fix with AI)
+        java.lang.NoSuchMethodException: com.cla.clip.master.work.ShizukuStatusWorker.<init> [class android.content.Context, class androidx.work.WorkerParameters]-->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
+
+        <receiver
+            android:name=".receiver.BootRebuildReceiver"
+            android:enabled="true"
+            android:exported="true"
+            android:directBootAware="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <service
             android:name=".service.ClipboardService"

@@ -66,6 +66,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         pendingClipId = intent.extractClipId()
+        logI(TAG) { "onNewIntent: pendingClipId=$pendingClipId" }
     }
 }
 

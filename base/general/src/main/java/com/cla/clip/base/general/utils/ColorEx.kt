@@ -46,3 +46,13 @@ private fun adjustColorIfNeeded(color: Int): Int {
 
     return ColorUtils.HSLToColor(hsl)
 }
+
+/**
+ * Int color 转成 #AARRGGBB 或 #RRGGBB 字符串
+ * @param includeAlpha 是否包含透明度，默认 false
+ */
+fun Int.toColorString(includeAlpha: Boolean = false) = if (includeAlpha) {
+    String.format("#%08X", this)   // 例：#FF3A7BD5
+} else {
+    String.format("#%06X", 0xFFFFFF and this)  // 例：#3A7BD5
+}
