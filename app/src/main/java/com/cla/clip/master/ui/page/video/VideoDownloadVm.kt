@@ -41,16 +41,6 @@ class VideoDownloadVm @Inject constructor(
     )
 
     val downloadState = _downloadState.transformLatest { taskId ->
-        // 启动下载任务
-        val task = downloadRepository.getTask(taskId)
-        if (task != null) {
-            // 开启下载任务之前，把之前的下载状态重置为 downloading，避免 UI 卡在完成或失败状态
-            // todo 如果要做断点续传的话，这里就需要改
-            downloadRepository.updateProgress(taskId, 0)
-        }
-
-        DownloadVideoWorkStarter.enqueue(appContext, taskId)
-
         downloadRepository.observeTask(taskId).collectLatest { taskData ->
             emit(taskData?.toUi() ?: VideoDownloadState.Failed(appContext.getString(R.string.base_general_the_download_task_was_not_found)))
         }

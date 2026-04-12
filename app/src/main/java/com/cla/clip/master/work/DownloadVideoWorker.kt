@@ -62,7 +62,7 @@ class DownloadVideoWorker @AssistedInject constructor(
         logD(TAG) { "doWork: 开始下载任务 taskId=$taskId task=$task" }
 
         // 首帧前台通知，避免后台限制
-        setForeground(buildForegroundInfo(applicationContext.getString(R.string.base_general_initialize_download, fileName.showName), 0))
+        setForeground(buildForegroundInfo(applicationContext.getString(R.string.base_general_initialize_download), fileName.showName, 0))
 
         val saveVideo = SaveToFile.Video(fileName)
         val mediaTarget = saveVideo.createPath(applicationContext)
@@ -75,7 +75,8 @@ class DownloadVideoWorker @AssistedInject constructor(
             downloadRepo.markFailed(taskId, tr.message ?: "Unknown error")
             notificationHelper.notifyDownloadResult(
                 taskId,
-                title = applicationContext.getString(R.string.base_general_download_failed, fileName.showName),
+                title = applicationContext.getString(R.string.base_general_download_failed),
+                fileName = fileName.showName,
                 content = tr.message ?: "Unknown error",
             )
             saveVideo.failure(applicationContext, mediaTarget)
@@ -104,7 +105,19 @@ class DownloadVideoWorker @AssistedInject constructor(
                 }
                 .build()
 
-            return okHttpClient.newCall(request).execute()
+            val response = okHttpClient.newCall(request).execute()
+
+            try {
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("HTTP ${response.code} ${response.message}")
+                }
+                validateMediaResponse(response) // 这里抛错也会进 catch 关闭
+                return response
+            } catch (t: Throwable) {
+                logE(TAG, t) { "call: url=$url" }
+                response.close()
+                throw t
+            }
         }
 
         val response = if (videoUrl.contains(DOU_YIN_PLAYVM)) {
@@ -114,7 +127,7 @@ class DownloadVideoWorker @AssistedInject constructor(
                 logD(TAG) { "downloadVideo: 抖音尝试下载无水印的地址" }
                 call(newUrl)
             }.getOrElse {
-                logD(TAG) { "downloadVideo: 抖音无水印地址连接失败，换回原地址" }
+                logE(TAG, it) { "downloadVideo: 抖音无水印地址连接失败，换回原地址" }
                 call(videoUrl)
             }
         } else {
@@ -122,10 +135,6 @@ class DownloadVideoWorker @AssistedInject constructor(
         }
 
         response.use { response ->
-            if (!response.isSuccessful) {
-                throw IllegalStateException("HTTP ${response.code} ${response.message}")
-            }
-
             val body = response.body ?: throw IllegalStateException("Empty response body")
             val totalSize = body.contentLength()
 
@@ -153,7 +162,7 @@ class DownloadVideoWorker @AssistedInject constructor(
                             lastProgress = progress
                             downloadRepo.updateProgress(taskId, progress)
                             setProgress(workDataOf("progress" to progress))
-                            setForeground(buildForegroundInfo(applicationContext.getString(R.string.base_general_download_now, fileName.showName), progress))
+                            setForeground(buildForegroundInfo(applicationContext.getString(R.string.base_general_download_now), fileName.showName, progress))
                         }
                     }
                 }
@@ -165,14 +174,15 @@ class DownloadVideoWorker @AssistedInject constructor(
 
             notificationHelper.notifyDownloadResult(
                 taskId,
-                title = applicationContext.getString(R.string.base_general_download_completed, fileName.showName),
+                title = applicationContext.getString(R.string.base_general_download_completed),
+                fileName = fileName.showName,
                 content = filePath,
             )
         }
     }
 
-    private fun buildForegroundInfo(title: String, progress: Int): ForegroundInfo {
-        val notification = notificationHelper.buildDownloadNotification(title, progress)
+    private fun buildForegroundInfo(title: String, fileName: String, progress: Int): ForegroundInfo {
+        val notification = notificationHelper.buildDownloadNotification(title, fileName, progress)
 
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             ForegroundInfo(
@@ -184,6 +194,55 @@ class DownloadVideoWorker @AssistedInject constructor(
             ForegroundInfo(NotificationHelper.VIDEO_DOWNLOAD_NOTIFICATION_ID, notification)
         }
     }
+
+    /**
+     * 视频地址出错的情况下，返回了一个json {"status_code":0,"status_msg":"url doesn't match"}
+     * 这个时候不能只依靠response.isSuccessful去判断是否能够下载失败
+     */
+    private fun validateMediaResponse(response: Response) {
+        val contentType = response.header("Content-Type").orEmpty().lowercase()
+
+        val badTypes = listOf("application/json", "text/json", "text/html")
+        if (badTypes.any { contentType.contains(it) }) {
+            throw IllegalStateException("Unexpected content-type: $contentType")
+        }
+
+        val allowByType = contentType.startsWith("video/") ||
+                contentType.contains("application/octet-stream") ||
+                contentType.contains("application/vnd.apple.mpegurl")
+
+        // peek 不会消耗真正的 body 流
+        val peek = response.peekBody(4096).bytes()
+        val textHead = peek.toString(Charsets.UTF_8).trimStart().lowercase()
+
+        val looksLikeJsonOrHtml = textHead.startsWith("{") ||
+                textHead.startsWith("[") ||
+                textHead.startsWith("<!doctype") ||
+                textHead.startsWith("<html")
+
+        if (looksLikeJsonOrHtml) {
+            throw IllegalStateException("Body is not media stream")
+        }
+
+        val looksLikeMp4 = peek.size > 12 &&
+                String(peek.copyOfRange(4, 8), Charsets.US_ASCII) == "ftyp"
+        val looksLikeWebm = peek.size >= 4 &&
+                peek[0] == 0x1A.toByte() &&
+                peek[1] == 0x45.toByte() &&
+                peek[2] == 0xDF.toByte() &&
+                peek[3] == 0xA3.toByte()
+        val looksLikeFlv = peek.size >= 3 &&
+                peek[0] == 'F'.code.toByte() &&
+                peek[1] == 'L'.code.toByte() &&
+                peek[2] == 'V'.code.toByte()
+
+        val allowBySniff = looksLikeMp4 || looksLikeWebm || looksLikeFlv
+
+        if (!allowByType && !allowBySniff) {
+            throw IllegalStateException("Response is not recognized as media")
+        }
+    }
+
 }
 
 object DownloadVideoWorkStarter {

@@ -64,7 +64,11 @@ fun AppNavigation(navController: NavHostController) {
                     // inclusive = true → 连 VideoExtractRoute 自身也从栈里移除
                     // 等效于：返回时跳过 VideoExtractPage，直接回到它的上一级
                     // inclusive = true 的含义：弹出到 VideoExtractRoute 这一层，并且把它自身也一起弹出，最终停在 VideoExtractRoute 的上一个目标（即你从哪里进的视频提取页，就回哪里）
-                    navController.popBackStack<VideoExtractRoute>(inclusive = true)
+                    val poppedExtract = navController.popBackStack<VideoExtractRoute>(inclusive = true)
+                    // 在首页从通知栏打开视频下载结果页，这个时候返回操作会失效，需要在这里判断
+                    if (!poppedExtract) {
+                        navController.popBackStack() // 从通知进来时，回到 MainPage
+                    }
                 }
             )
         }

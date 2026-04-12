@@ -54,4 +54,7 @@ interface ClipDao {
 
     /** 根据id查找剪贴数据 */
     suspend fun loadClipDetail(id: Long): ClipShowEntity?
+
+    /** 获取最后保存的剪贴数据 */
+    suspend fun loadLastClip(): String?
 }

@@ -313,7 +313,7 @@ private fun Success(
                     next = {
                         pendingCandidate = null
                         // 创建下载任务，并且跳转详情页
-                        videoExtractVm.createDownloadTaskAndGo(pending.second)
+                        videoExtractVm.startDownloadAndGo(pending.second)
                     }
                 )
             }

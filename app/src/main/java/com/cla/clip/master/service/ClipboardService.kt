@@ -4,25 +4,20 @@ import android.app.Service
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import android.view.View
 import android.view.WindowManager
-import androidx.core.content.FileProvider
 import com.cla.clip.base.general.R
-import com.cla.clip.base.general.entity.ClipCaptureEntity
 import com.cla.clip.base.general.repository.ClipDao
 import com.cla.clip.base.general.utils.ApplicationScope
-import com.cla.clip.base.general.utils.LinkUtils
 import com.cla.clip.base.general.utils.hasOverlayPermission
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.toColorString
 import com.cla.clip.base.general.utils.toast
-import com.cla.clip.master.utils.LinkMeta
-import com.cla.clip.master.utils.LinkMetaParser
+import com.cla.clip.master.utils.ClipHelper
 import com.cla.clip.master.utils.NotificationHelper
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -33,9 +28,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
-import java.io.FileOutputStream
-import java.util.UUID
 
 /**
  * 剪贴板监听服务
@@ -143,7 +135,9 @@ class ClipboardService : Service() {
     @Inject
     lateinit var notificationHelper: NotificationHelper
 
-    private val clipboardManager by lazy { getSystemService(ClipboardManager::class.java) }
+    @Inject
+    lateinit var clipHelper: dagger.Lazy<ClipHelper>
+
     private val windowManager by lazy { getSystemService(WindowManager::class.java) as WindowManager }
 
     private var killJob: Job? = null
@@ -242,14 +236,14 @@ class ClipboardService : Service() {
             })
 
             // 读取剪贴板内容
-            val clipData = clipboardManager.primaryClip
+            val clipData = clipHelper.get().clipboardManager.primaryClip
             val clip = clipData?.let { runCatching { it.getItemAt(0) }.getOrNull() }
 
             windowManager.removeView(view)
 
             if (clip != null) {
                 withContext(Dispatchers.IO) {
-                    processClip(clip, packageName, appName, iconPath, iconColor, iconHash)
+                    clipHelper.get().processClip(clip, packageName, appName, iconPath, iconColor, iconHash)
                 }
             }
         }.getOrElse {
@@ -265,82 +259,6 @@ class ClipboardService : Service() {
         killSelf()
     }
 
-    /** 处理新的剪贴板内容 */
-    private suspend fun processClip(
-        item: android.content.ClipData.Item,
-        packageName: String?,
-        appName: String?,
-        iconPath: String?,
-        iconColor: Int?,
-        iconHash: String?,
-    ) {
-        // 保存剪贴板内容
-        val contentUri = item.uri
-        val contentText = item.text?.toString()
-
-        val clipContent = when {
-            // 处理图片类型
-            contentUri != null && contentUri.toString().startsWith("content://") -> {
-                saveImageAndGetPath(contentUri)
-            }
-
-            else -> contentText
-        }?.trim()
-
-        if (clipContent.isNullOrBlank()) {
-            return
-        }
-
-        // 对于图片类型，启动OCR任务
-//            if (clipType == ClipType.IMAGE) {
-//                // TODO: 实现图片OCR逻辑
-//                // OcrProcessingWorker.enqueue(this@ClipboardService, clipContent, newClip.id)
-//            }
-
-        val extractedLink = LinkUtils.extractFirstPreviewableUrl(contentText)
-        val linkMeta = if (!extractedLink.isNullOrBlank()) {
-            val history = clipDao.get().loadLinkPreview(extractedLink)
-            if (!history?.imageUrl.isNullOrBlank()) {
-                logD(TAG) { "processClip 使用数据库中的链接数据 extractedLink=$extractedLink" }
-                // 避免重复解析链接
-                LinkMeta(history.title, history.description, history.imageUrl, history.siteName)
-            } else {
-                logD(TAG) { "processClip 去解析链接 extractedLink=$extractedLink" }
-                LinkMetaParser.parse(extractedLink)
-            }
-        } else {
-            null
-        }
-
-        val captureEntity = ClipCaptureEntity(
-            content = clipContent,
-            timestamp = System.currentTimeMillis(),
-            sourcePackage = packageName ?: "",
-            sourceAppName = appName ?: "",
-            sourceAppIconPath = iconPath,
-            sourcePrimaryColor = iconColor?.takeIf { it > 0 },
-            sourceAppIconHash = iconHash,
-            link = extractedLink,
-            linkTitle = linkMeta?.title,
-            linkDescription = linkMeta?.description,
-            linkImageUrl = linkMeta?.imageUrl,
-            linkSiteName = linkMeta?.siteName,
-        )
-
-        logI(TAG) { "processClip: isLink=${!extractedLink.isNullOrBlank()} captureEntity=$captureEntity" }
-
-        // 保存到数据库
-        val clipId = clipDao.get().addNewClip(captureEntity)
-
-        logD(TAG) { "processClip: 保存到数据库 clipId=${clipId}" }
-
-        notificationHelper.notifyClipUpdate(
-            title = "$appName ${appContext.getString(R.string.base_general_it_was_written_into_the_clipboard)}",
-            content = "${appContext.getString(R.string.base_general_content)}${clipContent}",
-            clipId = clipId
-        )
-    }
-
     private fun killSelf() {
         killJob?.cancel()
         killJob = scope.launch(Dispatchers.Main) {
@@ -348,37 +266,6 @@ class ClipboardService : Service() {
             logI(TAG) { "processClip: 关闭前台服务" }
             stopForeground(STOP_FOREGROUND_REMOVE) // 前台服务降级为普通服务，同时删除通知
             stopSelf()
-        }
-    }
-
-    /** 保存剪贴板中的图片，并返回保存路径 */
-    private fun saveImageAndGetPath(imageUri: Uri): String {
-        val imageDir = File(filesDir, "clip_images")
-        if (!imageDir.exists()) {
-            imageDir.mkdirs()
-        }
-
-        val fileName = "clip_img_${UUID.randomUUID()}.png"
-        val imageFile = File(imageDir, fileName)
-
-        return try {
-            contentResolver.openInputStream(imageUri)?.use { input ->
-                FileOutputStream(imageFile).use { output ->
-                    input.copyTo(output)
-                }
-            }
-
-            // 返回ContentProvider URI，确保应用内可访问
-            val fileUri = FileProvider.getUriForFile(
-                this@ClipboardService,
-                "${appContext.packageName}.fileprovider",
-                imageFile
-            )
-
-            fileUri.toString()
-        } catch (e: Exception) {
-            e.printStackTrace()
-            ""
         }
     }
 

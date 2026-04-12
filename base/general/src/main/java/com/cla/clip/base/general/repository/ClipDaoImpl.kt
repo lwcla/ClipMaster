@@ -109,9 +109,16 @@ class ClipDaoImpl @Inject constructor(
             )
             // 执行更新
             clipDao.upsertClip(clipToUpdate)
+            return@withContext existingClip.clip.id
         } else {
             // 插入数据
-            clipDao.upsertClip(newClip.copy(id = 0))
+            val rowId = clipDao.upsertClip(newClip.copy(id = 0))
+            // 关键：如果是更新旧任务，直接返回旧 id
+            return@withContext when {
+                rowId > 0L -> rowId
+                else -> clipDao.loadClipDetail(newClip.content, sourceApp.packageName)?.clip?.id
+                    ?: error("addNewClip: upsertClip 后未找到任务 newClip=$newClip")
+            }
         }
     }
 
@@ -148,5 +155,9 @@ class ClipDaoImpl @Inject constructor(
 
     override suspend fun loadClipDetail(id: Long) = withContext(Dispatchers.IO) {
         clipDao.loadClipDetail(id)?.toUi()
+    }
+
+    override suspend fun loadLastClip() = withContext(Dispatchers.IO){
+        clipDao.loadLastClip()
     }
 }

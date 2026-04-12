@@ -38,10 +38,19 @@ class NotificationHelper @Inject constructor(
         const val CLIP_UPDATE_CHANNEL_ID = "clip_update_channel_id"
         const val CLIP_UPDATE_NOTIFICATION_ID = 1004
 
-        /** 从通知跳转到详情页的字段 */
+        /** 下载结果 */
+        const val VIDEO_DOWNLOAD_RESULT_NOTIFICATION_ID = 1005
+
         const val EXTRA_TARGET = "extra_target"
-        const val EXTRA_CLIP_ID = "extra_clip_id"
+
+
+        /** 从通知跳转到详情页的字段 */
         const val TARGET_DETAIL = "target_detail"
+        const val EXTRA_CLIP_ID = "extra_clip_id"
+
+        /** 从通知跳转到下载结果页 */
+        const val TARGET_VIDEO_DOWNLOAD_RESULT = "target_video_download_result"
+        const val EXTRA_TASK_ID = "extra_task_id"
 
         fun Intent?.extractClipId(): Long? {
             if (this == null) return null
@@ -49,6 +58,14 @@ class NotificationHelper @Inject constructor(
             if (target != TARGET_DETAIL) return null
             if (!hasExtra(EXTRA_CLIP_ID)) return null
             return getLongExtra(EXTRA_CLIP_ID, -1L).takeIf { it > 0 }
+        }
+
+        fun Intent?.extractTaskId(): Long? {
+            if (this == null) return null
+            val target = getStringExtra(EXTRA_TARGET)
+            if (target != TARGET_VIDEO_DOWNLOAD_RESULT) return null
+            if (!hasExtra(EXTRA_TASK_ID)) return null
+            return getLongExtra(EXTRA_TASK_ID, -1L).takeIf { it > 0 }
         }
     }
 
@@ -70,9 +87,10 @@ class NotificationHelper @Inject constructor(
             return PendingIntent.getActivity(appContext, 0, launchIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         }
 
-    fun buildDownloadNotification(title: String, progress: Int) =
+    fun buildDownloadNotification(title: String, fileName: String, progress: Int) =
         NotificationCompat.Builder(appContext, VIDEO_DOWNLOAD_CHANNEL_ID)
             .setContentTitle(title)
+            .setSubText(fileName)
             .setSmallIcon(R.mipmap.base_general_ic_app)
             .setProgress(100, progress.coerceIn(0, 100), false)
             .setSilent(true)
@@ -81,19 +99,38 @@ class NotificationHelper @Inject constructor(
             .setOngoing(progress in 0..99)
             .build()
 
-    fun notifyDownloadResult(taskId: Long, title: String, content: String?) {
+    fun notifyDownloadResult(taskId: Long, title: String, fileName: String, content: String?) {
         createChannels()
+
+        // 跳转到下载结果页
+        val intent = Intent(appContext, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra(EXTRA_TARGET, TARGET_VIDEO_DOWNLOAD_RESULT)
+            putExtra(EXTRA_TASK_ID, taskId)
+        }
+
+        val pendingIntent = PendingIntent.getActivity(
+            appContext,
+            taskId.hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         val notification = NotificationCompat.Builder(appContext, VIDEO_DOWNLOAD_CHANNEL_ID)
             .setSmallIcon(R.mipmap.base_general_ic_app)
             .setContentTitle(title)
+            .setSubText(fileName) // 显示在标题下方，突出显示文件名
             .setContentText(content ?: "")
+            .setContentIntent(pendingIntent)
             .setSilent(true)
             .setOnlyAlertOnce(true)
             .setAutoCancel(true) // 点击后自动消失
             .setOngoing(false)
             .build()
 
-        manager.notify(taskId.toInt(), notification)
+        manager.notify(VIDEO_DOWNLOAD_RESULT_NOTIFICATION_ID, notification)
     }
 
     /** 读取剪贴板的前台服务通知 */

@@ -176,4 +176,8 @@ interface ClipDao {
     /** 获取最新的一条剪贴板记录 */
     @Query("SELECT * FROM clips ORDER BY timestamp DESC LIMIT 1")
     suspend fun getLatestClip(): ClipDetail?
+
+    /** 获取最新的一条剪贴板数据 */
+    @Query("SELECT content FROM clips ORDER BY timestamp DESC LIMIT 1")
+    suspend fun loadLastClip(): String?
 }

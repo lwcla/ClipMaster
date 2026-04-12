@@ -18,10 +18,14 @@ import androidx.navigation.compose.rememberNavController
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.master.ui.navigation.AppNavigation
 import com.cla.clip.master.ui.navigation.DetailRoute
+import com.cla.clip.master.ui.navigation.VideoDownloadRoute
 import com.cla.clip.master.ui.theme.ClipMaterTheme
 import com.cla.clip.master.ui.widget.ShizukuServiceUnavailableTip
+import com.cla.clip.master.utils.ClipHelper
 import com.cla.clip.master.utils.NotificationHelper.Companion.extractClipId
+import com.cla.clip.master.utils.NotificationHelper.Companion.extractTaskId
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -30,11 +34,16 @@ class MainActivity : ComponentActivity() {
         private const val TAG = "MainActivity"
     }
 
+    @Inject
+    lateinit var clipHelper: dagger.Lazy<ClipHelper>
+
     private var pendingClipId by mutableStateOf<Long?>(null)
+    private var pendingTaskId by mutableStateOf<Long?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         pendingClipId = intent.extractClipId()
+        pendingTaskId = intent.extractTaskId()
         enableEdgeToEdge()
 
         setContent {
@@ -55,6 +64,14 @@ class MainActivity : ComponentActivity() {
                             pendingClipId = null
                         }
 
+                        LaunchedEffect(pendingTaskId) {
+                            pendingTaskId?.let { id ->
+                                logI(TAG) { "onCreate: 跳转到下载结果页 id=$id" }
+                                navController.navigate(VideoDownloadRoute(id)) { launchSingleTop = true }
+                            }
+                            pendingTaskId = null
+                        }
+
                         AppNavigation(navController)
                     }
                 }
@@ -62,11 +79,18 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus) return
+        clipHelper.get().readNow()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         pendingClipId = intent.extractClipId()
-        logI(TAG) { "onNewIntent: pendingClipId=$pendingClipId" }
+        pendingTaskId = intent.extractTaskId()
+        logI(TAG) { "onNewIntent: pendingClipId=$pendingClipId pendingTaskId=$pendingTaskId" }
     }
 }
 
