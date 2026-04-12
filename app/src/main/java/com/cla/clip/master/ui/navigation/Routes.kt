@@ -16,9 +16,9 @@ data class DetailRoute(val clipId: Long) : Route()
 
 /** 视频链接提取 */
 @Serializable
-data class VideoExtractRoute(val url: String) : Route()
+data class VideoExtractRoute(val url: String, val name: String) : Route()
 
 
 /** 视频下载 */
 @Serializable
-data class VideoDownloadRoute(val candidate: VideoCandidate) : Route()
+data class VideoDownloadRoute(val taskId: Long) : Route()

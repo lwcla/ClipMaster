@@ -72,6 +72,7 @@ import coil3.compose.AsyncImage
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.master.R
+import com.cla.clip.master.ui.dialog.DeleteDialog
 import com.cla.clip.master.ui.navigation.DetailRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.widget.rememberFormattedTime
@@ -98,6 +99,8 @@ fun MainPage(
     var selectedClipForSheet by remember { mutableStateOf<ClipShowEntity?>(null) }
     val sheetState = rememberModalBottomSheetState()
 
+    var deleteClip by remember { mutableStateOf<ClipShowEntity?>(null) }
+
     logD("MainPage", { "MainPage: pagedClips itemCount = ${pagedClips.itemCount}, loadState = ${pagedClips.loadState}" })
 
     Box(modifier = Modifier.fillMaxWidth()) {
@@ -106,9 +109,18 @@ fun MainPage(
             pagedClips = pagedClips,
             onLongClick = { clip ->
                 // 长按时，设置选中的 Clip，触发 BottomSheet 显示
-                selectedClipForSheet = clip
+//                selectedClipForSheet = clip
             },
+            onDelete = { clip -> deleteClip = clip },
             onNavigate = onNavigate
+        )
+
+        DeleteDialog(
+            clip = deleteClip,
+            onDismiss = { deleteClip = null },
+            onConfirmDelete = { clip ->
+                viewModel.deleteClip(clip)
+            }
         )
 
         // 底部弹出窗口
@@ -141,6 +153,7 @@ private fun ClipList(
     viewModel: MainViewModel,
     pagedClips: LazyPagingItems<ClipShowEntity>,
     onLongClick: (ClipShowEntity) -> Unit,
+    onDelete: (ClipShowEntity) -> Unit,
     onNavigate: (Route) -> Unit,
 ) {
     if (pagedClips.loadState.refresh is LoadState.NotLoading && pagedClips.itemCount == 0) {
@@ -169,7 +182,7 @@ private fun ClipList(
                         ClipCard(
                             clip = clip,
                             onPinToggle = { viewModel.updatePinStatus(it, !it.isPinned) },
-                            onDelete = { viewModel.deleteClip(it) },
+                            onDelete = { onDelete(it) },
                             onCopy = { viewModel.copyToClipboard(it) },
                             onClick = { onNavigate(DetailRoute(it.id)) },
                             onLongClick = onLongClick

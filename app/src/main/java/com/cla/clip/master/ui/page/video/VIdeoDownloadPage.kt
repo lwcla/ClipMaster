@@ -1,5 +1,7 @@
 package com.cla.clip.master.ui.page.video
 
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -17,25 +19,28 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cla.clip.base.general.R
-import com.cla.clip.master.entity.VideoCandidate
+import com.cla.clip.base.general.utils.toast
 import com.cla.clip.master.entity.VideoDownloadState
 import com.cla.clip.master.ui.theme.ClipMaterTheme
 import com.cla.clip.master.ui.widget.TitleBar
+import kotlinx.coroutines.launch
 
 /** 视频下载页面 */
 @Composable
 fun VideoDownloadPage(
     downloadVm: VideoDownloadVm = hiltViewModel(),
-    candidate: VideoCandidate,
+    taskId: Long,
     onBack: () -> Unit
 ) {
     val state = downloadVm.downloadState.collectAsStateWithLifecycle().value
@@ -46,7 +51,7 @@ fun VideoDownloadPage(
     }
 
     LaunchedEffect(downloadVm.sessionId) {
-        downloadVm.startDownload(downloadVm.sessionId, candidate)
+        downloadVm.startDownload(downloadVm.sessionId, taskId)
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -77,7 +82,10 @@ fun VideoDownloadPage(
                 is VideoDownloadState.Failed -> {
                     Failed(
                         state,
-                        retry = { downloadVm.sessionId++ /* 通过改变 sessionId 来触发重新下载 */ }
+                        retry = {
+                            // 通过改变 sessionId 来触发重新下载
+                            downloadVm.sessionId++
+                        }
                     )
                 }
             }
@@ -125,38 +133,40 @@ private fun FailedPreview() {
 
 @Composable
 private fun Success(state: VideoDownloadState.Success) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                painter = rememberVectorPainter(Icons.Default.DownloadDone),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .padding(12.dp)
-                    .size(24.dp)
-            )
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
-            Text(
-                text = stringResource(R.string.base_general_video_download_success),
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(start = 0.dp, top = 0.dp, end = 12.dp, bottom = 0.dp)
-            )
-        }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+        modifier = Modifier.clickable(onClick = {
+            val uri = state.savePath?.let(Uri::parse) ?: return@clickable
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "video/*")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            runCatching {
+                context.startActivity(intent)
+            }.onFailure {
+                scope.launch { context.toast(R.string.base_general_there_is_no_available_application_to_open_this_video) }
+            }
+        })
+    ) {
+        Icon(
+            painter = rememberVectorPainter(Icons.Default.DownloadDone),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .padding(12.dp)
+                .size(24.dp)
+        )
 
         Text(
-            text = state.savePath ?: "",
-            color = MaterialTheme.colorScheme.error,
+            text = stringResource(R.string.base_general_video_download_success),
+            color = MaterialTheme.colorScheme.primary,
             style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier
-                .clickable(onClick = {
-
-                })
-                .padding(start = 12.dp, top = 6.dp, end = 12.dp, bottom = 6.dp)
+            modifier = Modifier.padding(start = 0.dp, top = 0.dp, end = 12.dp, bottom = 0.dp)
         )
     }
 }

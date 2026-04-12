@@ -21,6 +21,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.res.stringResource
@@ -34,6 +38,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.entity.ClipShowEntity
+import com.cla.clip.master.ui.dialog.DeleteDialog
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.navigation.VideoExtractRoute
 import com.cla.clip.master.ui.widget.TitleBar
@@ -48,6 +53,8 @@ fun DetailPage(
     onBack: () -> Unit,
     onNavigate: (Route) -> Unit,  // 跳转页面
 ) {
+    var deleteClip by remember { mutableStateOf<ClipShowEntity?>(null) }
+
     // 1) 只在 clipId 变化时触发加载，避免每次重组都查库
     LaunchedEffect(clipId) { detailVm.loadClip(clipId) }
     // 2) 订阅 flow
@@ -134,11 +141,20 @@ fun DetailPage(
                 ButtonContainer(
                     detailVm = detailVm,
                     onNavigate = onNavigate,
+                    onDelete = { clip -> deleteClip = clip },
                     clip = clip
                 )
             }
         }
     }
+
+    DeleteDialog(
+        clip = deleteClip,
+        onDismiss = { deleteClip = null },
+        onConfirmDelete = { clip ->
+            detailVm.deleteClip(clip, sendEvent = true)
+        }
+    )
 }
 
 /** 详情页底部的按钮的容器 */
@@ -146,6 +162,7 @@ fun DetailPage(
 private fun ButtonContainer(
     detailVm: DetailViewModel,
     onNavigate: (Route) -> Unit,
+    onDelete: (ClipShowEntity) -> Unit,
     clip: ClipShowEntity
 ) {
     Column(
@@ -184,7 +201,7 @@ private fun ButtonContainer(
                     modifier = Modifier.weight(1f),
                     onClick = {
                         // https://v.douyin.com/bzLHPnkAbhs/ 这个链接是抖音的一个视频链接，测试用的，实际使用时应该是 clip.link
-                        onNavigate(VideoExtractRoute(link))
+                        onNavigate(VideoExtractRoute(link, name = clip.linkTitle ?: clip.content))
                     }
                 ) {
                     Text(stringResource(R.string.base_general_video_extract))
@@ -194,7 +211,7 @@ private fun ButtonContainer(
                     modifier = Modifier.weight(1f),
                     onClick = {
                         // todo 这里应该要跳转到图片提取页，但目前还没有，所以暂时先跳视频提取页，等图片提取页做好了再改这里
-                        onNavigate(VideoExtractRoute(link))
+                        onNavigate(VideoExtractRoute(link, name = clip.linkTitle ?: clip.content))
                     }
                 ) {
                     Text(stringResource(R.string.base_general_image_extract))
@@ -207,9 +224,7 @@ private fun ButtonContainer(
         ) {
             Button(
                 modifier = Modifier.weight(1f),
-                onClick = {
-                    detailVm.deleteClip(clip, sendEvent = true)
-                }
+                onClick = { onDelete(clip) }
             ) {
                 Text(stringResource(R.string.base_general_delete))
             }

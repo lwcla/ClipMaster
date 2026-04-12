@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "cd1a7af4446f00944883ed4770a5aed5",
+    "identityHash": "5a6ad9467777fd9c6651804df92ff713",
     "entities": [
       {
         "tableName": "clips",
@@ -237,18 +237,12 @@
       },
       {
         "tableName": "download_tasks",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `task_id` TEXT NOT NULL, `video_url` TEXT NOT NULL, `referer` TEXT, `user_agent` TEXT, `cookie` TEXT, `progress` INTEGER NOT NULL, `status` TEXT NOT NULL, `error_msg` TEXT, `save_path` TEXT, `total_size` INTEGER NOT NULL, `downloaded_size` INTEGER NOT NULL, `create_time` INTEGER NOT NULL, `update_time` INTEGER NOT NULL)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `video_url` TEXT NOT NULL, `referer` TEXT, `user_agent` TEXT, `cookie` TEXT, `progress` INTEGER NOT NULL, `status` TEXT NOT NULL, `error_msg` TEXT, `save_path` TEXT, `total_size` INTEGER NOT NULL, `downloaded_size` INTEGER NOT NULL, `create_time` INTEGER NOT NULL, `update_time` INTEGER NOT NULL, `file_name` TEXT NOT NULL)",
         "fields": [
           {
             "fieldPath": "id",
             "columnName": "id",
             "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "taskId",
-            "columnName": "task_id",
-            "affinity": "TEXT",
             "notNull": true
           },
           {
@@ -317,6 +311,12 @@
             "columnName": "update_time",
             "affinity": "INTEGER",
             "notNull": true
+          },
+          {
+            "fieldPath": "fileName",
+            "columnName": "file_name",
+            "affinity": "TEXT",
+            "notNull": true
           }
         ],
         "primaryKey": {
@@ -327,13 +327,13 @@
         },
         "indices": [
           {
-            "name": "index_download_tasks_task_id",
+            "name": "index_download_tasks_video_url",
             "unique": true,
             "columnNames": [
-              "task_id"
+              "video_url"
             ],
             "orders": [],
-            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_download_tasks_task_id` ON `${TABLE_NAME}` (`task_id`)"
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_download_tasks_video_url` ON `${TABLE_NAME}` (`video_url`)"
           },
           {
             "name": "index_download_tasks_status",
@@ -358,7 +358,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'cd1a7af4446f00944883ed4770a5aed5')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '5a6ad9467777fd9c6651804df92ff713')"
     ]
   }
 }

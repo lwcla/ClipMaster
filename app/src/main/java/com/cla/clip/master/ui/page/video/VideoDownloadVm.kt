@@ -9,10 +9,9 @@ import com.cla.clip.base.general.R
 import com.cla.clip.base.general.entity.DownloadRepository
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.master.BaseViewModel
-import com.cla.clip.master.entity.VideoCandidate
 import com.cla.clip.master.entity.VideoDownloadState
 import com.cla.clip.master.entity.toUi
-import com.cla.clip.master.service.DownloadVideoService
+import com.cla.clip.master.work.DownloadVideoWorkStarter
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -23,7 +22,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.transformLatest
-import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 
@@ -37,20 +35,21 @@ class VideoDownloadVm @Inject constructor(
         private const val TAG = "VideoDownloadVm"
     }
 
-    private val _downloadState = MutableSharedFlow<VideoCandidate>(
+    private val _downloadState = MutableSharedFlow<Long>(
         replay = 1,
         onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
 
-    val downloadState = _downloadState.transformLatest { candidate ->
-        val (url, referer, userAgent, cookie) = candidate
-        val taskId = downloadRepository.createTask(url, referer, userAgent, cookie)
-
-        // 启动前台服务
-        // todo 这里可能会重复触发，需要在service里去判断当前任务是否正在下载，避免重复下载
-        withContext(Dispatchers.Main) {
-            DownloadVideoService.start(appContext, taskId, candidate)
+    val downloadState = _downloadState.transformLatest { taskId ->
+        // 启动下载任务
+        val task = downloadRepository.getTask(taskId)
+        if (task != null) {
+            // 开启下载任务之前，把之前的下载状态重置为 downloading，避免 UI 卡在完成或失败状态
+            // todo 如果要做断点续传的话，这里就需要改
+            downloadRepository.updateProgress(taskId, 0)
         }
+
+        DownloadVideoWorkStarter.enqueue(appContext, taskId)
 
         downloadRepository.observeTask(taskId).collectLatest { taskData ->
             emit(taskData?.toUi() ?: VideoDownloadState.Failed(appContext.getString(R.string.base_general_the_download_task_was_not_found)))
@@ -65,7 +64,7 @@ class VideoDownloadVm @Inject constructor(
 
     private var lastSessionId: Int? = null
 
-    fun startDownload(id: Int, candidate: VideoCandidate) {
+    fun startDownload(id: Int, taskId: Long) {
         if (lastSessionId == id) {
             // 不要重复触发下载
             logD(TAG) { "sessionId 没变，忽略重复的下载请求 id=$id" }
@@ -73,7 +72,7 @@ class VideoDownloadVm @Inject constructor(
         }
         lastSessionId = id
 
-        logD(TAG) { "开始下载，sessionId=$id, candidate=$candidate" }
-        _downloadState.tryEmit(candidate)
+        logD(TAG) { "开始下载，sessionId=$id, taskId=$taskId" }
+        _downloadState.tryEmit(taskId)
     }
 }

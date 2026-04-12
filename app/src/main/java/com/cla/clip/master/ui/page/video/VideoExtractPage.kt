@@ -50,6 +50,7 @@ import com.cla.clip.base.general.R
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.logW
+import com.cla.clip.base.general.utils.toast
 import com.cla.clip.base.general.widget.RequestStoragePermission
 import com.cla.clip.master.entity.VideoCandidate
 import com.cla.clip.master.ui.navigation.Route
@@ -57,8 +58,9 @@ import com.cla.clip.master.ui.navigation.VideoDownloadRoute
 import com.cla.clip.master.ui.theme.ClipMaterTheme
 import com.cla.clip.master.ui.widget.TitleBar
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 
-private const val HIDDEN_PROBE_TIMEOUT_MS = 6_000L
+private const val HIDDEN_PROBE_TIMEOUT_MS = 10_000L
 private const val USER_PLAY_TIMEOUT_MS = 25_000L
 
 private const val AUTO_PLAY_JS = """
@@ -83,11 +85,23 @@ private const val AUTO_PLAY_JS = """
 fun VideoExtractPage(
     videoExtractVm: VideoExtractVm = hiltViewModel(),
     pageUrl: String,
+    pageName: String,
     onBack: () -> Unit,
     onNavigate: (route: Route) -> Unit
 ) {
     val tag = "视频地址识别"
+    val context = LocalContext.current
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
+
+    LaunchedEffect(Unit) {
+        videoExtractVm.createDownloadTaskFlow.collectLatest { taskId ->
+            if (taskId < 0) {
+                context.toast(R.string.base_general_failed_to_create_the_download_task)
+            } else {
+                onNavigate(VideoDownloadRoute(taskId))
+            }
+        }
+    }
 
     LaunchedEffect(videoExtractVm.probeState) {
         when (val s = videoExtractVm.probeState) {
@@ -96,17 +110,8 @@ fun VideoExtractPage(
                 delay(HIDDEN_PROBE_TIMEOUT_MS)
                 val cur = videoExtractVm.probeState
                 if (cur is ProbeState.HiddenProbing && cur.sessionId == s.sessionId) {
-                    videoExtractVm.probeState = ProbeState.Success(
-                        VideoCandidate(
-                            url = toPlayUrl(pageUrl),
-                            referer = pageUrl,
-                            userAgent = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Mobile Safari/537.36",
-                            cookie = null
-                        )
-                    )
-
-//                    videoExtractVm.probeState = ProbeState.Failed
-
+                    logD(tag) { "VideoExtractPage: 自动识别超时，显示错误提示" }
+                    videoExtractVm.probeState = ProbeState.Failed
                     // todo 这里超时之后要显示webview，并引导用户主动点击视频播放，拦截视频的地址
 //                    videoExtractVm.probeState = ProbeState.NeedUserPlay(s.sessionId)
 //                    webViewRef?.evaluateJavascript(AUTO_PLAY_JS, null)
@@ -118,6 +123,7 @@ fun VideoExtractPage(
                 delay(USER_PLAY_TIMEOUT_MS)
                 val cur = videoExtractVm.probeState
                 if (cur is ProbeState.NeedUserPlay && cur.sessionId == s.sessionId) {
+                    logD(tag) { "VideoExtractPage: 用户手动识别超时，显示错误提示" }
                     videoExtractVm.probeState = ProbeState.Failed
                 }
             }
@@ -156,23 +162,23 @@ fun VideoExtractPage(
         modifier = Modifier.fillMaxSize()
     ) {
         Box {
-//            if (videoExtractVm.probeState !is ProbeState.Success) {
-//                Column {
-//                    TitleBar(stringResource(R.string.base_general_video_extract), onBack)
-//                    VideoProbeWebViewLayer(
-//                        targetUrl = pageUrl,
-//                        onWebViewReady = { webViewRef = it },
-//                        onVideoCandidate = { candidate ->
-//                            if (videoExtractVm.probeState !is ProbeState.Success) {
-//                                logI(tag) { "抓取成功: $candidate" }
-//                                clearWebView()
-//
-//                                videoExtractVm.probeState = ProbeState.Success(candidate)
-//                            }
-//                        }
-//                    )
-//                }
-//            }
+            if (videoExtractVm.probeState !is ProbeState.Success) {
+                Column {
+                    TitleBar(stringResource(R.string.base_general_video_extract), onBack)
+                    VideoProbeWebViewLayer(
+                        targetUrl = pageUrl,
+                        pageName = pageName,
+                        onWebViewReady = { webViewRef = it },
+                        onVideoCandidate = { candidate ->
+                            if (videoExtractVm.probeState !is ProbeState.Success) {
+                                clearWebView()
+                                logD(tag) { "VideoExtractPage: 视频地址识别成功 candidate=$candidate" }
+                                videoExtractVm.probeState = ProbeState.Success(candidate)
+                            }
+                        }
+                    )
+                }
+            }
 
             // ========== 前景遮罩层：盖住 WebView，并吞掉触摸，让WebView在后面加载页面，等页面加载完成之后，触发视频播放，拦截视频地址 ==========
 //            val hideWebView = videoExtractVm.probeState is ProbeState.HiddenProbing || videoExtractVm.probeState is ProbeState.Idle
@@ -187,10 +193,6 @@ fun VideoExtractPage(
 
             ) {
                 TitleBar(stringResource(R.string.base_general_video_extract), onBack)
-
-                if (videoExtractVm.probeState !is ProbeState.Success) {
-                    Text("假设这是webView ${videoExtractVm.sessionId}")
-                }
 
                 Column(
                     verticalArrangement = Arrangement.Center,
@@ -218,8 +220,8 @@ fun VideoExtractPage(
 
                         is ProbeState.Success -> {
                             Success(
+                                videoExtractVm,
                                 state.candidate,
-                                toDownload = { candidate -> onNavigate(VideoDownloadRoute(candidate)) }
                             )
                         }
                     }
@@ -296,8 +298,8 @@ private fun LoadingPreview() {
 /** 视频地址识别成功 */
 @Composable
 private fun Success(
+    videoExtractVm: VideoExtractVm,
     candidate: VideoCandidate,
-    toDownload: (VideoCandidate) -> Unit
 ) {
     var pendingCandidate by remember { mutableStateOf<Pair<Long, VideoCandidate>?>(null) }
 
@@ -305,14 +307,13 @@ private fun Success(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-
         pendingCandidate?.let { pending ->
             key(pending.first) {
                 RequestStoragePermission(
                     next = {
                         pendingCandidate = null
-                        // 跳转下载页，传递视频地址等信息
-                        toDownload(pending.second)
+                        // 创建下载任务，并且跳转详情页
+                        videoExtractVm.createDownloadTaskAndGo(pending.second)
                     }
                 )
             }
@@ -350,8 +351,14 @@ private fun Success(
 private fun SuccessPreview() {
     ClipMaterTheme {
         Success(
-            candidate = VideoCandidate("https://example.com/video.mp4", "https://example.com", "Mozilla/5.0", "cookie=value"),
-            toDownload = {}
+            videoExtractVm = hiltViewModel(),
+            candidate = VideoCandidate(
+                "https://example.com/video.mp4",
+                "https://example.com",
+                "Mozilla/5.0",
+                "cookie=value",
+                ""
+            ),
         )
     }
 }
@@ -359,7 +366,8 @@ private fun SuccessPreview() {
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 private fun VideoProbeWebViewLayer(
-    targetUrl: String?,
+    targetUrl: String,
+    pageName: String,
     onWebViewReady: (WebView) -> Unit,
     onVideoCandidate: (VideoCandidate) -> Unit,
 ) {
@@ -420,14 +428,17 @@ private fun VideoProbeWebViewLayer(
 //                        logD("tag) { "shouldInterceptRequest: reqUrl=$reqUrl" }
                         if (isLikelyVideoRequest(request.url, headers)) {
                             val cookie = android.webkit.CookieManager.getInstance().getCookie(reqUrl)
-                            val candidate = VideoCandidate(
-                                url = reqUrl,
-                                referer = headers["Referer"],
-                                userAgent = headers["User-Agent"],
-                                cookie = cookie
-                            )
-                            logD(tag) { "candidate=$candidate " }
-                            view.post { onVideoCandidate(candidate) }
+                            view.post {
+                                val candidate = VideoCandidate(
+                                    url = reqUrl,
+                                    referer = headers["Referer"],
+                                    userAgent = headers["User-Agent"],
+                                    cookie = cookie,
+                                    fileName = view.title ?: pageName
+                                )
+                                logD(tag) { "candidate=$candidate " }
+                                onVideoCandidate(candidate)
+                            }
                         }
                         return super.shouldInterceptRequest(view, request)
                     }
@@ -438,7 +449,7 @@ private fun VideoProbeWebViewLayer(
         update = { webView ->
             // 只有 URL 变化时再加载，避免重组反复 loadUrl
             val current = webView.url
-            if (!targetUrl.isNullOrBlank() && current != targetUrl) {
+            if (targetUrl.isNotBlank() && current != targetUrl) {
                 webView.loadUrl(targetUrl)
             }
         }
@@ -481,10 +492,4 @@ private fun isLikelyVideoRequest(
 
     return byExt || (byKeyword && byMime) || byMime
 }
-
-private fun toPlayUrl(url: String): String =
-    url.replace("/playwm/", "/play/")
-
-private fun toPlaywmUrl(url: String): String =
-    url.replace("/play/", "/playwm/")
 

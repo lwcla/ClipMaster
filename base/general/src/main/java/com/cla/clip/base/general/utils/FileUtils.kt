@@ -54,7 +54,7 @@ fun SaveToFile.createPath(context: Context): MediaStoreTarget {
                 //// 选项 4：保存到 Downloads（下载）
                 //put(MediaStore.MediaColumns.RELATIVE_PATH, "Downloads/MyApp")
                 // 设置相对路径，文件会自动保存在这个目录下，如果目录不存在会自动创建
-                put(MediaStore.MediaColumns.RELATIVE_PATH, "DCIM/clipMaster")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, "Pictures/clipMaster")
                 // 标记为正在下载，下载完成后再改为 0
                 put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
@@ -79,7 +79,7 @@ fun SaveToFile.createPath(context: Context): MediaStoreTarget {
             }
 
             val downloadDir = File(
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM),
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
                 "clipMaster"
             )
             downloadDir.mkdirs()

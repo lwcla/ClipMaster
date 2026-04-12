@@ -19,6 +19,7 @@ data class VideoCandidate(
     val referer: String?,
     val userAgent: String?,
     val cookie: String?,
+    val fileName: String
 ) : Parcelable
 
 object VideoCandidateNavType : NavType<VideoCandidate>(isNullableAllowed = false) {

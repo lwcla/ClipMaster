@@ -49,18 +49,17 @@ fun AppNavigation(navController: NavHostController) {
             val route = backStackEntry.toRoute<VideoExtractRoute>()
             VideoExtractPage(
                 pageUrl = route.url,
+                pageName = route.name,
                 onBack = onBack,
                 onNavigate = onNavigate
             )
         }
 
         // 视频下载页
-        composable<VideoDownloadRoute>(
-            typeMap = mapOf(typeOf<VideoCandidate>() to VideoCandidateNavType)
-        ) { backStackEntry ->
+        composable<VideoDownloadRoute> { backStackEntry ->
             val route = backStackEntry.toRoute<VideoDownloadRoute>()
             VideoDownloadPage(
-                candidate = route.candidate,
+                taskId = route.taskId,
                 onBack = {
                     // inclusive = true → 连 VideoExtractRoute 自身也从栈里移除
                     // 等效于：返回时跳过 VideoExtractPage，直接回到它的上一级

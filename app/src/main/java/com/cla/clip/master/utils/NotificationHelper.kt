@@ -70,38 +70,30 @@ class NotificationHelper @Inject constructor(
             return PendingIntent.getActivity(appContext, 0, launchIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         }
 
-    /** 视频下载进度和状态的前台服务通知 */
-    fun downloadForeground(service: Service, title: String, progress: Int) {
-        createChannels()
-
-        val notification = NotificationCompat.Builder(appContext, VIDEO_DOWNLOAD_CHANNEL_ID)
+    fun buildDownloadNotification(title: String, progress: Int) =
+        NotificationCompat.Builder(appContext, VIDEO_DOWNLOAD_CHANNEL_ID)
             .setContentTitle(title)
             .setSmallIcon(R.mipmap.base_general_ic_app)
-            .setProgress(100, progress, false)
-            .setSilent(true)          // 简单直接
-            .setDefaults(0)           // 不用默认铃声/震动/灯
+            .setProgress(100, progress.coerceIn(0, 100), false)
+            .setSilent(true)
+            .setDefaults(0)
             .setVibrate(longArrayOf(0L))
-            .setOngoing(true)
+            .setOngoing(progress in 0..99)
             .build()
 
-        service.apply {
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    // Android 14 (API 34) 强制要求指定前台服务类型
-                    startForeground(
-                        VIDEO_DOWNLOAD_NOTIFICATION_ID,
-                        notification,
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-                    )
-                } else {
-                    startForeground(VIDEO_DOWNLOAD_NOTIFICATION_ID, notification)
-                }
-            } catch (e: Exception) {
-                // 如果 Manifest 中缺少 foregroundServiceType 属性，可能会抛出异常
-                // 此时尝试不带 type 启动作为兜底
-                startForeground(VIDEO_DOWNLOAD_NOTIFICATION_ID, notification)
-            }
-        }
+    fun notifyDownloadResult(taskId: Long, title: String, content: String?) {
+        createChannels()
+        val notification = NotificationCompat.Builder(appContext, VIDEO_DOWNLOAD_CHANNEL_ID)
+            .setSmallIcon(R.mipmap.base_general_ic_app)
+            .setContentTitle(title)
+            .setContentText(content ?: "")
+            .setSilent(true)
+            .setOnlyAlertOnce(true)
+            .setAutoCancel(true) // 点击后自动消失
+            .setOngoing(false)
+            .build()
+
+        manager.notify(taskId.toInt(), notification)
     }
 
     /** 读取剪贴板的前台服务通知 */

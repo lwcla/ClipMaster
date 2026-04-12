@@ -47,8 +47,8 @@
 
         <!--把 androidx.startup.InitializationProvider 下面注册的 WorkManagerInitializer 这条初始化项，从最终合并后的 Manifest 里删掉。-->
         <!--告诉系统：不要再自动初始化 WorkManager，我自己在 Application 里手动初始化。-->
-       <!-- 否则可能出现 Could not instantiate com.cla.clip.master.work.ShizukuStatusWorker (Fix with AI)
-        java.lang.NoSuchMethodException: com.cla.clip.master.work.ShizukuStatusWorker.<init> [class android.content.Context, class androidx.work.WorkerParameters]-->
+        <!-- 否则可能出现 Could not instantiate com.cla.clip.master.work.ShizukuStatusWorker (Fix with AI)
+         java.lang.NoSuchMethodException: com.cla.clip.master.work.ShizukuStatusWorker.<init> [class android.content.Context, class androidx.work.WorkerParameters]-->
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"
@@ -63,9 +63,9 @@
 
         <receiver
             android:name=".receiver.BootRebuildReceiver"
+            android:directBootAware="false"
             android:enabled="true"
-            android:exported="true"
-            android:directBootAware="false">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
@@ -79,11 +79,12 @@
             android:foregroundServiceType="dataSync"
             tools:ignore="ExportedService" />
 
+        <!--下载任务-->
         <service
-            android:name=".service.DownloadVideoService"
-            android:enabled="true"
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
 
         <provider
             android:name="rikka.shizuku.ShizukuProvider"
