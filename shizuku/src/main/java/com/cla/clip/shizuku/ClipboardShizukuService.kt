@@ -138,6 +138,11 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
     }
 
     private suspend fun insert(packageName: String?, appName: String, bitmap: Bitmap?, iconHash: String?) {
+        // android.app.ForegroundServiceStartNotAllowedException: startForegroundService() not allowed due to mAllowStartForeground false: service com.cla.clip.master/.service.ClipboardService
+        // 在aidl中去启动前台服务被拒绝了，所以在这里先用命令启动一次前台服务
+        val shellOk = startForegroundService()
+        logI(TAG) { "先启动一次前台服务: $shellOk" }
+
         // 1) fast path: 先试一次
         val cb = callFlow.value
         if (cb != null) {
@@ -185,7 +190,7 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
             }
         }
 
-        logE(TAG) { "前台服务启动失败或者启动超时，启动普通服务" }
+        logE(TAG) { "callBack已经失活，前台服务启动失败或者启动超时，启动普通服务" }
         // 5) 兼容方案：启动普通服务（部分 Android 12+ 设备可能对 start-foreground-service 有额外限制，但对 startservice 没有）
         val okCompat = startService()
         logI(TAG) { "启动普通服务 okCompat=${okCompat}" }

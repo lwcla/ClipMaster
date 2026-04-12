@@ -109,10 +109,22 @@ class ClipboardService : Service() {
             serviceIntent.putExtra(ICON_HASH_KEY, iconHash)
             serviceIntent.putExtra(READ_CLIP_KEY, true)
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(serviceIntent)
-            } else {
+            runCatching {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    // 尝试启动前台服务，如果失败，就启动普通服务
+                    // 这里只是为了传递数据给service,shizuku进程会在传数据之前先用命令启动前台服务
+                    context.startForegroundService(serviceIntent)
+                    return
+                }
+            }.getOrElse {
+                logE(TAG, it) { "start: 启动前台服务失败，器启动普通服务" }
+            }
+
+
+            runCatching {
                 context.startService(serviceIntent)
+            }.getOrElse {
+                logE(TAG, it) { "start: 普通服务启动失败" }
             }
         }
     }

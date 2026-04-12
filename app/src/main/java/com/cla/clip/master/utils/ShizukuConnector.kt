@@ -63,7 +63,6 @@ class ShizukuConnector @Inject constructor(
                                 return
                             }
 
-
                             logD(TAG) {
                                 """
                                 剪贴板有更新了：
@@ -90,6 +89,8 @@ class ShizukuConnector @Inject constructor(
                                 }
 
                                 withContext(Dispatchers.Main) {
+                                    // CoroutineExceptionHandler--> Coroutine exception (Show original) (Fix with AI)
+                                    // android.app.ForegroundServiceStartNotAllowedException: startForegroundService() not allowed due to mAllowStartForeground false: service com.cla.clip.master/.service.ClipboardService
                                     ClipboardService.start(
                                         appContext,
                                         packageName,
@@ -129,6 +130,8 @@ class ShizukuConnector @Inject constructor(
     private val binderDeadListener = Shizuku.OnBinderDeadListener {
         val status = ShizukuUtils.checkStatus(appContext)
         logD(TAG) { "binderDeadListener: shizuku状态=${status}" }
+
+        // todo 这里还要看一下，关闭shizuku服务时，这里没有回调，也就没有发送通知
         notificationHelper.get().notifyShizukuStatus(status)
     }
 
