@@ -23,7 +23,7 @@ class NotificationHelper @Inject constructor(
 
     companion object {
         /** 读取剪贴板数据通知 */
-        const val READ_CLIP_CHANNEL_ID = "read_clip_channel"
+        const val READ_CLIP_CHANNEL_ID = "read_clip_channel_id"
         const val READ_CLIP_NOTIFICATION_ID = 1001
 
         /** 视频下载通知 */
@@ -33,6 +33,10 @@ class NotificationHelper @Inject constructor(
         /** shizuku状态通知 */
         const val SHIZUKU_STATUS_CHANNEL_ID = "shizuku_status_channel_id"
         const val SHIZUKU_STATUS_NOTIFICATION_ID = 1003
+
+        /** 剪贴板数据更新通知 */
+        const val CLIP_UPDATE_CHANNEL_ID = "clip_update_channel_id"
+        const val CLIP_UPDATE_NOTIFICATION_ID = 1004
 
         /** 从通知跳转到详情页的字段 */
         const val EXTRA_TARGET = "extra_target"
@@ -101,45 +105,21 @@ class NotificationHelper @Inject constructor(
     }
 
     /** 读取剪贴板的前台服务通知 */
-    fun readClipForeground(
-        service: Service,
-        title: String,
-        content: String,
-        clipId: Long?
-    ) {
+    fun readClipForeground(service: Service) {
         createChannels()
 
-        val pendingIntent = if (clipId == null) {
-            launchPendingIntent
-        } else {
-            val intent = Intent(appContext, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                        Intent.FLAG_ACTIVITY_SINGLE_TOP
-                putExtra(EXTRA_TARGET, TARGET_DETAIL)
-                putExtra(EXTRA_CLIP_ID, clipId)
-            }
-
-            PendingIntent.getActivity(
-                appContext,
-                clipId.hashCode(),
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-        }
-
         val notification = NotificationCompat.Builder(appContext, READ_CLIP_CHANNEL_ID)
-            .setContentTitle(title)
-            .setContentText(content)
+            .setContentTitle(appContext.getString(R.string.base_general_app_name))
+            .setContentText(appContext.getString(R.string.base_general_the_clipboard_is_being_read))
             .setSmallIcon(R.mipmap.base_general_ic_app) // 确保资源存在，或者使用 android.R.drawable.ic_menu_save
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setContentIntent(pendingIntent) // 3. 设置点击行为
+            .setContentIntent(launchPendingIntent) // 3. 设置点击行为
             .setSilent(true)          // 简单直接
             .setDefaults(0)           // 不用默认铃声/震动/灯
             .setVibrate(longArrayOf(0L))
             .setAutoCancel(false)
             .setOnlyAlertOnce(true)  // 更新文案时不重复提示音
-            .setOngoing(clipId == null) // true ：常驻样式（用户通常不能滑掉）
+            .setOngoing(true) // true ：常驻样式（用户通常不能滑掉）
             .build()
 
         service.apply {
@@ -160,6 +140,48 @@ class NotificationHelper @Inject constructor(
                 startForeground(READ_CLIP_NOTIFICATION_ID, notification)
             }
         }
+    }
+
+    /** 剪贴数据更新通知 */
+    fun notifyClipUpdate(
+        title: String,
+        content: String,
+        clipId: Long
+    ) {
+        createChannels()
+
+        // 跳转到详情页
+        val intent = Intent(appContext, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra(EXTRA_TARGET, TARGET_DETAIL)
+            putExtra(EXTRA_CLIP_ID, clipId)
+        }
+
+        val pendingIntent = PendingIntent.getActivity(
+            appContext,
+            clipId.hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(appContext, CLIP_UPDATE_CHANNEL_ID)
+            .setSmallIcon(R.mipmap.base_general_ic_app)
+            .setContentTitle(title)
+            .setContentText(content)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(content))
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)          // 简单直接
+            .setDefaults(0)           // 不用默认铃声/震动/灯
+            .setVibrate(longArrayOf(0L))
+            .setOngoing(false) // true ：常驻样式（用户通常不能滑掉）
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+
+        manager.notify(CLIP_UPDATE_NOTIFICATION_ID, notification) // 固定ID=覆盖上一条；若想每条都保留可用递增ID
     }
 
     /** shizuku状态通知 */
@@ -206,7 +228,7 @@ class NotificationHelper @Inject constructor(
             enableVibration(false) // 关闭震动
             vibrationPattern = longArrayOf(0L)
             setSound(null, null) // 关闭铃声
-            description = appContext.getString(R.string.base_general_display_clipboard_content_updates)
+            description = appContext.getString(R.string.base_general_read_clip_channel)
         }
 
         val videoDownloadChannel = NotificationChannel(
@@ -231,8 +253,20 @@ class NotificationHelper @Inject constructor(
             description = appContext.getString(R.string.base_general_shizuku_status_channel)
         }
 
+        val clipUpdateChannel = NotificationChannel(
+            CLIP_UPDATE_CHANNEL_ID,
+            appContext.getString(R.string.base_general_clipboard_service),
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            enableVibration(false) // 关闭震动
+            vibrationPattern = longArrayOf(0L)
+            setSound(null, null) // 关闭铃声
+            description = appContext.getString(R.string.base_general_display_clipboard_content_updates)
+        }
+
         manager.createNotificationChannel(videoDownloadChannel)
         manager.createNotificationChannel(readClipChannel)
         manager.createNotificationChannel(shizukuStatusChannel)
+        manager.createNotificationChannel(clipUpdateChannel)
     }
 }

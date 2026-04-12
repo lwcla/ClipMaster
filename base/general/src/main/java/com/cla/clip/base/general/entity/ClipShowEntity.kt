@@ -46,7 +46,7 @@ fun ClipDetail.toUi(): ClipShowEntity {
         timestamp = clip.timestamp,
         formattedTime = timeStr,
         // 如果关联不到 App，显示默认名
-        appName = app?.appName,
+        appName = app?.appName?.takeIf { it.isNotBlank() },
         appIconPath = app?.iconPath,
         appColor = iconColor?.let { Color(it.red, it.green, it.blue) },
         borderColor = color,

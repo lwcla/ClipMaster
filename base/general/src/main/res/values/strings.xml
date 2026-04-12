@@ -17,7 +17,7 @@
     <string name="base_general_clipboard_update">剪贴板更新</string>
     <string name="base_general_display_clipboard_content_updates">剪贴板更新的通知</string>
     <string name="base_general_service_is_running">服务正在运行中</string>
-    <string name="base_general_read_clip_channel">读取剪贴板时的前台服务通知</string>
+    <string name="base_general_read_clip_channel">读取剪贴板时的通知</string>
     <string name="base_general_waiting_for_shizuku_connection">等待shizuku连接..</string>
     <string name="base_general_shizuku_not_install">shizuku未安装</string>
     <string name="base_general_shizuku_service_not_alive">shizuku服务未存活</string>

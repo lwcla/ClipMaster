@@ -130,7 +130,7 @@ class ClipboardService : Service() {
     }
 
     @Inject
-    lateinit var clipDao: ClipDao
+    lateinit var clipDao: dagger.Lazy<ClipDao>
 
     @Inject
     @ApplicationScope
@@ -152,12 +152,7 @@ class ClipboardService : Service() {
         super.onCreate()
         // 服务创建时，立即尝试提升为前台服务
         logI(TAG) { "onCreate: " }
-        notificationHelper.createChannels()
-        startForeground(
-            title = appContext.getString(R.string.base_general_app_name),
-            content = appContext.getString(R.string.base_general_the_clipboard_is_being_read),
-            clipId = null
-        )
+        startForeground()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -176,11 +171,7 @@ class ClipboardService : Service() {
             val killComplete = killJob?.isCompleted
             killJob?.cancel()
 
-            startForeground(
-                title = appContext.getString(R.string.base_general_app_name),
-                content = appContext.getString(R.string.base_general_the_clipboard_is_being_read),
-                clipId = null
-            )
+            startForeground()
 
             logD(TAG) {
                 """
@@ -308,7 +299,7 @@ class ClipboardService : Service() {
 
         val extractedLink = LinkUtils.extractFirstPreviewableUrl(contentText)
         val linkMeta = if (!extractedLink.isNullOrBlank()) {
-            val history = clipDao.loadLinkPreview(extractedLink)
+            val history = clipDao.get().loadLinkPreview(extractedLink)
             if (!history?.imageUrl.isNullOrBlank()) {
                 logD(TAG) { "processClip 使用数据库中的链接数据 extractedLink=$extractedLink" }
                 // 避免重复解析链接
@@ -325,7 +316,7 @@ class ClipboardService : Service() {
             content = clipContent,
             timestamp = System.currentTimeMillis(),
             sourcePackage = packageName ?: "",
-            sourceAppName = appName ?: "unknown",
+            sourceAppName = appName ?: "",
             sourceAppIconPath = iconPath,
             sourcePrimaryColor = iconColor?.takeIf { it > 0 },
             sourceAppIconHash = iconHash,
@@ -339,9 +330,11 @@ class ClipboardService : Service() {
         logI(TAG) { "processClip: isLink=${!extractedLink.isNullOrBlank()} captureEntity=$captureEntity" }
 
         // 保存到数据库
-        val clipId = clipDao.addNewClip(captureEntity)
+        val clipId = clipDao.get().addNewClip(captureEntity)
 
-        startForeground(
+        logD(TAG) { "processClip: 保存到数据库 clipId=${clipId}" }
+
+        notificationHelper.notifyClipUpdate(
             title = "$appName ${appContext.getString(R.string.base_general_it_was_written_into_the_clipboard)}",
             content = "${appContext.getString(R.string.base_general_content)}${clipContent}",
             clipId = clipId
@@ -353,14 +346,12 @@ class ClipboardService : Service() {
         killJob = scope.launch(Dispatchers.Main) {
             delay(5000)
             logI(TAG) { "processClip: 关闭前台服务" }
-            stopForeground(STOP_FOREGROUND_DETACH) // 前台服务降级为普通服务，但通知依旧保留
+            stopForeground(STOP_FOREGROUND_REMOVE) // 前台服务降级为普通服务，同时删除通知
             stopSelf()
         }
     }
 
-    /**
-     * 保存剪贴板中的图片，并返回保存路径
-     */
+    /** 保存剪贴板中的图片，并返回保存路径 */
     private fun saveImageAndGetPath(imageUri: Uri): String {
         val imageDir = File(filesDir, "clip_images")
         if (!imageDir.exists()) {
@@ -391,8 +382,8 @@ class ClipboardService : Service() {
         }
     }
 
-    private fun startForeground(title: String, content: String, clipId: Long?) {
-        notificationHelper.readClipForeground(this, title, content, clipId)
+    private fun startForeground() {
+        notificationHelper.readClipForeground(this)
     }
 
     override fun onBind(intent: Intent): IBinder? {

@@ -110,7 +110,7 @@ dependencies {
     testImplementation(libs.paging.common)
 
     // codelocator，用于在调试时定位代码位置，提升调试效率
-    debugImplementation(libs.codelocator.core)
+//    debugImplementation(libs.codelocator.core)
 
     // work
     implementation(libs.androidx.work.runtime.ktx)
