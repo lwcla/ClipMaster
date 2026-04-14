@@ -8,6 +8,7 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import okhttp3.ConnectionPool
+import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import java.util.concurrent.TimeUnit
@@ -46,28 +47,44 @@ object NetworkModule {
 //    @Named("M3U8Client")
 //    lateinit var m3u8Client: OkHttpClient
 //
-//    @Provides
-//    @Singleton
-//    @Named("M3U8Client")
-//    fun provideM3U8Client(): OkHttpClient {
-//        val logger = HttpLoggingInterceptor().apply {
-//            level = HttpLoggingInterceptor.Level.BASIC
-//        }
-//
-//        return OkHttpClient.Builder()
-//            .addInterceptor(logger)
-//            // M3U8 的 .ts 分片通常要并发下载 3~5 个
-//            .connectionPool(ConnectionPool(
-//                maxIdleConnections = 20,    // 更多闲置连接
-//                keepAliveDuration = 5,
-//                timeUnit = TimeUnit.MINUTES
-//            ))
-//            .connectTimeout(30, TimeUnit.SECONDS)
-//            .readTimeout(60, TimeUnit.SECONDS)
-//            .followRedirects(true)
-//            .retryOnConnectionFailure(true)
-//            .build()
-//    }
+    @Provides
+    @Singleton
+    @Named("M3U8Client")
+    fun provideM3U8Client(): OkHttpClient {
+        val logger = HttpLoggingInterceptor().apply {
+            level = HttpLoggingInterceptor.Level.BASIC
+        }
+
+        val dispatcher = Dispatcher().apply {
+            maxRequests = 32          // 全局最大并发请求
+            maxRequestsPerHost = 10    // 单域名最大并发
+        }
+
+        return OkHttpClient.Builder()
+            .addInterceptor(logger)
+            .dispatcher(dispatcher)
+
+            // M3U8 的 .ts 分片通常要并发下载 3~5 个
+            .connectionPool(ConnectionPool(
+                maxIdleConnections = 20,    // 更多闲置连接
+                keepAliveDuration = 5,
+                timeUnit = TimeUnit.MINUTES
+            ))
+
+            .connectTimeout(30, TimeUnit.SECONDS)    // 连接超时
+            .readTimeout(60, TimeUnit.SECONDS)      // 读取超时（大文件下载可能需要）
+            .writeTimeout(120, TimeUnit.SECONDS)     // 写入超时
+
+            // 重定向支持（很多 CDN 会有重定向）
+            // 自动重定向 CDN 经常会 301/302 重定向
+            .followRedirects(true)
+            .retryOnConnectionFailure(true)
+
+            // 重试策略（可选，但对网络不稳定很有帮助）
+            // 自动重试 网络不稳定时，自动重试连接失败的请求
+            .retryOnConnectionFailure(true)
+            .build()
+    }
 
     @Provides
     @Singleton
@@ -78,16 +95,6 @@ object NetworkModule {
 
         return OkHttpClient.Builder()
             .addInterceptor(logger)
-
-            // 连接池：支持并发下载（M3U8 的多个 .ts 文件可以并发下载）
-            // 连接复用 M3U8 有多个 .ts 分片，连接池能加速并发下载
-            .connectionPool(
-                ConnectionPool(
-                    maxIdleConnections = 15,      // 最多保持 10 个闲置连接
-                    keepAliveDuration = 5,
-                    timeUnit = TimeUnit.MINUTES
-                )
-            )
 
             // 超时配置：大文件下载需要更长的超时
             .connectTimeout(60, TimeUnit.SECONDS)    // 连接超时
