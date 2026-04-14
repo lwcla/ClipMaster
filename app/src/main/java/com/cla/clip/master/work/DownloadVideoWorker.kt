@@ -12,6 +12,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.cla.clip.base.general.R
+import com.cla.clip.base.general.di.M3u8Client
 import com.cla.clip.base.general.entity.DownloadRepository
 import com.cla.clip.base.general.utils.MediaStoreTarget
 import com.cla.clip.base.general.utils.SaveToFile
@@ -35,6 +36,7 @@ class DownloadVideoWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted params: WorkerParameters,
     private val okHttpClient: OkHttpClient,
+    @param:M3u8Client private val m3u8Client: OkHttpClient,
     private val downloadRepo: DownloadRepository,
     private val notificationHelper: NotificationHelper,
 ) : CoroutineWorker(appContext, params) {
@@ -180,7 +182,7 @@ class DownloadVideoWorker @AssistedInject constructor(
 
         suspend fun start(response: Response) {
             val download = if (isM3u8(response)) {
-                Download.M3u8(taskId, response, referer, userAgent, cookie, mediaTarget)
+                Download.M3u8(taskId, response, mediaTarget) { url -> executeRequest(m3u8Client, url, referer, userAgent, cookie) }
             } else {
                 Download.Video(response, fileName, mediaTarget)
             }
@@ -193,15 +195,15 @@ class DownloadVideoWorker @AssistedInject constructor(
             runCatching {
                 logD(TAG) { "downloadVideo: 抖音尝试下载无水印的地址" }
                 val newUrl = videoUrl.replace(DOU_YIN_PLAYVM, DOU_YIN_PLAY)
-                val response = executeRequest(newUrl, referer, userAgent, cookie)
+                val response = executeRequest(okHttpClient, newUrl, referer, userAgent, cookie)
                 start(response)
             }.getOrElse {
                 logE(TAG, it) { "downloadVideo: 抖音无水印地址连接失败，换回原地址" }
-                val response = executeRequest(videoUrl, referer, userAgent, cookie)
+                val response = executeRequest(okHttpClient, videoUrl, referer, userAgent, cookie)
                 start(response)
             }
         } else {
-            val response = executeRequest(videoUrl, referer, userAgent, cookie)
+            val response = executeRequest(okHttpClient, videoUrl, referer, userAgent, cookie)
             start(response)
         }
 
@@ -326,8 +328,14 @@ class DownloadVideoWorker @AssistedInject constructor(
         return t.contains("#EXTINF", true) || t.contains("#EXT-X-STREAM-INF", true)
     }
 
-    private fun executeRequest(url: String, referer: String?, userAgent: String?, cookie: String?): Response {
-        val response = okHttpClient.newCall(requestBuilder(url, referer, userAgent, cookie)).execute()
+    private fun executeRequest(
+        client: OkHttpClient,
+        url: String,
+        referer: String?,
+        userAgent: String?,
+        cookie: String?
+    ): Response {
+        val response = client.newCall(requestBuilder(url, referer, userAgent, cookie)).execute()
         if (!response.isSuccessful) {
             response.close()
             error("HTTP ${response.code} ${response.message}, url=$url")

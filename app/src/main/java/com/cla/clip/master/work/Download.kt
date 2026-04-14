@@ -10,7 +10,6 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import okhttp3.Request
 import okhttp3.Response
 import java.io.File
 import java.nio.ByteBuffer
@@ -126,10 +125,8 @@ sealed class Download {
     data class M3u8(
         val taskId: Long,
         val response: Response,
-        val referer: String?,
-        val userAgent: String?,
-        val cookie: String?,
         val mediaTarget: MediaStoreTarget,
+        val newResponse: (url: String) -> Response,
     ) : Download() {
 
         companion object {
@@ -172,7 +169,7 @@ sealed class Download {
                 val variants = parseMasterPlaylist(entryUrl, entryText)
                 val selected = variants.maxByOrNull { it.bandwidth } ?: error("master playlist 无可用码流")
                 mediaUrl = selected.url
-                mediaText = executeRequest(mediaUrl, referer, userAgent, cookie).use {
+                mediaText = newResponse(mediaUrl).use {
                     it.body?.string() ?: error("Empty media playlist")
                 }
             } else {
@@ -198,7 +195,7 @@ sealed class Download {
              */
             suspend fun getKeyBytes(keyUri: String): ByteArray {
                 keyCache[keyUri]?.let { return it }
-                val keyBytes = executeRequest(keyUri, referer, userAgent, cookie).use { resp ->
+                val keyBytes = newResponse(keyUri).use { resp ->
                     resp.body?.bytes() ?: error("Empty key body: $keyUri")
                 }
                 val normalized = when {
@@ -223,7 +220,7 @@ sealed class Download {
                             if (isStopped) error("Worker stopped")
 
                             // 分片原始字节（可能是明文，也可能是加密密文）
-                            val rawBytes = executeRequest(seg.url, referer, userAgent, cookie).use { resp ->
+                            val rawBytes = newResponse(seg.url).use { resp ->
                                 resp.body?.bytes() ?: error("Empty segment body: ${seg.url}")
                             }
 
@@ -295,37 +292,6 @@ sealed class Download {
                 tempDir.listFiles()?.forEach { it.delete() }
                 tempDir.delete()
             }
-        }
-
-        /**
-         * 构建请求对象并附带可选请求头。
-         *
-         * 这些头对于防盗链站点很关键：
-         * - Referer：校验来源页
-         * - User-Agent：模拟浏览器环境
-         * - Cookie：维持登录态或权限态
-         */
-        private fun requestBuilder(url: String, referer: String?, userAgent: String?, cookie: String?) =
-            Request.Builder().url(url).apply {
-                if (!referer.isNullOrBlank()) header("Referer", referer)
-                if (!userAgent.isNullOrBlank()) header("User-Agent", userAgent)
-                if (!cookie.isNullOrBlank()) header("Cookie", cookie)
-            }.build()
-
-        /**
-         * 发起同步 HTTP 请求并返回成功响应。
-         *
-         * 注意：
-         * - 仅当 HTTP 状态码成功时才返回。
-         * - 非 2xx 会先关闭 Response 再抛错，避免资源泄漏。
-         */
-        private fun executeRequest(url: String, referer: String?, userAgent: String?, cookie: String?): Response {
-            val response = okHttpClient.newCall(requestBuilder(url, referer, userAgent, cookie)).execute()
-            if (!response.isSuccessful) {
-                response.close()
-                error("HTTP ${response.code} ${response.message}, url=$url")
-            }
-            return response
         }
 
         /**

@@ -14,6 +14,7 @@ import okhttp3.logging.HttpLoggingInterceptor
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Named
+import javax.inject.Qualifier
 import javax.inject.Singleton
 
 
@@ -34,6 +35,9 @@ abstract class RepositoryModule {
     abstract fun bindClipRepository(clipDaoImpl: ClipDaoImpl): ClipDao
 }
 
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class M3u8Client
 
 /**
  * 提供 OkHttpClient 单例
@@ -42,14 +46,10 @@ abstract class RepositoryModule {
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
 
-    //  如果M3U8需要高并发下载多个 .ts 分片，可以考虑提供一个专门配置的 OkHttpClient 实例，使用 @Named 注解区分：
-//    @Inject
-//    @Named("M3U8Client")
-//    lateinit var m3u8Client: OkHttpClient
-//
+    //  如果M3U8需要高并发下载多个 .ts 分片，可以考虑提供一个专门配置的 OkHttpClient 实例
     @Provides
     @Singleton
-    @Named("M3U8Client")
+    @M3u8Client
     fun provideM3U8Client(): OkHttpClient {
         val logger = HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.BASIC
