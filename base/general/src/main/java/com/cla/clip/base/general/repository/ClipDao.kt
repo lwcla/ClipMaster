@@ -4,6 +4,7 @@ import androidx.paging.PagingSource
 import com.cla.clip.base.general.dao.LinkPreviewData
 import com.cla.clip.base.general.dao.SourceAppData
 import com.cla.clip.base.general.dao.data.ClipDetail
+import com.cla.clip.base.general.dao.data.LastClipData
 import com.cla.clip.base.general.entity.ClipCaptureEntity
 import com.cla.clip.base.general.entity.ClipShowEntity
 import kotlinx.coroutines.flow.Flow
@@ -56,5 +57,5 @@ interface ClipDao {
     suspend fun loadClipDetail(id: Long): ClipShowEntity?
 
     /** 获取最后保存的剪贴数据 */
-    suspend fun loadLastClip(): String?
+    suspend fun loadLastClip(): LastClipData?
 }

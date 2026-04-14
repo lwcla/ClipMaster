@@ -175,7 +175,7 @@ class ClipboardService : Service() {
             sourceAppName=$sourceAppName
             sourceAppIconPath=$sourceAppIconPath
             sourceAppIconHash=$sourceAppIconHash
-            sourceAppIconColor=$sourceAppIconColor-${sourceAppIconColor?.toColorString()}
+            sourceAppIconColor=$sourceAppIconColor / ${sourceAppIconColor?.toColorString()}
         """.trimIndent()
             }
 

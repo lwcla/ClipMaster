@@ -17,7 +17,6 @@ data class ClipShowEntity(
     val appName: String?,
     val appIconPath: String?,
     val appColor: Color?,
-    val borderColor: Color?,
     val isPinned: Boolean,
     val linkImgUrl: String?,
     val link: String?,
@@ -29,14 +28,7 @@ fun ClipDetail.toUi(): ClipShowEntity {
     val app = this.sourceApp
     val linkPreview = this.linkPreview
     val clip = this.clip
-    val iconColor = app?.primaryColor?.takeIf { it != -1 }
-
-    // 2. 颜色转换逻辑 (例如处理默认色)
-    val color = runCatching {
-        // 如果 primaryColor 不为 null，创建一个 20%透明度 的 Color 对象，否则返回 null
-        if (iconColor != null) Color(iconColor.red, iconColor.green, iconColor.blue, alpha = 61) else null
-    }.getOrNull()
-
+    val appColor = app?.primaryColor?.takeIf { it != -1 }
     // 3. 时间格式化
     val timeStr = clip.timestamp.toRelativeTimeSpanString()
 
@@ -48,8 +40,7 @@ fun ClipDetail.toUi(): ClipShowEntity {
         // 如果关联不到 App，显示默认名
         appName = app?.appName?.takeIf { it.isNotBlank() },
         appIconPath = app?.iconPath,
-        appColor = iconColor?.let { Color(it.red, it.green, it.blue) },
-        borderColor = color,
+        appColor = appColor?.let { Color(it.red, it.green, it.blue) },
         isPinned = clip.pinnedTime != 0L,
         link = linkPreview?.link,
         linkImgUrl = linkPreview?.imageUrl,

@@ -10,6 +10,7 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Upsert
 import com.cla.clip.base.general.dao.data.ClipDetail
+import com.cla.clip.base.general.dao.data.LastClipData
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -178,6 +179,15 @@ interface ClipDao {
     suspend fun getLatestClip(): ClipDetail?
 
     /** 获取最新的一条剪贴板数据 */
-    @Query("SELECT content FROM clips ORDER BY timestamp DESC LIMIT 1")
-    suspend fun loadLastClip(): String?
+    @Query(
+        """
+    SELECT 
+        content,
+        source_app_package AS sourceAppPackage
+    FROM clips
+    ORDER BY timestamp DESC
+    LIMIT 1
+    """
+    )
+    suspend fun loadLastClip(): LastClipData?
 }

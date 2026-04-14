@@ -45,12 +45,6 @@ class ClipHelper @Inject constructor(
 
         logI(TAG) { "readNow: 回到前台时读取一次剪贴板" }
         scope.launch(Dispatchers.IO) {
-            val contentText = clip.text?.toString()
-            if (contentText == clipDao.get().loadLastClip()) {
-                logD(TAG) { "readNow: contentText=${contentText} 和上一条是重复的，不要重复保存" }
-                return@launch
-            }
-
             processClip(
                 item = clip,
                 packageName = null,
@@ -74,6 +68,14 @@ class ClipHelper @Inject constructor(
         // 保存剪贴板内容
         val contentUri = item.uri
         val contentText = item.text?.toString()
+
+        val lastClip = clipDao.get().loadLastClip()
+        if (lastClip != null) {
+            if (contentText == lastClip.content && lastClip.sourceAppPackage == packageName) {
+                logD(TAG) { "readNow: contentText=${contentText} packageName=${packageName} 和上一条是重复的，不要重复保存" }
+                return
+            }
+        }
 
         val clipContent = when {
             // 处理图片类型
@@ -115,7 +117,7 @@ class ClipHelper @Inject constructor(
             sourcePackage = packageName ?: "",
             sourceAppName = appName ?: "",
             sourceAppIconPath = iconPath,
-            sourcePrimaryColor = iconColor?.takeIf { it > 0 },
+            sourcePrimaryColor = iconColor,
             sourceAppIconHash = iconHash,
             link = extractedLink,
             linkTitle = linkMeta?.title,

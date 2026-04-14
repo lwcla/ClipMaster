@@ -248,7 +248,7 @@ private fun ClipCard(
     modifier: Modifier = Modifier,
 ) {
     val appColor = clip.appColor ?: MaterialTheme.colorScheme.outlineVariant
-    val borderColor = clip.borderColor ?: MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+    val borderColor = appColor.copy(alpha = 0.3f)
     val lineColor = appColor.copy(alpha = 0.3f)
     // 提取形状变量，确保外层卡片和内层裁剪使用相同的圆角
     val cardShape = RoundedCornerShape(12.dp)
@@ -554,7 +554,6 @@ private fun ClipCardPreview() {
         appName = "飞书飞书飞书飞书",
         appIconPath = "https://img2.baidu.com/it/u=3546907450,5411894&fm=253&fmt=auto&app=120&f=JPEG?w=500&h=500",
         appColor = MaterialTheme.colorScheme.error,
-        borderColor = MaterialTheme.colorScheme.error.copy(alpha = 0.3f),
         isPinned = false,
         link = "https://www.wanandroid.com/",
         linkImgUrl = "https://img0.baidu.com/it/u=2280054277,2128244139&fm=253&fmt=auto&app=138&f=JPEG?w=973&h=304",
