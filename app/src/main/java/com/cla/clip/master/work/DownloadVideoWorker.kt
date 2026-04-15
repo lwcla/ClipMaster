@@ -25,6 +25,7 @@ import com.cla.clip.base.general.utils.showName
 import com.cla.clip.base.general.utils.success
 import com.cla.clip.master.utils.NotificationHelper
 import com.cla.clip.master.work.DownloadVideoWorker.Companion.TASK_TAG
+import dagger.Lazy
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import okhttp3.OkHttpClient
@@ -35,8 +36,8 @@ import okhttp3.Response
 class DownloadVideoWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted params: WorkerParameters,
-    private val okHttpClient: OkHttpClient,
-    @param:M3u8Client private val m3u8Client: OkHttpClient,
+    private val okHttpClient: Lazy<OkHttpClient>,
+    @param:M3u8Client private val m3u8Client: Lazy<OkHttpClient>,
     private val downloadRepo: DownloadRepository,
     private val notificationHelper: NotificationHelper,
 ) : CoroutineWorker(appContext, params) {
@@ -182,7 +183,7 @@ class DownloadVideoWorker @AssistedInject constructor(
 
         suspend fun start(response: Response) {
             val download = if (isM3u8(response)) {
-                Download.M3u8(taskId, response, mediaTarget) { url -> executeRequest(m3u8Client, url, referer, userAgent, cookie) }
+                Download.M3u8(taskId, response, mediaTarget) { url -> executeRequest(m3u8Client.get(), url, referer, userAgent, cookie) }
             } else {
                 Download.Video(response, fileName, mediaTarget)
             }
@@ -195,15 +196,15 @@ class DownloadVideoWorker @AssistedInject constructor(
             runCatching {
                 logD(TAG) { "downloadVideo: 抖音尝试下载无水印的地址" }
                 val newUrl = videoUrl.replace(DOU_YIN_PLAYVM, DOU_YIN_PLAY)
-                val response = executeRequest(okHttpClient, newUrl, referer, userAgent, cookie)
+                val response = executeRequest(okHttpClient.get(), newUrl, referer, userAgent, cookie)
                 start(response)
             }.getOrElse {
                 logE(TAG, it) { "downloadVideo: 抖音无水印地址连接失败，换回原地址" }
-                val response = executeRequest(okHttpClient, videoUrl, referer, userAgent, cookie)
+                val response = executeRequest(okHttpClient.get(), videoUrl, referer, userAgent, cookie)
                 start(response)
             }
         } else {
-            val response = executeRequest(okHttpClient, videoUrl, referer, userAgent, cookie)
+            val response = executeRequest(okHttpClient.get(), videoUrl, referer, userAgent, cookie)
             start(response)
         }
 

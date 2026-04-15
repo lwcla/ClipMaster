@@ -72,7 +72,7 @@ sealed class Download {
          * 视频地址出错的情况下，返回了一个json {"status_code":0,"status_msg":"url doesn't match"}
          * 这个时候不能只依靠response.isSuccessful去判断是否能够下载失败
          */
-        protected fun validateMediaResponse(response: Response) {
+        private fun validateMediaResponse(response: Response) {
             if (!response.isSuccessful) {
                 throw IllegalStateException("HTTP ${response.code} ${response.message}")
             }

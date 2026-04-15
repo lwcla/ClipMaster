@@ -8,6 +8,7 @@ import com.cla.clip.base.general.R
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.repository.ClipDao
 import com.cla.clip.base.general.utils.toast
+import com.cla.clip.master.utils.ClipHelper
 import dagger.Lazy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -24,6 +25,9 @@ abstract class ClipBaseVm(appContext: Context) : BaseViewModel(appContext) {
 
     @Inject
     lateinit var clipDao: Lazy<ClipDao>
+
+    @Inject
+    lateinit var clipHelper: Lazy<ClipHelper>
 
     protected val clipboardManager by lazy { appContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager }
 
@@ -66,6 +70,7 @@ abstract class ClipBaseVm(appContext: Context) : BaseViewModel(appContext) {
      */
     fun deleteClip(clip: ClipShowEntity, sendEvent: Boolean = false) {
         viewModelScope.launch(Dispatchers.IO) {
+            clipHelper.get().delete(clip)
             if (clipDao.get().deleteClip(clip) && sendEvent) {
                 _deleteSuccessFlow.emit(clip.id)
             }

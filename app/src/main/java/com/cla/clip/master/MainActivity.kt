@@ -79,10 +79,15 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        clipHelper.get().readNow(resume = true)
+    }
+
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (!hasFocus) return
-        clipHelper.get().readNow()
+        clipHelper.get().readNow(hasFocus = true)
     }
 
     override fun onNewIntent(intent: Intent) {
