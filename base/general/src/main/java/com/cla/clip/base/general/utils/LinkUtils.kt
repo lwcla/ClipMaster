@@ -28,6 +28,15 @@ object LinkUtils {
         "apk", "ipa", "exe", "dmg", "msi", "iso"
     )
 
+    private val DOWNLOADABLE_MEDIA_EXTENSIONS = setOf(
+        // streaming playlists / manifests
+        "m3u8", "mpd",
+        // common video containers
+        "mp4", "mkv", "mov", "avi", "webm", "ts",
+        // common audio containers
+        "mp3", "wav", "aac", "flac", "ogg", "m4a"
+    )
+
     /** 提取字符串中的第一个 URL（不保证适合做网页预览） */
     fun extractFirstUrl(text: String?): String? {
         if (text.isNullOrBlank()) return null
@@ -42,16 +51,15 @@ object LinkUtils {
         return if (isPreviewableUrl(url)) url else null
     }
 
+    /** 提取字符串中第一个“可下载媒体链接” URL */
+    fun extractFirstDownloadableMediaUrl(text: String?): String? {
+        val url = extractFirstUrl(text) ?: return null
+        return if (isDownloadableMediaUrl(url)) url else null
+    }
+
     /** 判断 URL 是否适合做网页预览 */
     fun isPreviewableUrl(url: String): Boolean {
-        val uri = runCatching { URI(url) }.getOrNull() ?: return false
-
-        val scheme = uri.scheme?.lowercase(Locale.ROOT) ?: return false
-        if (scheme != "http" && scheme != "https") return false
-
-        val host = uri.host?.lowercase(Locale.ROOT)?.removePrefix("www.") ?: return false
-        if (host.isBlank()) return false
-        if (isLocalHost(host) || isPrivateIp(host)) return false
+        val uri = parsePublicHttpUri(url) ?: return false
 
         val path = uri.path.orEmpty()
         val ext = path.substringAfterLast('.', "").lowercase(Locale.ROOT)
@@ -61,6 +69,14 @@ object LinkUtils {
         }
 
         return true
+    }
+
+    /** 判断 URL 是否是可下载媒体链接（如 mp4 / m3u8） */
+    fun isDownloadableMediaUrl(url: String): Boolean {
+        val uri = parsePublicHttpUri(url) ?: return false
+        val path = uri.path.orEmpty()
+        val ext = path.substringAfterLast('.', "").lowercase(Locale.ROOT)
+        return ext.isNotBlank() && ext in DOWNLOADABLE_MEDIA_EXTENSIONS
     }
 
     /**
@@ -91,6 +107,20 @@ object LinkUtils {
 
     private fun isLocalHost(host: String): Boolean {
         return host == "localhost"
+    }
+
+    /** 仅允许公网 http/https URL */
+    private fun parsePublicHttpUri(url: String): URI? {
+        val uri = runCatching { URI(url) }.getOrNull() ?: return null
+
+        val scheme = uri.scheme?.lowercase(Locale.ROOT) ?: return null
+        if (scheme != "http" && scheme != "https") return null
+
+        val host = uri.host?.lowercase(Locale.ROOT)?.removePrefix("www.") ?: return null
+        if (host.isBlank()) return null
+        if (isLocalHost(host) || isPrivateIp(host)) return null
+
+        return uri
     }
 
     /** 本地/局域网地址 */

@@ -201,6 +201,7 @@ private fun ButtonContainer(
                     modifier = Modifier.weight(1f),
                     onClick = {
                         // https://v.douyin.com/bzLHPnkAbhs/ 这个链接是抖音的一个视频链接，测试用的，实际使用时应该是 clip.link
+                        // https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
                         onNavigate(VideoExtractRoute(link, name = clip.linkTitle ?: clip.content))
                     }
                 ) {

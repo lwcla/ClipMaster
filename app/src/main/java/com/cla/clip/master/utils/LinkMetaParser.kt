@@ -29,7 +29,7 @@ object LinkMetaParser {
         }
 
         runCatching {
-            val doc: Document = Jsoup.connect(url)
+            val doc = Jsoup.connect(url)
                 .userAgent("Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36")
                 .timeout(10_000)
                 .get()

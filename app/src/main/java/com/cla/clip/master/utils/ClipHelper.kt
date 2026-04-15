@@ -135,7 +135,7 @@ class ClipHelper @Inject constructor(
 //                // OcrProcessingWorker.enqueue(this@ClipboardService, clipContent, newClip.id)
 //            }
 
-        val extractedLink = LinkUtils.extractFirstPreviewableUrl(contentText)
+        val extractedLink = LinkUtils.extractFirstUrl(contentText)
         val linkMeta = if (!extractedLink.isNullOrBlank()) {
             val history = clipDao.get().loadLinkPreview(extractedLink)
             if (!history?.imageUrl.isNullOrBlank()) {

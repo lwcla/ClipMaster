@@ -434,7 +434,7 @@ private fun VideoProbeWebViewLayer(
                                     referer = headers["Referer"],
                                     userAgent = headers["User-Agent"],
                                     cookie = cookie,
-                                    fileName = view.title ?: pageName
+                                    fileName = pageName
                                 )
                                 logD(tag) { "candidate=$candidate " }
                                 onVideoCandidate(candidate)

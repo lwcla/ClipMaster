@@ -1,5 +1,6 @@
 package com.cla.clip.base.general.di
 
+import com.cla.clip.base.general.BuildConfig
 import com.cla.clip.base.general.repository.ClipDao
 import com.cla.clip.base.general.repository.ClipDaoImpl
 import dagger.Binds
@@ -12,8 +13,6 @@ import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import java.util.concurrent.TimeUnit
-import javax.inject.Inject
-import javax.inject.Named
 import javax.inject.Qualifier
 import javax.inject.Singleton
 
@@ -52,7 +51,7 @@ object NetworkModule {
     @M3u8Client
     fun provideM3U8Client(): OkHttpClient {
         val logger = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BASIC
+            level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC else HttpLoggingInterceptor.Level.NONE // 生产环境关闭日志
         }
 
         val dispatcher = Dispatcher().apply {
@@ -65,11 +64,13 @@ object NetworkModule {
             .dispatcher(dispatcher)
 
             // M3U8 的 .ts 分片通常要并发下载 3~5 个
-            .connectionPool(ConnectionPool(
-                maxIdleConnections = 20,    // 更多闲置连接
-                keepAliveDuration = 5,
-                timeUnit = TimeUnit.MINUTES
-            ))
+            .connectionPool(
+                ConnectionPool(
+                    maxIdleConnections = 20,    // 更多闲置连接
+                    keepAliveDuration = 5,
+                    timeUnit = TimeUnit.MINUTES
+                )
+            )
 
             .connectTimeout(30, TimeUnit.SECONDS)    // 连接超时
             .readTimeout(60, TimeUnit.SECONDS)      // 读取超时（大文件下载可能需要）
@@ -90,7 +91,7 @@ object NetworkModule {
     @Singleton
     fun provideOkHttpClient(): OkHttpClient {
         val logger = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BASIC // 打印完整请求/响应体
+            level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC else HttpLoggingInterceptor.Level.NONE // 生产环境关闭日志
         }
 
         return OkHttpClient.Builder()

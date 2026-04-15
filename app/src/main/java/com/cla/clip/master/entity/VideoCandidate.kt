@@ -7,6 +7,7 @@ import androidx.navigation.NavType
 import com.cla.clip.base.general.dao.DownloadTaskData
 import com.cla.clip.base.general.dao.DownloadTaskData.Companion.STATUS_DOWNLOADING
 import com.cla.clip.base.general.dao.DownloadTaskData.Companion.STATUS_FAILED
+import com.cla.clip.base.general.dao.DownloadTaskData.Companion.STATUS_MERGING
 import com.cla.clip.base.general.dao.DownloadTaskData.Companion.STATUS_SUCCESS
 import kotlinx.parcelize.Parcelize
 import kotlinx.serialization.Serializable
@@ -49,6 +50,8 @@ object VideoCandidateNavType : NavType<VideoCandidate>(isNullableAllowed = false
 sealed class VideoDownloadState {
     object Idle : VideoDownloadState()
     data class Downloading(val progress: Int) : VideoDownloadState()
+
+    data class Merging(val progress: Int) : VideoDownloadState()
     data class Success(val savePath: String?) : VideoDownloadState()
     data class Failed(val errorMsg: String?) : VideoDownloadState()
 }
@@ -56,6 +59,10 @@ sealed class VideoDownloadState {
 fun DownloadTaskData.toUi() = when (status) {
     STATUS_DOWNLOADING -> {
         VideoDownloadState.Downloading(progress.coerceIn(0, 100))
+    }
+
+    STATUS_MERGING -> {
+        VideoDownloadState.Merging(progress.coerceIn(0, 100))
     }
 
     STATUS_SUCCESS -> {

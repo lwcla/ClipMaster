@@ -55,6 +55,7 @@
     <string name="base_general_the_download_task_was_not_found">下载任务未找到</string>
     <string name="base_general_preparing_download" tools:ignore="TypographyEllipsis">下载任务正在初始化...</string>
     <string name="base_general_download_now" tools:ignore="TypographyEllipsis">下载中</string>
+    <string name="base_general_merge_now">合并中</string>
     <string name="base_general_the_clipboard_is_being_read">正在读取剪贴板</string>
     <string name="base_general_unknow">未知</string>
     <string name="base_general_there_is_no_available_application_to_open_this_video">没有可用的应用打开该视频</string>

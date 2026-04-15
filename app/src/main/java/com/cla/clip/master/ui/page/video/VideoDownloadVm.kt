@@ -11,7 +11,6 @@ import com.cla.clip.base.general.utils.logD
 import com.cla.clip.master.BaseViewModel
 import com.cla.clip.master.entity.VideoDownloadState
 import com.cla.clip.master.entity.toUi
-import com.cla.clip.master.work.DownloadVideoWorkStarter
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope

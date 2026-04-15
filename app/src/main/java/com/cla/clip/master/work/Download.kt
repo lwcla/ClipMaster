@@ -22,8 +22,11 @@ import javax.crypto.spec.SecretKeySpec
 
 sealed class Download {
 
-    abstract suspend fun ListenableWorker.start(progress: suspend (Int) -> Unit)
-
+    /** 开始下载 */
+    abstract suspend fun ListenableWorker.start(
+        merge: suspend (progress: Int) -> Unit = {}, /*合并*/
+        download: suspend (progress: Int) -> Unit, /*下载*/
+    )
 
     data class Video(val response: Response, val fileName: String, val mediaTarget: MediaStoreTarget) : Download() {
 
@@ -31,7 +34,10 @@ sealed class Download {
             private const val TAG = "Download:Video"
         }
 
-        override suspend fun ListenableWorker.start(progress: suspend (Int) -> Unit) {
+        override suspend fun ListenableWorker.start(
+            merge: suspend (progress: Int) -> Unit,
+            download: suspend (progress: Int) -> Unit
+        ) {
             validateMediaResponse(response)
 
             response.use { response ->
@@ -59,8 +65,9 @@ sealed class Download {
                             } else 0
 
                             if (curProgress != lastProgress) {
+                                logD(TAG) { "start : 视频下载进度 $curProgress" }
                                 lastProgress = curProgress
-                                progress(curProgress)
+                                download(curProgress)
                             }
                         }
                     }
@@ -148,7 +155,10 @@ sealed class Download {
          * - `progress` 回调参数保留用于上层汇报进度；当前代码里尚未实际调用该回调更新 UI。
          * - 方法仅负责下载/解密/合并，不负责持久化任务状态（相关代码在当前文件中已注释）。
          */
-        override suspend fun ListenableWorker.start(progress: suspend (Int) -> Unit) = coroutineScope {
+        override suspend fun ListenableWorker.start(
+            merge: suspend (progress: Int) -> Unit,
+            download: suspend (progress: Int) -> Unit
+        ) = coroutineScope {
             // 入口 URL 必须先请求成功；失败时及时关闭 Response，避免连接泄漏。
             if (!response.isSuccessful) {
                 response.close()
@@ -208,7 +218,7 @@ sealed class Download {
             }
 
             // 分片先落地到临时目录，全部完成后再按顺序合并到最终文件。
-            val tempDir = File(applicationContext.cacheDir, "m3u8_${taskId}_${System.currentTimeMillis()}").apply { mkdirs() }
+            val tempDir = File(applicationContext.cacheDir, "m3u8_${taskId}").apply { mkdirs() }
             val semaphore = Semaphore(4) // 设置并发数量，避免对网络/设备造成过大压力。
             val done = AtomicInteger(0)
 
@@ -239,51 +249,28 @@ sealed class Download {
                             segFile.outputStream().use { it.write(finalBytes) }
 
                             val finished = done.incrementAndGet()
-                            val curProgress = ((finished * 90L) / segments.size).toInt().coerceIn(0, 90)
-
-//                            downloadRepo.updateProgress(taskId, progress)
-//                            setProgress(workDataOf("progress" to progress))
-//                            setForeground(
-//                                buildForegroundInfo(
-//                                    applicationContext.getString(R.string.base_general_download_now),
-//                                    fileName.showName,
-//                                    progress
-//                                )
-//                            )
-
+                            val curProgress = ((finished * 100) / segments.size).coerceIn(0, 100)
+                            download(curProgress)
                             segFile
                         }
                     }
                 }.awaitAll()
 
                 // 4) 顺序合并：必须按分片索引顺序写入，否则会造成视频时序错乱。
-                val (_, filePath, outputStream) = mediaTarget
+                val (_, _, outputStream) = mediaTarget
+                var lastProgress: Int? = null
                 outputStream.use { out ->
                     segments.indices.forEach { i ->
                         val segFile = File(tempDir, "seg_${i.toString().padStart(6, '0')}.ts")
                         segFile.inputStream().use { it.copyTo(out) }
 
-                        val curProgress = (90 + ((i + 1) * 10 / segments.size)).coerceIn(90, 100)
-//                        downloadRepo.updateProgress(taskId, progress)
-//                        setProgress(workDataOf("progress" to progress))
-//                        setForeground(
-//                            buildForegroundInfo(
-//                                applicationContext.getString(R.string.base_general_download_now),
-//                                fileName.showName,
-//                                progress
-//                            )
-//                        )
+                        val curProgress = ((i * 100) / segments.size).coerceIn(0, 100)
+                        if (lastProgress != curProgress) {
+                            lastProgress = curProgress
+                            merge(curProgress)
+                        }
                     }
                 }
-
-//                saveVideo.success(applicationContext, mediaTarget)
-//                downloadRepo.markSuccess(taskId, filePath)
-//                notificationHelper.notifyDownloadResult(
-//                    taskId,
-//                    title = applicationContext.getString(R.string.base_general_download_completed),
-//                    fileName = fileName.showName,
-//                    content = filePath,
-//                )
             } catch (t: Throwable) {
                 logE(TAG, t) { "下载失败: ${t.message}" }
                 throw t

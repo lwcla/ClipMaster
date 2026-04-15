@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -72,7 +73,11 @@ fun VideoDownloadPage(
                 }
 
                 is VideoDownloadState.Downloading -> {
-                    Loading(state)
+                    Downloading(state)
+                }
+
+                is VideoDownloadState.Merging -> {
+                    Merging(state)
                 }
 
                 is VideoDownloadState.Success -> {
@@ -180,18 +185,19 @@ private fun SuccessPreview() {
 }
 
 @Composable
-private fun Loading(state: VideoDownloadState.Downloading) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
+private fun Downloading(state: VideoDownloadState.Downloading) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier.padding(horizontal = 40.dp)
     ) {
         LinearProgressIndicator(
             progress = { state.progress.toFloat() / 100 },
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.fillMaxWidth()
         )
 
         Text(
-            text = "${state.progress}%",
+            text = "${stringResource(R.string.base_general_download_now)} ${state.progress}%",
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(start = 12.dp)
         )
@@ -200,8 +206,37 @@ private fun Loading(state: VideoDownloadState.Downloading) {
 
 @Preview(showBackground = true)
 @Composable
-private fun LoadingPreview() {
+private fun DownloadingPreview() {
     ClipMaterTheme {
-        Loading(VideoDownloadState.Downloading(progress = 66))
+        Downloading(VideoDownloadState.Downloading(progress = 66))
+    }
+}
+
+@Composable
+private fun Merging(state: VideoDownloadState.Merging) {
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.padding(horizontal = 40.dp)
+    ) {
+        LinearProgressIndicator(
+            progress = { state.progress.toFloat() / 100 },
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Text(
+            text = "${stringResource(R.string.base_general_merge_now)} ${state.progress}%",
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(start = 12.dp)
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun MergingPreview() {
+    ClipMaterTheme {
+        Merging(VideoDownloadState.Merging(progress = 66))
     }
 }

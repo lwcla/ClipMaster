@@ -46,6 +46,13 @@ data class DownloadTaskData(
     @ColumnInfo(name = "save_path")
     val savePath: String? = null,
 
+    /**
+     * 当前下载任务占用中的 MediaStore 输出 URI（Android 10+）。
+     * 用于进程异常退出后在下次启动时清理半成品。
+     */
+    @ColumnInfo(name = "pending_output_uri")
+    val pendingOutputUri: String? = null,
+
     @ColumnInfo(name = "total_size")
     val totalSize: Long = 0,
 
@@ -62,8 +69,16 @@ data class DownloadTaskData(
     val fileName: String,
 ) {
     companion object {
+        /** 合并中 */
+        const val STATUS_MERGING = "merging"
+
+        /** 下载中 */
         const val STATUS_DOWNLOADING = "downloading"
+
+        /** 下载成功 */
         const val STATUS_SUCCESS = "success"
+
+        /** 下载失败 */
         const val STATUS_FAILED = "failed"
     }
 }
@@ -83,11 +98,28 @@ interface DownloadDao {
     @Query("SELECT * FROM download_tasks WHERE id = :id")
     fun observeTask(id: Long): Flow<DownloadTaskData?>
 
+    @Query("SELECT * FROM download_tasks WHERE pending_output_uri IS NOT NULL AND status != :successStatus")
+    suspend fun listTasksWithPendingOutput(successStatus: String = DownloadTaskData.STATUS_SUCCESS): List<DownloadTaskData>
+
     @Query("UPDATE download_tasks SET progress = :progress, status = :status, update_time = :updateTime WHERE id = :id")
     suspend fun updateProgress(id: Long, progress: Int, status: String, updateTime: Long = System.currentTimeMillis())
 
-    @Query("UPDATE download_tasks SET status = :status, error_msg = :errorMsg, save_path = :savePath, update_time = :updateTime WHERE id = :id")
-    suspend fun updateStatus(id: Long, status: String, errorMsg: String? = null, savePath: String? = null, updateTime: Long = System.currentTimeMillis())
+    @Query(
+        "UPDATE download_tasks " +
+                "SET status = :status, error_msg = :errorMsg, save_path = :savePath, pending_output_uri = :pendingOutputUri, update_time = :updateTime " +
+                "WHERE id = :id"
+    )
+    suspend fun updateStatus(
+        id: Long,
+        status: String,
+        errorMsg: String? = null,
+        savePath: String? = null,
+        pendingOutputUri: String? = null,
+        updateTime: Long = System.currentTimeMillis()
+    )
+
+    @Query("UPDATE download_tasks SET pending_output_uri = :pendingOutputUri, update_time = :updateTime WHERE id = :id")
+    suspend fun updatePendingOutputUri(id: Long, pendingOutputUri: String?, updateTime: Long = System.currentTimeMillis())
 
     @Query("DELETE FROM download_tasks WHERE id = :id")
     suspend fun deleteTask(id: Long)
