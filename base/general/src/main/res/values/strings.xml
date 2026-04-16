@@ -41,8 +41,8 @@
     <string name="base_general_extract_the_video_address" tools:ignore="TypographyEllipsis">提取视频地址中...</string>
     <string name="base_general_failed_to_extract_the_video_address">视频地址提取失败，点击重试</string>
     <string name="base_general_extract_the_video_address_success">视频地址提取成功</string>
-    <string name="base_general_video_download_failed">视频下载失败，点我重试</string>
-    <string name="base_general_video_download_success">视频下载完成，点我播放</string>
+    <string name="base_general_video_download_failed">视频下载失败，点击重试</string>
+    <string name="base_general_video_download_success">视频下载完成，点击播放</string>
     <string name="base_general_video_download">视频下载</string>
     <string name="base_general_update_the_download_progress_and_status">更新下载进度和状态</string>
     <string name="base_general_without_the_floating_window_permission">没有悬浮窗权限，无法读取剪贴板内容</string>
@@ -61,6 +61,7 @@
     <string name="base_general_there_is_no_available_application_to_open_this_video">没有可用的应用打开该视频</string>
     <string name="base_general_failed_to_create_the_download_task">创建下载任务失败</string>
     <string name="base_general_prompt">提示</string>
+    <string name="base_general_the_download_was_cancelled">下载被取消</string>
     <string name="base_general_sure_to_delete">确定要删除 %1$s 吗？</string>
 
 </resources>

@@ -11,7 +11,7 @@ import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
 import com.cla.clip.master.BaseViewModel
 import com.cla.clip.master.entity.VideoCandidate
-import com.cla.clip.master.work.DownloadVideoWorkStarter
+import com.cla.clip.master.work.DownloadVideoWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -67,7 +67,7 @@ class VideoExtractVm @Inject constructor(
                     downloadRepo.updateProgress(taskId, 0)
                 }
                 logD(TAG) { "startDownloadAndGo: 启动下载" }
-                DownloadVideoWorkStarter.enqueue(appContext, taskId)
+                DownloadVideoWorker.enqueue(appContext, taskId)
 
                 _createDownloadTaskFlow.emit(taskId)
             }.onFailure {

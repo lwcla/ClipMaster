@@ -1,16 +1,22 @@
 package com.cla.clip.master.work
 
+import android.os.SystemClock
 import androidx.work.ListenableWorker
 import com.cla.clip.base.general.utils.MediaStoreTarget
+import com.cla.clip.base.general.utils.clear
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
+import com.cla.clip.master.work.DownloadVideoWorker.Companion.M3U8_DIR_NAME
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Response
+import okio.Buffer
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -65,7 +71,6 @@ sealed class Download {
                             } else 0
 
                             if (curProgress != lastProgress) {
-                                logD(TAG) { "start : 视频下载进度 $curProgress" }
                                 lastProgress = curProgress
                                 download(curProgress)
                             }
@@ -203,7 +208,7 @@ sealed class Download {
              *   - >16：截取前 16 字节
              *   - <16：视为错误
              */
-            suspend fun getKeyBytes(keyUri: String): ByteArray {
+            fun getKeyBytes(keyUri: String): ByteArray {
                 keyCache[keyUri]?.let { return it }
                 val keyBytes = newResponse(keyUri).use { resp ->
                     resp.body?.bytes() ?: error("Empty key body: $keyUri")
@@ -217,15 +222,17 @@ sealed class Download {
                 return normalized
             }
 
+            fun sepName(index: Int) = "seg_${index.toString().padStart(6, '0')}.ts"
+
             // 分片先落地到临时目录，全部完成后再按顺序合并到最终文件。
-            val tempDir = File(applicationContext.cacheDir, "m3u8_${taskId}").apply { mkdirs() }
+            val tempDir = File(applicationContext.cacheDir, "${M3U8_DIR_NAME}${File.separator}${taskId}").apply { mkdirs() }
             val semaphore = Semaphore(4) // 设置并发数量，避免对网络/设备造成过大压力。
             val done = AtomicInteger(0)
 
             try {
                 // 3) 并发下载分片，并在需要时进行 AES-128 解密，然后写入临时文件
                 segments.mapIndexed { index, seg ->
-                    async {
+                    async(Dispatchers.IO) {
                         semaphore.withPermit {
                             if (isStopped) error("Worker stopped")
 
@@ -261,7 +268,7 @@ sealed class Download {
                 var lastProgress: Int? = null
                 outputStream.use { out ->
                     segments.indices.forEach { i ->
-                        val segFile = File(tempDir, "seg_${i.toString().padStart(6, '0')}.ts")
+                        val segFile = File(tempDir, sepName(i))
                         segFile.inputStream().use { it.copyTo(out) }
 
                         val curProgress = ((i * 100) / segments.size).coerceIn(0, 100)
@@ -276,8 +283,7 @@ sealed class Download {
                 throw t
             } finally {
                 // 无论成功或失败都清理临时目录，避免缓存目录持续膨胀。
-                tempDir.listFiles()?.forEach { it.delete() }
-                tempDir.delete()
+                tempDir.clear()
             }
         }
 

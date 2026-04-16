@@ -1,6 +1,5 @@
 package com.cla.clip.master.ui.navigation
 
-import com.cla.clip.master.entity.VideoCandidate
 import kotlinx.serialization.Serializable
 
 sealed class Route

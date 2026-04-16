@@ -105,21 +105,21 @@ interface DownloadDao {
     suspend fun updateProgress(id: Long, progress: Int, status: String, updateTime: Long = System.currentTimeMillis())
 
     @Query(
-        "UPDATE download_tasks " +
-                "SET status = :status, error_msg = :errorMsg, save_path = :savePath, pending_output_uri = :pendingOutputUri, update_time = :updateTime " +
-                "WHERE id = :id"
+        """
+            UPDATE download_tasks 
+            SET status = :status, error_msg = :errorMsg, update_time = :updateTime 
+            WHERE id = :id
+        """
     )
     suspend fun updateStatus(
         id: Long,
         status: String,
         errorMsg: String? = null,
-        savePath: String? = null,
-        pendingOutputUri: String? = null,
         updateTime: Long = System.currentTimeMillis()
     )
 
-    @Query("UPDATE download_tasks SET pending_output_uri = :pendingOutputUri, update_time = :updateTime WHERE id = :id")
-    suspend fun updatePendingOutputUri(id: Long, pendingOutputUri: String?, updateTime: Long = System.currentTimeMillis())
+    @Query("UPDATE download_tasks SET pending_output_uri = :pendingOutputUri, save_path =:savePath WHERE id = :id")
+    suspend fun updatePath(id: Long, pendingOutputUri: String?, savePath: String?)
 
     @Query("DELETE FROM download_tasks WHERE id = :id")
     suspend fun deleteTask(id: Long)

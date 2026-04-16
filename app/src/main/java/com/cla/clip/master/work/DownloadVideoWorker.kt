@@ -3,6 +3,7 @@ package com.cla.clip.master.work
 import android.content.Context
 import android.content.pm.ServiceInfo
 import android.os.Build
+import androidx.core.net.toUri
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
@@ -12,10 +13,12 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.cla.clip.base.general.R
+import com.cla.clip.base.general.dao.DownloadTaskData
 import com.cla.clip.base.general.di.M3u8Client
 import com.cla.clip.base.general.entity.DownloadRepository
 import com.cla.clip.base.general.utils.MediaStoreTarget
 import com.cla.clip.base.general.utils.SaveToFile
+import com.cla.clip.base.general.utils.clear
 import com.cla.clip.base.general.utils.createPath
 import com.cla.clip.base.general.utils.failure
 import com.cla.clip.base.general.utils.logD
@@ -23,14 +26,15 @@ import com.cla.clip.base.general.utils.logE
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.showName
 import com.cla.clip.base.general.utils.success
+import com.cla.clip.base.general.utils.videoDownloadTaskId
 import com.cla.clip.master.utils.NotificationHelper
-import com.cla.clip.master.work.DownloadVideoWorker.Companion.DOWNLOAD_VIDEO_TASK_TAG
 import dagger.Lazy
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import java.io.File
 
 @HiltWorker
 class DownloadVideoWorker @AssistedInject constructor(
@@ -49,8 +53,31 @@ class DownloadVideoWorker @AssistedInject constructor(
 
         const val KEY_TASK_ID = "key_task_id"
 
+        const val M3U8_DIR_NAME = "m3u8"
+
         private const val DOU_YIN_PLAYVM = "/playwm/"
         private const val DOU_YIN_PLAY = "/play/"
+
+        // todo 不知道能不能设置为如果是同一个taskId，则keep，如果是不同的taskId，则排队
+        fun enqueue(context: Context, taskId: Long) {
+            val data = workDataOf(KEY_TASK_ID to taskId)
+
+            val request = OneTimeWorkRequestBuilder<DownloadVideoWorker>()
+                .setInputData(data)
+                .addTag(DOWNLOAD_VIDEO_TASK_TAG)
+                .addTag("${DOWNLOAD_VIDEO_TASK_TAG}:$taskId")
+                .build()
+
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                "${DOWNLOAD_VIDEO_TASK_TAG}:$taskId",
+                ExistingWorkPolicy.KEEP, // 如果存在具有相同唯一名称的挂起（未完成）工作，则不执行任何操作。否则，插入新指定的作品
+                request
+            )
+        }
+
+        fun cancel(context: Context) {
+            WorkManager.getInstance(context).cancelAllWorkByTag(DOWNLOAD_VIDEO_TASK_TAG)
+        }
     }
 
     override suspend fun doWork(): Result {
@@ -67,23 +94,47 @@ class DownloadVideoWorker @AssistedInject constructor(
         // 首帧前台通知，避免后台限制
         setForeground(buildForegroundInfo(applicationContext.getString(R.string.base_general_initialize_download), fileName.showName, 0))
 
+        val lastTask = videoDownloadTaskId
+        downloadRepo.getTask(lastTask)?.let { task ->
+            if (task.status != DownloadTaskData.STATUS_SUCCESS) {
+                // 上次的任务还未成功，说明可能是异常中断了，需要清除上次未完成的 pending 输出，避免这个遗留文件一直占用空间（尤其是m3u8的临时文件可能非常大）
+                logD(TAG) { "doWork: 上次下载任务 ${task.fileName} 可能异常中断了，正在清理遗留的 pending 输出  errorMsg=${task.errorMsg}" }
+                val saveToFile = SaveToFile.Video(task.fileName)
+                saveToFile.failure(applicationContext, task.pendingOutputUri?.toUri(), task.savePath)
+            }
+        }
+
+        // m3u8 的下载会在 cacheDir 下创建一个临时目录来保存 ts 分片，命名为 m3u8/{taskId}，下载完成后会删除这个目录。这里清理掉 cacheDir 下遗留的 m3u8 目录，避免占用空间
+        val dir = File(applicationContext.cacheDir, M3U8_DIR_NAME)
+        if (dir.exists() && dir.isDirectory) {
+            dir.listFiles()?.forEach {
+                if (it.isDirectory && it.name != taskId.toString()) {
+                    // 可能是上次下载遗留的临时目录，清理掉
+                    logD(TAG) { "doWork : 清理之前遗留的临时文件夹 taskId=$taskId dirName=${it.absolutePath}" }
+                    it.clear()
+                }
+            }
+        }
+
+        videoDownloadTaskId = taskId
         val saveVideo = SaveToFile.Video(fileName)
         val mediaTarget = saveVideo.createPath(applicationContext)
-        downloadRepo.markPendingOutputUri(taskId, mediaTarget.uri?.toString())
+        downloadRepo.markPath(taskId, mediaTarget.uri?.toString(), mediaTarget.path)
 
         return runCatching {
             downloadVideo(taskId, videoUrl, fileName, referer, userAgent, cookie, saveVideo, mediaTarget)
             Result.success()
         }.getOrElse { tr ->
             logE(TAG, tr) { "doWork: 下载失败" }
-            downloadRepo.markFailed(taskId, tr.message ?: "Unknown error")
+            val errorMsg = tr.message ?: applicationContext.getString(R.string.base_general_download_failed)
+            downloadRepo.markFailed(applicationContext, taskId, errorMsg)
+            saveVideo.failure(applicationContext, mediaTarget)
             notificationHelper.notifyDownloadResult(
                 taskId,
                 title = applicationContext.getString(R.string.base_general_download_failed),
                 fileName = fileName.showName,
-                content = tr.message ?: "Unknown error",
+                content = errorMsg,
             )
-            saveVideo.failure(applicationContext, mediaTarget)
             Result.failure()
         }
     }
@@ -105,10 +156,23 @@ class DownloadVideoWorker @AssistedInject constructor(
                 Download.Video(response, fileName, mediaTarget)
             }
 
+            var lastProgress: Int? = null
             download.apply {
                 start(
-                    merge = { progress -> updateProgress(taskId, fileName, progress, isMerge = true) },
-                    download = { progress -> updateProgress(taskId, fileName, progress, isMerge = false) }
+                    merge = { progress ->
+                        if (lastProgress == null || lastProgress != progress) {
+                            lastProgress = progress
+                            logD(TAG) { "start : 合并进度${progress}% $fileName" }
+                            updateProgress(taskId, fileName, progress, isMerge = true)
+                        }
+                    },
+                    download = { progress ->
+                        if (lastProgress == null || lastProgress != progress) {
+                            lastProgress = progress
+                            logD(TAG) { "start : 下载进度 ${progress}% $fileName" }
+                            updateProgress(taskId, fileName, progress, isMerge = false)
+                        }
+                    }
                 )
             }
         }
@@ -116,12 +180,12 @@ class DownloadVideoWorker @AssistedInject constructor(
         val isDouYinVm = videoUrl.contains(DOU_YIN_PLAYVM)
         if (isDouYinVm) {
             runCatching {
-                logD(TAG) { "downloadVideo: 抖音尝试下载无水印的地址" }
+                logD(TAG) { "downloadVideo: 抖音尝试下载无水印的地址 fileName=$fileName" }
                 val newUrl = videoUrl.replace(DOU_YIN_PLAYVM, DOU_YIN_PLAY)
                 val response = executeRequest(okHttpClient.get(), newUrl, referer, userAgent, cookie)
                 start(response)
             }.getOrElse {
-                logE(TAG, it) { "downloadVideo: 抖音无水印地址连接失败，换回原地址" }
+                logE(TAG, it) { "downloadVideo: 抖音无水印地址连接失败，换回原地址 fileName=$fileName" }
                 val response = executeRequest(okHttpClient.get(), videoUrl, referer, userAgent, cookie)
                 start(response)
             }
@@ -129,10 +193,9 @@ class DownloadVideoWorker @AssistedInject constructor(
             val response = executeRequest(okHttpClient.get(), videoUrl, referer, userAgent, cookie)
             start(response)
         }
-
+        downloadRepo.markSuccess(taskId)
         saveVideo.success(applicationContext, mediaTarget)
         val savePath = mediaTarget.path
-        downloadRepo.markSuccess(taskId, savePath)
         logI(TAG) { "下载完成 taskId=$taskId path=${savePath}" }
 
         notificationHelper.notifyDownloadResult(
@@ -214,25 +277,5 @@ class DownloadVideoWorker @AssistedInject constructor(
         } else {
             ForegroundInfo(NotificationHelper.VIDEO_DOWNLOAD_NOTIFICATION_ID, notification)
         }
-    }
-}
-
-object DownloadVideoWorkStarter {
-
-    // todo 不知道能不能设置为如果是同一个taskId，则keep，如果是不同的taskId，则排队
-    fun enqueue(context: Context, taskId: Long) {
-        val data = workDataOf(DownloadVideoWorker.KEY_TASK_ID to taskId)
-
-        val request = OneTimeWorkRequestBuilder<DownloadVideoWorker>()
-            .setInputData(data)
-            .addTag(DOWNLOAD_VIDEO_TASK_TAG)
-            .addTag("${DOWNLOAD_VIDEO_TASK_TAG}:$taskId")
-            .build()
-
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            "${DOWNLOAD_VIDEO_TASK_TAG}:$taskId",
-            ExistingWorkPolicy.KEEP, // 如果存在具有相同唯一名称的挂起（未完成）工作，则不执行任何操作。否则，插入新指定的作品
-            request
-        )
     }
 }

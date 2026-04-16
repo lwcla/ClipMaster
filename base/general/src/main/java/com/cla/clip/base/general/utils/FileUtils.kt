@@ -142,14 +142,20 @@ fun SaveToFile.success(context: Context, target: MediaStoreTarget) {
  * 在 Android 10 以下，则需要删除文件，并且调用 MediaScannerConnection.scanFile() 来通知系统更新媒体库。
  */
 suspend fun SaveToFile.failure(context: Context, target: MediaStoreTarget) = withContext(Dispatchers.IO) {
-    val uri = target.uri
-    val path = target.path
+    failure(context, target.uri, target.path)
+}
+
+suspend fun SaveToFile.failure(context: Context, uri: Uri?, path: String?) = withContext(Dispatchers.IO) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && uri != null) {
         // 删除半成品
-        logD(TAG) { "下载失败，已删除半成品: uri=$uri" }
-        context.contentResolver.delete(uri, null, null)
+        runCatching {
+            context.contentResolver.delete(uri, null, null)
+            logD(TAG) { "下载失败，已删除半成品: uri=$uri" }
+        }.onFailure {
+            logE(TAG, it) { "下载失败，删除半成品失败: uri=$uri" }
+        }
     } else {
-        if (path.isBlank()) {
+        if (path.isNullOrBlank()) {
             return@withContext
         }
 
@@ -162,6 +168,30 @@ suspend fun SaveToFile.failure(context: Context, target: MediaStoreTarget) = wit
                 logE(TAG, it) { "下载失败，删除半成品失败: path=$path" }
             }
         }
+    }
+}
+
+fun File.clear() {
+    if (!exists()) {
+        return
+    }
+
+    runCatching {
+        if (isDirectory) {
+            if (!deleteRecursively()) {
+                logE(TAG) { "清理目录失败: path=${absolutePath}" }
+            } else {
+                logD(TAG) { "清理目录成功: path=${absolutePath}" }
+            }
+        } else {
+            if (!delete()) {
+                logE(TAG) { "清理文件失败: path=${absolutePath}" }
+            } else {
+                logD(TAG) { "清理文件成功: path=${absolutePath}" }
+            }
+        }
+    }.onFailure {
+        logE(TAG, it) { "清理文件或目录出错: path=${absolutePath}" }
     }
 }
 

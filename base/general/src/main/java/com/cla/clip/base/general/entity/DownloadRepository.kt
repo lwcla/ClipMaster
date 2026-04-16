@@ -1,19 +1,16 @@
 package com.cla.clip.base.general.entity
 
 import android.content.Context
-import android.net.Uri
+import com.cla.clip.base.general.R
 import com.cla.clip.base.general.dao.DownloadDao
 import com.cla.clip.base.general.dao.DownloadTaskData
 import com.cla.clip.base.general.dao.DownloadTaskData.Companion.STATUS_DOWNLOADING
 import com.cla.clip.base.general.dao.DownloadTaskData.Companion.STATUS_FAILED
 import com.cla.clip.base.general.dao.DownloadTaskData.Companion.STATUS_MERGING
 import com.cla.clip.base.general.dao.DownloadTaskData.Companion.STATUS_SUCCESS
-import com.cla.clip.base.general.utils.logD
-import com.cla.clip.base.general.utils.logE
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
-import androidx.core.net.toUri
 
 @Singleton
 class DownloadRepository @Inject constructor(
@@ -43,7 +40,7 @@ class DownloadRepository @Inject constructor(
             referer = referer,
             userAgent = userAgent,
             cookie = cookie,
-            status = "downloading",
+            status = STATUS_DOWNLOADING,
             progress = 0,
             pendingOutputUri = null,
             fileName = fileName
@@ -76,18 +73,18 @@ class DownloadRepository @Inject constructor(
     }
 
     /** 记录当前下载占用的 MediaStore 输出 URI（用于异常恢复时清理半成品） */
-    suspend fun markPendingOutputUri(taskId: Long, pendingOutputUri: String?) {
-        downloadDao.updatePendingOutputUri(taskId, pendingOutputUri)
+    suspend fun markPath(taskId: Long, uri: String?, savePath: String?) {
+        downloadDao.updatePath(taskId, uri, savePath)
     }
 
     /** 标记成功 */
-    suspend fun markSuccess(taskId: Long, savePath: String) {
-        downloadDao.updateStatus(taskId, STATUS_SUCCESS, savePath = savePath, pendingOutputUri = null)
+    suspend fun markSuccess(taskId: Long) {
+        downloadDao.updateStatus(taskId, STATUS_SUCCESS)
     }
 
     /** 标记失败 */
-    suspend fun markFailed(taskId: Long, errorMsg: String) {
-        downloadDao.updateStatus(taskId, STATUS_FAILED, errorMsg = errorMsg, pendingOutputUri = null)
+    suspend fun markFailed(context: Context, taskId: Long, errorMsg: String?) {
+        downloadDao.updateStatus(id = taskId, status = STATUS_FAILED, errorMsg = errorMsg ?: context.getString(R.string.base_general_download_failed))
     }
 
     /** 获取任务 */
@@ -98,45 +95,5 @@ class DownloadRepository @Inject constructor(
     /** 删除任务 */
     suspend fun deleteTask(taskId: Long) {
         downloadDao.deleteTask(taskId)
-    }
-
-    /**
-     * 清理未完成任务遗留的 pending 输出文件。
-     *
-     * @return 实际清理的条目数
-     */
-    suspend fun cleanupOrphanPendingOutputs(context: Context, staleThresholdMs: Long = 10 * 60 * 1000L): Int {
-        val now = System.currentTimeMillis()
-        val tasks = downloadDao.listTasksWithPendingOutput()
-        if (tasks.isEmpty()) return 0
-
-        var cleaned = 0
-        tasks.forEach { task ->
-            val pendingUri = task.pendingOutputUri.orEmpty()
-            if (pendingUri.isBlank()) return@forEach
-
-            val isStale = now - task.updateTime >= staleThresholdMs
-            if (!isStale) return@forEach
-
-            runCatching {
-                context.contentResolver.delete(pendingUri.toUri(), null, null)
-            }.onFailure {
-                logE(TAG, it) { "cleanupOrphanPendingOutputs: 删除遗留文件失败 uri=$pendingUri taskId=${task.id}" }
-            }
-
-            downloadDao.updateStatus(
-                id = task.id,
-                status = STATUS_FAILED,
-                errorMsg = "App process restarted, pending output was cleaned",
-                savePath = null,
-                pendingOutputUri = null
-            )
-            cleaned++
-        }
-
-        if (cleaned > 0) {
-            logD(TAG) { "cleanupOrphanPendingOutputs: 已清理遗留 pending 输出 $cleaned 条" }
-        }
-        return cleaned
     }
 }

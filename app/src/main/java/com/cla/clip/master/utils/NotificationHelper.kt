@@ -225,7 +225,7 @@ class NotificationHelper @Inject constructor(
         val content = appContext.getString(status.textRes)
         val notification = NotificationCompat.Builder(appContext, SHIZUKU_STATUS_CHANNEL_ID)
             .setSmallIcon(R.mipmap.base_general_ic_app)
-            .setContentTitle(appContext.getString(R.string.base_general_clipboard_service))
+            .setContentTitle(appContext.getString(R.string.base_general_shizuku_status))
             .setContentText(content)
             .setContentIntent(launchPendingIntent)
             .setOngoing(false)  // true ：常驻样式（用户通常不能滑掉）

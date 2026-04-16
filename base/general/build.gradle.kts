@@ -102,6 +102,9 @@ dependencies {
 
     // json
     api(libs.kotlinx.serialization.json)
+
+    // mmkv
+    implementation(libs.mmkv)
 }
 
 val org.gradle.api.Project.androidApp: com.android.build.gradle.AppExtension

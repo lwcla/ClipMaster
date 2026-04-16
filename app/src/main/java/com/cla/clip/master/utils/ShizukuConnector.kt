@@ -135,13 +135,12 @@ class ShizukuConnector @Inject constructor(
         notificationHelper.get().notifyShizukuStatus(status)
     }
 
-    fun connect() {
-        Shizuku.removeBinderReceivedListener(binderReceivedListener)
+    init {
         Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
-
-        Shizuku.removeBinderDeadListener(binderDeadListener)
         Shizuku.addBinderDeadListener(binderDeadListener)
+    }
 
+    fun connect() {
         runCatching {
             val result = Shizuku.peekUserService(userServiceArgs, userServiceConnection)
             if (result == -1) {
