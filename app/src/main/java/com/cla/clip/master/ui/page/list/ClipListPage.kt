@@ -18,9 +18,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
+import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -87,6 +89,7 @@ import kotlin.math.max
 @Composable
 fun ClipListPage(
     viewModel: ClipListModel = hiltViewModel(),
+    gridState: LazyStaggeredGridState = rememberLazyStaggeredGridState(),
     onNavigate: (Route) -> Unit  // 跳转页面
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -105,6 +108,7 @@ fun ClipListPage(
 
     Box(modifier = Modifier.fillMaxWidth()) {
         ClipList(
+            gridState = gridState,
             viewModel = viewModel,
             pagedClips = pagedClips,
             onLongClick = { clip ->
@@ -151,6 +155,7 @@ fun ClipListPage(
 @Composable
 private fun ClipList(
     viewModel: ClipListModel,
+    gridState: LazyStaggeredGridState,
     pagedClips: LazyPagingItems<ClipShowEntity>,
     onLongClick: (ClipShowEntity) -> Unit,
     onDelete: (ClipShowEntity) -> Unit,
@@ -160,6 +165,7 @@ private fun ClipList(
         EmptyScreen()
     } else {
         LazyVerticalStaggeredGrid(
+            state = gridState,
             // 设置两列 (也可以用 StaggeredGridCells.Adaptive(150.dp) 做自适应)
             columns = StaggeredGridCells.Fixed(2),
             modifier = Modifier.fillMaxSize(),

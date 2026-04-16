@@ -7,6 +7,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
 import com.cla.clip.master.ui.page.detail.DetailPage
 import com.cla.clip.master.ui.page.list.ClipListPage
+import com.cla.clip.master.ui.page.main.MainPage
+import com.cla.clip.master.ui.page.mine.MinePage
 import com.cla.clip.master.ui.page.video.VideoDownloadPage
 import com.cla.clip.master.ui.page.video.VideoExtractPage
 
@@ -23,8 +25,16 @@ fun AppNavigation(navController: NavHostController) {
 
     NavHost(
         navController = navController,
-        startDestination = ClipListRoute
+        startDestination = MainRoute
     ) {
+        // 主页
+        composable<MainRoute> {
+            MainPage(
+                onNavigate = onNavigate
+            )
+        }
+
+        // 剪贴数据列表页
         composable<ClipListRoute> {
             ClipListPage(
                 onNavigate = onNavigate
@@ -67,6 +77,12 @@ fun AppNavigation(navController: NavHostController) {
                         navController.popBackStack() // 从通知进来时，回到 MainPage
                     }
                 }
+            )
+        }
+
+        composable<MineRoute> {
+            MinePage(
+                onNavigate = onNavigate
             )
         }
     }
