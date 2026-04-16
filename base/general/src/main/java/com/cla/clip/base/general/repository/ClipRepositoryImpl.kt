@@ -22,11 +22,11 @@ import javax.inject.Inject
  * 通过构造函数注入ClipDao，并委托所有数据操作给它。
  * 使用 @Inject constructor() 使Hilt能够创建这个类的实例。
  */
-class ClipDaoImpl @Inject constructor(
+class ClipRepositoryImpl @Inject constructor(
     private val clipDao: ClipDao,
     private val sourceAppDao: SourceAppDao,
     private val linkPreviewDao: LinkPreviewDao,
-) : com.cla.clip.base.general.repository.ClipDao {
+) : ClipRepository {
 
     // 使用 withContext(Dispatchers.IO) 确保所有数据库写操作都在IO线程上执行。
     // Flow 本身是异步的，Room会自动处理其线程，所以读操作不需要显式切换。
@@ -157,7 +157,7 @@ class ClipDaoImpl @Inject constructor(
         clipDao.loadClipDetail(id)?.toUi()
     }
 
-    override suspend fun loadLastClip() = withContext(Dispatchers.IO){
+    override suspend fun loadLastClip() = withContext(Dispatchers.IO) {
         clipDao.loadLastClip()
     }
 }

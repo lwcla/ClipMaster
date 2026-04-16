@@ -1,4 +1,4 @@
-package com.cla.clip.master.ui.page.main
+package com.cla.clip.master.ui.page.list
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -79,14 +79,14 @@ import com.cla.clip.master.ui.widget.rememberFormattedTime
 import kotlin.math.max
 
 /**
- * 主屏幕的入口Composable。
+ * 剪贴数据列表页
  *
  * @param viewModel Hilt自动注入的MainViewModel实例。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainPage(
-    viewModel: MainViewModel = hiltViewModel(),
+fun ClipListPage(
+    viewModel: ClipListModel = hiltViewModel(),
     onNavigate: (Route) -> Unit  // 跳转页面
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -150,7 +150,7 @@ fun MainPage(
 
 @Composable
 private fun ClipList(
-    viewModel: MainViewModel,
+    viewModel: ClipListModel,
     pagedClips: LazyPagingItems<ClipShowEntity>,
     onLongClick: (ClipShowEntity) -> Unit,
     onDelete: (ClipShowEntity) -> Unit,

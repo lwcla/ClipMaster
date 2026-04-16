@@ -1,16 +1,18 @@
-package com.cla.clip.master.ui.page.main
+package com.cla.clip.master.ui.page.list
 
-import android.content.Context
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.cachedIn
 import androidx.paging.map
 import com.cla.clip.base.general.entity.toUi
-import com.cla.clip.master.ClipBaseVm
+import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.master.utils.ShizukuConnector
+import com.cla.clip.master.processor.ClipboardDataProcessor
+import com.cla.clip.master.processor.DefaultClipboardDataProcessor
+import dagger.Lazy
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
@@ -21,10 +23,11 @@ import javax.inject.Inject
  * 使用 @HiltViewModel 注解，Hilt会自动处理它的创建和依赖注入。
  */
 @HiltViewModel
-class MainViewModel @Inject constructor(
-    @param:ApplicationContext override val appContext: Context,
-    private val shizukuConnector: ShizukuConnector
-) : ClipBaseVm(appContext) {
+class ClipListModel @Inject constructor(
+    private val shizukuConnector: ShizukuConnector,
+    private val clipboardDataProcessor: DefaultClipboardDataProcessor,
+    private val clipRepository: Lazy<ClipRepository>,
+) : ViewModel() , ClipboardDataProcessor by clipboardDataProcessor {
 
     val pagedClips = Pager(
         config = PagingConfig(
@@ -33,7 +36,7 @@ class MainViewModel @Inject constructor(
             enablePlaceholders = false
         )
     ) {
-        clipDao.get().loadAllClips()
+        clipRepository.get().loadAllClips()
     }.flow.map { it.map { data -> data.toUi() } }.cachedIn(
         CoroutineScope(viewModelScope.coroutineContext + Dispatchers.IO)
     )

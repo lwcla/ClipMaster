@@ -4,9 +4,9 @@ import kotlinx.serialization.Serializable
 
 sealed class Route
 
-/** 主页 */
+/** 剪贴数据列表 */
 @Serializable
-data object MainRoute : Route()
+data object ClipListRoute : Route()
 
 /** 详情页 */
 @Serializable

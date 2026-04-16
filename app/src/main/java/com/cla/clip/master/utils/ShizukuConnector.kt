@@ -5,7 +5,7 @@ import android.content.Context
 import android.content.ServiceConnection
 import android.graphics.Bitmap
 import android.os.IBinder
-import com.cla.clip.base.general.repository.ClipDao
+import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.base.general.utils.ApplicationScope
 import com.cla.clip.base.general.utils.extractUsableColor
 import com.cla.clip.base.general.utils.logD
@@ -33,7 +33,7 @@ import javax.inject.Singleton
 class ShizukuConnector @Inject constructor(
     @param:ApplicationScope private val scope: CoroutineScope,
     @param:ApplicationContext private val appContext: Context,
-    private val clipDao: Lazy<ClipDao>,
+    private val clipRepository: Lazy<ClipRepository>,
     private val notificationHelper: Lazy<NotificationHelper>,
 ) {
 
@@ -73,7 +73,7 @@ class ShizukuConnector @Inject constructor(
                             }
 
                             scope.launch(Dispatchers.IO) {
-                                val sourceAppData = packageName?.let { clipDao.get().loadSourceApp(it) }
+                                val sourceAppData = packageName?.let { clipRepository.get().loadSourceApp(it) }
                                 val appColor: Int?
                                 val appIconPath: String?
 

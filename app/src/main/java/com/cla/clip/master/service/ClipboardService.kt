@@ -1,7 +1,6 @@
 package com.cla.clip.master.service
 
 import android.app.Service
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -9,7 +8,7 @@ import android.os.IBinder
 import android.view.View
 import android.view.WindowManager
 import com.cla.clip.base.general.R
-import com.cla.clip.base.general.repository.ClipDao
+import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.base.general.utils.ApplicationScope
 import com.cla.clip.base.general.utils.hasOverlayPermission
 import com.cla.clip.base.general.utils.logD
@@ -122,7 +121,7 @@ class ClipboardService : Service() {
     }
 
     @Inject
-    lateinit var clipDao: dagger.Lazy<ClipDao>
+    lateinit var clipRepository: dagger.Lazy<ClipRepository>
 
     @Inject
     @ApplicationScope

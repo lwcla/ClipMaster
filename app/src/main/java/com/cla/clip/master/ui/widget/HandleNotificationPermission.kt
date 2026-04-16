@@ -40,7 +40,7 @@ import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.toPermissionSetting
 import com.cla.clip.master.R
-import com.cla.clip.master.ui.page.main.MainViewModel
+import com.cla.clip.master.ui.page.list.ClipListModel
 
 /**
  * 通知权限处理组件
@@ -49,7 +49,7 @@ import com.cla.clip.master.ui.page.main.MainViewModel
  */
 @Composable
 fun HandleNotificationPermission(
-    viewModel: MainViewModel = hiltViewModel(),
+    viewModel: ClipListModel = hiltViewModel(),
     trigger: Boolean
 ) {
     // 1. Android 13 以下不需要动态申请，直接退出

@@ -5,11 +5,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cla.clip.base.general.entity.DownloadRepository
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
-import com.cla.clip.master.BaseViewModel
 import com.cla.clip.master.entity.VideoCandidate
 import com.cla.clip.master.work.DownloadVideoWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -31,9 +31,9 @@ sealed interface ProbeState {
 
 @HiltViewModel
 class VideoExtractVm @Inject constructor(
-    @param:ApplicationContext override val appContext: Context,
+    @param:ApplicationContext val appContext: Context,
     private val downloadRepo: DownloadRepository,
-) : BaseViewModel(appContext) {
+) : ViewModel() {
 
     companion object {
         private const val TAG = "VideoExtractVm"

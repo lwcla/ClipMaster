@@ -4,11 +4,11 @@ import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.entity.DownloadRepository
 import com.cla.clip.base.general.utils.logD
-import com.cla.clip.master.BaseViewModel
 import com.cla.clip.master.entity.VideoDownloadState
 import com.cla.clip.master.entity.toUi
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -27,8 +27,8 @@ import javax.inject.Inject
 @HiltViewModel
 class VideoDownloadVm @Inject constructor(
     private val downloadRepository: DownloadRepository,
-    @param:ApplicationContext override val appContext: Context
-) : BaseViewModel(appContext) {
+    @param:ApplicationContext val appContext: Context
+) : ViewModel() {
 
     companion object {
         private const val TAG = "VideoDownloadVm"

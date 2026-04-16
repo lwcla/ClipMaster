@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.Flow
  * 剪贴板数据仓库的接口。
  * 定义了所有与Clip数据相关的操作，作为数据源和业务逻辑之间的契约。
  */
-interface ClipDao {
+interface ClipRepository {
 
     /**
      * 根据查询词搜索所有剪贴板条目（包括历史记录）。

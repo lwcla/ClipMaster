@@ -7,7 +7,7 @@ import androidx.core.content.FileProvider
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.entity.ClipCaptureEntity
 import com.cla.clip.base.general.entity.LiveEvent
-import com.cla.clip.base.general.repository.ClipDao
+import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.base.general.utils.ApplicationScope
 import com.cla.clip.base.general.utils.LinkUtils
 import com.cla.clip.base.general.utils.logD
@@ -28,7 +28,7 @@ import javax.inject.Singleton
 @Singleton
 class ClipHelper @Inject constructor(
     @param:ApplicationContext private val appContext: Context,
-    private val clipDao: dagger.Lazy<ClipDao>,
+    private val clipRepository: dagger.Lazy<ClipRepository>,
     private val notificationHelper: dagger.Lazy<NotificationHelper>,
     @param:ApplicationScope private val scope: CoroutineScope,
 ) {
@@ -107,7 +107,7 @@ class ClipHelper @Inject constructor(
 
         lastClipContent.set(contentText)
 
-        val lastClip = clipDao.get().loadLastClip()
+        val lastClip = clipRepository.get().loadLastClip()
         if (lastClip != null) {
             if (contentText == lastClip.content && (packageName == null || lastClip.sourceAppPackage == packageName)) {
                 logD(TAG) { "processClip: 222 contentText=${contentText} packageName=${packageName} 和上一条是重复的，不要重复保存" }
@@ -137,7 +137,7 @@ class ClipHelper @Inject constructor(
 
         val extractedLink = LinkUtils.extractFirstUrl(contentText)
         val linkMeta = if (!extractedLink.isNullOrBlank()) {
-            val history = clipDao.get().loadLinkPreview(extractedLink)
+            val history = clipRepository.get().loadLinkPreview(extractedLink)
             if (!history?.imageUrl.isNullOrBlank()) {
                 logD(TAG) { "processClip 使用数据库中的链接数据 extractedLink=$extractedLink" }
                 // 避免重复解析链接
@@ -168,7 +168,7 @@ class ClipHelper @Inject constructor(
         logI(TAG) { "processClip: isLink=${!extractedLink.isNullOrBlank()} captureEntity=$captureEntity" }
 
         // 保存到数据库
-        val clipId = clipDao.get().addNewClip(captureEntity)
+        val clipId = clipRepository.get().addNewClip(captureEntity)
 
         logD(TAG) { "processClip: 保存到数据库 clipId=${clipId}" }
         notificationHelper.get().notifyClipUpdate(

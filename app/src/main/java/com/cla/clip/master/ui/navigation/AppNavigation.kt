@@ -5,13 +5,10 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
-import com.cla.clip.master.entity.VideoCandidate
-import com.cla.clip.master.entity.VideoCandidateNavType
 import com.cla.clip.master.ui.page.detail.DetailPage
-import com.cla.clip.master.ui.page.main.MainPage
+import com.cla.clip.master.ui.page.list.ClipListPage
 import com.cla.clip.master.ui.page.video.VideoDownloadPage
 import com.cla.clip.master.ui.page.video.VideoExtractPage
-import kotlin.reflect.typeOf
 
 @Composable
 fun AppNavigation(navController: NavHostController) {
@@ -26,10 +23,10 @@ fun AppNavigation(navController: NavHostController) {
 
     NavHost(
         navController = navController,
-        startDestination = MainRoute
+        startDestination = ClipListRoute
     ) {
-        composable<MainRoute> {
-            MainPage(
+        composable<ClipListRoute> {
+            ClipListPage(
                 onNavigate = onNavigate
             )
         }

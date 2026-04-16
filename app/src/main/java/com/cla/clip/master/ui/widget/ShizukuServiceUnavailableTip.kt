@@ -30,7 +30,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.master.R
-import com.cla.clip.master.ui.page.main.MainViewModel
+import com.cla.clip.master.ui.page.list.ClipListModel
 import com.cla.clip.master.ui.theme.ClipMaterTheme
 import com.cla.clip.shizuku.ShizukuStatus
 import com.cla.clip.shizuku.ShizukuUtils
@@ -39,7 +39,7 @@ import rikka.shizuku.Shizuku
 /** shizuku 服务不可用提示 */
 @Composable
 fun ShizukuServiceUnavailableTip(
-    viewModel: MainViewModel = hiltViewModel()
+    viewModel: ClipListModel = hiltViewModel()
 ) {
     val tag = "shizuku状态提示"
 
