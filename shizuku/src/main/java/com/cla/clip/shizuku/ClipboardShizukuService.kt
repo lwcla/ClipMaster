@@ -166,7 +166,7 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         logI(TAG) { "callBack已经失活，尝试启动前台服务 okCmd=${okCmd}" }
         if (okCmd) {
             // 3) 等待 callback 重连（务必加超时，防止永久挂起）
-            val rebound = withTimeoutOrNull(2_000) {
+            val rebound = withTimeoutOrNull(2_500) {
                 callFlow.filterNotNull().first()
             }
 

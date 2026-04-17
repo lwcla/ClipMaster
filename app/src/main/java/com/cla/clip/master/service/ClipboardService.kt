@@ -18,6 +18,7 @@ import com.cla.clip.base.general.utils.toColorString
 import com.cla.clip.base.general.utils.toast
 import com.cla.clip.master.utils.ClipHelper
 import com.cla.clip.master.utils.NotificationHelper
+import dagger.Lazy
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.qualifiers.ApplicationContext
 import jakarta.inject.Inject
@@ -26,7 +27,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * 剪贴板监听服务
@@ -121,36 +122,43 @@ class ClipboardService : Service() {
     }
 
     @Inject
-    lateinit var clipRepository: dagger.Lazy<ClipRepository>
+    lateinit var clipRepository: Lazy<ClipRepository>
 
     @Inject
     @ApplicationScope
-    lateinit var scope: CoroutineScope
+    lateinit var scope: Lazy<CoroutineScope>
 
     @Inject
     @ApplicationContext
-    lateinit var appContext: Context
+    lateinit var appContext: Lazy<Context>
 
     @Inject
-    lateinit var notificationHelper: NotificationHelper
+    lateinit var notificationHelper: Lazy<NotificationHelper>
 
     @Inject
-    lateinit var clipHelper: dagger.Lazy<ClipHelper>
+    lateinit var clipHelper: Lazy<ClipHelper>
 
     private val windowManager by lazy { getSystemService(WindowManager::class.java) as WindowManager }
 
-    private var killJob: Job? = null
+    private val activeTasks = AtomicInteger(0)
+
+    @Volatile
+    private var latestStartId: Int = 0
+
+    @Volatile
+    private var pendingNoPayloadStopJob: Job? = null
 
     override fun onCreate() {
         super.onCreate()
         // 服务创建时，立即尝试提升为前台服务
         logI(TAG) { "onCreate: " }
-        startForeground()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        latestStartId = startId
         // 关键：每次调用 startForegroundService 后，必须再次调用 startForeground，
         // 否则在 API 26+ 设备上可能会因为“未能在规定时间内进入前台”而崩溃。
+        startForeground()
 
         // 从shizuku进程拉起service时，没有传递数据，这个时候readClip没有值，不要去读剪贴板数据
         val readClip = intent?.getBooleanExtra(READ_CLIP_KEY, false) ?: false
@@ -161,15 +169,17 @@ class ClipboardService : Service() {
         val sourceAppIconHash = intent?.getStringExtra(ICON_HASH_KEY)
 
         if (intent != null && readClip) {
-            val killComplete = killJob?.isCompleted
-            killJob?.cancel()
+            // 收到真正任务后，取消无数据拉起的延迟关闭逻辑
+            pendingNoPayloadStopJob?.cancel()
+            pendingNoPayloadStopJob = null
 
-            startForeground()
+            activeTasks.incrementAndGet()
 
             logD(TAG) {
                 """
             onStartCommand: 
-            killComplete=$killComplete
+            startId=$startId
+            activeTasks=${activeTasks.get()}
             sourcePackageName=$sourcePackageName
             sourceAppName=$sourceAppName
             sourceAppIconPath=$sourceAppIconPath
@@ -178,11 +188,13 @@ class ClipboardService : Service() {
         """.trimIndent()
             }
 
-            scope.launch(Dispatchers.Main) {
-                magic(sourcePackageName, sourceAppName, sourceAppIconPath, sourceAppIconColor, sourceAppIconHash)
-            }
+            magic(sourcePackageName, sourceAppName, sourceAppIconPath, sourceAppIconColor, sourceAppIconHash)
         } else {
-            killSelf()
+            logD(TAG) { "onStartCommand : 延迟一点时间去结束服务" }
+            // 这里应该是shizuku进程拉起的服务，没有传递数据过来，不需要读剪贴板
+            // shizuku进程用aidl联系ShizukuConnector把数据传递过来，但是不能在ShizukuConnector直接启动前台服务
+            // 所以会在shizuku进程中通过命令拉起服务，这时不能立即停止服务，否则shizuku进程传递数据过来时服务已经被杀死了，无法处理数据
+            scheduleNoPayloadStop()
         }
 
         return START_NOT_STICKY
@@ -200,25 +212,26 @@ class ClipboardService : Service() {
         super.onTaskRemoved(rootIntent)
     }
 
-    private suspend fun magic(
+    private fun magic(
         packageName: String?,
         appName: String?,
         iconPath: String?,
         iconColor: Int?,
         iconHash: String?,
-    ) = withContext(Dispatchers.Main.immediate) {
+    ) {
         // 检查当前有没有悬浮窗权限
-        if (!appContext.hasOverlayPermission()) {
-            appContext.toast(R.string.base_general_without_the_floating_window_permission)
+        if (!appContext.get().hasOverlayPermission()) {
+            scope.get().launch { appContext.get().toast(R.string.base_general_without_the_floating_window_permission) }
             logE(TAG) { "没有悬浮窗权限，无法读取剪贴板内容" }
-            return@withContext
+            killSelf(decrement = true)
+            return
         }
 
         var view: View? = null
         runCatching {
             // 通过添加一个不可见的 View 来触发系统读取剪贴板内容，从而获取最新的剪贴板数据
             // todo 状态栏展开时不可用，不能解决，可以在我的页面给用户提示
-            view = View(appContext)
+            view = View(appContext.get())
             windowManager.addView(view, WindowManager.LayoutParams().apply {
                 // 根据 API 版本选择窗口类型
                 type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -241,35 +254,45 @@ class ClipboardService : Service() {
             windowManager.removeView(view)
 
             if (clip != null) {
-                withContext(Dispatchers.IO) {
+                scope.get().launch(Dispatchers.IO) {
                     clipHelper.get().processClip(clip, packageName, appName, iconPath, iconColor, iconHash)
                 }
             }
-        }.getOrElse {
+        }.onFailure {
             logE(TAG, it) { "读取剪贴板内容出错" }
             // 确保移除 view，避免泄漏
             runCatching {
                 view?.let { windowManager.removeView(it) }
-            }.getOrElse { tr ->
+            }.onFailure { tr ->
                 logE(TAG, tr) { "移除悬浮View出错" }
             }
         }
 
-        killSelf()
+        killSelf(decrement = true)
     }
 
-    private fun killSelf() {
-        killJob?.cancel()
-        killJob = scope.launch(Dispatchers.Main) {
-            delay(5000)
-            logI(TAG) { "processClip: 关闭前台服务" }
-            stopForeground(STOP_FOREGROUND_REMOVE) // 前台服务降级为普通服务，同时删除通知
-            stopSelf()
+    private fun killSelf(decrement: Boolean) {
+        val left = if (decrement) activeTasks.decrementAndGet() else activeTasks.get()
+        logI(TAG) { "停止服务 : left=$left" }
+        if (left == 0) {
+            // 没有任务了，才降级并尝试停服务
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            // 用最新的 startId 来停，避免旧请求误停
+            stopSelfResult(latestStartId)
+        }
+    }
+
+    private fun scheduleNoPayloadStop() {
+        pendingNoPayloadStopJob?.cancel()
+        pendingNoPayloadStopJob = scope.get().launch(Dispatchers.Main) {
+            delay(3000)
+            logD(TAG) { "scheduleNoPayloadStop : 延迟时间到，准备去停止服务" }
+            killSelf(decrement = false)
         }
     }
 
     private fun startForeground() {
-        notificationHelper.readClipForeground(this)
+        notificationHelper.get().readClipForeground(this)
     }
 
     override fun onBind(intent: Intent): IBinder? {

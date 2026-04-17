@@ -24,20 +24,10 @@ class App : BaseApplication(), Configuration.Provider {
     }
 
     @Inject
-    @ApplicationScope
-    lateinit var scope: CoroutineScope
-
-    @Inject
     lateinit var workerFactory: HiltWorkerFactory
 
     @Inject
-    lateinit var notificationHelper: Lazy<NotificationHelper>
-
-    @Inject
     lateinit var shizukuConnector: ShizukuConnector
-
-    @Inject
-    lateinit var downloadRepository: DownloadRepository
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
