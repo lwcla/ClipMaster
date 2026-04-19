@@ -27,3 +27,24 @@
 #把 missing_rules.txt 里的两行加到 app/proguard-rules.pro：
 -dontwarn com.google.re2j.Matcher
 -dontwarn com.google.re2j.Pattern
+
+#删除log打印
+#-assumenosideeffects class android.util.Log {
+#    public static boolean isLoggable(java.lang.String, int);
+#    public static int v(...);
+#    public static int d(...);
+#    public static int i(...);
+#    public static int w(...);
+#    public static int e(...);
+#}
+#
+#-assumenosideeffects class com.cla.clip.base.general.utils.LogcatKt {
+#    private static java.lang.String LOG_TAG;
+#    private boolean loggable(int);
+#    public void logV(...);
+#    public void logD(...);
+#    public void logI(...);
+#    public void logW(...);
+#    public void logE(...);
+#    public void logStack(...);
+#}

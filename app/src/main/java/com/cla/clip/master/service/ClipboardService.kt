@@ -177,15 +177,15 @@ class ClipboardService : Service() {
 
             logD(TAG) {
                 """
-            onStartCommand: 
-            startId=$startId
-            activeTasks=${activeTasks.get()}
-            sourcePackageName=$sourcePackageName
-            sourceAppName=$sourceAppName
-            sourceAppIconPath=$sourceAppIconPath
-            sourceAppIconHash=$sourceAppIconHash
-            sourceAppIconColor=$sourceAppIconColor / ${sourceAppIconColor?.toColorString()}
-        """.trimIndent()
+                onStartCommand: 
+                startId=$startId
+                activeTasks=${activeTasks.get()}
+                sourcePackageName=$sourcePackageName
+                sourceAppName=$sourceAppName
+                sourceAppIconPath=$sourceAppIconPath
+                sourceAppIconHash=$sourceAppIconHash
+                sourceAppIconColor=$sourceAppIconColor / ${sourceAppIconColor?.toColorString()}
+                """.trimIndent()
             }
 
             magic(sourcePackageName, sourceAppName, sourceAppIconPath, sourceAppIconColor, sourceAppIconHash)

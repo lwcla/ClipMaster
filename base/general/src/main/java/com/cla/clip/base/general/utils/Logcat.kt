@@ -3,8 +3,6 @@ package com.cla.clip.base.general.utils
 import android.util.Log
 import com.cla.clip.base.general.BuildConfig
 
-private const val LOG_INFO_TAG = "clip_master"
-
 private const val LOG_TAG = "cla_clip_master" // 定义自己的日志TAG
 
 /**
