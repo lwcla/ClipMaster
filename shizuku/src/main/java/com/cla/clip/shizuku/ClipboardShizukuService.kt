@@ -10,7 +10,6 @@ import com.cla.clip.base.general.utils.hasOverlayPermission
 import com.cla.clip.base.general.utils.iconBitmap
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
-import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.toStableHash
 import dev.rikka.tools.refine.Refine
 import kotlinx.coroutines.CoroutineScope
@@ -145,7 +144,7 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         // android.app.ForegroundServiceStartNotAllowedException: startForegroundService() not allowed due to mAllowStartForeground false: service com.cla.clip.master/.service.ClipboardService
         // 在aidl中去启动前台服务被拒绝了，所以在这里先用命令启动一次前台服务
         val shellOk = startForegroundService()
-        logI(TAG) { "先启动一次前台服务: $shellOk" }
+        logD(TAG) { "先启动一次前台服务: $shellOk" }
 
         // 1) fast path: 先试一次
         val cb = callFlow.value
@@ -167,7 +166,7 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
 
         // 2) 发送失败，可能是 callback 进程被系统杀死了，尝试启动前台服务唤醒它（部分 Android 12+ 设备可能对 start-foreground-service 有额外限制，但对 startservice 没有）
         val okCmd = startForegroundService()
-        logI(TAG) { "callBack已经失活，尝试启动前台服务 okCmd=${okCmd}" }
+        logD(TAG) { "callBack已经失活，尝试启动前台服务 okCmd=${okCmd}" }
         if (okCmd) {
             // 3) 等待 callback 重连（务必加超时，防止永久挂起）
             val rebound = withTimeoutOrNull(2_500) {
@@ -197,7 +196,7 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         logE(TAG) { "callBack已经失活，前台服务启动失败或者启动超时，启动普通服务" }
         // 5) 兼容方案：启动普通服务（部分 Android 12+ 设备可能对 start-foreground-service 有额外限制，但对 startservice 没有）
         val okCompat = startService()
-        logI(TAG) { "启动普通服务 okCompat=${okCompat}" }
+        logD(TAG) { "启动普通服务 okCompat=${okCompat}" }
 
         val rebound = withTimeoutOrNull(5_000) {
             callFlow.filterNotNull().first()

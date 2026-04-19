@@ -27,6 +27,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.cla.clip.base.general.utils.hasNotificationPermission
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.master.R
@@ -58,6 +59,8 @@ fun ShizukuServiceUnavailableTip(
                 // 在 onResume 时检查 Shizuku 状态
                 val new = ShizukuUtils.checkStatus(context)
                 logI(tag) { "ON_RESUME shizuku状态 $new" }
+                // 从后台返回前台时，如果是已经连接shizuku的情况下，尝试绑定shizuku进程，如果已经绑定中，则不作其他操作，如果是已经失活，则再次绑定
+                if (new is ShizukuStatus.Connected && context.hasNotificationPermission()) viewModel.connectShizuku()
                 status = new
             }
         }
