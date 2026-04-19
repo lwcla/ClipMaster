@@ -21,4 +21,11 @@ class ClipboardListener(
         }
         owner.handleOpNoted(packageName)
     }
+
+    override fun onOpNoted(code: Int, uid: Int, packageName: String?, attributionTag: String?, flags: Int, result: Int) {
+        if (packageName == BuildConfig.APPLICATION_ID) {
+            return
+        }
+        owner.handleOpNoted(packageName)
+    }
 }

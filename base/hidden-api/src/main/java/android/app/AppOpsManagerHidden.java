@@ -40,6 +40,18 @@ public class AppOpsManagerHidden {
         void onOpNoted(@NonNull String op, int uid, @NonNull String packageName, @Nullable String attributionTag, int flags, int result);
 
         /**
+         * Called when an op was noted.
+         *
+         * @param code           The op code.
+         * @param uid            The UID performing the operation.
+         * @param packageName    The package performing the operation.
+         * @param attributionTag The attribution tag performing the operation.
+         * @param flags          The flags of this op
+         * @param result         The result of the note.
+         */
+        void onOpNoted(int code, int uid, String packageName, String attributionTag, int flags, int result);
+
+        /**
          * Similar to {@link #onOpNoted(String, int, String, String, int, int, int)},
          * but also includes the virtual device id of the op is now active or inactive.
          *
