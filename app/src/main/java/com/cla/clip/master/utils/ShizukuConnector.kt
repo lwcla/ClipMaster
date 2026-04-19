@@ -12,6 +12,7 @@ import com.cla.clip.base.general.utils.extractUsableColor
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
 import com.cla.clip.base.general.utils.logI
+import com.cla.clip.base.general.utils.logW
 import com.cla.clip.base.general.utils.saveIcon
 import com.cla.clip.master.BuildConfig
 import com.cla.clip.master.service.ClipboardService
@@ -23,6 +24,7 @@ import dagger.Lazy
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -154,10 +156,17 @@ class ShizukuConnector @Inject constructor(
     fun connect() {
         scope.launch {
             connectMutex.withLock {
+                if (!ShizukuUtils.isConnected(appContext)) {
+                    logW(TAG) { "connect: shizuku未连接，不需要在这里就绑定shizuku服务" }
+                    return@launch
+                }
+
                 val isAlive = runCatching { shizukuService?.isAlive }.getOrElse {
                     logE(TAG, it) { "connect: 连接已经断开" }
-                    false
+                    null
                 }
+
+                logI(TAG) { "connect: isAlive=$isAlive" }
 
                 if (isAlive == true) {
                     logD(TAG) { "connect: shizuku服务连接中，不需要重复绑定" }
@@ -172,6 +181,10 @@ class ShizukuConnector @Inject constructor(
                     } else {
                         logI(TAG) { "连接 shizuku 远程服务成功" }
                     }
+                    // 在这里稍微延迟一点时间，避免短时间内连续触发远程服务连接
+                    delay(500)
+                }.getOrElse {
+                    logE(TAG, it) { "connect: shizuku远程服务连接失败" }
                 }
             }
         }
