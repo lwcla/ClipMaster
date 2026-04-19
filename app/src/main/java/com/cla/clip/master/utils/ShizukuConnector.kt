@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.ServiceConnection
 import android.graphics.Bitmap
 import android.os.IBinder
+import com.cla.clip.base.general.R
 import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.base.general.utils.ApplicationScope
 import com.cla.clip.base.general.utils.extractUsableColor
@@ -23,6 +24,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
 import javax.inject.Inject
@@ -54,6 +57,7 @@ class ShizukuConnector @Inject constructor(
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             logI(TAG) { "userServiceConnection : 已经连接 pingBinder=${binder?.pingBinder()}" }
             if (binder != null && binder.pingBinder()) {
+                notificationHelper.get().cancelShizukuStatus()
                 shizukuService = IClipboardShizukuService.Stub.asInterface(binder).also { service ->
                     service.start()
                     service.setCallback(object : ShizukuCallback.Stub() {
@@ -105,6 +109,10 @@ class ShizukuConnector @Inject constructor(
                     })
                 }
             } else {
+                val status = ShizukuUtils.checkStatus(appContext)
+                logE(TAG) { "userServiceConnection: 绑定服务出错 status=$status" }
+                notificationHelper.get().notifyShizukuStatus(status, appContext.getString(R.string.base_general_shizuku_not_connect))
+
                 runCatching { shizukuService?.setCallback(null) }.getOrElse {
                     logE(TAG, it) { "callback 置空出错 1" }
                 }
@@ -114,7 +122,7 @@ class ShizukuConnector @Inject constructor(
         override fun onServiceDisconnected(name: ComponentName?) {
             val status = ShizukuUtils.checkStatus(appContext)
             logE(TAG) { "userServiceConnection: 断开连接 status=$status" }
-            notificationHelper.get().notifyShizukuStatus(status)
+            notificationHelper.get().notifyShizukuStatus(status, appContext.getString(R.string.base_general_shizuku_not_connect))
 
             runCatching { shizukuService?.setCallback(null) }.getOrElse {
                 logE(TAG, it) { "callback 置空出错 2" }
@@ -135,19 +143,36 @@ class ShizukuConnector @Inject constructor(
         notificationHelper.get().notifyShizukuStatus(status)
     }
 
+    /** 连接服务时，添加一把锁，避免短时间内重复绑定服务 */
+    private val connectMutex = Mutex()
+
     init {
         Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
         Shizuku.addBinderDeadListener(binderDeadListener)
     }
 
     fun connect() {
-        runCatching {
-            val result = Shizuku.peekUserService(userServiceArgs, userServiceConnection)
-            if (result == -1) {
-                logI(TAG) { "去绑定 shizuku 远程服务" }
-                Shizuku.bindUserService(userServiceArgs, userServiceConnection)
-            } else {
-                logI(TAG) { "连接 shizuku 远程服务成功" }
+        scope.launch {
+            connectMutex.withLock {
+                val isAlive = runCatching { shizukuService?.isAlive }.getOrElse {
+                    logE(TAG, it) { "connect: 连接已经断开" }
+                    false
+                }
+
+                if (isAlive == true) {
+                    logD(TAG) { "connect: shizuku服务连接中，不需要重复绑定" }
+                    return@launch
+                }
+
+                runCatching {
+                    val result = Shizuku.peekUserService(userServiceArgs, userServiceConnection)
+                    if (result == -1) {
+                        logI(TAG) { "去绑定 shizuku 远程服务" }
+                        Shizuku.bindUserService(userServiceArgs, userServiceConnection)
+                    } else {
+                        logI(TAG) { "连接 shizuku 远程服务成功" }
+                    }
+                }
             }
         }
     }

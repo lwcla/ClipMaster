@@ -1,5 +1,6 @@
 package com.cla.clip.master.utils
 
+import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.net.Uri
@@ -15,8 +16,10 @@ import com.cla.clip.base.general.utils.logI
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
@@ -94,13 +97,13 @@ class ClipHelper @Inject constructor(
 
     /** 处理新的剪贴板内容 */
     suspend fun processClip(
-        item: android.content.ClipData.Item,
+        item: ClipData.Item,
         packageName: String?,
         appName: String?,
         iconPath: String?,
         iconColor: Int?,
         iconHash: String?,
-    ) {
+    ) = withContext(Dispatchers.IO) {
         // 保存剪贴板内容
         val contentUri = item.uri
         val contentText = item.text?.toString()
@@ -111,7 +114,7 @@ class ClipHelper @Inject constructor(
         if (lastClip != null) {
             if (contentText == lastClip.content && (packageName == null || lastClip.sourceAppPackage == packageName)) {
                 logD(TAG) { "processClip: 222 contentText=${contentText} packageName=${packageName} 和上一条是重复的，不要重复保存" }
-                return
+                return@withContext
             }
         }
 
@@ -125,7 +128,7 @@ class ClipHelper @Inject constructor(
         }?.trim()
 
         if (clipContent.isNullOrBlank()) {
-            return
+            return@withContext
         }
 
 
@@ -135,47 +138,70 @@ class ClipHelper @Inject constructor(
 //                // OcrProcessingWorker.enqueue(this@ClipboardService, clipContent, newClip.id)
 //            }
 
-        val extractedLink = LinkUtils.extractFirstUrl(contentText)
-        val linkMeta = if (!extractedLink.isNullOrBlank()) {
-            val history = clipRepository.get().loadLinkPreview(extractedLink)
-            if (!history?.imageUrl.isNullOrBlank()) {
-                logD(TAG) { "processClip 使用数据库中的链接数据 extractedLink=$extractedLink" }
-                // 避免重复解析链接
-                LinkMeta(history.title, history.description, history.imageUrl, history.siteName)
-            } else {
-                logD(TAG) { "processClip 去解析链接 extractedLink=$extractedLink" }
-                LinkMetaParser.parse(extractedLink)
-            }
-        } else {
-            null
+        suspend fun save(link: String?, linkMeta: LinkMeta?) {
+            val captureEntity = ClipCaptureEntity(
+                content = clipContent,
+                timestamp = System.currentTimeMillis(),
+                sourcePackage = packageName ?: "",
+                sourceAppName = appName ?: "",
+                sourceAppIconPath = iconPath,
+                sourcePrimaryColor = iconColor,
+                sourceAppIconHash = iconHash,
+                link = link,
+                linkTitle = linkMeta?.title,
+                linkDescription = linkMeta?.description,
+                linkImageUrl = linkMeta?.imageUrl,
+                linkSiteName = linkMeta?.siteName,
+            )
+
+            logI(TAG) { "processClip: isLink=${!link.isNullOrBlank()} captureEntity=$captureEntity" }
+
+            // 保存到数据库
+            val clipId = clipRepository.get().addNewClip(captureEntity)
+
+            logD(TAG) { "processClip: 保存到数据库 clipId=${clipId}" }
+            notificationHelper.get().notifyClipUpdate(
+                title = "$appName ${appContext.getString(R.string.base_general_it_was_written_into_the_clipboard)}",
+                content = "${appContext.getString(R.string.base_general_content)}${clipContent}",
+                clipId = clipId
+            )
         }
 
-        val captureEntity = ClipCaptureEntity(
-            content = clipContent,
-            timestamp = System.currentTimeMillis(),
-            sourcePackage = packageName ?: "",
-            sourceAppName = appName ?: "",
-            sourceAppIconPath = iconPath,
-            sourcePrimaryColor = iconColor,
-            sourceAppIconHash = iconHash,
-            link = extractedLink,
-            linkTitle = linkMeta?.title,
-            linkDescription = linkMeta?.description,
-            linkImageUrl = linkMeta?.imageUrl,
-            linkSiteName = linkMeta?.siteName,
-        )
+        val extractedLink = LinkUtils.extractFirstUrl(clipContent)
+        if (extractedLink.isNullOrBlank()) {
+            save(extractedLink, null)
+            return@withContext
+        }
 
-        logI(TAG) { "processClip: isLink=${!extractedLink.isNullOrBlank()} captureEntity=$captureEntity" }
+        if (LinkUtils.isDownloadableMediaUrl(clipContent)) {
+            // 纯视频链接，这种是拿不到预览图的，就不去解析了
+            save(extractedLink, null)
+            return@withContext
+        }
 
-        // 保存到数据库
-        val clipId = clipRepository.get().addNewClip(captureEntity)
+        val history = clipRepository.get().loadLinkPreview(extractedLink)
+        if (!history?.imageUrl.isNullOrBlank()) {
+            logD(TAG) { "processClip 使用数据库中的链接数据 extractedLink=$extractedLink" }
+            // 避免重复解析链接
+            val linkMeta = LinkMeta(history.title, history.description, history.imageUrl, history.siteName)
+            save(extractedLink, linkMeta)
+            return@withContext
+        }
 
-        logD(TAG) { "processClip: 保存到数据库 clipId=${clipId}" }
-        notificationHelper.get().notifyClipUpdate(
-            title = "$appName ${appContext.getString(R.string.base_general_it_was_written_into_the_clipboard)}",
-            content = "${appContext.getString(R.string.base_general_content)}${clipContent}",
-            clipId = clipId
-        )
+        // 解析链接在网络比较差的情况下，耗时长，所以先保存一次剪贴数据，等到链接解析完成之后再更新一次剪贴数据，
+        // 这样用户就能第一时间看到保存的剪贴数据了，而不是等链接解析完成之后才看到保存的剪贴数据
+        save(extractedLink, null)
+
+        logD(TAG) { "processClip 去解析链接 extractedLink=$extractedLink" }
+        // 解析链接可能会比较慢，所以放在协程里，解析完成之后再保存数据
+        // 避免网络比较差的情况下，需要很长时间才能看到保存的剪贴数据
+        val deferred = async {
+            val linkMeta = LinkMetaParser.parse(extractedLink)
+            logD(TAG) { "processClip 链接解析结果 linkMeta=$linkMeta" }
+            linkMeta
+        }
+
+        save(extractedLink, deferred.await())
     }
 
     /** 保存剪贴板中的图片，并返回保存路径 */

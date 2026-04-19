@@ -5,7 +5,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -20,7 +20,6 @@ import com.cla.clip.master.ui.navigation.AppNavigation
 import com.cla.clip.master.ui.navigation.DetailRoute
 import com.cla.clip.master.ui.navigation.VideoDownloadRoute
 import com.cla.clip.master.ui.theme.ClipMaterTheme
-import com.cla.clip.master.ui.widget.ShizukuServiceUnavailableTip
 import com.cla.clip.master.utils.ClipHelper
 import com.cla.clip.master.utils.NotificationHelper.Companion.extractClipId
 import com.cla.clip.master.utils.NotificationHelper.Companion.extractTaskId
@@ -53,9 +52,7 @@ class MainActivity : ComponentActivity() {
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
                 ) { innerPadding ->
-                    Column(modifier = Modifier.padding(innerPadding)) {
-                        ShizukuServiceUnavailableTip()
-
+                    Box(modifier = Modifier.padding(innerPadding)) {
                         LaunchedEffect(pendingClipId) {
                             pendingClipId?.let { id ->
                                 logI(TAG) { "跳转到详情页 id=$id" }

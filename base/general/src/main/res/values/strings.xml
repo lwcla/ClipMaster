@@ -26,6 +26,7 @@
     <string name="base_general_shizuku_service_not_alive">shizuku服务未存活</string>
     <string name="base_general_shizuku_version_too_low">shizuku版本过低</string>
     <string name="base_general_shizuku_not_granted">shizuku未授权</string>
+    <string name="base_general_shizuku_not_connect">shizuku未连接</string>
     <string name="base_general_shizuku_status">shizuku状态</string>
     <string name="base_general_shizuku_status_channel">shizuku状态的通知</string>
     <string name="base_general_it_was_written_into_the_clipboard">写入了剪切板</string>
@@ -41,7 +42,7 @@
     <string name="base_general_videos_or_pictures_from_web_pages_can_be_extracted_1">识别到网页 </string>
     <string name="base_general_videos_or_pictures_from_web_pages_can_be_extracted_2"> ,可以提取网页中的视频和图片</string>
     <string name="base_general_extract_the_video_address" tools:ignore="TypographyEllipsis">提取视频地址中...</string>
-    <string name="base_general_failed_to_extract_the_video_address">视频地址提取失败，点击重试</string>
+    <string name="base_general_failed_to_extract_the_video_address">视频地址提取超时，点击重试</string>
     <string name="base_general_extract_the_video_address_success">视频地址提取成功</string>
     <string name="base_general_video_download_failed">视频下载失败，点击重试</string>
     <string name="base_general_video_download_success">视频下载完成，点击播放</string>

@@ -214,15 +214,20 @@ class NotificationHelper @Inject constructor(
     }
 
     /** shizuku状态通知 */
-    fun notifyShizukuStatus(status: ShizukuStatus) {
+    fun notifyShizukuStatus(status: ShizukuStatus, text: String? = null) {
         createChannels()
 
-        if (status is ShizukuStatus.Connected) {
-            cancelShizukuStatus()
-            return
+        val content = if (text.isNullOrBlank()) {
+            if (status is ShizukuStatus.Connected) {
+                cancelShizukuStatus()
+                return
+            }
+
+            appContext.getString(status.textRes)
+        } else {
+            text
         }
 
-        val content = appContext.getString(status.textRes)
         val notification = NotificationCompat.Builder(appContext, SHIZUKU_STATUS_CHANNEL_ID)
             .setSmallIcon(R.mipmap.base_general_ic_app)
             .setContentTitle(appContext.getString(R.string.base_general_shizuku_status))

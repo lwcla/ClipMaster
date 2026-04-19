@@ -75,6 +75,8 @@ fun HandleNotificationPermission(
                 // 在 onResume 时检查权限状态
                 val new = context.hasNotificationPermission()
                 logI(tag) { "HandleNotificationPermission: ON_RESUME 通知权限状态 $new" }
+                // 从后台返回前台时，如果是已经连接shizuku的情况下，尝试绑定shizuku进程，如果已经绑定中，则不作其他操作，如果是已经失活，则再次绑定
+                if (new) viewModel.connectShizuku()
                 hasPermission = new
             }
         }

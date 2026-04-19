@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -184,7 +185,7 @@ fun VideoExtractPage(
 //            val hideWebView = videoExtractVm.probeState is ProbeState.HiddenProbing || videoExtractVm.probeState is ProbeState.Idle
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.background)
                     .clickable(
                         indication = null,
@@ -197,7 +198,7 @@ fun VideoExtractPage(
                 Column(
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     when (val state = videoExtractVm.probeState) {
                         ProbeState.Idle -> {}
@@ -388,7 +389,8 @@ private fun VideoProbeWebViewLayer(
                     databaseEnabled = true
                     loadsImagesAutomatically = true
                     mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                    userAgentString = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Mobile Safari/537.36"
+                    userAgentString = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Mobile Safari/537.36" // Android手机访问
+//                    userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" // pc浏览器访问
                     javaScriptCanOpenWindowsAutomatically = true
                     allowContentAccess = true
                     allowFileAccess = true
@@ -425,7 +427,7 @@ private fun VideoProbeWebViewLayer(
                     ): WebResourceResponse? {
                         val reqUrl = request.url.toString()
                         val headers = request.requestHeaders.orEmpty()
-//                        logD("tag) { "shouldInterceptRequest: reqUrl=$reqUrl" }
+                        logD(tag) { "shouldInterceptRequest: reqUrl=$reqUrl" }
                         if (isLikelyVideoRequest(request.url, headers)) {
                             val cookie = android.webkit.CookieManager.getInstance().getCookie(reqUrl)
                             view.post {

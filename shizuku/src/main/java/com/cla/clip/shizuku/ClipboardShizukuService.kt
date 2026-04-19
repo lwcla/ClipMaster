@@ -46,6 +46,10 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
 
     private var job: Job? = null
 
+    override fun isAlive(): Boolean {
+        return callFlow.value != null
+    }
+
     override fun exit() {
         logD(TAG) { "exit" }
         destroy()

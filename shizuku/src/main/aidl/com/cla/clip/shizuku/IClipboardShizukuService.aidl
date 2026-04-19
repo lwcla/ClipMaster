@@ -7,4 +7,5 @@ interface IClipboardShizukuService {
     void exit() = 1; // Exit method defined by user
     void start() = 2;
     void setCallback(@nullable ShizukuCallback callback) = 3;
+    boolean isAlive() = 4;
 }

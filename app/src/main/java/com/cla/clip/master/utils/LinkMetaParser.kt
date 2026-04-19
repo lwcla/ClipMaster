@@ -30,7 +30,8 @@ object LinkMetaParser {
 
         runCatching {
             val doc = Jsoup.connect(url)
-                .userAgent("Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36")
+                .userAgent("Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36") // 模拟Android手机访问
+//                .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36") // 模拟pc访问
                 .timeout(10_000)
                 .get()
 
