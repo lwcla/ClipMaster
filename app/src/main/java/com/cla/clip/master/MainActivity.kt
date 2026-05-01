@@ -5,14 +5,12 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.rememberNavController
 import com.cla.clip.base.general.utils.logI
@@ -36,13 +34,13 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var clipHelper: dagger.Lazy<ClipHelper>
 
-    private var pendingClipId by mutableStateOf<Long?>(null)
-    private var pendingTaskId by mutableStateOf<Long?>(null)
+    private val mainVm by viewModels<MainVm>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        pendingClipId = intent.extractClipId()
-        pendingTaskId = intent.extractTaskId()
+        mainVm.pendingClipId = intent.extractClipId()
+        mainVm.pendingTaskId = intent.extractTaskId()
+        logI(TAG) { "onCreate: pendingClipId=${mainVm.pendingClipId} pendingTaskId=${mainVm.pendingTaskId}" }
         enableEdgeToEdge()
 
         setContent {
@@ -53,20 +51,18 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                 ) { innerPadding ->
                     Box(modifier = Modifier.padding(innerPadding)) {
-                        LaunchedEffect(pendingClipId) {
-                            pendingClipId?.let { id ->
+                        LaunchedEffect(mainVm.pendingClipId) {
+                            mainVm.pendingClipId()?.let { id ->
                                 logI(TAG) { "跳转到详情页 id=$id" }
                                 navController.navigate(DetailRoute(id)) { launchSingleTop = true }
                             }
-                            pendingClipId = null
                         }
 
-                        LaunchedEffect(pendingTaskId) {
-                            pendingTaskId?.let { id ->
+                        LaunchedEffect(mainVm.pendingTaskId) {
+                            mainVm.pendingTaskId()?.let { id ->
                                 logI(TAG) { "onCreate: 跳转到下载结果页 id=$id" }
                                 navController.navigate(VideoDownloadRoute(id)) { launchSingleTop = true }
                             }
-                            pendingTaskId = null
                         }
 
                         AppNavigation(navController)
@@ -89,9 +85,9 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        pendingClipId = intent.extractClipId()
-        pendingTaskId = intent.extractTaskId()
-        logI(TAG) { "onNewIntent: pendingClipId=$pendingClipId pendingTaskId=$pendingTaskId" }
+        mainVm.pendingClipId = intent.extractClipId()
+        mainVm.pendingTaskId = intent.extractTaskId()
+        logI(TAG) { "onNewIntent: pendingClipId=${mainVm.pendingClipId} pendingTaskId=${mainVm.pendingTaskId}" }
     }
 }
 

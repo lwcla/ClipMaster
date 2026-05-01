@@ -8,9 +8,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import com.cla.clip.base.general.R
 import com.cla.clip.master.MainActivity
+import com.cla.clip.master.entity.ExtraData
 import com.cla.clip.shizuku.ShizukuStatus
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -43,6 +45,8 @@ class NotificationHelper @Inject constructor(
 
         const val EXTRA_TARGET = "extra_target"
 
+        const val EXTRA_TIMESTAMP = "extra_timestamp"
+
 
         /** 从通知跳转到详情页的字段 */
         const val TARGET_DETAIL = "target_detail"
@@ -52,20 +56,40 @@ class NotificationHelper @Inject constructor(
         const val TARGET_VIDEO_DOWNLOAD_RESULT = "target_video_download_result"
         const val EXTRA_TASK_ID = "extra_task_id"
 
-        fun Intent?.extractClipId(): Long? {
+        fun Intent?.extractClipId(): ExtraData? {
             if (this == null) return null
             val target = getStringExtra(EXTRA_TARGET)
             if (target != TARGET_DETAIL) return null
             if (!hasExtra(EXTRA_CLIP_ID)) return null
-            return getLongExtra(EXTRA_CLIP_ID, -1L).takeIf { it > 0 }
+            val id = getLongExtra(EXTRA_CLIP_ID, -1L).takeIf { it > 0 }
+            if (id == null) {
+                return null
+            }
+
+            val time = getLongExtra(EXTRA_TIMESTAMP, -1L)
+            if (time <= 0) {
+                return null
+            }
+
+            return ExtraData(id, time)
         }
 
-        fun Intent?.extractTaskId(): Long? {
+        fun Intent?.extractTaskId(): ExtraData? {
             if (this == null) return null
             val target = getStringExtra(EXTRA_TARGET)
             if (target != TARGET_VIDEO_DOWNLOAD_RESULT) return null
             if (!hasExtra(EXTRA_TASK_ID)) return null
-            return getLongExtra(EXTRA_TASK_ID, -1L).takeIf { it > 0 }
+            val id = getLongExtra(EXTRA_TASK_ID, -1L).takeIf { it > 0 }
+            if (id == null) {
+                return null
+            }
+
+            val time = getLongExtra(EXTRA_TIMESTAMP, -1L)
+            if (time <= 0) {
+                return null
+            }
+
+            return ExtraData(id, time)
         }
     }
 
@@ -109,6 +133,7 @@ class NotificationHelper @Inject constructor(
                     Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra(EXTRA_TARGET, TARGET_VIDEO_DOWNLOAD_RESULT)
             putExtra(EXTRA_TASK_ID, taskId)
+            putExtra(EXTRA_TIMESTAMP, SystemClock.elapsedRealtime()) // 避免因 Intent 内容相同而 PendingIntent 被重用导致 extras 不更新
         }
 
         val pendingIntent = PendingIntent.getActivity(
@@ -186,6 +211,7 @@ class NotificationHelper @Inject constructor(
                     Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra(EXTRA_TARGET, TARGET_DETAIL)
             putExtra(EXTRA_CLIP_ID, clipId)
+            putExtra(EXTRA_TIMESTAMP, SystemClock.elapsedRealtime()) // 避免因 Intent 内容相同而 PendingIntent 被重用导致 extras 不更新
         }
 
         val pendingIntent = PendingIntent.getActivity(
