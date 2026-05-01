@@ -4,15 +4,12 @@ import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import androidx.work.WorkManager
 import com.cla.clip.base.general.BaseApplication
-import com.cla.clip.base.general.entity.DownloadRepository
-import com.cla.clip.base.general.utils.ApplicationScope
-import com.cla.clip.master.utils.NotificationHelper
+import com.cla.clip.base.general.utils.logI
 import com.cla.clip.master.utils.ShizukuConnector
 import com.cla.clip.master.work.DownloadVideoWorker
 import com.cla.clip.master.work.ShizukuWorkScheduler
 import dagger.Lazy
 import dagger.hilt.android.HiltAndroidApp
-import kotlinx.coroutines.CoroutineScope
 import javax.inject.Inject
 
 @HiltAndroidApp

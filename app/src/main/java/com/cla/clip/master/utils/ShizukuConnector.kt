@@ -6,6 +6,7 @@ import android.content.ServiceConnection
 import android.graphics.Bitmap
 import android.os.IBinder
 import com.cla.clip.base.general.R
+import com.cla.clip.base.general.config.AppSetting
 import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.base.general.utils.ApplicationScope
 import com.cla.clip.base.general.utils.extractUsableColor
@@ -40,6 +41,7 @@ class ShizukuConnector @Inject constructor(
     @param:ApplicationContext private val appContext: Context,
     private val clipRepository: Lazy<ClipRepository>,
     private val notificationHelper: Lazy<NotificationHelper>,
+    private val appSetting: AppSetting,
 ) {
 
     companion object {
@@ -48,12 +50,15 @@ class ShizukuConnector @Inject constructor(
 
     private var shizukuService: IClipboardShizukuService? = null
 
-    private val userServiceArgs = Shizuku.UserServiceArgs(ComponentName(BuildConfig.APPLICATION_ID, ClipboardShizukuService::class.java.name))
-        .daemon(true) // 守护进程，确保服务在后台持续运行
-        .processNameSuffix("shizuku")
-        .debuggable(BuildConfig.DEBUG)
-        .version(BuildConfig.VERSION_CODE)
-        .tag(BuildConfig.APPLICATION_ID + TAG)
+    private val userServiceArgs by lazy {
+        logD(TAG) { "args init: version=${BuildConfig.VERSION_NAME} pid=${appSetting.pid} debug=${BuildConfig.DEBUG}" }
+        Shizuku.UserServiceArgs(ComponentName(BuildConfig.APPLICATION_ID, ClipboardShizukuService::class.java.name))
+            .daemon(true) // 守护进程，确保服务在后台持续运行
+            .processNameSuffix("shizuku_${BuildConfig.VERSION_NAME}_${appSetting.pid}")
+            .debuggable(BuildConfig.DEBUG)
+            .version(BuildConfig.VERSION_CODE)
+            .tag(BuildConfig.APPLICATION_ID)
+    }
 
     private val userServiceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
