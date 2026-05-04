@@ -38,6 +38,10 @@ abstract class RepositoryModule {
 @Retention(AnnotationRetention.BINARY)
 annotation class M3u8Client
 
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class LinkPreviewClient
+
 /**
  * 提供 OkHttpClient 单例
  */
@@ -83,6 +87,32 @@ object NetworkModule {
 
             // 重试策略（可选，但对网络不稳定很有帮助）
             // 自动重试 网络不稳定时，自动重试连接失败的请求
+            .retryOnConnectionFailure(true)
+            .build()
+    }
+
+    /**
+     * 提供链接预览专用的 OkHttpClient。
+     *
+     * 链接预览只需要快速读取少量 HTML，因此使用短超时配置；
+     * 这样短链或风控页面卡住时，不会拖慢剪贴板保存流程。
+     */
+    @Provides
+    @Singleton
+    @LinkPreviewClient
+    fun provideLinkPreviewClient(): OkHttpClient {
+        val logger = HttpLoggingInterceptor().apply {
+            level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC else HttpLoggingInterceptor.Level.NONE
+        }
+
+        return OkHttpClient.Builder()
+            .addInterceptor(logger)
+            .connectTimeout(4, TimeUnit.SECONDS)
+            .readTimeout(5, TimeUnit.SECONDS)
+            .writeTimeout(5, TimeUnit.SECONDS)
+            .callTimeout(7, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .followSslRedirects(true)
             .retryOnConnectionFailure(true)
             .build()
     }

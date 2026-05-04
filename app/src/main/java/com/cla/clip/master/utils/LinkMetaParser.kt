@@ -1,6 +1,6 @@
 package com.cla.clip.master.utils
 
-import android.content.Context
+import com.cla.clip.base.general.di.LinkPreviewClient
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
 import kotlinx.coroutines.Deferred
@@ -14,11 +14,12 @@ import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 import org.jsoup.Jsoup
-import org.jsoup.nodes.Element
 import org.jsoup.nodes.Document
+import org.jsoup.nodes.Element
 import org.jsoup.parser.Parser
 import java.net.URI
-import java.util.concurrent.TimeUnit
+import javax.inject.Inject
+import javax.inject.Singleton
 
 data class LinkMeta(
     val title: String?,
@@ -27,24 +28,24 @@ data class LinkMeta(
     val siteName: String?,
 )
 
-object LinkMetaParser {
+/**
+ * 链接预览解析器。
+ *
+ * OkHttpClient 由 Hilt 网络模块提供，避免在工具类内部重复创建客户端，
+ * 也方便统一管理超时、日志、代理和连接池等网络配置。
+ */
+@Singleton
+class LinkMetaParser @Inject constructor(
+    @param:LinkPreviewClient private val client: OkHttpClient,
+) {
 
-    private const val TAG = "LinkMetaParser"
-    private const val JSOUP_TIMEOUT_MS = 7_000
-    private const val MAX_BODY_SIZE = 2 * 1024 * 1024
-    private const val USER_AGENT =
-        "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36"
-
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(4, TimeUnit.SECONDS)
-        .readTimeout(5, TimeUnit.SECONDS)
-        .callTimeout(7, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .followSslRedirects(true)
-        .retryOnConnectionFailure(true)
-        .build()
-
-    suspend fun parse(context: Context, url: String): LinkMeta = parse(url)
+    companion object {
+        private const val TAG = "LinkMetaParser"
+        private const val JSOUP_TIMEOUT_MS = 7_000
+        private const val MAX_BODY_SIZE = 2 * 1024 * 1024
+        private const val USER_AGENT =
+            "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36"
+    }
 
     suspend fun parse(url: String): LinkMeta = withContext(Dispatchers.IO) {
         if (url.endsWith(".json", ignoreCase = true)) {
