@@ -5,13 +5,11 @@ import android.app.AppOpsManagerHidden
 import android.content.Context
 import android.graphics.Bitmap
 import android.os.Build
-import androidx.core.net.toUri
 import com.cla.clip.base.general.utils.exceptionHandler
 import com.cla.clip.base.general.utils.hasOverlayPermission
 import com.cla.clip.base.general.utils.iconBitmap
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
-import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.toStableHash
 import dev.rikka.tools.refine.Refine
 import kotlinx.coroutines.CoroutineScope
@@ -219,44 +217,6 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
                 logE(TAG, e) { "兼容方案重连后回调失败" }
             }
         }
-    }
-
-    /** 根据 suffix 拼出完整的 Shizuku 进程名。 */
-    /** 通过系统 content 命令查询 Provider，作为读取 current suffix 的首选路径。 */
-    private fun currentSuffixFromProviderByCommand(): String? {
-        val uri = "content://${packageName}.shizuku-state/current_suffix".toUri()
-
-        // ContentResolver 直连 Provider 时，系统仍可能把 calling package 识别成
-        // 宿主 App 包名，而当前 UID 却是 shell(2000)，从而被 ActivityManager
-        // 拒绝。这里改用系统 content 命令查询，命令本身以 shell 身份运行，
-        // calling package/uid 更容易保持一致，适合先验证 Provider 是否可读。
-        return runCatching {
-            val process = ProcessBuilder(
-                "content",
-                "query",
-                "--uri",
-                uri.toString(),
-                "--projection",
-                "current_suffix"
-            ).redirectErrorStream(true).start()
-
-            val exitCode = process.waitFor()
-            val output = process.inputStream.bufferedReader().use { it.readText() }
-            logI(TAG) { "currentSuffixFromProviderByCommand: exit=$exitCode output=$output" }
-
-            if (exitCode != 0) {
-                return@runCatching null
-            }
-
-            Regex("""current_suffix=([^,\s]+)""")
-                .find(output)
-                ?.groupValues
-                ?.getOrNull(1)
-                ?.removePrefix(":")
-                ?.takeIf { it.isNotBlank() }
-        }.onFailure { tr ->
-            logE(TAG, tr) { "Failed to query current Shizuku suffix by content command: uri=$uri" }
-        }.getOrNull()
     }
 
     private fun startForegroundService(): Boolean {
