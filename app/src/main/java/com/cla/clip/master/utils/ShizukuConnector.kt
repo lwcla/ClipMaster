@@ -41,7 +41,6 @@ class ShizukuConnector @Inject constructor(
     @param:ApplicationContext private val appContext: Context,
     private val clipRepository: Lazy<ClipRepository>,
     private val notificationHelper: Lazy<NotificationHelper>,
-    private val appSetting: AppSetting,
 ) {
 
     companion object {
@@ -51,13 +50,13 @@ class ShizukuConnector @Inject constructor(
     private var shizukuService: IClipboardShizukuService? = null
 
     private val userServiceArgs by lazy {
-        logD(TAG) { "args init: version=${BuildConfig.VERSION_NAME} pid=${appSetting.pid} debug=${BuildConfig.DEBUG}" }
+        logD(TAG) { "args init: debug=${BuildConfig.DEBUG} version_code=${BuildConfig.VERSION_CODE} pid=${AppSetting.pid}" }
         Shizuku.UserServiceArgs(ComponentName(BuildConfig.APPLICATION_ID, ClipboardShizukuService::class.java.name))
             .daemon(true) // 守护进程，确保服务在后台持续运行
-            .processNameSuffix("shizuku_${BuildConfig.VERSION_NAME}_${appSetting.pid}")
+            .processNameSuffix("shizuku_${BuildConfig.VERSION_CODE}_${AppSetting.pid}")
             .debuggable(BuildConfig.DEBUG)
             .version(BuildConfig.VERSION_CODE)
-            .tag(BuildConfig.APPLICATION_ID)
+            .tag(AppSetting.pid) // tag和version决定是否需要替换shizuku进程，并且退出旧进程
     }
 
     private val userServiceConnection = object : ServiceConnection {
@@ -65,56 +64,56 @@ class ShizukuConnector @Inject constructor(
             logI(TAG) { "userServiceConnection : 已经连接 pingBinder=${binder?.pingBinder()}" }
             if (binder != null && binder.pingBinder()) {
                 notificationHelper.get().cancelShizukuStatus()
-                shizukuService = IClipboardShizukuService.Stub.asInterface(binder).also { service ->
-                    service.start()
-                    service.setCallback(object : ShizukuCallback.Stub() {
-                        override fun onOpNoted(packageName: String?, appName: String?, appIcon: Bitmap?, iconHash: String?) {
-                            if (packageName == BuildConfig.APPLICATION_ID) {
-                                // 自己复制的内容，不处理
-                                return
-                            }
+                val service = IClipboardShizukuService.Stub.asInterface(binder)
+                shizukuService = service
+                service.start()
+                service.setCallback(object : ShizukuCallback.Stub() {
+                    override fun onOpNoted(packageName: String?, appName: String?, appIcon: Bitmap?, iconHash: String?) {
+                        if (packageName == BuildConfig.APPLICATION_ID) {
+                            // 自己复制的内容，不处理
+                            return
+                        }
 
-                            logD(TAG) {
-                                """
+                        logD(TAG) {
+                            """
                                 剪贴板有更新了：
                                 packageName=$packageName
                                 appName=$appName
                                 appIcon=${appIcon?.width} x ${appIcon?.height}
                             """.trimIndent()
+                        }
+
+                        scope.launch(Dispatchers.IO) {
+                            val sourceAppData = packageName?.let { clipRepository.get().loadSourceApp(it) }
+                            val appColor: Int?
+                            val appIconPath: String?
+
+                            if (sourceAppData?.iconHash == iconHash) {
+                                logD(TAG) { "onOpNoted 使用数据库中的应用数据" }
+                                appColor = sourceAppData?.primaryColor
+                                appIconPath = sourceAppData?.iconPath
+                            } else {
+                                logD(TAG) { "onOpNoted 去提取应用图标的颜色和保存图标到本地" }
+                                // 提取图标里的颜色后续用来做边框的颜色
+                                appColor = appIcon?.extractUsableColor()
+                                appIconPath = appContext.saveIcon(packageName, appIcon)
                             }
 
-                            scope.launch(Dispatchers.IO) {
-                                val sourceAppData = packageName?.let { clipRepository.get().loadSourceApp(it) }
-                                val appColor: Int?
-                                val appIconPath: String?
-
-                                if (sourceAppData?.iconHash == iconHash) {
-                                    logD(TAG) { "onOpNoted 使用数据库中的应用数据" }
-                                    appColor = sourceAppData?.primaryColor
-                                    appIconPath = sourceAppData?.iconPath
-                                } else {
-                                    logD(TAG) { "onOpNoted 去提取应用图标的颜色和保存图标到本地" }
-                                    // 提取图标里的颜色后续用来做边框的颜色
-                                    appColor = appIcon?.extractUsableColor()
-                                    appIconPath = appContext.saveIcon(packageName, appIcon)
-                                }
-
-                                withContext(Dispatchers.Main) {
-                                    // CoroutineExceptionHandler--> Coroutine exception (Show original) (Fix with AI)
-                                    // android.app.ForegroundServiceStartNotAllowedException: startForegroundService() not allowed due to mAllowStartForeground false: service com.cla.clip.master/.service.ClipboardService
-                                    ClipboardService.start(
-                                        appContext,
-                                        packageName,
-                                        appName,
-                                        appIconPath,
-                                        appColor,
-                                        iconHash
-                                    )
-                                }
+                            withContext(Dispatchers.Main) {
+                                // CoroutineExceptionHandler--> Coroutine exception (Show original) (Fix with AI)
+                                // android.app.ForegroundServiceStartNotAllowedException: startForegroundService() not allowed due to mAllowStartForeground false: service com.cla.clip.master/.service.ClipboardService
+                                ClipboardService.start(
+                                    appContext,
+                                    packageName,
+                                    appName,
+                                    appIconPath,
+                                    appColor,
+                                    iconHash
+                                )
                             }
                         }
-                    })
-                }
+                    }
+                })
             } else {
                 val status = ShizukuUtils.checkStatus(appContext)
                 logE(TAG) { "userServiceConnection: 绑定服务出错 status=$status" }
@@ -128,7 +127,7 @@ class ShizukuConnector @Inject constructor(
 
         override fun onServiceDisconnected(name: ComponentName?) {
             val status = ShizukuUtils.checkStatus(appContext)
-            logE(TAG) { "userServiceConnection: 断开连接 status=$status" }
+            logE(TAG) { "onServiceDisconnected: 断开连接 status=$status" }
             notificationHelper.get().notifyShizukuStatus(status, appContext.getString(R.string.base_general_shizuku_not_connect))
 
             runCatching { shizukuService?.setCallback(null) }.getOrElse {
@@ -158,9 +157,13 @@ class ShizukuConnector @Inject constructor(
         Shizuku.addBinderDeadListener(binderDeadListener)
     }
 
-    fun connect() {
+    fun connect(delayTime: Long = 0) {
         scope.launch {
             connectMutex.withLock {
+                if (delayTime > 0) {
+                    delay(delayTime)
+                }
+
                 if (!ShizukuUtils.isConnected(appContext)) {
                     logW(TAG) { "connect: shizuku未连接，不需要在这里就绑定shizuku服务" }
                     return@launch
@@ -172,22 +175,24 @@ class ShizukuConnector @Inject constructor(
                 }
 
                 logI(TAG) { "connect: isAlive=$isAlive" }
-
                 if (isAlive == true) {
                     logD(TAG) { "connect: shizuku服务连接中，不需要重复绑定" }
                     return@launch
                 }
 
                 runCatching {
-                    val result = Shizuku.peekUserService(userServiceArgs, userServiceConnection)
-                    if (result == -1) {
-                        logI(TAG) { "去绑定 shizuku 远程服务" }
-                        Shizuku.bindUserService(userServiceArgs, userServiceConnection)
-                    } else {
-                        logI(TAG) { "连接 shizuku 远程服务成功" }
-                    }
-                    // 在这里稍微延迟一点时间，避免短时间内连续触发远程服务连接
-                    delay(500)
+                    logI(TAG) { "connect: 去绑定shizuku进程" }
+                    // 这里不能用peekUserService，它会导致，即使userServiceArgs已经设置了不同的版本号，但不会创建新的shizuku进程，导致绑定的服务一直是旧的服务，无法更新到新的版本
+                    Shizuku.bindUserService(userServiceArgs, userServiceConnection)
+//                    val result = Shizuku.peekUserService(userServiceArgs, userServiceConnection)
+//                    if (result == -1) {
+//                        logI(TAG) { "去绑定 shizuku 远程服务" }
+//                        Shizuku.bindUserService(userServiceArgs, userServiceConnection)
+//                    } else {
+//                        logI(TAG) { "连接 shizuku 远程服务成功" }
+//                    }
+                    // 加个延迟避免短时间内重复绑定服务
+                    delay(3000)
                 }.getOrElse {
                     logE(TAG, it) { "connect: shizuku远程服务连接失败" }
                 }

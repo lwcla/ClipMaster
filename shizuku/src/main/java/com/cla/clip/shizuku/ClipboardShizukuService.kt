@@ -5,11 +5,13 @@ import android.app.AppOpsManagerHidden
 import android.content.Context
 import android.graphics.Bitmap
 import android.os.Build
+import androidx.core.net.toUri
 import com.cla.clip.base.general.utils.exceptionHandler
 import com.cla.clip.base.general.utils.hasOverlayPermission
 import com.cla.clip.base.general.utils.iconBitmap
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
+import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.toStableHash
 import dev.rikka.tools.refine.Refine
 import kotlinx.coroutines.CoroutineScope
@@ -37,6 +39,8 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
     private val appOpsManager by lazy { context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager }
 
     private val packageManager by lazy { context.packageManager }
+
+    private val packageName by lazy { context.packageName }
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob() + exceptionHandler)
     private var callFlow = MutableStateFlow<ShizukuCallback?>(null)
     private var isRunning = AtomicBoolean(false)
@@ -57,14 +61,13 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
     override fun destroy() {
         logD(TAG) { "destroy" }
         isRunning.set(false)
+        callFlow.update { null }
         removeListener()
 
-        if (BuildConfig.DEBUG) {
-            // 这里可能是应用被卸载了，在debug时杀死自己的进程
-            val pid = android.os.Process.myPid()
-            logD(TAG) { "停止监听剪贴板事件，杀死进程 pid=$pid" }
-            android.os.Process.killProcess(pid)
-        }
+        // 这里可能是应用被卸载了，在debug时杀死自己的进程
+        val pid = android.os.Process.myPid()
+        logD(TAG) { "停止监听剪贴板事件，杀死进程 pid=$pid" }
+        android.os.Process.killProcess(pid)
     }
 
     override fun start() {
@@ -85,13 +88,13 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         Refine.unsafeCast<AppOpsManagerHidden>(appOpsManager)
             .setMode(
                 AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW,
-                packageManager.getPackageUid(BuildConfig.APPLICATION_ID, 0),
-                BuildConfig.APPLICATION_ID,
+                packageManager.getPackageUid(packageName, 0),
+                packageName,
                 AppOpsManager.MODE_ALLOWED
             )
 
         // DO NOT convert it to lambda due to R8 will break it down
-        opNotedListener = ClipboardListener(this)
+        opNotedListener = ClipboardListener(packageName, this)
 
         // 监听剪贴板事件
         Refine.unsafeCast<AppOpsManagerHidden>(appOpsManager).startWatchingNoted(intArrayOf(30), opNotedListener)
@@ -101,14 +104,14 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         callFlow.update { shizukuCallback }
     }
 
-    fun handleOpNoted(packageName: String?) {
+    fun handleOpNoted(clipPackageName: String?) {
         if (!context.hasOverlayPermission()) {
             // 开启悬浮窗权限
             Refine.unsafeCast<AppOpsManagerHidden>(appOpsManager)
                 .setMode(
                     AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW,
-                    packageManager.getPackageUid(BuildConfig.APPLICATION_ID, 0),
-                    BuildConfig.APPLICATION_ID,
+                    packageManager.getPackageUid(packageName, 0),
+                    packageName,
                     AppOpsManager.MODE_ALLOWED
                 )
         }
@@ -116,7 +119,7 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         job?.cancel()
         job = serviceScope.launch {
             delay(100) // 防抖
-            val packageInfo = packageName?.let { packageManager.getPackageInfo(it, 0) }
+            val packageInfo = clipPackageName?.let { packageManager.getPackageInfo(it, 0) }
             val name = packageInfo?.applicationInfo?.loadLabel(packageManager)?.toString().takeUnless { it.isNullOrBlank() } ?: "Unknown"
             // 获取图标 Drawable
             // Android 的 Bitmap 类实现了 Parcelable，并且针对 Binder 传输做了特殊优化（会将大图片数据放在 Ashmem 匿名共享内存中，而不是 Binder 缓冲区，只传递文件描述符）
@@ -124,8 +127,8 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
             val bitmap = packageInfo?.applicationInfo?.loadIcon(packageManager).iconBitmap()
             val iconHash = bitmap?.toStableHash()
 
-            logD(TAG) { "OnOpNotedListener packageName=${packageName} name=$name bitmap=${bitmap?.width} x ${bitmap?.height} iconHash=$iconHash" }
-            insert(packageName, name, bitmap, iconHash)
+            logD(TAG) { "OnOpNotedListener packageName=${clipPackageName} name=$name bitmap=${bitmap?.width} x ${bitmap?.height} iconHash=$iconHash" }
+            insert(clipPackageName, name, bitmap, iconHash)
         }
     }
 
@@ -140,7 +143,7 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         opNotedListener = null
     }
 
-    private suspend fun insert(packageName: String?, appName: String, bitmap: Bitmap?, iconHash: String?) {
+    private suspend fun insert(clipPackageName: String?, appName: String, bitmap: Bitmap?, iconHash: String?) {
         // android.app.ForegroundServiceStartNotAllowedException: startForegroundService() not allowed due to mAllowStartForeground false: service com.cla.clip.master/.service.ClipboardService
         // 在aidl中去启动前台服务被拒绝了，所以在这里先用命令启动一次前台服务
         val shellOk = startForegroundService()
@@ -150,7 +153,7 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         val cb = callFlow.value
         if (cb != null) {
             try {
-                cb.onOpNoted(packageName, appName, bitmap, iconHash)
+                cb.onOpNoted(clipPackageName, appName, bitmap, iconHash)
                 logD(TAG) { "第一次发送剪贴板信息 成功" }
                 return
             } catch (e: android.os.DeadObjectException) {
@@ -178,7 +181,7 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
                 currentCoroutineContext().ensureActive()
                 // 4) 再投递一次
                 try {
-                    rebound.onOpNoted(packageName, appName, bitmap, iconHash)
+                    rebound.onOpNoted(clipPackageName, appName, bitmap, iconHash)
                     logD(TAG) { "第二次发送剪贴板信息 成功" }
                     return
                 } catch (e: android.os.DeadObjectException) {
@@ -206,7 +209,7 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         if (rebound != null) {
             currentCoroutineContext().ensureActive()
             try {
-                rebound.onOpNoted(packageName, appName, bitmap, iconHash)
+                rebound.onOpNoted(clipPackageName, appName, bitmap, iconHash)
                 logD(TAG) { "第三次发送剪贴板信息 成功" }
             } catch (e: android.os.DeadObjectException) {
                 callFlow.update { current -> if (current === rebound) null else current }
@@ -218,13 +221,50 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         }
     }
 
-    /** 启动前台服务 */
+    /** 根据 suffix 拼出完整的 Shizuku 进程名。 */
+    /** 通过系统 content 命令查询 Provider，作为读取 current suffix 的首选路径。 */
+    private fun currentSuffixFromProviderByCommand(): String? {
+        val uri = "content://${packageName}.shizuku-state/current_suffix".toUri()
+
+        // ContentResolver 直连 Provider 时，系统仍可能把 calling package 识别成
+        // 宿主 App 包名，而当前 UID 却是 shell(2000)，从而被 ActivityManager
+        // 拒绝。这里改用系统 content 命令查询，命令本身以 shell 身份运行，
+        // calling package/uid 更容易保持一致，适合先验证 Provider 是否可读。
+        return runCatching {
+            val process = ProcessBuilder(
+                "content",
+                "query",
+                "--uri",
+                uri.toString(),
+                "--projection",
+                "current_suffix"
+            ).redirectErrorStream(true).start()
+
+            val exitCode = process.waitFor()
+            val output = process.inputStream.bufferedReader().use { it.readText() }
+            logI(TAG) { "currentSuffixFromProviderByCommand: exit=$exitCode output=$output" }
+
+            if (exitCode != 0) {
+                return@runCatching null
+            }
+
+            Regex("""current_suffix=([^,\s]+)""")
+                .find(output)
+                ?.groupValues
+                ?.getOrNull(1)
+                ?.removePrefix(":")
+                ?.takeIf { it.isNotBlank() }
+        }.onFailure { tr ->
+            logE(TAG, tr) { "Failed to query current Shizuku suffix by content command: uri=$uri" }
+        }.getOrNull()
+    }
+
     private fun startForegroundService(): Boolean {
         val process = ProcessBuilder(
             "am",
             "start-foreground-service",
 //            "--user", "0", // 这个参数在某些设备上可能会导致权限问题，暂时先不加了，等后续有需要再说
-            "-n", "${BuildConfig.APPLICATION_ID}/.service.ClipboardService"
+            "-n", "${packageName}/.service.ClipboardService"
         ).redirectErrorStream(true).start()
 
         val exitCode = process.waitFor()
@@ -241,7 +281,7 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
             "am",
             "startservice",
 //            "--user", "0", // 这个参数在某些设备上可能会导致权限问题，暂时先不加了，等后续有需要再说
-            "-n", "${BuildConfig.APPLICATION_ID}/.service.ClipboardService"
+            "-n", "${packageName}/.service.ClipboardService"
         ).redirectErrorStream(true).start()
 
         val exitCode = process.waitFor()

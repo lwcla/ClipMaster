@@ -5,27 +5,28 @@ import androidx.annotation.Keep
 
 @Keep
 class ClipboardListener(
+    private val packageName: String,
     private val owner: ClipboardShizukuService
 ) : AppOpsManagerHidden.OnOpNotedListener {
 
     override fun onOpNoted(
         op: String,
         uid: Int,
-        packageName: String,
+        clipPackageName: String,
         attributionTag: String?,
         flags: Int,
         result: Int
     ) {
-        if (op != "android:write_clipboard" || packageName == BuildConfig.APPLICATION_ID) {
+        if (op != "android:write_clipboard" || clipPackageName == packageName) {
             return
         }
-        owner.handleOpNoted(packageName)
+        owner.handleOpNoted(clipPackageName)
     }
 
-    override fun onOpNoted(code: Int, uid: Int, packageName: String?, attributionTag: String?, flags: Int, result: Int) {
-        if (packageName == BuildConfig.APPLICATION_ID) {
+    override fun onOpNoted(code: Int, uid: Int, clipPackageName: String?, attributionTag: String?, flags: Int, result: Int) {
+        if (clipPackageName == packageName) {
             return
         }
-        owner.handleOpNoted(packageName)
+        owner.handleOpNoted(clipPackageName)
     }
 }

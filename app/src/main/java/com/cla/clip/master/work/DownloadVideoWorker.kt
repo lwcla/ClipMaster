@@ -44,7 +44,6 @@ class DownloadVideoWorker @AssistedInject constructor(
     @param:M3u8Client private val m3u8Client: Lazy<OkHttpClient>,
     private val downloadRepo: DownloadRepository,
     private val notificationHelper: NotificationHelper,
-    private val appSetting: Lazy<AppSetting>,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -95,7 +94,7 @@ class DownloadVideoWorker @AssistedInject constructor(
         // 首帧前台通知，避免后台限制
         setForeground(buildForegroundInfo(applicationContext.getString(R.string.base_general_initialize_download), fileName.showName, 0))
 
-        val lastTask = appSetting.get().videoDownloadTaskId
+        val lastTask = AppSetting.videoDownloadTaskId
         downloadRepo.getTask(lastTask)?.let { task ->
             if (task.status != DownloadTaskData.STATUS_SUCCESS) {
                 // 上次的任务还未成功，说明可能是异常中断了，需要清除上次未完成的 pending 输出，避免这个遗留文件一直占用空间（尤其是m3u8的临时文件可能非常大）
@@ -117,7 +116,7 @@ class DownloadVideoWorker @AssistedInject constructor(
             }
         }
 
-        appSetting.get().videoDownloadTaskId = taskId
+        AppSetting.videoDownloadTaskId = taskId
         val saveVideo = SaveToFile.Video(fileName)
         val mediaTarget = saveVideo.createPath(applicationContext)
         downloadRepo.markPath(taskId, mediaTarget.uri?.toString(), mediaTarget.path)
