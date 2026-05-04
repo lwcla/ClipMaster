@@ -60,6 +60,7 @@ class DownloadVideoWorker @AssistedInject constructor(
 
         // todo 不知道能不能设置为如果是同一个taskId，则keep，如果是不同的taskId，则排队
         fun enqueue(context: Context, taskId: Long) {
+            logD(TAG) { "enqueue: 启动下载 taskId=$taskId" }
             val data = workDataOf(KEY_TASK_ID to taskId)
 
             val request = OneTimeWorkRequestBuilder<DownloadVideoWorker>()

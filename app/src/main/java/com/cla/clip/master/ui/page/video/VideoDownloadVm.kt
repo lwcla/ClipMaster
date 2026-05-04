@@ -11,6 +11,7 @@ import com.cla.clip.base.general.entity.DownloadRepository
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.master.entity.VideoDownloadState
 import com.cla.clip.master.entity.toUi
+import com.cla.clip.master.work.DownloadVideoWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -21,6 +22,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.transformLatest
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 
@@ -61,7 +63,17 @@ class VideoDownloadVm @Inject constructor(
         }
         lastSessionId = id
 
-        logD(TAG) { "开始下载，sessionId=$id, taskId=$taskId" }
-        _downloadState.tryEmit(taskId)
+        viewModelScope.launch(Dispatchers.IO) {
+            val task = downloadRepository.getTask(taskId)
+            if (task != null) {
+                // 开启下载任务之前，把之前的下载状态重置为 downloading，避免 UI 卡在完成或失败状态
+                // todo 如果要做断点续传的话，这里就需要改
+                downloadRepository.updateProgress(taskId, 0)
+            }
+            DownloadVideoWorker.enqueue(appContext, taskId)
+
+            logD(TAG) { "startDownload 开始下载，sessionId=$id, taskId=$taskId" }
+            _downloadState.tryEmit(taskId)
+        }
     }
 }

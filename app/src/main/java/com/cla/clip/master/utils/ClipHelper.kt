@@ -173,6 +173,19 @@ class ClipHelper @Inject constructor(
             return@withContext
         }
 
+        if (LinkUtils.isImageUrl(extractedLink)) {
+            save(
+                extractedLink,
+                LinkMeta(
+                    title = null,
+                    description = null,
+                    imageUrl = extractedLink,
+                    siteName = null,
+                )
+            )
+            return@withContext
+        }
+
         if (LinkUtils.isDownloadableMediaUrl(clipContent)) {
             // 纯视频链接，这种是拿不到预览图的，就不去解析了
             save(extractedLink, null)
@@ -196,7 +209,7 @@ class ClipHelper @Inject constructor(
         // 解析链接可能会比较慢，所以放在协程里，解析完成之后再保存数据
         // 避免网络比较差的情况下，需要很长时间才能看到保存的剪贴数据
         val deferred = async {
-            val linkMeta = LinkMetaParser.parse(extractedLink)
+            val linkMeta = LinkMetaParser.parse(appContext, extractedLink)
             logD(TAG) { "processClip 链接解析结果 linkMeta=$linkMeta" }
             linkMeta
         }

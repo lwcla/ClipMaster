@@ -411,6 +411,19 @@ private fun VideoProbeWebViewLayer(
 
                 webChromeClient = WebChromeClient()
                 webViewClient = object : WebViewClient() {
+                    override fun shouldOverrideUrlLoading(
+                        view: WebView,
+                        request: WebResourceRequest
+                    ): Boolean {
+                        val reqUrl = request.url
+                        val scheme = reqUrl.scheme?.lowercase().orEmpty()
+                        if (request.isForMainFrame && isExternalAppScheme(scheme)) {
+                            logD(tag) { "blocked non-web url: $reqUrl" }
+                            return true
+                        }
+                        return false
+                    }
+
                     override fun onPageFinished(view: WebView, url: String?) {
                         super.onPageFinished(view, url)
                         // 尝试自动触发（成功率非100%）
@@ -456,6 +469,10 @@ private fun VideoProbeWebViewLayer(
             }
         }
     )
+}
+
+private fun isExternalAppScheme(scheme: String): Boolean {
+    return scheme !in setOf("http", "https", "about", "data", "blob")
 }
 
 private fun isLikelyVideoRequest(

@@ -37,6 +37,10 @@ object LinkUtils {
         "mp3", "wav", "aac", "flac", "ogg", "m4a"
     )
 
+    private val IMAGE_EXTENSIONS = setOf(
+        "jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", "ico", "avif"
+    )
+
     /** 提取字符串中的第一个 URL（不保证适合做网页预览） */
     fun extractFirstUrl(text: String?): String? {
         if (text.isNullOrBlank()) return null
@@ -77,6 +81,13 @@ object LinkUtils {
         val path = uri.path.orEmpty()
         val ext = path.substringAfterLast('.', "").lowercase(Locale.ROOT)
         return ext.isNotBlank() && ext in DOWNLOADABLE_MEDIA_EXTENSIONS
+    }
+
+    fun isImageUrl(url: String): Boolean {
+        val uri = parsePublicHttpUri(url) ?: return false
+        val path = uri.path.orEmpty()
+        val ext = path.substringAfterLast('.', "").lowercase(Locale.ROOT)
+        return ext.isNotBlank() && ext in IMAGE_EXTENSIONS
     }
 
     /**

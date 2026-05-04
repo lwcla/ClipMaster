@@ -1,11 +1,23 @@
 package com.cla.clip.master.utils
 
+import android.content.Context
+import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONArray
+import org.json.JSONObject
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
+import org.jsoup.parser.Parser
 import java.net.URI
+import java.util.concurrent.TimeUnit
 
 data class LinkMeta(
     val title: String?,
@@ -17,82 +29,309 @@ data class LinkMeta(
 object LinkMetaParser {
 
     private const val TAG = "LinkMetaParser"
+    private const val JSOUP_TIMEOUT_MS = 7_000
+    private const val MAX_BODY_SIZE = 2 * 1024 * 1024
+    private const val USER_AGENT =
+        "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36"
 
-    /**
-     * 阻塞式解析，调用方必须已经在 IO 协程中。
-     * 超时 10s，User-Agent 模拟浏览器，否则很多网站会返回 403。
-     */
-    suspend fun parse(url: String) = withContext(Dispatchers.IO) {
-        if (url.endsWith(".json")) {
-            // json不需要去解析
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(4, TimeUnit.SECONDS)
+        .readTimeout(5, TimeUnit.SECONDS)
+        .callTimeout(7, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .retryOnConnectionFailure(true)
+        .build()
+
+    suspend fun parse(context: Context, url: String): LinkMeta = parse(url)
+
+    suspend fun parse(url: String): LinkMeta = withContext(Dispatchers.IO) {
+        if (url.endsWith(".json", ignoreCase = true)) {
             return@withContext LinkMeta(null, null, null, null)
         }
 
-        runCatching {
-            val doc = Jsoup.connect(url)
-                .userAgent("Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36") // 模拟Android手机访问
-//                .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36") // 模拟pc访问
-                .timeout(10_000)
-                .get()
+        parseWithRace(url)
+    }
 
-            // 优先读 og: 标签，其次回退到普通标签
-            val title = doc.ogMeta("og:title")
-                ?: doc.select("title").firstOrNull()?.text()
+    /**
+     * 同时使用 OkHttp 和 Jsoup 两套网络实现解析链接预览。
+     *
+     * 不同站点会对不同 HTTP 客户端做差异化处理；这里让两条路径并发执行，
+     * 谁先拿到有效标题或图片就采用谁，并取消另一条还在等待的请求。
+     */
+    private suspend fun parseWithRace(url: String): LinkMeta = coroutineScope {
+        val okHttpTask = async(Dispatchers.IO) { parseWithOkHttp(url) }
+        val jsoupTask = async(Dispatchers.IO) { parseWithJsoup(url) }
 
-            val description = doc.ogMeta("og:description")
-                ?: doc.meta("description")
+        // 第一条完成的路径如果已经拿到有效预览，就立刻取消另一条，避免继续占用网络。
+        val first = awaitFirst(okHttpTask, jsoupTask)
+        if (first.meta.hasUsefulPreview()) {
+            first.other.cancel()
+            return@coroutineScope first.meta
+        }
 
-            val imageUrl = (doc.ogMeta("og:image")
-                ?: doc.select("img[src]")
-                    .firstOrNull { img ->
-                        val src = img.attr("abs:src")
-                        src.isNotBlank()
-                                && !src.endsWith(".svg")
-                                && !src.contains("icon", ignoreCase = true)
-                    }
-                    ?.attr("abs:src")
-                    )?.takeIf { it.isNotBlank() }
-                ?.let { resolveUrl(doc.baseUri(), it) }
-
-            val siteName = doc.ogMeta("og:site_name")
-                ?: doc.meta("application-name")
-                ?: extractSiteNameFromUrl(url)
-
-            LinkMeta(title, description, imageUrl, siteName)
-        }.getOrElse {
-            logE(TAG, it) { "链接解析出错" }
-            LinkMeta(null, null, null, null)
+        // 如果先完成的是空结果，继续等待另一条路径，给短链/风控页面多一次机会。
+        val second = first.other.await()
+        if (second.hasUsefulPreview()) {
+            second
+        } else {
+            first.meta.takeIf { it.siteName != null } ?: second
         }
     }
 
-    /** 读取 <meta property="xxx" content="..."> */
+    /**
+     * 等待两个解析任务中先完成的一个，并返回另一个任务引用，方便后续取消或继续等待。
+     */
+    private suspend fun awaitFirst(
+        okHttpTask: Deferred<LinkMeta>,
+        jsoupTask: Deferred<LinkMeta>,
+    ): RaceResult = select {
+        okHttpTask.onAwait { meta -> RaceResult(meta, jsoupTask) }
+        jsoupTask.onAwait { meta -> RaceResult(meta, okHttpTask) }
+    }
+
+    private data class RaceResult(
+        val meta: LinkMeta,
+        val other: Deferred<LinkMeta>,
+    )
+
+    /**
+     * 使用 OkHttp 负责联网，Jsoup 只负责解析 HTML 字符串。
+     *
+     * 这条路径网络控制更强，可以精确设置总超时、请求头和最大读取体积。
+     */
+    private fun parseWithOkHttp(url: String): LinkMeta {
+        return runCatching {
+            logD(TAG) { "parse html with okhttp: url=$url" }
+            val html = fetchHtml(url)
+            if (html.isNullOrBlank()) {
+                return@runCatching LinkMeta(null, null, null, extractSiteNameFromUrl(url))
+            }
+
+            parseHtml(Jsoup.parse(html, url), url)
+        }.getOrElse {
+            logE(TAG, it) { "Failed to parse link preview with okhttp" }
+            LinkMeta(null, null, null, extractSiteNameFromUrl(url))
+        }
+    }
+
+    /**
+     * 使用 Jsoup 自带连接能力联网并解析。
+     *
+     * 部分短链站点对 Jsoup 的请求更友好，因此保留这条路径作为 OkHttp 的并发兜底。
+     */
+    private fun parseWithJsoup(url: String): LinkMeta {
+        return runCatching {
+            if (!url.isHttpUrl()) return@runCatching LinkMeta(null, null, null, null)
+
+            logD(TAG) { "parse html with jsoup: url=$url" }
+            val doc = Jsoup.connect(url)
+                .userAgent(USER_AGENT)
+                .referrer(extractOrigin(url) ?: "https://www.google.com/")
+                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+                .maxBodySize(MAX_BODY_SIZE)
+                .timeout(JSOUP_TIMEOUT_MS)
+                .followRedirects(true)
+                .get()
+
+            parseHtml(doc, url)
+        }.getOrElse {
+            logE(TAG, it) { "Failed to parse link preview with jsoup" }
+            LinkMeta(null, null, null, extractSiteNameFromUrl(url))
+        }
+    }
+
+    /**
+     * 统一从 HTML 文档中提取链接预览信息。
+     *
+     * 两条网络路径都会进入这里，保证 JSON-LD、OpenGraph、Twitter Card 的解析规则一致。
+     */
+    private fun parseHtml(doc: Document, sourceUrl: String): LinkMeta {
+        return parseJsonLd(doc, sourceUrl)
+            ?: parseMetaTags(doc, sourceUrl)
+            ?: LinkMeta(null, null, null, extractSiteNameFromUrl(sourceUrl))
+    }
+
+    /**
+     * 使用 OkHttp 获取 HTML 字符串。
+     *
+     * 这里只读取响应体前 2MB，避免预览解析为了大页面消耗过多内存和时间。
+     */
+    private fun fetchHtml(url: String): String? {
+        if (!url.isHttpUrl()) return null
+
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", USER_AGENT)
+            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+            .header("Referer", extractOrigin(url) ?: "https://www.google.com/")
+            .build()
+
+        return client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                logD(TAG) { "fetch html failed: code=${response.code}, url=$url" }
+                return@use null
+            }
+
+            response.peekBody(MAX_BODY_SIZE.toLong()).string()
+        }
+    }
+
+    private fun parseJsonLd(doc: Document, sourceUrl: String): LinkMeta? {
+        for (script in doc.select("script[type=application/ld+json]")) {
+            val jsonText = script.data()
+                .ifBlank { script.html() }
+                .ifBlank { script.text() }
+                .let { Parser.unescapeEntities(it, false) }
+            val value = runCatching { parseJsonValue(jsonText) }.getOrNull() ?: continue
+            val meta = extractFromJson(value, sourceUrl)
+            if (meta.hasUsefulPreview()) return meta
+        }
+        return null
+    }
+
+    private fun parseMetaTags(doc: Document, sourceUrl: String): LinkMeta? {
+        val title = doc.ogMeta("og:title")
+            ?: doc.meta("twitter:title")
+            ?: doc.select("title").firstOrNull()?.text()
+
+        val description = doc.ogMeta("og:description")
+            ?: doc.meta("description")
+            ?: doc.meta("twitter:description")
+
+        val imageUrl = (doc.ogMeta("og:image")
+            ?: doc.meta("twitter:image")
+            ?: doc.select("img[src]")
+                .firstOrNull { img ->
+                    val src = img.attr("abs:src")
+                    src.isNotBlank()
+                            && !src.startsWith("data:", ignoreCase = true)
+                            && !src.endsWith(".svg", ignoreCase = true)
+                            && !src.contains("icon", ignoreCase = true)
+                }
+                ?.attr("abs:src")
+                )?.takeIf { it.isNotBlank() }
+            ?.let { resolveUrl(doc.baseUri(), it) }
+
+        val siteName = doc.ogMeta("og:site_name")
+            ?: doc.meta("application-name")
+            ?: extractSiteNameFromUrl(sourceUrl)
+
+        val meta = LinkMeta(title, description, imageUrl, siteName)
+        return meta.takeIf { it.hasUsefulPreview() }
+    }
+
+    private fun extractFromJson(value: Any?, sourceUrl: String): LinkMeta {
+        val best = findBestJsonObject(value)
+            ?: return LinkMeta(null, null, null, extractSiteNameFromUrl(sourceUrl))
+        return LinkMeta(
+            title = best.firstString("name", "headline", "title"),
+            description = best.firstString("description", "summary"),
+            imageUrl = best.firstString("image", "thumbnailUrl", "thumbnail")
+                ?.let { resolveUrl(sourceUrl, it) },
+            siteName = best.firstString("publisher.name", "provider.name")
+                ?: extractSiteNameFromUrl(sourceUrl),
+        )
+    }
+
+    private fun findBestJsonObject(value: Any?): JSONObject? {
+        var best: JSONObject? = null
+
+        fun visit(node: Any?) {
+            when (node) {
+                is JSONObject -> {
+                    val hasTitle = node.hasAny("name", "headline", "title")
+                    val hasImage = node.hasAny("image", "thumbnailUrl", "thumbnail")
+                    if (best == null || (hasTitle && hasImage)) {
+                        best = node
+                    }
+                    node.keys().forEach { key -> visit(node.opt(key)) }
+                }
+
+                is JSONArray -> {
+                    for (i in 0 until node.length()) {
+                        visit(node.opt(i))
+                    }
+                }
+            }
+        }
+
+        visit(value)
+        return best
+    }
+
+    private fun parseJsonValue(text: String): Any? {
+        val trimmed = text.trim()
+        return when {
+            trimmed.startsWith("{") -> JSONObject(trimmed)
+            trimmed.startsWith("[") -> JSONArray(trimmed)
+            else -> null
+        }
+    }
+
+    private fun JSONObject.hasAny(vararg keys: String): Boolean =
+        keys.any { has(it) && !optString(it).isNullOrBlankCompat() }
+
+    private fun JSONObject.firstString(vararg paths: String): String? {
+        for (path in paths) {
+            val value = valueAtPath(path).firstString()
+            if (!value.isNullOrBlank()) return value
+        }
+        return null
+    }
+
+    private fun JSONObject.valueAtPath(path: String): Any? {
+        var current: Any? = this
+        for (part in path.split(".")) {
+            current = (current as? JSONObject)?.opt(part) ?: return null
+        }
+        return current
+    }
+
+    private fun Any?.firstString(): String? {
+        return when (this) {
+            is String -> takeIf { it.isNotBlank() }
+            is JSONArray -> opt(0).firstString()
+            is JSONObject -> firstString("url", "contentUrl", "name")
+            else -> null
+        }
+    }
+
     private fun Document.ogMeta(property: String): String? =
         select("meta[property=$property]").firstOrNull()?.attr("content")?.takeIf { it.isNotBlank() }
 
-    /** 读取 <meta name="xxx" content="..."> */
     private fun Document.meta(name: String): String? =
         select("meta[name=$name]").firstOrNull()?.attr("content")?.takeIf { it.isNotBlank() }
 
-    /**
-     * 将可能是相对路径的 url 解析为绝对路径。
-     * 例如 baseUri="https://example.com/article/1", url="/img/cover.jpg"
-     * → "https://example.com/img/cover.jpg"
-     */
+    private fun LinkMeta?.hasUsefulPreview(): Boolean =
+        this != null && (!title.isNullOrBlank() || !imageUrl.isNullOrBlank())
+
     private fun resolveUrl(baseUri: String, url: String): String {
-        // 已经是绝对路径，直接返回
-        if (url.startsWith("http://") || url.startsWith("https://")) return url
+        val normalized = when {
+            url.startsWith("//") -> "https:$url"
+            else -> url
+        }
+        if (normalized.startsWith("http://") || normalized.startsWith("https://")) return normalized
         return try {
-            URI(baseUri).resolve(url).toString()
+            URI(baseUri).resolve(normalized).toString()
         } catch (e: Exception) {
-            url // 解析失败就原样返回
+            normalized
         }
     }
 
-    /**
-     * 从 URL 中提取站点名称。
-     * "https://www.example.com/article/1" → "example.com"
-     * "https://mp.weixin.qq.com/s/xxx"    → "weixin.qq.com"
-     */
+    private fun extractOrigin(url: String): String? {
+        return try {
+            val uri = URI(url)
+            val scheme = uri.scheme ?: return null
+            val host = uri.host ?: return null
+            "$scheme://$host/"
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     private fun extractSiteNameFromUrl(url: String): String? {
         return try {
             URI(url).host
@@ -102,4 +341,10 @@ object LinkMetaParser {
             null
         }
     }
+
+    private fun String.isHttpUrl(): Boolean =
+        startsWith("http://", ignoreCase = true) || startsWith("https://", ignoreCase = true)
+
+    private fun String?.isNullOrBlankCompat(): Boolean =
+        this == null || isBlank()
 }
