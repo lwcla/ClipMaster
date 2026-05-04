@@ -14,6 +14,7 @@ import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 import org.jsoup.Jsoup
+import org.jsoup.nodes.Element
 import org.jsoup.nodes.Document
 import org.jsoup.parser.Parser
 import java.net.URI
@@ -201,19 +202,7 @@ object LinkMetaParser {
             ?: doc.meta("description")
             ?: doc.meta("twitter:description")
 
-        val imageUrl = (doc.ogMeta("og:image")
-            ?: doc.meta("twitter:image")
-            ?: doc.select("img[src]")
-                .firstOrNull { img ->
-                    val src = img.attr("abs:src")
-                    src.isNotBlank()
-                            && !src.startsWith("data:", ignoreCase = true)
-                            && !src.endsWith(".svg", ignoreCase = true)
-                            && !src.contains("icon", ignoreCase = true)
-                }
-                ?.attr("abs:src")
-                )?.takeIf { it.isNotBlank() }
-            ?.let { resolveUrl(doc.baseUri(), it) }
+        val imageUrl = selectPreviewImage(doc)
 
         val siteName = doc.ogMeta("og:site_name")
             ?: doc.meta("application-name")
@@ -230,7 +219,8 @@ object LinkMetaParser {
             title = best.firstString("name", "headline", "title"),
             description = best.firstString("description", "summary"),
             imageUrl = best.firstString("image", "thumbnailUrl", "thumbnail")
-                ?.let { resolveUrl(sourceUrl, it) },
+                ?.let { resolveUrl(sourceUrl, it) }
+                ?.takeIf { isUsablePreviewImageUrl(it) },
             siteName = best.firstString("publisher.name", "provider.name")
                 ?: extractSiteNameFromUrl(sourceUrl),
         )
@@ -296,6 +286,118 @@ object LinkMetaParser {
             is JSONArray -> opt(0).firstString()
             is JSONObject -> firstString("url", "contentUrl", "name")
             else -> null
+        }
+    }
+
+    /**
+     * 从页面中选择更像“内容封面”的图片。
+     *
+     * 有些网站会把 og:image 设置成品牌 logo，这种图通常是 svg、logo、icon 或尺寸很小；
+     * 因此这里会收集 meta、懒加载图片和 srcset 多种候选，再过滤明显不适合作为封面的图片。
+     */
+    private fun selectPreviewImage(doc: Document): String? {
+        val candidates = buildList {
+            addImageCandidate(doc.ogMeta("og:image"), doc.baseUri())
+            addImageCandidate(doc.meta("twitter:image"), doc.baseUri())
+            addImageCandidate(doc.select("link[rel=image_src]").firstOrNull()?.attr("href"), doc.baseUri())
+
+            doc.select("img, source[srcset]").forEach { element ->
+                addImageCandidatesFromElement(element, doc.baseUri())
+            }
+        }
+
+        return candidates
+            .filter { isUsablePreviewImageUrl(it.url) && !it.isKnownSmallImage() }
+            .sortedByDescending { it.score }
+            .firstOrNull()
+            ?.url
+    }
+
+    /**
+     * 从 img/source 标签里提取图片候选。
+     *
+     * 许多 H5 页面会把真实封面放在 data-src、data-original 或 srcset 中，
+     * 只读取 src 很容易拿到占位图或 logo。
+     */
+    private fun MutableList<ImageCandidate>.addImageCandidatesFromElement(element: Element, baseUri: String) {
+        val attrs = listOf(
+            "src", "data-src", "data-original", "data-lazy-src",
+            "data-thumb", "data-thumb-url", "data-thumb_url", "data-mediumthumb",
+            "poster"
+        )
+
+        attrs.forEach { attr ->
+            addImageCandidate(element.attr(attr), baseUri, element)
+        }
+
+        extractBestFromSrcSet(element.attr("srcset"))
+            ?.let { addImageCandidate(it, baseUri, element) }
+    }
+
+    /**
+     * 添加图片候选并计算基础评分。
+     *
+     * meta 图优先级较高，但如果它是 logo/svg，会在后续过滤阶段被剔除。
+     */
+    private fun MutableList<ImageCandidate>.addImageCandidate(
+        rawUrl: String?,
+        baseUri: String,
+        element: Element? = null,
+    ) {
+        val resolved = rawUrl
+            ?.takeIf { it.isNotBlank() }
+            ?.let { resolveUrl(baseUri, it) }
+            ?: return
+
+        val width = element?.attr("width")?.toIntOrNull()
+        val height = element?.attr("height")?.toIntOrNull()
+        val score = when {
+            width != null && height != null -> width * height
+            element == null -> 50_000
+            else -> 10_000
+        }
+
+        add(ImageCandidate(resolved, width, height, score))
+    }
+
+    /**
+     * 从 srcset 中选择最后一个候选。
+     *
+     * srcset 通常按清晰度从低到高排列，最后一项往往更适合作为预览封面。
+     */
+    private fun extractBestFromSrcSet(srcSet: String): String? {
+        return srcSet.split(",")
+            .mapNotNull { item -> item.trim().split(Regex("\\s+")).firstOrNull() }
+            .lastOrNull { it.isNotBlank() }
+    }
+
+    /**
+     * 过滤明显不是内容封面的图片 URL。
+     *
+     * 例如 logo、icon、sprite、placeholder、svg 等通常只适合作为站点标识，不适合作为链接封面。
+     */
+    private fun isUsablePreviewImageUrl(url: String): Boolean {
+        val lower = url.lowercase()
+        if (lower.startsWith("data:")) return false
+        if (lower.substringBefore("?").endsWith(".svg")) return false
+        if (lower.substringBefore("?").endsWith(".ico")) return false
+
+        val blockedKeywords = listOf("logo", "icon", "sprite", "placeholder", "blank", "default")
+        return blockedKeywords.none { lower.contains(it) }
+    }
+
+    private data class ImageCandidate(
+        val url: String,
+        val width: Int?,
+        val height: Int?,
+        val score: Int,
+    ) {
+        /**
+         * 如果页面显式标了很小的宽高，基本可以判断它不是内容封面。
+         */
+        fun isKnownSmallImage(): Boolean {
+            if (width == null || height == null) return false
+            return width < 120 || height < 90
         }
     }
 
