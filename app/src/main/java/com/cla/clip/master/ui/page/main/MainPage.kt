@@ -50,7 +50,7 @@ fun MainPage(
     Scaffold(
         bottomBar = {
             NavigationBar(
-                modifier = Modifier.height(70.dp),
+                modifier = Modifier.height(50.dp),
                 windowInsets = WindowInsets(0, 0, 0, 0) // 如需去掉系统底部额外 inset
             ) {
                 tabs.forEachIndexed { index, tab ->
@@ -58,7 +58,7 @@ fun MainPage(
                         selected = pagerState.currentPage == index,
                         onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
                         icon = tab.icon,
-                        label = { Text(tab.title) }
+//                        label = { Text(tab.title) }
                     )
                 }
             }

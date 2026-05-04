@@ -77,6 +77,7 @@ import com.cla.clip.master.R
 import com.cla.clip.master.ui.dialog.DeleteDialog
 import com.cla.clip.master.ui.navigation.DetailRoute
 import com.cla.clip.master.ui.navigation.Route
+import com.cla.clip.master.ui.theme.cardCornerShape
 import com.cla.clip.master.ui.widget.ShizukuServiceUnavailableTip
 import com.cla.clip.master.ui.widget.rememberFormattedTime
 import kotlin.math.max
@@ -262,7 +263,7 @@ private fun ClipCard(
     val borderColor = appColor.copy(alpha = 0.3f)
     val lineColor = appColor.copy(alpha = 0.3f)
     // 提取形状变量，确保外层卡片和内层裁剪使用相同的圆角
-    val cardShape = RoundedCornerShape(12.dp)
+    val cardShape = cardCornerShape
 
     // 使用 Box 作为顶层，以便将 DropdownMenu 锚定在这个位置
     Box(modifier = modifier) {

@@ -52,4 +52,11 @@ object AppSetting {
             mmkv.putString(KEY_SHIZUKU_SUFFIX, value.removePrefix(":"))
         }
 
+    /** 权限说米是否已经展开 */
+    private const val KEY_PERMISSION_EXPANDED = "permission_expanded"
+    var permissionExpanded: Boolean
+        get() = mmkv.getBoolean(KEY_PERMISSION_EXPANDED, false)
+        set(value) {
+            mmkv.putBoolean(KEY_PERMISSION_EXPANDED, value)
+        }
 }

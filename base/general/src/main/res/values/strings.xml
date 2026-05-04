@@ -66,5 +66,9 @@
     <string name="base_general_prompt">提示</string>
     <string name="base_general_the_download_was_cancelled">下载被取消</string>
     <string name="base_general_sure_to_delete">确定要删除 %1$s 吗？</string>
+    <string name="base_general_permission_description">权限说明</string>
+    <string name="base_general_notice">通知</string>
+    <string name="base_general_suspended_window">悬浮窗</string>
+    <string name="base_general_shizuku" translatable="false">shizuku</string>
 
 </resources>
