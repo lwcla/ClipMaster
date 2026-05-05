@@ -35,7 +35,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.cla.clip.base.general.utils.PermissionUtils
-import com.cla.clip.base.general.utils.hasNotificationPermission
+import com.cla.clip.base.general.utils.hasNotificationRuntimePermission
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.toPermissionSetting
@@ -62,7 +62,7 @@ fun HandleNotificationPermission(
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
 
-    var hasPermission by remember { mutableStateOf(context.hasNotificationPermission()) }
+    var hasPermission by remember { mutableStateOf(context.hasNotificationRuntimePermission()) }
     var showRationaleDialog by rememberSaveable { mutableStateOf(false) }
     var requestTime by rememberSaveable { mutableLongStateOf(0L) }
     // --- 新增代码：使用 rememberSaveable 记录是否已经自动触发过 ---
@@ -73,7 +73,7 @@ fun HandleNotificationPermission(
         val observer = LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
                 // 在 onResume 时检查权限状态
-                val new = context.hasNotificationPermission()
+                val new = context.hasNotificationRuntimePermission()
                 logI(tag) { "HandleNotificationPermission: ON_RESUME 通知权限状态 $new" }
                 // 从后台返回前台时，如果是已经连接shizuku的情况下，尝试绑定shizuku进程，如果已经绑定中，则不作其他操作，如果是已经失活，则再次绑定
                 if (new) viewModel.connectShizuku()
@@ -121,7 +121,7 @@ fun HandleNotificationPermission(
     val permission = Manifest.permission.POST_NOTIFICATIONS
     // 3. 监听触发信号，执行初次检查与请求
     LaunchedEffect(owner) { // Key 使用 Unit，配合外层的 if (!trigger) return，确保只在组件进入组合且 satisfied 时运行一次
-        if (!hasAutoRequested && !context.hasNotificationPermission()) {
+        if (!hasAutoRequested && !context.hasNotificationRuntimePermission()) {
             logD(tag) { "触发条件满足，正在请求通知权限..." }
             requestTime = System.currentTimeMillis()
             // 标记位设为 true，下次重建 Activity 时这里依然是 true

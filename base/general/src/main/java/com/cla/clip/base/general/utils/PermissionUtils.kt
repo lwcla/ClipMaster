@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 
 object PermissionUtils {
@@ -22,15 +23,32 @@ object PermissionUtils {
 /** 检查某个权限是否被授予 */
 fun Context.hasPermission(permission: String) = ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 
-/** 是否已经有通知权限了 */
-fun Context.hasNotificationPermission() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-    hasPermission(Manifest.permission.POST_NOTIFICATIONS)
-} else {
-    // Android 13 以下默认有通知权限
-    true
+/**
+ * 判断应用当前是否可以发送通知。
+ *
+ * 通知权限需要同时检查系统通知总开关和 Android 13+ 的运行时权限，否则用户在设置页关闭通知后，
+ * 只检查 POST_NOTIFICATIONS 会误判为仍然开启。
+ */
+fun Context.hasNotificationPermission(): Boolean {
+    val notificationEnabled = NotificationManagerCompat.from(this).areNotificationsEnabled()
+    val runtimeGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        hasPermission(Manifest.permission.POST_NOTIFICATIONS)
+    } else {
+        true
+    }
+    return notificationEnabled && runtimeGranted
 }
 
 /** 检查悬浮窗权限 */
+/**
+ * 判断前台服务启动链路需要的通知运行时权限是否已授予。
+ *
+ * 这里不检查系统通知总开关，避免用户只关闭通知展示时，误阻断 Shizuku/前台服务启动流程。
+ */
+fun Context.hasNotificationRuntimePermission(): Boolean {
+    return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || hasPermission(Manifest.permission.POST_NOTIFICATIONS)
+}
+
 fun Context.hasOverlayPermission() = Settings.canDrawOverlays(this)
 
 /** 跳转到应用的权限设置页面 */
@@ -45,6 +63,12 @@ fun Context.toPermissionSetting(permission: String) {
                 }
             }
             // Android 11+ 完整文件访问权限，跳专属页面
+            permission == Manifest.permission.SYSTEM_ALERT_WINDOW -> {
+                // 悬浮窗权限没有运行时授权弹窗，需要进入系统“显示在其他应用上层”页面处理。
+                return Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                    data = Uri.fromParts("package", packageName, null)
+                }
+            }
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && permission == Manifest.permission.MANAGE_EXTERNAL_STORAGE -> {
                 return Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
                     data = Uri.fromParts("package", packageName, null)

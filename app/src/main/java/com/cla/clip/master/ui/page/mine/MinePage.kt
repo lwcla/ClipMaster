@@ -1,5 +1,9 @@
 package com.cla.clip.master.ui.page.mine
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -28,6 +32,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,8 +45,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.cla.clip.base.general.R
-import com.cla.clip.base.general.utils.hasNotificationPermission
-import com.cla.clip.base.general.utils.hasOverlayPermission
+import com.cla.clip.base.general.utils.toPermissionSetting
 import com.cla.clip.master.entity.SettingSwitchItemUi
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.theme.cardCornerShape
@@ -68,25 +72,57 @@ private fun Permission(
 ) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { mineVm.refreshPermissionStatus() }
+    )
+
+    /**
+     * 收集权限动作并在 UI 层执行。
+     *
+     * 权限弹窗和系统设置页跳转都需要 Context，因此 ViewModel 只负责判断状态并发出动作。
+     */
+    LaunchedEffect(mineVm) {
+        mineVm.permissionActions.collect { action ->
+            when (action) {
+                MineVm.PermissionAction.RequestShizukuPermission -> ShizukuUtils.toConnect()
+                MineVm.PermissionAction.OpenShizukuApp -> ShizukuUtils.toShizukuApp(context)
+                MineVm.PermissionAction.DownloadShizuku -> ShizukuUtils.toDownloadApk(context)
+                MineVm.PermissionAction.RequestNotificationPermission -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    } else {
+                        mineVm.refreshPermissionStatus()
+                    }
+                }
+                MineVm.PermissionAction.OpenNotificationSettings -> {
+                    context.toPermissionSetting(Manifest.permission.POST_NOTIFICATIONS)
+                }
+                MineVm.PermissionAction.OpenOverlaySettings -> {
+                    context.toPermissionSetting(Manifest.permission.SYSTEM_ALERT_WINDOW)
+                }
+            }
+        }
+    }
 
     val items = listOf(
         SettingSwitchItemUi(
             id = SettingSwitchItemUi.Id.Permission.Shizuku,
             title = stringResource(R.string.base_general_shizuku),
             description = stringResource(com.cla.clip.master.R.string.host_shizuku_service_require),
-            checked = ShizukuUtils.isConnected(context),
+            checked = mineVm.shizukuChecked,
         ),
         SettingSwitchItemUi(
             id = SettingSwitchItemUi.Id.Permission.Notice,
             title = stringResource(R.string.base_general_notice),
-            description = stringResource(com.cla.clip.master.R.string.host_notification_permission_tip),
-            checked = context.hasNotificationPermission(),
+            description = stringResource(mineVm.notificationStatus.descriptionRes),
+            checked = mineVm.notificationChecked,
         ),
         SettingSwitchItemUi(
-            id = SettingSwitchItemUi.Id.Permission.Notice,
+            id = SettingSwitchItemUi.Id.Permission.Overlay,
             title = stringResource(R.string.base_general_suspended_window),
             description = stringResource(com.cla.clip.master.R.string.host_suspended_window_permission_tip),
-            checked = context.hasOverlayPermission(),
+            checked = mineVm.overlayChecked,
         ),
     )
 
@@ -120,6 +156,18 @@ private fun Permission(
 }
 
 /** 通用：可展开设置卡片 */
+/**
+ * 根据通知状态选择设置项说明文案。
+ *
+ * 同一个“通知”入口承载三种状态，避免拆成多个开关给普通用户造成困惑。
+ */
+private val MineVm.NotificationStatus.descriptionRes: Int
+    get() = when (this) {
+        MineVm.NotificationStatus.Enabled -> com.cla.clip.master.R.string.host_notification_permission_tip
+        MineVm.NotificationStatus.RuntimeDenied -> com.cla.clip.master.R.string.host_notification_permission_denied_tip
+        MineVm.NotificationStatus.SystemDisabled -> com.cla.clip.master.R.string.host_notification_system_disabled_tip
+    }
+
 @Composable
 private fun ExpandableSettingCard(
     title: String,
