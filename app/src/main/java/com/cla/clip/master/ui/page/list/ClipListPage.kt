@@ -78,6 +78,7 @@ import com.cla.clip.master.ui.dialog.DeleteDialog
 import com.cla.clip.master.ui.navigation.DetailRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.theme.cardCornerShape
+import com.cla.clip.master.ui.widget.CollapsingTitle
 import com.cla.clip.master.ui.widget.ShizukuServiceUnavailableTip
 import com.cla.clip.master.ui.widget.rememberFormattedTime
 import kotlin.math.max
@@ -108,49 +109,55 @@ fun ClipListPage(
 
     logD("MainPage", { "MainPage: pagedClips itemCount = ${pagedClips.itemCount}, loadState = ${pagedClips.loadState}" })
 
-    Column {
-        ShizukuServiceUnavailableTip()
+    CollapsingTitle(stringResource(com.cla.clip.base.general.R.string.base_general_list)) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            ShizukuServiceUnavailableTip()
 
-        Box(modifier = Modifier.fillMaxWidth()) {
-            ClipList(
-                gridState = gridState,
-                viewModel = viewModel,
-                pagedClips = pagedClips,
-                onLongClick = { clip ->
-                    // 长按时，设置选中的 Clip，触发 BottomSheet 显示
+            Box(modifier = Modifier.fillMaxWidth()) {
+                ClipList(
+                    gridState = gridState,
+                    viewModel = viewModel,
+                    pagedClips = pagedClips,
+                    onLongClick = { clip ->
+                        // 长按时，设置选中的 Clip，触发 BottomSheet 显示
 //                selectedClipForSheet = clip
-                },
-                onDelete = { clip -> deleteClip = clip },
-                onNavigate = onNavigate
-            )
+                    },
+                    onDelete = { clip -> deleteClip = clip },
+                    onNavigate = onNavigate
+                )
 
-            DeleteDialog(
-                clip = deleteClip,
-                onDismiss = { deleteClip = null },
-                onConfirmDelete = { clip ->
-                    viewModel.deleteClip(clip)
-                }
-            )
+                DeleteDialog(
+                    clip = deleteClip,
+                    onDismiss = { deleteClip = null },
+                    onConfirmDelete = { clip ->
+                        viewModel.deleteClip(clip)
+                    }
+                )
 
-            // 底部弹出窗口
-            val clip = selectedClipForSheet
-            if (clip != null) {
-                ModalBottomSheet(
-                    onDismissRequest = { selectedClipForSheet = null },
-                    sheetState = sheetState
-                ) {
-                    // BottomSheet 的内容
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            // 添加垂直滚动修饰符
-                            .verticalScroll(rememberScrollState())
-                            .padding(start = 20.dp, end = 20.dp, bottom = 20.dp)
+                // 底部弹出窗口
+                val clip = selectedClipForSheet
+                if (clip != null) {
+                    ModalBottomSheet(
+                        onDismissRequest = { selectedClipForSheet = null },
+                        sheetState = sheetState
                     ) {
-                        Text(
-                            text = clip.content,
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
+                        // BottomSheet 的内容
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                // 添加垂直滚动修饰符
+                                .verticalScroll(rememberScrollState())
+                                .padding(start = 20.dp, end = 20.dp, bottom = 20.dp)
+                        ) {
+                            Text(
+                                text = clip.content,
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                        }
                     }
                 }
             }

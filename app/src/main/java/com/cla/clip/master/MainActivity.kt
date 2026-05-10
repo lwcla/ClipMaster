@@ -1,5 +1,6 @@
 package com.cla.clip.master
 
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -8,7 +9,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
@@ -36,6 +36,7 @@ class MainActivity : ComponentActivity() {
 
     private val mainVm by viewModels<MainVm>()
 
+    @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         mainVm.pendingClipId = intent.extractClipId()
@@ -49,8 +50,8 @@ class MainActivity : ComponentActivity() {
 
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
-                ) { innerPadding ->
-                    Box(modifier = Modifier.padding(innerPadding)) {
+                ) {
+                    Box(modifier = Modifier.fillMaxSize()) {
                         LaunchedEffect(mainVm.pendingClipId) {
                             mainVm.pendingClipId()?.let { id ->
                                 logI(TAG) { "跳转到详情页 id=$id" }

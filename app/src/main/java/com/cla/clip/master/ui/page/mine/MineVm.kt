@@ -58,7 +58,7 @@ class MineVm @Inject constructor(
      */
     fun refreshPermissionStatus() {
         shizukuChecked = ShizukuUtils.isConnected(appContext)
-        notificationStatus = getNotificationStatus()
+        notificationStatus = resolveNotificationStatus()
         notificationChecked = notificationStatus == NotificationStatus.Enabled
         overlayChecked = appContext.hasOverlayPermission()
         logD(TAG) { "refreshPermissionStatus shizukuChecked=$shizukuChecked notificationStatus=$notificationStatus notificationChecked=$notificationChecked overlayChecked=$overlayChecked" }
@@ -114,7 +114,7 @@ class MineVm @Inject constructor(
      *
      * 运行时权限关闭会影响剪贴板监听链路；系统通知总开关关闭只影响通知展示，不应阻断前台服务启动。
      */
-    private fun getNotificationStatus(): NotificationStatus {
+    private fun resolveNotificationStatus(): NotificationStatus {
         return when {
             !appContext.hasNotificationRuntimePermission() -> NotificationStatus.RuntimeDenied
             appContext.hasNotificationPermission() -> NotificationStatus.Enabled

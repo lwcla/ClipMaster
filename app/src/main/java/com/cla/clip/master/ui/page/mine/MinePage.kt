@@ -15,16 +15,19 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -49,21 +52,29 @@ import com.cla.clip.base.general.utils.toPermissionSetting
 import com.cla.clip.master.entity.SettingSwitchItemUi
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.theme.cardCornerShape
+import com.cla.clip.master.ui.widget.CollapsingTitle
 import com.cla.clip.shizuku.ShizukuUtils
 import rikka.shizuku.Shizuku
 
 /** 我的页面 */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MinePage(
     mineVm: MineVm = hiltViewModel(),
     onNavigate: (route: Route) -> Unit
 ) {
-    Column(
-        modifier = Modifier.fillMaxSize()
-    ) {
-        Permission(mineVm = mineVm)
+    CollapsingTitle(stringResource(R.string.base_general_mine)) { paddingValues ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues),
+            contentPadding = PaddingValues(bottom = 16.dp),
+        ) {
+            item { Permission(mineVm = mineVm) }
+        }
     }
 }
+
 
 /** 权限说明模块 */
 @Composable
@@ -95,9 +106,11 @@ private fun Permission(
                         mineVm.refreshPermissionStatus()
                     }
                 }
+
                 MineVm.PermissionAction.OpenNotificationSettings -> {
                     context.toPermissionSetting(Manifest.permission.POST_NOTIFICATIONS)
                 }
+
                 MineVm.PermissionAction.OpenOverlaySettings -> {
                     context.toPermissionSetting(Manifest.permission.SYSTEM_ALERT_WINDOW)
                 }
