@@ -1,4 +1,4 @@
-package com.cla.clip.base.general.entity
+package com.cla.clip.base.general.repository
 
 import android.content.Context
 import com.cla.clip.base.general.R

@@ -7,7 +7,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cla.clip.base.general.R
-import com.cla.clip.base.general.entity.DownloadRepository
+import com.cla.clip.base.general.repository.DownloadRepository
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.master.entity.VideoDownloadState
 import com.cla.clip.master.entity.toUi

@@ -16,7 +16,7 @@ import com.cla.clip.base.general.R
 import com.cla.clip.base.general.config.AppSetting
 import com.cla.clip.base.general.dao.DownloadTaskData
 import com.cla.clip.base.general.di.M3u8Client
-import com.cla.clip.base.general.entity.DownloadRepository
+import com.cla.clip.base.general.repository.DownloadRepository
 import com.cla.clip.base.general.utils.MediaStoreTarget
 import com.cla.clip.base.general.utils.SaveToFile
 import com.cla.clip.base.general.utils.clear

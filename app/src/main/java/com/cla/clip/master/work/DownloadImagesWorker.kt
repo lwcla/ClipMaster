@@ -3,7 +3,6 @@ package com.cla.clip.master.work
 import android.content.Context
 import android.content.pm.ServiceInfo
 import android.os.Build
-import androidx.core.net.toUri
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
@@ -15,11 +14,10 @@ import androidx.work.workDataOf
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.dao.ImageExtractBatchData
 import com.cla.clip.base.general.dao.ImageExtractItemData
-import com.cla.clip.base.general.entity.ImageExtractRepository
+import com.cla.clip.base.general.repository.ImageExtractRepository
 import com.cla.clip.base.general.utils.SaveToFile
 import com.cla.clip.base.general.utils.createPath
 import com.cla.clip.base.general.utils.failure
-import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
 import com.cla.clip.base.general.utils.showName
 import com.cla.clip.base.general.utils.success

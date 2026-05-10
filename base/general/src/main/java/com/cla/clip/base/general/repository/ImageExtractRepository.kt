@@ -1,4 +1,4 @@
-package com.cla.clip.base.general.entity
+package com.cla.clip.base.general.repository
 
 import com.cla.clip.base.general.dao.ImageExtractBatchData
 import com.cla.clip.base.general.dao.ImageExtractDao

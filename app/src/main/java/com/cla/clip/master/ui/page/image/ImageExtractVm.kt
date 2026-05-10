@@ -8,8 +8,8 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cla.clip.base.general.dao.ImageExtractBatchData
-import com.cla.clip.base.general.entity.ImageCandidateData
-import com.cla.clip.base.general.entity.ImageExtractRepository
+import com.cla.clip.base.general.repository.ImageCandidateData
+import com.cla.clip.base.general.repository.ImageExtractRepository
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
 import com.cla.clip.master.work.DownloadImagesWorker

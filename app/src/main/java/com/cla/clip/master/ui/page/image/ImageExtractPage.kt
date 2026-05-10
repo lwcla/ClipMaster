@@ -39,7 +39,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.cla.clip.base.general.dao.ImageExtractBatchData
-import com.cla.clip.base.general.entity.ImageCandidateData
+import com.cla.clip.base.general.repository.ImageCandidateData
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.master.ui.widget.ProbeWebView
 import com.cla.clip.master.ui.widget.TitleBar
