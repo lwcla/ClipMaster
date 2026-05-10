@@ -6,6 +6,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
 import com.cla.clip.master.ui.page.detail.DetailPage
+import com.cla.clip.master.ui.page.image.ImageExtractPage
 import com.cla.clip.master.ui.page.list.ClipListPage
 import com.cla.clip.master.ui.page.main.MainPage
 import com.cla.clip.master.ui.page.mine.MinePage
@@ -77,6 +78,16 @@ fun AppNavigation(navController: NavHostController) {
                         navController.popBackStack() // 从通知进来时，回到 MainPage
                     }
                 }
+            )
+        }
+
+        // 图片提取页
+        composable<ImageExtractRoute> { backStackEntry ->
+            val route = backStackEntry.toRoute<ImageExtractRoute>()
+            ImageExtractPage(
+                pageUrl = route.url,
+                pageName = route.name,
+                onBack = onBack
             )
         }
 

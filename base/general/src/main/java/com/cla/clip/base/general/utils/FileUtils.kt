@@ -21,6 +21,11 @@ private const val APP_ICONS_DIR = "app_icons"
 
 sealed class SaveToFile(open val fileName: String) {
     data class Video(override val fileName: String) : SaveToFile(fileName)
+    data class Image(
+        override val fileName: String,
+        val folderName: String,
+        val mimeType: String
+    ) : SaveToFile(fileName)
 }
 
 /**
@@ -31,14 +36,17 @@ fun SaveToFile.createPath(context: Context): MediaStoreTarget {
     runCatching {
         val name = when (this@createPath) {
             is SaveToFile.Video -> "${fileName}.mp4"
+            is SaveToFile.Image -> fileName
         }
 
         val type = when (this@createPath) {
             is SaveToFile.Video -> "video/mp4"
+            is SaveToFile.Image -> mimeType
         }
 
         val url = when (this) {
             is SaveToFile.Video -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            is SaveToFile.Image -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
         }
 
         val target = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -55,7 +63,12 @@ fun SaveToFile.createPath(context: Context): MediaStoreTarget {
                 //put(MediaStore.MediaColumns.RELATIVE_PATH, "Downloads/MyApp")
                 // 设置相对路径，文件会自动保存在这个目录下，如果目录不存在会自动创建
                 // 要设置到相机相册下，这样才能在下载完成之后，可以让用户在相册里看到这个视频
-                put(MediaStore.MediaColumns.RELATIVE_PATH, "DCIM/clipMaster")
+                val relativePath = when (this@createPath) {
+                    is SaveToFile.Video -> "DCIM/clipMaster"
+                    is SaveToFile.Image -> "DCIM/clipMaster/${folderName}"
+                }
+                // 图片批量下载需要按网页标题单独建目录，方便用户在相册或文件管理器里查看一组图片。
+                put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
                 // 标记为正在下载，下载完成后再改为 0
                 put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
@@ -79,10 +92,17 @@ fun SaveToFile.createPath(context: Context): MediaStoreTarget {
                 throw Exception("没有存储权限，无法保存文件")
             }
 
-            val downloadDir = File(
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
-                "clipMaster"
-            )
+            val downloadDir = when (this@createPath) {
+                is SaveToFile.Video -> File(
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                    "clipMaster"
+                )
+
+                is SaveToFile.Image -> File(
+                    File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "clipMaster"),
+                    folderName
+                )
+            }
             downloadDir.mkdirs()
 
             val saveFile = File(downloadDir, name)
@@ -121,6 +141,7 @@ fun SaveToFile.success(context: Context, target: MediaStoreTarget) {
 
     val type = when (this) {
         is SaveToFile.Video -> "video/mp4"
+        is SaveToFile.Image -> mimeType
     }
 
     MediaScannerConnection.scanFile(

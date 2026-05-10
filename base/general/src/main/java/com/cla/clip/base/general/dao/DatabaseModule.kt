@@ -78,4 +78,11 @@ object DatabaseModule {
     fun provideDownloadDao(appDatabase: AppDatabase): DownloadDao {
         return appDatabase.downloadDao()
     }
+
+    /** 注入网页图片批量提取 DAO，供 Repository 和 Worker 共享同一批任务数据。 */
+    @Provides
+    @Singleton
+    fun provideImageExtractDao(appDatabase: AppDatabase): ImageExtractDao {
+        return appDatabase.imageExtractDao()
+    }
 }

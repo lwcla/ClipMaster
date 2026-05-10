@@ -57,6 +57,7 @@ import com.cla.clip.master.entity.VideoCandidate
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.navigation.VideoDownloadRoute
 import com.cla.clip.master.ui.theme.ClipMaterTheme
+import com.cla.clip.master.ui.widget.ProbeWebView
 import com.cla.clip.master.ui.widget.TitleBar
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -166,7 +167,7 @@ fun VideoExtractPage(
             if (videoExtractVm.probeState !is ProbeState.Success) {
                 Column {
                     TitleBar(stringResource(R.string.base_general_video_extract), onBack)
-                    VideoProbeWebViewLayer(
+                    SharedVideoProbeWebViewLayer(
                         targetUrl = pageUrl,
                         pageName = pageName,
                         onWebViewReady = { webViewRef = it },
@@ -362,6 +363,50 @@ private fun SuccessPreview() {
             ),
         )
     }
+}
+
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+private fun SharedVideoProbeWebViewLayer(
+    targetUrl: String,
+    pageName: String,
+    onWebViewReady: (WebView) -> Unit,
+    onVideoCandidate: (VideoCandidate) -> Unit,
+) {
+    val tag = "webView"
+
+    ProbeWebView(
+        targetUrl = targetUrl,
+        onWebViewReady = onWebViewReady,
+        onPageFinished = { view, _ ->
+            // 页面加载完成后尝试触发 video 播放，部分站点只有播放后才会请求真实视频资源。
+            val progress = view.progress
+            if (progress > 99) {
+                logW(tag) { "onPageFinished: progress=${progress}" }
+                view.evaluateJavascript(AUTO_PLAY_JS, null)
+            }
+        },
+        shouldInterceptRequest = { view, request ->
+            val reqUrl = request.url.toString()
+            val headers = request.requestHeaders.orEmpty()
+            logD(tag) { "shouldInterceptRequest: reqUrl=$reqUrl" }
+            if (isLikelyVideoRequest(request.url, headers)) {
+                val cookie = android.webkit.CookieManager.getInstance().getCookie(reqUrl)
+                view.post {
+                    val candidate = VideoCandidate(
+                        url = reqUrl,
+                        referer = headers["Referer"],
+                        userAgent = headers["User-Agent"],
+                        cookie = cookie,
+                        fileName = pageName
+                    )
+                    logD(tag) { "candidate=$candidate " }
+                    onVideoCandidate(candidate)
+                }
+            }
+            null
+        }
+    )
 }
 
 @SuppressLint("SetJavaScriptEnabled")

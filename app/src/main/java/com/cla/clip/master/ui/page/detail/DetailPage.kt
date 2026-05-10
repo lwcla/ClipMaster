@@ -39,6 +39,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.master.ui.dialog.DeleteDialog
+import com.cla.clip.master.ui.navigation.ImageExtractRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.navigation.VideoExtractRoute
 import com.cla.clip.master.ui.widget.TitleBar
@@ -211,8 +212,8 @@ private fun ButtonContainer(
                 Button(
                     modifier = Modifier.weight(1f),
                     onClick = {
-                        // todo 这里应该要跳转到图片提取页，但目前还没有，所以暂时先跳视频提取页，等图片提取页做好了再改这里
-                        onNavigate(VideoExtractRoute(link, name = clip.linkTitle ?: clip.content))
+                        // 图片提取已有独立页面，进入后会先提取并落库，再由用户确认批量下载。
+                        onNavigate(ImageExtractRoute(link, name = clip.linkTitle ?: clip.content))
                     }
                 ) {
                     Text(stringResource(R.string.base_general_image_extract))
