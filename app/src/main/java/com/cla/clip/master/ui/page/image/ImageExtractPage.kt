@@ -492,15 +492,14 @@ private fun BatchStatusContent(
 /** 组装图片下载结果文案，统一使用字符串资源，避免 UI 层硬编码中文。 */
 @Composable
 private fun buildImageDownloadResultText(batch: ImageExtractBatchData, includeOpenText: Boolean): String {
-    val context = LocalContext.current
     val parts = buildList {
-        if (batch.successCount > 0) add(context.getString(R.string.base_general_image_saved_count, batch.successCount))
-        if (batch.filteredCount > 0) add(context.getString(R.string.base_general_image_filtered_count, batch.filteredCount))
-        if (batch.failedCount > 0) add(context.getString(R.string.base_general_image_failed_count, batch.failedCount))
-        if (isEmpty()) add(context.getString(R.string.base_general_image_download_failed))
+        if (batch.successCount > 0) add(stringResource(R.string.base_general_image_saved_count, batch.successCount))
+        if (batch.filteredCount > 0) add(stringResource(R.string.base_general_image_filtered_count, batch.filteredCount))
+        if (batch.failedCount > 0) add(stringResource(R.string.base_general_image_failed_count, batch.failedCount))
+        if (isEmpty()) add(stringResource(R.string.base_general_image_download_failed))
     }
-    val separator = context.getString(R.string.base_general_text_separator)
-    return parts.joinToString(separator) + if (includeOpenText) separator + context.getString(R.string.base_general_image_open_suffix) else ""
+    val separator = stringResource(R.string.base_general_text_separator)
+    return parts.joinToString(separator) + if (includeOpenText) separator + stringResource(R.string.base_general_image_open_suffix) else ""
 }
 
 @Composable
