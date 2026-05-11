@@ -20,6 +20,12 @@ import kotlinx.coroutines.flow.Flow
         Index(value = ["create_time"]),
     ]
 )
+/**
+ * 网页图片批量提取任务的汇总记录。
+ *
+ * 这个实体保存一次网页图片提取/下载任务的整体状态，UI 通过 observeBatch 观察它来展示提取结果、下载进度、
+ * 成功数量、过滤数量和失败数量。计数字段会被 Worker 在不同阶段持续更新，因此它承担跨页面和后台任务之间的状态契约。
+ */
 data class ImageExtractBatchData(
     @PrimaryKey(autoGenerate = true)
     @ColumnInfo(name = "id")
@@ -42,6 +48,10 @@ data class ImageExtractBatchData(
 
     @ColumnInfo(name = "failed_count")
     val failedCount: Int = 0,
+
+    /** 被内容校验主动过滤的图片数量，例如透明占位图、1x1 跟踪像素或纯色错误图。 */
+    @ColumnInfo(name = "filtered_count", defaultValue = "0")
+    val filteredCount: Int = 0,
 
     @ColumnInfo(name = "output_dir")
     val outputDir: String? = null,
@@ -67,6 +77,9 @@ data class ImageExtractBatchData(
 
         /** 只有部分图片保存成功。 */
         const val STATUS_PARTIAL_SUCCESS = "partial_success"
+
+        /** 候选图片全部被内容校验过滤，没有真实下载失败。 */
+        const val STATUS_FILTERED = "filtered"
 
         /** 全部图片都保存失败。 */
         const val STATUS_FAILED = "failed"
@@ -143,6 +156,9 @@ data class ImageExtractItemData(
         /** 已发布到相册/文件夹。 */
         const val STATUS_SUCCESS = "success"
 
+        /** 被内容质量校验主动过滤，不应计入下载失败。 */
+        const val STATUS_FILTERED = "filtered"
+
         /** 当前图片下载或发布失败。 */
         const val STATUS_FAILED = "failed"
     }
@@ -173,6 +189,7 @@ interface ImageExtractDao {
         """
             UPDATE image_extract_batches
             SET status = :status, success_count = :successCount, failed_count = :failedCount,
+                filtered_count = :filteredCount,
                 output_dir = :outputDir, error_msg = :errorMsg, update_time = :updateTime
             WHERE id = :batchId
         """
@@ -182,6 +199,7 @@ interface ImageExtractDao {
         status: String,
         successCount: Int,
         failedCount: Int,
+        filteredCount: Int,
         outputDir: String?,
         errorMsg: String?,
         updateTime: Long = System.currentTimeMillis()

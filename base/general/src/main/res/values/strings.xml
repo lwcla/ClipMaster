@@ -59,6 +59,23 @@
     <string name="base_general_preparing_download" tools:ignore="TypographyEllipsis">下载任务正在初始化...</string>
     <string name="base_general_download_now" tools:ignore="TypographyEllipsis">下载中</string>
     <string name="base_general_merge_now">合并中</string>
+    <string name="base_general_image_extract_title">图片提取</string>
+    <string name="base_general_image_extract_loading" tools:ignore="TypographyEllipsis">正在提取网页图片...</string>
+    <string name="base_general_image_extract_failed_retry">图片提取失败，点击重试</string>
+    <string name="base_general_image_extract_count">已提取到 %1$d 张图片</string>
+    <string name="base_general_download_all_images">下载全部图片</string>
+    <string name="base_general_image_download_progress">正在下载 %1$d/%2$d</string>
+    <string name="base_general_image_saved_count">已保存 %1$d 张图片</string>
+    <string name="base_general_image_filtered_count">过滤 %1$d 张</string>
+    <string name="base_general_image_failed_count">失败 %1$d 张</string>
+    <string name="base_general_image_download_failed">下载失败</string>
+    <string name="base_general_image_open_suffix">点击打开</string>
+    <string name="base_general_text_separator">，</string>
+    <string name="base_general_open_gallery">打开相册</string>
+    <string name="base_general_open_folder">打开文件夹</string>
+    <string name="base_general_open_images">打开图片</string>
+    <string name="base_general_choose_saved_image_location">选择查看已保存图片的位置</string>
+    <string name="base_general_open_image_folder_chooser">打开图片文件夹</string>
     <string name="base_general_the_clipboard_is_being_read">正在读取剪贴板</string>
     <string name="base_general_unknow">未知</string>
     <string name="base_general_there_is_no_available_application_to_open_this_video">没有可用的应用打开该视频</string>

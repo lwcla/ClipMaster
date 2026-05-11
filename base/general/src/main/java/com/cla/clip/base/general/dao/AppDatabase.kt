@@ -19,11 +19,12 @@ import androidx.room.RoomDatabase
         ImageExtractBatchData::class,
         ImageExtractItemData::class
     ],
-    version = 3, // 版本3：新增网页图片批量提取任务表和图片明细表。
+    version = 4, // 版本4：图片批量下载新增 filtered_count，用于区分主动过滤和真实失败。
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
-        AutoMigration(from = 2, to = 3)
+        AutoMigration(from = 2, to = 3),
+        AutoMigration(from = 3, to = 4)
     ]
 )
 abstract class AppDatabase : RoomDatabase() {

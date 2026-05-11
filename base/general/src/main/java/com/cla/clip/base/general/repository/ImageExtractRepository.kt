@@ -61,10 +61,11 @@ class ImageExtractRepository @Inject constructor(
         status: String,
         successCount: Int,
         failedCount: Int,
+        filteredCount: Int = 0,
         outputDir: String? = null,
         errorMsg: String? = null
     ) {
-        imageExtractDao.updateBatchStatus(batchId, status, successCount, failedCount, outputDir, errorMsg)
+        imageExtractDao.updateBatchStatus(batchId, status, successCount, failedCount, filteredCount, outputDir, errorMsg)
     }
 
     /** 更新单张图片状态，记录临时文件、最终 URI 或失败原因。 */

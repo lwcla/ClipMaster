@@ -99,6 +99,7 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
     }
 
     override fun setCallback(shizukuCallback: ShizukuCallback?) {
+        logD(TAG) { "setCallback : 设置callback shizukuCallback=$shizukuCallback" }
         callFlow.update { shizukuCallback }
     }
 

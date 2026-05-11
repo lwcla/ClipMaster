@@ -17,7 +17,20 @@ import java.io.OutputStream
 
 private const val TAG = "FileUtils"
 
+/** 应用图标缓存目录名称，用于保存剪贴板来源应用的图标文件。 */
 private const val APP_ICONS_DIR = "app_icons"
+
+/** 媒体文件统一保存的根目录名称，视频和图片都会归到该应用目录下。 */
+private const val MEDIA_ROOT_DIR = "clipMaster"
+
+/** 图片保存到 MediaStore 时使用的相对路径前缀。 */
+private const val IMAGE_MEDIA_RELATIVE_PREFIX = "DCIM/$MEDIA_ROOT_DIR"
+
+/** 生成不重名图片文件夹时的最大尝试次数，避免异常情况下无限循环。 */
+private const val MAX_UNIQUE_FOLDER_ATTEMPTS = 1_000
+
+/** 进程内已预留的图片文件夹名，避免并发下载任务抢到同一个目录。 */
+private val reservedImageFolderNames = mutableSetOf<String>()
 
 sealed class SaveToFile(open val fileName: String) {
     data class Video(override val fileName: String) : SaveToFile(fileName)
@@ -64,8 +77,8 @@ fun SaveToFile.createPath(context: Context): MediaStoreTarget {
                 // 设置相对路径，文件会自动保存在这个目录下，如果目录不存在会自动创建
                 // 要设置到相机相册下，这样才能在下载完成之后，可以让用户在相册里看到这个视频
                 val relativePath = when (this@createPath) {
-                    is SaveToFile.Video -> "DCIM/clipMaster"
-                    is SaveToFile.Image -> "DCIM/clipMaster/${folderName}"
+                    is SaveToFile.Video -> IMAGE_MEDIA_RELATIVE_PREFIX
+                    is SaveToFile.Image -> "$IMAGE_MEDIA_RELATIVE_PREFIX/${folderName}"
                 }
                 // 图片批量下载需要按网页标题单独建目录，方便用户在相册或文件管理器里查看一组图片。
                 put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
@@ -95,11 +108,11 @@ fun SaveToFile.createPath(context: Context): MediaStoreTarget {
             val downloadDir = when (this@createPath) {
                 is SaveToFile.Video -> File(
                     Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
-                    "clipMaster"
+                    MEDIA_ROOT_DIR
                 )
 
                 is SaveToFile.Image -> File(
-                    File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "clipMaster"),
+                    File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), MEDIA_ROOT_DIR),
                     folderName
                 )
             }
@@ -221,6 +234,65 @@ data class MediaStoreTarget(
     val path: String,
     val outputStream: OutputStream
 )
+
+/**
+ * 图片批量下载最终使用的唯一目录信息。
+ *
+ * folderName 用于传给 SaveToFile.Image 创建实际文件，relativePath 用于业务层记录本批次输出目录并展示给用户。
+ * 这个结构把“目录如何命名”和“目录在媒体库中的相对路径”放在保存工具层统一维护，避免上层 Worker 复制存储规则。
+ */
+data class UniqueImageFolder(
+    val folderName: String,
+    val relativePath: String,
+)
+
+/** 为图片批量下载选择未占用的文件夹，避免同名网页任务保存到同一个相册目录。 */
+fun Context.createUniqueImageFolderName(baseFolderName: String): UniqueImageFolder {
+    synchronized(reservedImageFolderNames) {
+        repeat(MAX_UNIQUE_FOLDER_ATTEMPTS) { index ->
+            val candidate = if (index == 0) baseFolderName else "${baseFolderName}_${index}"
+            if (!reservedImageFolderNames.contains(candidate) && !imageFolderExists(candidate)) {
+                // 先预留名称，避免并发下载在媒体库记录创建前同时拿到同一个文件夹。
+                reservedImageFolderNames.add(candidate)
+                return UniqueImageFolder(candidate, "$IMAGE_MEDIA_RELATIVE_PREFIX/$candidate")
+            }
+        }
+        val fallback = "${baseFolderName}_${System.currentTimeMillis()}"
+        reservedImageFolderNames.add(fallback)
+        return UniqueImageFolder(fallback, "$IMAGE_MEDIA_RELATIVE_PREFIX/$fallback")
+    }
+}
+
+/** 按系统版本判断图片文件夹是否存在：Android 10+ 查询媒体库，旧系统查询真实目录。 */
+private fun Context.imageFolderExists(folderName: String): Boolean {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        mediaStoreImageFolderExists(folderName)
+    } else {
+        val parentDir = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+            MEDIA_ROOT_DIR
+        )
+        File(parentDir, folderName).exists()
+    }
+}
+
+/** Android 10+ 的公共媒体目录由 MediaStore 管理，需要通过 RELATIVE_PATH 判断目录里是否已有图片。 */
+private fun Context.mediaStoreImageFolderExists(folderName: String): Boolean {
+    val relativePath = "$IMAGE_MEDIA_RELATIVE_PREFIX/$folderName"
+    val projection = arrayOf(MediaStore.Images.Media._ID)
+    val selection = "${MediaStore.MediaColumns.RELATIVE_PATH} IN (?, ?)"
+    val selectionArgs = arrayOf(relativePath, "$relativePath/")
+
+    return contentResolver.query(
+        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+        projection,
+        selection,
+        selectionArgs,
+        null
+    )?.use { cursor ->
+        cursor.moveToFirst()
+    } ?: false
+}
 
 fun Context.saveIcon(packageName: String?, appIcon: Bitmap?): String? {
     if (appIcon == null || packageName.isNullOrBlank()) {
