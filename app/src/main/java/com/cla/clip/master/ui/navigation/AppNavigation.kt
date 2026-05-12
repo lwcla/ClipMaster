@@ -10,6 +10,7 @@ import com.cla.clip.master.ui.page.image.ImageExtractPage
 import com.cla.clip.master.ui.page.list.ClipListPage
 import com.cla.clip.master.ui.page.main.MainPage
 import com.cla.clip.master.ui.page.mine.MinePage
+import com.cla.clip.master.ui.page.search.SearchPage
 import com.cla.clip.master.ui.page.video.VideoDownloadPage
 import com.cla.clip.master.ui.page.video.VideoExtractPage
 
@@ -38,6 +39,14 @@ fun AppNavigation(navController: NavHostController) {
         // 剪贴数据列表页
         composable<ClipListRoute> {
             ClipListPage(
+                onNavigate = onNavigate
+            )
+        }
+
+        // 剪贴搜索页
+        composable<SearchRoute> {
+            SearchPage(
+                onBack = onBack,
                 onNavigate = onNavigate
             )
         }

@@ -7,6 +7,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Upsert
+import kotlinx.coroutines.flow.Flow
 
 /**
  * 来源应用的信息实体类。
@@ -56,4 +57,13 @@ interface SourceAppDao {
      */
     @Query("SELECT * FROM source_apps WHERE package_name = :packageName LIMIT 1")
     suspend fun loadByPackageName(packageName: String): SourceAppData?
+
+    /**
+     * 加载所有已经记录过的来源 App，供搜索页构建来源筛选器。
+     *
+     * 返回 Flow 是为了让新复制内容写入来源表后，筛选器能自动刷新；排序同时使用应用名和包名，
+     * 避免同名应用或空名称导致列表顺序不稳定。
+     */
+    @Query("SELECT * FROM source_apps ORDER BY app_name COLLATE NOCASE ASC, package_name ASC")
+    fun loadAllSourceApps(): Flow<List<SourceAppData>>
 }

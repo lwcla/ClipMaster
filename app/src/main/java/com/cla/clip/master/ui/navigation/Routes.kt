@@ -12,6 +12,10 @@ data object MainRoute : Route()
 @Serializable
 data object ClipListRoute : Route()
 
+/** 剪贴板搜索 */
+@Serializable
+data object SearchRoute : Route()
+
 /** 剪贴板详情 */
 @Serializable
 data class DetailRoute(val clipId: Long) : Route()

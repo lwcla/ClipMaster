@@ -21,6 +21,18 @@ interface ClipRepository {
     fun searchAllClips(userInput: String): Flow<List<ClipShowEntity>>
 
     /**
+     * 按关键词、时间范围和来源 App 分页搜索剪贴记录。
+     *
+     * Repository 负责把用户输入转换成 DAO 可执行的查询参数，避免 UI 层理解 FTS 语法或数据库边界。
+     */
+    fun searchClips(
+        userInput: String,
+        startTime: Long?,
+        endTime: Long?,
+        sourceAppPackage: String?,
+    ): PagingSource<Int, ClipDetail>
+
+    /**
      * 新增一个全新的剪贴板条目。
      */
     suspend fun addNewClip(captureEntity: ClipCaptureEntity): Long
@@ -49,6 +61,9 @@ interface ClipRepository {
 
     /** 根据包名和剪贴板内容获取来源app信息 */
     suspend fun loadSourceApp(packageName: String): SourceAppData?
+
+    /** 加载所有来源 App，供搜索筛选器展示。 */
+    fun loadAllSourceApps(): Flow<List<SourceAppData>>
 
     /** 根据链接查找历史数据 */
     suspend fun loadLinkPreview(link: String): LinkPreviewData?

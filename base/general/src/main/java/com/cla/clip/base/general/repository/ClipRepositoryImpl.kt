@@ -28,6 +28,15 @@ class ClipRepositoryImpl @Inject constructor(
     private val linkPreviewDao: LinkPreviewDao,
 ) : ClipRepository {
 
+    companion object {
+        /**
+         * FTS 查询只保留字母和数字参与 MATCH。
+         *
+         * 这样做是为了过滤双引号、冒号、星号等会改变 FTS 语法的字符；代价是纯符号搜索会退回 LIKE 查询。
+         */
+        private val ftsSearchableCharRegex = Regex("[\\p{L}\\p{N}]")
+    }
+
     // 使用 withContext(Dispatchers.IO) 确保所有数据库写操作都在IO线程上执行。
     // Flow 本身是异步的，Room会自动处理其线程，所以读操作不需要显式切换。
     override fun searchAllClips(userInput: String): Flow<List<ClipShowEntity>> {
@@ -53,6 +62,69 @@ class ClipRepositoryImpl @Inject constructor(
             exactQuery = exactQuery,
             queryWord = queryWord
         ).map { it.toUi() }
+    }
+
+    override fun searchClips(
+        userInput: String,
+        startTime: Long?,
+        endTime: Long?,
+        sourceAppPackage: String?,
+    ): PagingSource<Int, ClipDetail> {
+        val trimmed = userInput.trim()
+        if (trimmed.isBlank()) {
+            return clipDao.searchClipsByFilters(
+                startTime = startTime,
+                endTime = endTime,
+                sourceAppPackage = sourceAppPackage
+            )
+        }
+
+        val ftsQuery = buildFtsQuery(trimmed)
+        if (ftsQuery.isBlank()) {
+            return clipDao.searchClipsByLike(
+                keyword = trimmed,
+                startTime = startTime,
+                endTime = endTime,
+                sourceAppPackage = sourceAppPackage
+            )
+        }
+
+        return clipDao.searchClipsByKeyword(
+            query = ftsQuery,
+            exactQuery = trimmed,
+            queryWord = buildQueryWord(trimmed),
+            // 中文连续词依赖 LIKE 子串兜底，必须保留完整输入，避免“来源”无法命中“来源应用的包名”。
+            likeKeyword = trimmed,
+            startTime = startTime,
+            endTime = endTime,
+            sourceAppPackage = sourceAppPackage
+        )
+    }
+
+    /**
+     * 把用户输入转换成 FTS 可执行的前缀查询。
+     *
+     * 这里延续旧搜索“逐字符前缀匹配”的策略，方便中文内容在没有明确空格分词时仍能被查到；
+     * 同时过滤 FTS 特殊字符，避免用户输入 URL 或标点时触发 MATCH 语法错误。
+     */
+    private fun buildFtsQuery(trimmedInput: String): String {
+        return trimmedInput
+            .mapNotNull { char ->
+                char.takeIf { ftsSearchableCharRegex.matches(it.toString()) }?.let { "$it*" }
+            }
+            .joinToString(separator = " ")
+    }
+
+    /**
+     * 提取用于排序打分的核心查询词。
+     *
+     * 多词搜索时取第一个非空词，保持与旧搜索排序逻辑一致；如果分词结果为空，则回退到完整输入。
+     */
+    private fun buildQueryWord(trimmedInput: String): String {
+        return trimmedInput
+            .split(Regex("\\s+"))
+            .firstOrNull { it.isNotBlank() }
+            ?: trimmedInput
     }
 
     override suspend fun addNewClip(captureEntity: ClipCaptureEntity) = withContext(Dispatchers.IO) {
@@ -147,6 +219,10 @@ class ClipRepositoryImpl @Inject constructor(
 
     override suspend fun loadSourceApp(packageName: String) = withContext(Dispatchers.IO) {
         sourceAppDao.loadByPackageName(packageName)
+    }
+
+    override fun loadAllSourceApps(): Flow<List<SourceAppData>> {
+        return sourceAppDao.loadAllSourceApps()
     }
 
     override suspend fun loadLinkPreview(link: String) = withContext(Dispatchers.IO) {

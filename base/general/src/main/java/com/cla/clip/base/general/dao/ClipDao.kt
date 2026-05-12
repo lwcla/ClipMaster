@@ -8,6 +8,7 @@ import androidx.room.Fts4
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Upsert
 import com.cla.clip.base.general.dao.data.ClipDetail
 import com.cla.clip.base.general.dao.data.LastClipData
@@ -88,10 +89,12 @@ interface ClipDao {
      * @param content 要查询的内容。FTS5会自动处理分词和匹配，所以这里直接传入原始内容即可。
      * @return
      */
+    @Transaction
     @Query("SELECT * FROM clips WHERE content = :content AND source_app_package=:packageName LIMIT 1")
     suspend fun loadClipDetail(content: String, packageName: String): ClipDetail?
 
     /** 根据id查询剪贴数据 */
+    @Transaction
     @Query("SELECT * FROM clips WHERE id = :id LIMIT 1")
     suspend fun loadClipDetail(id: Long): ClipDetail?
 
@@ -110,6 +113,7 @@ interface ClipDao {
      * @param query 用户的搜索词。FTS5会自动处理分词。
      * @return 匹配的Clip列表，无论新旧都会被返回。
      */
+    @Transaction
     @Query(
         """
     SELECT DISTINCT c.* FROM clips c
@@ -136,6 +140,116 @@ interface ClipDao {
     ): Flow<List<ClipDetail>>
 
     /**
+     * 按关键词、时间范围和来源 App 分页搜索剪贴记录。
+     *
+     * 这个查询供搜索页使用：关键词优先走 FTS 虚拟表，同时并入 `LIKE` 子串命中集合。
+     *
+     * 中文连续文本在默认 FTS 分词下可能被当成一个长 token，例如搜索“来源”时不一定能命中
+     * “来源应用的包名”；因此这里额外使用 `search_text LIKE '%关键词%'` 作为中文和 URL 片段的兜底。
+     * UNION 会去掉 FTS 与 LIKE 同时命中的重复记录，代价是关键词搜索比纯 FTS 多一次主表扫描。
+     *
+     * 排序先保持列表页的置顶优先规则，再在同一置顶分组内按搜索命中质量和时间排序，避免搜索页与列表页的置顶语义割裂。
+     *
+     * @param query 清洗后的 FTS 查询语句，外层 Repository 负责规避空查询和特殊字符导致的 MATCH 语法错误。
+     * @param exactQuery 精确匹配用原始关键词。
+     * @param queryWord 包含匹配和前缀匹配用的核心词。
+     * @param likeKeyword 普通子串匹配用关键词，保留用户输入的连续文本，用来补齐中文模糊搜索。
+     * @param startTime 起始时间戳，单位毫秒；为 null 时不限制开始时间。
+     * @param endTime 结束时间戳，单位毫秒；为 null 时不限制结束时间，非 null 时使用左闭右开区间。
+     * @param sourceAppPackage 来源 App 包名；为 null 时不过滤来源。
+     */
+    @Transaction
+    @Query(
+        """
+    SELECT * FROM (
+      SELECT c.* FROM clips c
+      JOIN clips_fts fts ON c.id = fts.rowid
+      WHERE clips_fts MATCH :query
+        AND (:startTime IS NULL OR c.timestamp >= :startTime)
+        AND (:endTime IS NULL OR c.timestamp < :endTime)
+        AND (:sourceAppPackage IS NULL OR c.source_app_package = :sourceAppPackage)
+      UNION
+      SELECT c.* FROM clips c
+      WHERE c.search_text LIKE '%' || :likeKeyword || '%'
+        AND (:startTime IS NULL OR c.timestamp >= :startTime)
+        AND (:endTime IS NULL OR c.timestamp < :endTime)
+        AND (:sourceAppPackage IS NULL OR c.source_app_package = :sourceAppPackage)
+    ) AS c
+    ORDER BY
+      CASE WHEN c.pinned_time > 0 THEN 1 ELSE 0 END DESC,
+      CASE
+        WHEN c.search_text = :exactQuery THEN 4
+        WHEN INSTR(c.search_text, :likeKeyword) > 0 THEN 3
+        WHEN LENGTH(:queryWord) > 2 AND INSTR(c.search_text, SUBSTR(:queryWord, 1, LENGTH(:queryWord)-1)) > 0 THEN 2
+        ELSE 1
+      END DESC,
+      c.pinned_time DESC,
+      c.timestamp DESC
+    """
+    )
+    fun searchClipsByKeyword(
+        query: String,
+        exactQuery: String,
+        queryWord: String,
+        likeKeyword: String,
+        startTime: Long?,
+        endTime: Long?,
+        sourceAppPackage: String?,
+    ): PagingSource<Int, ClipDetail>
+
+    /**
+     * 在没有关键词时按筛选条件分页加载剪贴记录。
+     *
+     * 关键词为空不能执行 FTS MATCH，否则 SQLite 会抛语法异常；因此搜索页清空输入时走这个查询，
+     * 只保留时间和来源 App 条件，并完全沿用列表页排序。
+     */
+    @Transaction
+    @Query(
+        """
+        SELECT * FROM clips
+        WHERE (:startTime IS NULL OR timestamp >= :startTime)
+          AND (:endTime IS NULL OR timestamp < :endTime)
+          AND (:sourceAppPackage IS NULL OR source_app_package = :sourceAppPackage)
+        ORDER BY
+          CASE WHEN pinned_time > 0 THEN 1 ELSE 0 END DESC,
+          pinned_time DESC,
+          timestamp DESC
+    """
+    )
+    fun searchClipsByFilters(
+        startTime: Long?,
+        endTime: Long?,
+        sourceAppPackage: String?,
+    ): PagingSource<Int, ClipDetail>
+
+    /**
+     * FTS 查询无法构造时的兜底搜索。
+     *
+     * 某些输入只包含标点或 FTS 特殊字符，直接拼进 MATCH 会失败；此处退回到普通 LIKE，
+     * 牺牲一点性能换取搜索框对 URL、符号片段等输入的稳定响应。
+     */
+    @Transaction
+    @Query(
+        """
+        SELECT * FROM clips
+        WHERE search_text LIKE '%' || :keyword || '%'
+          AND (:startTime IS NULL OR timestamp >= :startTime)
+          AND (:endTime IS NULL OR timestamp < :endTime)
+          AND (:sourceAppPackage IS NULL OR source_app_package = :sourceAppPackage)
+        ORDER BY
+          CASE WHEN pinned_time > 0 THEN 1 ELSE 0 END DESC,
+          pinned_time DESC,
+          timestamp DESC
+    """
+    )
+    fun searchClipsByLike(
+        keyword: String,
+        startTime: Long?,
+        endTime: Long?,
+        sourceAppPackage: String?,
+    ): PagingSource<Int, ClipDetail>
+
+    /**
      * 删除一个具体的剪贴板条目。
      * @param id 要删除的Clip id。
      */
@@ -157,6 +271,7 @@ interface ClipDao {
      * 2. 如果置顶了，按照 pinned_time 倒序排列（新置顶的在前）。
      * 3. 如果没置顶，按照 timestamp 倒序排列（新复制的在前）。
      */
+    @Transaction
     @Query(
         """
         SELECT * FROM clips 
@@ -175,6 +290,7 @@ interface ClipDao {
     suspend fun clearAll()
 
     /** 获取最新的一条剪贴板记录 */
+    @Transaction
     @Query("SELECT * FROM clips ORDER BY timestamp DESC LIMIT 1")
     suspend fun getLatestClip(): ClipDetail?
 

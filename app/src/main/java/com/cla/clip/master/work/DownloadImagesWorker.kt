@@ -332,7 +332,7 @@ class DownloadImagesWorker @AssistedInject constructor(
         }
     }
 
-    /** 下载后校验真实图片内容，主动过滤透明像素、占位图和反盗链返回的纯色错误图。 */
+    /** 下载后校验真实图片 内容，主动过滤透明像素、占位图和反盗链返回的纯色错误图。 */
     private fun validateDownloadedImage(file: File, mimeType: String) {
         if (file.length() < MIN_VALID_IMAGE_BYTES) {
             throw FilteredImageException("Ignore tiny image file: ${file.length()} bytes")
@@ -472,7 +472,7 @@ class DownloadImagesWorker @AssistedInject constructor(
         val ext: String,
     )
 
-    /** 图片内容质量的轻量抽样结果，用于下载阶段过滤明显无效的资源。 */
+    /** 图片 内容质量的轻量抽样结果，用于下载阶段过滤明显无效的资源。 */
     private data class ImageQuality(
         val transparentRatio: Double,
         val avgLuminance: Int,
