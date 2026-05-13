@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-图片提取入口位于剪贴板详情页，用户点击“提取图片”后进入图片提取页。页面使用隐藏的 `WebView` 加载目标网页，通过 DOM 扫描脚本、懒加载滚动探测和网络请求拦截合并图片候选，再将候选保存到 Room 的图片提取批次表和图片项表。用户确认后，`DownloadImagesWorker` 从数据库读取本批次图片，按网页顺序并发下载到临时目录，校验过滤无效图片后再发布到相册目录。
+图片提取入口位于剪贴板详情页，用户点击“提取图片”后进入图片提取页。页面使用隐藏的 `WebView` 加载目标网页，通过 DOM 扫描脚本、懒加载滚动探测和网络请求拦截合并图片候选，再将候选保存到 Room 的图片提取批次表和图片项表。用户确认后，`DownloadImagesWorker` 从数据库读取本批次图片，按网页顺序并发下载到临时目录，校验过滤无效图片后再发布到相册目录，并把本批次输出目录记录到批次 `outputDir`。
 
 当前体验在下载前展示图片网格，所有图片默认选中。用户可以在网格中取消不需要的图片，也可以点击缩略图打开底部弹窗查看大图、动图和元信息，再确认下载已选图片。
 
@@ -15,12 +15,14 @@
 - 点击缩略图打开底部弹窗预览，长图可以上下滑动完整查看。
 - 弹窗支持 GIF、Animated WebP 等动图播放。
 - 弹窗展示分辨率、文件类型、文件体积，帮助用户在重复图片中选择质量更合适的一张。
+- 下载完成、部分完成或全部过滤后，完成态点击入口优先直接打开本批次保存文件夹，而不是只打开泛化图片选择器。
 - 不新增数据库字段，不引入 Room 迁移；选择状态保存在当前 UI 内存中。
 
 ## 范围
 
 - 涉及 `ImageExtractPage`、`ImageExtractVm`、`ImageExtractRepository`、`ImageExtractDao`、图片下载 Worker 的既有数据契约、字符串资源和 Gradle 图片加载依赖。
-- 不改变图片候选提取规则、图片内容过滤规则、最终保存路径和通知展示策略。
+- 不改变图片候选提取规则、图片内容过滤规则和最终保存路径。
+- 调整下载完成后的打开入口：页面完成态和图片结果通知都使用批次 `outputDir` 定位本次保存目录；由于 Android 没有统一的“打开文件夹”协议，需要保留系统文件管理器、DocumentsUI 和相册兜底。
 - 不实现完整相册能力，例如左右切换、双指缩放、暂停动图或逐帧控制。
 
 ## 用户体验
@@ -32,6 +34,8 @@
 5. 弹窗显示分辨率、文件类型和文件体积。文件体积依赖服务端响应头，无法获取时显示“未知”。
 6. 用户可以在网格或弹窗内切换当前图片是否下载。
 7. 确认下载后，未选中的图片从本批次下载列表中移除，剩余图片沿用现有 Worker 下载。
+8. 下载完成后，用户点击完成态文案会直接尝试打开 `DCIM/clipMaster/<本次网页标题目录>`；如果设备文件管理器不支持直接打开目录，则退回到 DocumentsUI 定位目录或系统相册。
+9. 点击图片下载结果通知时，同样优先打开本批次保存目录；如果没有任何图片成功保存，则只进入相册或系统可用兜底入口，避免误导用户进入空目录。
 
 ## 最终实现
 
@@ -42,6 +46,8 @@
 - 预览和缩略图请求都携带 Referer、User-Agent、Cookie，尽量保持预览加载与 Worker 下载一致。
 - `ImageExtractVm` 在当前页面内缓存分辨率、文件类型和文件体积，文件体积只通过 HEAD 或 Range GET 响应头尽力获取。
 - `ImageExtractRepository.keepSelectedItems` 通过事务删除未选图片并更新批次总数，Worker 继续读取剩余图片项下载。
+- `ImageFolderOpenHelper` 统一处理图片保存目录打开逻辑，页面完成态和图片下载结果通知都复用它；目录 URI 优先按 `outputDir` 生成 DocumentsProvider 目录 URI，直接打开失败时再使用 DocumentsUI 初始目录、旧式文件管理器、相册和图片选择器兜底。
+- 图片下载结果通知使用 `TARGET_IMAGE_FOLDER` 和 `ImageFolderOpenData`，不再复用视频下载结果页跳转；没有成功保存图片时不会携带具体目录，避免打开空目录。
 
 ## 数据流
 
@@ -52,6 +58,7 @@
 - UI 通过 `observeBatch` 观察批次状态，通过图片项 Flow 观察当前批次候选。
 - 用户确认下载时，Repository 删除未选中的图片项，并把批次 `total_count` 更新为选中数量。
 - `DownloadImagesWorker` 读取剩余图片项，并保持现有临时下载、内容校验、按顺序发布和状态回写逻辑。
+- 结果通知点击进入 `MainActivity` 后，由 `MainVm` 一次性消费 `ImageFolderOpenData`，再调用 `ImageFolderOpenHelper` 打开保存目录或兜底入口。
 
 ## 涉及文件
 
@@ -59,7 +66,13 @@
 - `app/src/main/java/com/cla/clip/master/ui/page/image/ImageExtractVm.kt`
 - `base/general/src/main/java/com/cla/clip/base/general/repository/ImageExtractRepository.kt`
 - `base/general/src/main/java/com/cla/clip/base/general/dao/ImageExtractDao.kt`
+- `base/general/src/main/java/com/cla/clip/base/general/utils/FileUtils.kt`
 - `base/general/src/main/res/values/strings.xml`
+- `app/src/main/java/com/cla/clip/master/MainActivity.kt`
+- `app/src/main/java/com/cla/clip/master/MainVm.kt`
+- `app/src/main/java/com/cla/clip/master/entity/ImageFolderOpenData.kt`
+- `app/src/main/java/com/cla/clip/master/utils/ImageFolderOpenHelper.kt`
+- `app/src/main/java/com/cla/clip/master/utils/NotificationHelper.kt`
 - `gradle/libs.versions.toml`
 - `app/build.gradle.kts`
 
@@ -70,8 +83,10 @@
 3. 将提取完成状态从“数量 + 下载全部”改为网格选择界面。
 4. 使用支持动图的 Coil `ImageLoader` 加载缩略图和底部预览图，并携带 Referer、User-Agent、Cookie。
 5. 通过响应头尽力获取文件类型和文件体积；服务端不返回时显示“未知”。
-6. 补充字符串资源和简体中文注释。
-7. 编译验证后更新本文档状态和变更记录。
+6. 下载完成态点击时直接按批次 `outputDir` 打开保存目录，并为不支持目录 Intent 的设备提供兜底。
+7. 图片下载结果通知改为图片目录打开协议，避免继续复用视频下载结果页跳转。
+8. 补充字符串资源和简体中文注释。
+9. 编译验证后更新本文档状态和变更记录。
 
 ## 测试验证
 
@@ -82,6 +97,8 @@
 - GIF 或 Animated WebP 在弹窗中正常播放，而不是只显示首帧。
 - 弹窗中能显示已有分辨率、推断类型；体积获取失败时显示“未知”。
 - 在弹窗中切换选中状态后，返回网格同步更新。
+- 下载完成态点击后优先打开本批次目录；在不支持直接打开目录的设备上能进入 DocumentsUI 或相册兜底。
+- 图片下载结果通知点击后不再进入视频下载页，而是打开本批次保存目录或兜底入口。
 - 运行 `./gradlew :app:compileDebugKotlin` 验证编译。
 
 ## 已知取舍
@@ -90,6 +107,7 @@
 - 文件体积只通过响应头获取，不为了显示体积提前完整下载图片，避免预览阶段消耗过多流量。
 - 动图预览以正常播放为目标，不提供暂停、逐帧或动图编辑能力。
 - 主动取消的图片不计入失败或过滤数量，确认下载后的批次总数以选中数量为准。
+- Android 对“打开某个公共媒体文件夹”没有统一标准。实现会优先尝试 DocumentsProvider 目录 URI，但不同系统文件管理器和相册应用支持程度不一致，因此必须保留 DocumentsUI 和相册兜底。
 
 ## 开放问题
 
@@ -102,3 +120,5 @@
 - 2026-05-13：完成网格选择、底部可滚动预览、动图播放、图片元信息展示和确认已选下载；原因是用户需要在下载前筛除重复或低质量图片，并能通过尺寸、类型、体积判断保留哪张。
 - 2026-05-13：补齐 `ImageExtractVm` 预览元信息探测相关方法、状态字段和缓存字段的简体中文注释；原因是代码注释规范要求私有辅助方法和实体字段也说明职责、边界和取舍，本次无行为变化。
 - 2026-05-13：补齐 `ImageExtractPage` 私有 Composable、布局容器、格式化展示函数和 WebView 辅助函数的简体中文注释；原因是 Compose UI 辅助函数同样需要说明 UI 职责、状态输入、用户交互和重组边界，本次无行为变化。
+- 2026-05-13：将图片下载完成态和图片结果通知调整为优先打开本批次保存文件夹；原因是当前“打开文件夹”只打开泛化图片入口，不能直接定位到本次下载目录。
+- 2026-05-13：完成目录打开工具、图片结果通知协议、MainActivity 一次性目录打开消费和无可用应用 Toast 兜底，并通过 `./gradlew :app:compileDebugKotlin` 验证；原因是需要保证页面和通知的下载完成入口都能复用批次 `outputDir`，且不再误跳视频下载结果页。

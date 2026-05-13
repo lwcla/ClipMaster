@@ -13,6 +13,7 @@ import androidx.core.app.NotificationCompat
 import com.cla.clip.base.general.R
 import com.cla.clip.master.MainActivity
 import com.cla.clip.master.entity.ExtraData
+import com.cla.clip.master.entity.ImageFolderOpenData
 import com.cla.clip.shizuku.ShizukuStatus
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -53,6 +54,9 @@ class NotificationHelper @Inject constructor(
         /** 视频下载完成或失败结果通知固定 ID。 */
         const val VIDEO_DOWNLOAD_RESULT_NOTIFICATION_ID = 1005
 
+        /** 图片下载完成或失败结果通知固定 ID；固定 ID 覆盖上一次图片结果，避免通知栏堆积。 */
+        const val IMAGE_DOWNLOAD_RESULT_NOTIFICATION_ID = 1006
+
         /** 通知 Intent 中描述目标页面类型的 key。 */
         const val EXTRA_TARGET = "extra_target"
 
@@ -69,6 +73,11 @@ class NotificationHelper @Inject constructor(
         const val TARGET_VIDEO_DOWNLOAD_RESULT = "target_video_download_result"
         /** 视频下载结果通知携带的下载任务 ID。 */
         const val EXTRA_TASK_ID = "extra_task_id"
+
+        /** 从通知直接打开图片批量下载目录。 */
+        const val TARGET_IMAGE_FOLDER = "target_image_folder"
+        /** 图片下载结果通知携带的批次输出目录。 */
+        const val EXTRA_IMAGE_OUTPUT_DIR = "extra_image_output_dir"
 
         /**
          * 从通知 Intent 中解析剪贴详情跳转数据。
@@ -114,6 +123,27 @@ class NotificationHelper @Inject constructor(
             }
 
             return ExtraData(id, time)
+        }
+
+        /**
+         * 从通知 Intent 中解析图片保存目录打开数据。
+         *
+         * 图片下载结果通知不再复用视频下载页跳转，而是把批次输出目录交给 MainActivity 直接打开文件夹；timestamp 用于区分同一目录的多次点击。
+         */
+        fun Intent?.extractImageFolderOpenData(): ImageFolderOpenData? {
+            if (this == null) return null
+            val target = getStringExtra(EXTRA_TARGET)
+            if (target != TARGET_IMAGE_FOLDER) return null
+
+            val time = getLongExtra(EXTRA_TIMESTAMP, -1L)
+            if (time <= 0) {
+                return null
+            }
+
+            return ImageFolderOpenData(
+                outputDir = getStringExtra(EXTRA_IMAGE_OUTPUT_DIR),
+                timestamp = time
+            )
         }
     }
 
@@ -198,6 +228,47 @@ class NotificationHelper @Inject constructor(
             .build()
 
         manager.notify(VIDEO_DOWNLOAD_RESULT_NOTIFICATION_ID, notification)
+    }
+
+    /**
+     * 展示图片批量下载结果通知。
+     *
+     * 点击通知会把本批次 outputDir 带回 MainActivity，由统一的目录打开工具优先打开对应保存文件夹；requestCode 使用批次 id，
+     * 避免不同图片批次的 PendingIntent extras 互相覆盖。
+     */
+    fun notifyImageDownloadResult(batchId: Long, outputDir: String?, title: String, fileName: String, content: String?) {
+        createChannels()
+
+        val intent = Intent(appContext, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra(EXTRA_TARGET, TARGET_IMAGE_FOLDER)
+            putExtra(EXTRA_IMAGE_OUTPUT_DIR, outputDir)
+            // 同一批次可能被重新下载或再次通知，时间戳确保 MainVm 能把每次通知点击都当作独立事件消费。
+            putExtra(EXTRA_TIMESTAMP, SystemClock.elapsedRealtime())
+        }
+
+        val pendingIntent = PendingIntent.getActivity(
+            appContext,
+            batchId.hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(appContext, VIDEO_DOWNLOAD_CHANNEL_ID)
+            .setSmallIcon(R.mipmap.base_general_ic_app)
+            .setContentTitle(title)
+            .setSubText(fileName)
+            .setContentText(content ?: "")
+            .setContentIntent(pendingIntent)
+            .setSilent(true)
+            .setOnlyAlertOnce(true)
+            .setAutoCancel(true)
+            .setOngoing(false)
+            .build()
+
+        manager.notify(IMAGE_DOWNLOAD_RESULT_NOTIFICATION_ID, notification)
     }
 
     /** 读取剪贴板的前台服务通知 */

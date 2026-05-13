@@ -160,7 +160,7 @@ class DownloadImagesWorker @AssistedInject constructor(
                 filteredCount = filteredCount,
                 outputDir = outputDir
             )
-            notifyResult(batchId, outputFolderName, publishResult.successCount, failedCount, filteredCount)
+            notifyResult(batchId, outputFolderName, outputDir, publishResult.successCount, failedCount, filteredCount)
             Result.success()
         }.getOrElse { tr ->
             logE(TAG, tr) { "doWork: 图片批量下载失败" }
@@ -173,7 +173,7 @@ class DownloadImagesWorker @AssistedInject constructor(
                 outputDir = outputDir,
                 errorMsg = tr.message
             )
-            notifyResult(batchId, outputFolderName, 0, items.size, 0)
+            notifyResult(batchId, outputFolderName, outputDir, 0, items.size, 0)
             Result.failure()
         }
     }
@@ -448,7 +448,7 @@ class DownloadImagesWorker @AssistedInject constructor(
      *
      * 通知内容包含成功、过滤和失败数量；失败数量为 0 时使用下载完成标题，否则使用下载失败标题。
      */
-    private fun notifyResult(batchId: Long, fileName: String, successCount: Int, failedCount: Int, filteredCount: Int) {
+    private fun notifyResult(batchId: Long, fileName: String, outputDir: String, successCount: Int, failedCount: Int, filteredCount: Int) {
         val title = if (failedCount == 0) {
             applicationContext.getString(R.string.base_general_download_completed)
         } else {
@@ -459,7 +459,9 @@ class DownloadImagesWorker @AssistedInject constructor(
             if (filteredCount > 0) add(applicationContext.getString(R.string.base_general_image_filtered_count, filteredCount))
             if (failedCount > 0) add(applicationContext.getString(R.string.base_general_image_failed_count, failedCount))
         }.joinToString(applicationContext.getString(R.string.base_general_text_separator))
-        notificationHelper.notifyDownloadResult(batchId, title, fileName.showName, content)
+        // 没有任何图片发布成功时不传 outputDir，通知点击只走相册/选择器兜底，避免把用户带到一个可能不存在或为空的目录。
+        val openableOutputDir = outputDir.takeIf { successCount > 0 }
+        notificationHelper.notifyImageDownloadResult(batchId, openableOutputDir, title, fileName.showName, content)
     }
 
     /** 内容质量校验主动过滤图片时使用的异常，调用方据此区分过滤和真实失败。 */

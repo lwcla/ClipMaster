@@ -11,24 +11,30 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.rememberNavController
+import com.cla.clip.base.general.R
 import com.cla.clip.base.general.utils.logI
+import com.cla.clip.base.general.utils.toast
 import com.cla.clip.master.ui.navigation.AppNavigation
 import com.cla.clip.master.ui.navigation.DetailRoute
 import com.cla.clip.master.ui.navigation.VideoDownloadRoute
 import com.cla.clip.master.ui.theme.ClipMaterTheme
 import com.cla.clip.master.utils.ClipHelper
+import com.cla.clip.master.utils.ImageFolderOpenHelper
 import com.cla.clip.master.utils.NotificationHelper.Companion.extractClipId
+import com.cla.clip.master.utils.NotificationHelper.Companion.extractImageFolderOpenData
 import com.cla.clip.master.utils.NotificationHelper.Companion.extractTaskId
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @AndroidEntryPoint
 /**
  * 应用主 Activity。
  *
- * 承载 Compose 导航宿主，处理通知点击带来的剪贴板详情页和视频下载页跳转，并在前台/获焦时触发一次剪贴板读取。
+ * 承载 Compose 导航宿主，处理通知点击带来的剪贴板详情页、视频下载页和图片保存目录打开动作，并在前台/获焦时触发一次剪贴板读取。
  * 通知参数交给 MainVm 做一次性消费，避免 Activity 重组或重复 intent 导致页面重复打开。
  */
 class MainActivity : ComponentActivity() {
@@ -56,12 +62,17 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         mainVm.pendingClipId = intent.extractClipId()
         mainVm.pendingTaskId = intent.extractTaskId()
-        logI(TAG) { "onCreate: pendingClipId=${mainVm.pendingClipId} pendingTaskId=${mainVm.pendingTaskId}" }
+        mainVm.pendingImageFolderOpenData = intent.extractImageFolderOpenData()
+        logI(TAG) {
+            "onCreate: pendingClipId=${mainVm.pendingClipId} pendingTaskId=${mainVm.pendingTaskId} pendingImageFolderOpenData=${mainVm.pendingImageFolderOpenData}"
+        }
         enableEdgeToEdge()
 
         setContent {
             ClipMaterTheme {
                 val navController = rememberNavController()
+                /** 图片通知打开目录失败时需要从 Compose 侧发起 Toast 协程，避免在 LaunchedEffect 中阻塞 UI。 */
+                val coroutineScope = rememberCoroutineScope()
 
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
@@ -78,6 +89,18 @@ class MainActivity : ComponentActivity() {
                             mainVm.pendingTaskId()?.let { id ->
                                 logI(TAG) { "onCreate: 跳转到下载结果页 id=$id" }
                                 navController.navigate(VideoDownloadRoute(id)) { launchSingleTop = true }
+                            }
+                        }
+
+                        LaunchedEffect(mainVm.pendingImageFolderOpenData) {
+                            mainVm.pendingImageFolderOpenData()?.let { data ->
+                                logI(TAG) { "onCreate: 打开图片保存目录 outputDir=${data.outputDir}" }
+                                val opened = ImageFolderOpenHelper.openDownloadedImageFolder(this@MainActivity, data.outputDir)
+                                if (!opened) {
+                                    coroutineScope.launch {
+                                        this@MainActivity.toast(R.string.base_general_no_available_app_to_open_image_folder)
+                                    }
+                                }
                             }
                         }
 
@@ -110,7 +133,9 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         mainVm.pendingClipId = intent.extractClipId()
         mainVm.pendingTaskId = intent.extractTaskId()
-        logI(TAG) { "onNewIntent: pendingClipId=${mainVm.pendingClipId} pendingTaskId=${mainVm.pendingTaskId}" }
+        mainVm.pendingImageFolderOpenData = intent.extractImageFolderOpenData()
+        logI(TAG) {
+            "onNewIntent: pendingClipId=${mainVm.pendingClipId} pendingTaskId=${mainVm.pendingTaskId} pendingImageFolderOpenData=${mainVm.pendingImageFolderOpenData}"
+        }
     }
 }
-

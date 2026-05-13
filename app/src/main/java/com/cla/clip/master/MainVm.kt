@@ -6,6 +6,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.master.entity.ExtraData
+import com.cla.clip.master.entity.ImageFolderOpenData
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 
@@ -13,7 +14,7 @@ import javax.inject.Inject
 /**
  * 主 Activity 的一次性导航状态 ViewModel。
  *
- * 通知点击可能带来剪贴板记录 id 或下载任务 id；这些目标需要在 Compose 中被消费一次，
+ * 通知点击可能带来剪贴板记录 id、视频下载任务 id 或图片保存目录；这些目标需要在 Compose 中被消费一次，
  * 否则重组、横竖屏或重复 intent 可能导致重复导航。
  */
 class MainVm @Inject constructor() : ViewModel() {
@@ -34,6 +35,12 @@ class MainVm @Inject constructor() : ViewModel() {
 
     /** 最近一次已消费的下载任务 id，避免同一通知目标在重组时重复打开。 */
     private var usedTaskId: ExtraData? = null
+
+    /** 待打开的图片保存目录，来自图片下载结果通知；消费后会记录到 usedImageFolderOpenData。 */
+    var pendingImageFolderOpenData by mutableStateOf<ImageFolderOpenData?>(null)
+
+    /** 最近一次已消费的图片目录打开数据，带时间戳区分同一目录的不同通知点击。 */
+    private var usedImageFolderOpenData: ImageFolderOpenData? = null
 
     /**
      * 取出一个尚未消费的剪贴板记录 id。
@@ -65,6 +72,25 @@ class MainVm @Inject constructor() : ViewModel() {
 
         if (usedTaskId != null && usedTaskId == pendingTaskId) {
             logI(TAG) { "pendingTaskId: $pendingTaskId 已经被使用过 usedTaskId=$usedTaskId" }
+        }
+        return null
+    }
+
+    /**
+     * 取出一个尚未消费的图片保存目录。
+     *
+     * 返回 null 表示没有新目录目标或目标已被消费；调用方拿到目录后会尝试直接打开本批次图片文件夹。
+     */
+    fun pendingImageFolderOpenData(): ImageFolderOpenData? {
+        if (usedImageFolderOpenData != pendingImageFolderOpenData) {
+            usedImageFolderOpenData = pendingImageFolderOpenData
+            return pendingImageFolderOpenData
+        }
+
+        if (usedImageFolderOpenData != null && usedImageFolderOpenData == pendingImageFolderOpenData) {
+            logI(TAG) {
+                "pendingImageFolderOpenData: $pendingImageFolderOpenData 已经被使用过 usedImageFolderOpenData=$usedImageFolderOpenData"
+            }
         }
         return null
     }

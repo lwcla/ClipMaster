@@ -1,10 +1,8 @@
 package com.cla.clip.master.ui.page.image
 
 import android.content.Context
-import android.content.Intent
 import android.net.Uri
 import android.os.Build
-import android.provider.MediaStore
 import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -36,7 +34,6 @@ import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -90,6 +87,8 @@ import com.cla.clip.base.general.dao.ImageExtractBatchData
 import com.cla.clip.base.general.dao.ImageExtractItemData
 import com.cla.clip.base.general.repository.ImageCandidateData
 import com.cla.clip.base.general.utils.logD
+import com.cla.clip.base.general.utils.toast
+import com.cla.clip.master.utils.ImageFolderOpenHelper
 import com.cla.clip.master.ui.widget.ProbeWebView
 import com.cla.clip.master.ui.widget.TitleBar
 import kotlinx.coroutines.Job
@@ -396,7 +395,6 @@ fun ImageExtractPage(
     val coroutineScope = rememberCoroutineScope()
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var probeUserAgent by remember { mutableStateOf<String?>(null) }
-    var showOpenDialog by remember { mutableStateOf(false) }
     var collectJob by remember { mutableStateOf<Job?>(null) }
 
     /**
@@ -479,33 +477,17 @@ fun ImageExtractPage(
                 state = state,
                 viewModel = imageExtractVm,
                 onRetry = { imageExtractVm.sessionId += 1 },
-                onOpen = { showOpenDialog = true },
+                onOpen = { outputDir ->
+                    // 下载完成后直接按批次 outputDir 打开本次目录；失败时给用户一个轻量 Toast，而不是重新弹选择对话框。
+                    val opened = ImageFolderOpenHelper.openDownloadedImageFolder(context, outputDir)
+                    if (!opened) {
+                        coroutineScope.launch {
+                            context.toast(R.string.base_general_no_available_app_to_open_image_folder)
+                        }
+                    }
+                },
             )
         }
-    }
-
-    if (showOpenDialog) {
-        AlertDialog(
-            onDismissRequest = { showOpenDialog = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    showOpenDialog = false
-                    openGallery(context)
-                }) {
-                    Text(stringResource(R.string.base_general_open_gallery))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    showOpenDialog = false
-                    openFolder(context)
-                }) {
-                    Text(stringResource(R.string.base_general_open_folder))
-                }
-            },
-            title = { Text(stringResource(R.string.base_general_open_images)) },
-            text = { Text(stringResource(R.string.base_general_choose_saved_image_location)) }
-        )
     }
 }
 
@@ -519,7 +501,7 @@ private fun ImageExtractContent(
     state: ImageProbeState,
     viewModel: ImageExtractVm,
     onRetry: () -> Unit,
-    onOpen: () -> Unit,
+    onOpen: (String?) -> Unit,
 ) {
     when (state) {
         ImageProbeState.Idle -> Unit
@@ -559,7 +541,7 @@ private fun BatchStatusContent(
     state: ImageProbeState.Extracted,
     viewModel: ImageExtractVm,
     onRetry: () -> Unit,
-    onOpen: () -> Unit,
+    onOpen: (String?) -> Unit,
 ) {
     val batch by viewModel.observeBatch(state.batchId).collectAsState(initial = null)
     val curBatch = batch
@@ -587,15 +569,21 @@ private fun BatchStatusContent(
             }
 
             ImageExtractBatchData.STATUS_SUCCESS -> {
-                SuccessText(buildImageDownloadResultText(curBatch, includeOpenText = true), onOpen)
+                SuccessText(buildImageDownloadResultText(curBatch, includeOpenText = true)) {
+                    onOpen(curBatch.outputDir)
+                }
             }
 
             ImageExtractBatchData.STATUS_PARTIAL_SUCCESS -> {
-                SuccessText(buildImageDownloadResultText(curBatch, includeOpenText = true), onOpen)
+                SuccessText(buildImageDownloadResultText(curBatch, includeOpenText = true)) {
+                    onOpen(curBatch.outputDir)
+                }
             }
 
             ImageExtractBatchData.STATUS_FILTERED -> {
-                SuccessText(buildImageDownloadResultText(curBatch, includeOpenText = true), onOpen)
+                SuccessText(buildImageDownloadResultText(curBatch, includeOpenText = true)) {
+                    onOpen(curBatch.outputDir)
+                }
             }
 
             ImageExtractBatchData.STATUS_FAILED -> {
@@ -1241,33 +1229,4 @@ private fun isDecorativeImageUrl(lowerUrl: String): Boolean {
         Regex("""(^|[-_.@])icon([-_.@]|$)"""),
         Regex("""(^|[-_.@])logo([-_.@]|$)"""),
     ).any { it.containsMatchIn(fileName) }
-}
-
-/**
- * 打开系统图片媒体库。
- *
- * 下载完成后提供给用户快速查看已保存图片；启动失败时静默忽略，避免外部相册应用异常影响当前页面。
- */
-private fun openGallery(context: android.content.Context) {
-    val intent = Intent(Intent.ACTION_VIEW, MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
-        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    runCatching { context.startActivity(intent) }
-}
-
-/**
- * 打开系统图片查看入口选择器。
- *
- * 作为“打开相册”的补充路径，让用户可选择文件管理器或图库类应用查看保存结果；没有可用应用时静默留在当前页。
- */
-private fun openFolder(context: android.content.Context) {
-    val intent = Intent(Intent.ACTION_VIEW).apply {
-        type = "image/*"
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    }
-    runCatching {
-        context.startActivity(
-            Intent.createChooser(intent, context.getString(R.string.base_general_open_image_folder_chooser))
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        )
-    }
 }
