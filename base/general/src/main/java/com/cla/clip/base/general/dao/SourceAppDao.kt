@@ -26,20 +26,32 @@ import kotlinx.coroutines.flow.Flow
 data class SourceAppData(
     @PrimaryKey
     @ColumnInfo(name = "package_name")
+    /** 来源应用包名，作为主键；剪贴板记录通过 source_app_package 关联到这里。 */
     val packageName: String,
+
     @ColumnInfo(name = "app_name")
+    /** 用户可见应用名，来自 PackageManager；无法解析时调用方应提供兜底名称。 */
     val appName: String,
+
     @ColumnInfo(name = "icon_path")
+    /** 应用图标缓存路径，可能为空；图标文件由 FileUtils.saveIcon 写入应用私有目录。 */
     val iconPath: String?,
-    // 从图标提取出的主色，存储在这里，所有该应用的剪贴板记录共用
+
     @ColumnInfo(name = "primary_color")
+    /** 从图标提取的主色 ARGB Int，可能为空；所有同来源剪贴板记录共用，避免重复取色。 */
     val primaryColor: Int?,
-    // 图标的hash，避免重复保存图标和取色
+
     @ColumnInfo(name = "icon_hash")
+    /** 图标内容稳定哈希，用于判断图标是否变化，避免重复保存图标和重复提取主色。 */
     val iconHash: String?
 )
 
 @Dao
+/**
+ * 来源应用 DAO。
+ *
+ * 负责缓存来源应用名称、图标和主色信息，供列表、详情和搜索来源筛选复用。
+ */
 interface SourceAppDao {
 
     /**

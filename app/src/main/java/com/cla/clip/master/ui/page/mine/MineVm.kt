@@ -18,8 +18,15 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import javax.inject.Inject
 
+/**
+ * 我的页 ViewModel。
+ *
+ * 负责汇总 Shizuku、通知和悬浮窗权限状态，并把用户点击转换为一次性权限动作。
+ * 实际系统弹窗或设置页跳转由 UI 层执行，避免 ViewModel 持有 Activity 结果 API。
+ */
 @HiltViewModel
 class MineVm @Inject constructor(
+    /** 应用级 Context，仅用于读取系统权限状态，不持有页面实例。 */
     @param:ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
@@ -27,19 +34,34 @@ class MineVm @Inject constructor(
         private const val TAG = "MineVm"
     }
 
+    /** 权限说明卡片是否展开；属于纯 UI 状态，页面重建后恢复默认折叠。 */
     var permissionExpanded by mutableStateOf(false)
         private set
 
+    /** Shizuku 服务是否已连接，连接成功才代表可以使用跨进程剪贴板监听。 */
     var shizukuChecked by mutableStateOf(false)
         private set
+
+    /** 通知入口开关展示状态，只有运行时权限和系统通知总开关都可用时才为 true。 */
     var notificationChecked by mutableStateOf(false)
         private set
+
+    /** 通知权限的细分状态，用于区分运行时拒绝和系统通知总开关关闭。 */
     var notificationStatus by mutableStateOf(NotificationStatus.RuntimeDenied)
         private set
+
+    /** 悬浮窗权限是否已授予，当前只负责展示和跳转设置页。 */
     var overlayChecked by mutableStateOf(false)
         private set
 
+    /**
+     * 权限点击产生的一次性动作。
+     *
+     * 使用 SharedFlow 避免状态恢复时重复弹权限框或重复打开系统设置页。
+     */
     private val _permissionActions = MutableSharedFlow<PermissionAction>(extraBufferCapacity = 1)
+
+    /** 页面订阅的权限动作流。 */
     val permissionActions = _permissionActions.asSharedFlow()
 
     init {
@@ -47,6 +69,7 @@ class MineVm @Inject constructor(
         refreshPermissionStatus()
     }
 
+    /** 展开或收起权限说明卡片。 */
     fun togglePermissionExpanded() {
         permissionExpanded = !permissionExpanded
     }
@@ -131,22 +154,49 @@ class MineVm @Inject constructor(
         emitPermissionAction(PermissionAction.OpenOverlaySettings)
     }
 
+    /** 发送权限动作事件，缓冲区满时丢弃旧动作，避免连续点击造成多个系统页面叠加。 */
     private fun emitPermissionAction(action: PermissionAction) {
         _permissionActions.tryEmit(action)
     }
 
+    /**
+     * 我的页权限入口需要执行的一次性动作。
+     *
+     * ViewModel 只描述动作类型，具体启动权限弹窗、打开系统设置或跳转 Shizuku 应用由 Composable 完成。
+     */
     sealed class PermissionAction {
+        /** 请求 Shizuku 授权弹窗。 */
         data object RequestShizukuPermission : PermissionAction()
+
+        /** 打开 Shizuku 应用，用于启动服务或关闭已连接服务。 */
         data object OpenShizukuApp : PermissionAction()
+
+        /** 跳转到 Shizuku 下载页面。 */
         data object DownloadShizuku : PermissionAction()
+
+        /** 请求 Android 13+ 通知运行时权限。 */
         data object RequestNotificationPermission : PermissionAction()
+
+        /** 打开系统通知设置页。 */
         data object OpenNotificationSettings : PermissionAction()
+
+        /** 打开系统悬浮窗设置页。 */
         data object OpenOverlaySettings : PermissionAction()
     }
 
+    /**
+     * 通知权限细分状态。
+     *
+     * Android 13+ 的运行时权限和系统通知总开关语义不同，需要分开展示，方便用户知道该去哪里恢复。
+     */
     enum class NotificationStatus {
+        /** 通知运行时权限和系统通知总开关都可用。 */
         Enabled,
+
+        /** Android 13+ POST_NOTIFICATIONS 运行时权限被拒绝。 */
         RuntimeDenied,
+
+        /** 运行时权限可用，但系统通知总开关被关闭。 */
         SystemDisabled,
     }
 }

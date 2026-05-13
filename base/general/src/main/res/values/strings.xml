@@ -14,6 +14,7 @@
     <string name="base_general_delete">删除</string>
     <string name="base_general_copy">复制</string>
     <string name="base_general_list">列表</string>
+    <string name="base_general_list_tab">列表页</string>
     <string name="base_general_search">搜索</string>
     <string name="base_general_search_clip_hint">搜索剪贴内容、链接标题或来源 App</string>
     <string name="base_general_clear_search_keyword">清空搜索关键词</string>
@@ -29,6 +30,7 @@
     <string name="base_general_search_result_empty">没有找到相关内容</string>
     <string name="base_general_data_load_failed_retry">数据加载出错，点击重试！</string>
     <string name="base_general_mine">我的</string>
+    <string name="base_general_mine_tab">我的页</string>
     <string name="base_general_to_download">去下载</string>
     <string name="base_general_clipboard_service">剪贴板服务</string>
     <string name="base_general_clipboard_update">剪贴板更新</string>
@@ -56,6 +58,7 @@
     <string name="base_general_videos_or_pictures_from_web_pages_can_be_extracted_1">识别到网页 </string>
     <string name="base_general_videos_or_pictures_from_web_pages_can_be_extracted_2"> ,可以提取网页中的视频和图片</string>
     <string name="base_general_extract_the_video_address" tools:ignore="TypographyEllipsis">提取视频地址中...</string>
+    <string name="base_general_tap_video_in_webview">请在下方 WebView 中点击播放</string>
     <string name="base_general_failed_to_extract_the_video_address">视频地址提取超时，点击重试</string>
     <string name="base_general_extract_the_video_address_success">视频地址提取成功</string>
     <string name="base_general_video_download_failed">视频下载失败，点击重试</string>
@@ -72,12 +75,30 @@
     <string name="base_general_the_download_task_was_not_found">下载任务未找到</string>
     <string name="base_general_preparing_download" tools:ignore="TypographyEllipsis">下载任务正在初始化...</string>
     <string name="base_general_download_now" tools:ignore="TypographyEllipsis">下载中</string>
+    <string name="base_general_download_progress">下载中 %1$d%%</string>
     <string name="base_general_merge_now">合并中</string>
+    <string name="base_general_merge_progress">合并中 %1$d%%</string>
     <string name="base_general_image_extract_title">图片提取</string>
     <string name="base_general_image_extract_loading" tools:ignore="TypographyEllipsis">正在提取网页图片...</string>
     <string name="base_general_image_extract_failed_retry">图片提取失败，点击重试</string>
     <string name="base_general_image_extract_count">已提取到 %1$d 张图片</string>
     <string name="base_general_download_all_images">下载全部图片</string>
+    <string name="base_general_image_select_count">已选 %1$d/%2$d 张</string>
+    <string name="base_general_select_all">全选</string>
+    <string name="base_general_unselect_all">取消全选</string>
+    <string name="base_general_confirm_download_selected_images">下载已选图片</string>
+    <string name="base_general_image_preview">图片预览</string>
+    <string name="base_general_image_resolution">分辨率：%1$s</string>
+    <string name="base_general_image_file_type">类型：%1$s</string>
+    <string name="base_general_image_file_size">大小：%1$s</string>
+    <string name="base_general_image_resolution_value">%1$d×%2$d</string>
+    <string name="base_general_file_size_bytes">%1$d B</string>
+    <string name="base_general_file_size_kb">%1$.1f KB</string>
+    <string name="base_general_file_size_mb">%1$.1f MB</string>
+    <string name="base_general_file_size_gb">%1$.1f GB</string>
+    <string name="base_general_keep_this_image">保留这张图片</string>
+    <string name="base_general_remove_this_image">移除这张图片</string>
+    <string name="base_general_image_load_failed">图片加载失败</string>
     <string name="base_general_image_download_progress">正在下载 %1$d/%2$d</string>
     <string name="base_general_image_saved_count">已保存 %1$d 张图片</string>
     <string name="base_general_image_filtered_count">过滤 %1$d 张</string>

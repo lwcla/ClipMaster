@@ -28,34 +28,55 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.lsposed.hiddenapibypass.HiddenApiBypass
 import java.util.concurrent.atomic.AtomicBoolean
 
+/**
+ * 运行在 Shizuku 进程中的剪贴板 AppOps 桥接服务。
+ *
+ * 它通过隐藏 API 监听其他应用写剪贴板事件，采集来源应用信息后回调主进程；必要时会用 shell 命令预拉起主进程前台服务，
+ * 以绕过部分系统对后台启动服务的限制。
+ */
 class ClipboardShizukuService(private val context: Context) : IClipboardShizukuService.Stub() {
 
     companion object {
+        /** Shizuku 服务日志标签，用于排查隐藏 API、回调重连和 shell 启动命令。 */
         const val TAG = "ClipboardShizukuService"
     }
 
+    /** AppOpsManager 隐藏 API 入口，用于监听剪贴板写入 op 和授予悬浮窗模式。 */
     private val appOpsManager by lazy { context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager }
 
+    /** Shizuku 进程使用的 PackageManager，用来解析来源应用名称和图标。 */
     private val packageManager by lazy { context.packageManager }
 
+    /** 当前应用包名，既用于过滤自身事件，也用于 shell 命令启动主进程服务。 */
     private val packageName by lazy { context.packageName }
+
+    /** Shizuku 进程内协程作用域，使用 SupervisorJob 避免单次回调失败终止整个监听服务。 */
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob() + exceptionHandler)
+
+    /** 主进程注册的 AIDL 回调；为空表示主进程尚未连接或已经死亡。 */
     private var callFlow = MutableStateFlow<ShizukuCallback?>(null)
+
+    /** 监听启动状态，防止重复注册 AppOps listener。 */
     private var isRunning = AtomicBoolean(false)
 
+    /** 当前注册到 AppOps 的监听器实例，destroy 或重新 start 前必须移除。 */
     private var opNotedListener: AppOpsManagerHidden.OnOpNotedListener? = null
 
+    /** 最近一次剪贴板事件处理任务，用于防抖；新事件到来会取消旧任务。 */
     private var job: Job? = null
 
+    /** AIDL 健康检查入口；主进程用它确认 Shizuku 进程是否仍持有 callback。 */
     override fun isAlive(): Boolean {
         return callFlow.value != null
     }
 
+    /** 主动退出 Shizuku 服务，通常用于用户关闭或重连前清理旧进程。 */
     override fun exit() {
         logD(TAG) { "exit" }
         destroy()
     }
 
+    /** 销毁监听并杀死当前 Shizuku 进程，避免旧进程继续监听剪贴板事件。 */
     override fun destroy() {
         logD(TAG) { "destroy" }
         isRunning.set(false)
@@ -68,6 +89,11 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         android.os.Process.killProcess(pid)
     }
 
+    /**
+     * 启动剪贴板 AppOps 监听。
+     *
+     * 会先确保悬浮窗权限被授予，再注册隐藏 API 监听器；Android P+ 需要先添加 HiddenApiBypass 豁免。
+     */
     override fun start() {
         logD(TAG) { "start" }
         if (isRunning.get()) {
@@ -98,11 +124,17 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         Refine.unsafeCast<AppOpsManagerHidden>(appOpsManager).startWatchingNoted(intArrayOf(30), opNotedListener)
     }
 
+    /** 注册主进程回调；主进程重连时会覆盖旧 callback，死亡时由发送失败路径清空。 */
     override fun setCallback(shizukuCallback: ShizukuCallback?) {
         logD(TAG) { "setCallback : 设置callback shizukuCallback=$shizukuCallback" }
         callFlow.update { shizukuCallback }
     }
 
+    /**
+     * 处理剪贴板写入事件。
+     *
+     * 先确保主进程具备悬浮窗权限，再防抖 100ms 后解析来源应用名、图标和图标哈希，最后回调主进程读取真实剪贴板内容。
+     */
     fun handleOpNoted(clipPackageName: String?) {
         if (!context.hasOverlayPermission()) {
             // 开启悬浮窗权限
@@ -131,6 +163,7 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         }
     }
 
+    /** 移除当前 AppOps 监听器；隐藏 API 失败只记录日志，避免 destroy 流程被中断。 */
     private fun removeListener() {
         opNotedListener?.let { listener ->
             runCatching {
@@ -142,6 +175,12 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         opNotedListener = null
     }
 
+    /**
+     * 将来源应用信息投递给主进程。
+     *
+     * 先尝试已有 callback；失败后分别尝试前台服务和普通服务唤醒主进程并等待 callback 重连。
+     * 所有等待都有超时，避免 Shizuku 进程因主进程不可用而永久挂起。
+     */
     private suspend fun insert(clipPackageName: String?, appName: String, bitmap: Bitmap?, iconHash: String?) {
         // android.app.ForegroundServiceStartNotAllowedException: startForegroundService() not allowed due to mAllowStartForeground false: service com.cla.clip.master/.service.ClipboardService
         // 在aidl中去启动前台服务被拒绝了，所以在这里先用命令启动一次前台服务
@@ -220,6 +259,11 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         }
     }
 
+    /**
+     * 通过 shell 命令启动主进程前台服务。
+     *
+     * Shizuku 进程不直接调用 Context.startForegroundService，避免后台启动限制；返回 false 表示命令失败或输出包含 Error。
+     */
     private fun startForegroundService(): Boolean {
         val process = ProcessBuilder(
             "am",
@@ -235,7 +279,11 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
         return (exitCode == 0) && !output.contains("Error:", ignoreCase = true)
     }
 
-    /** 启动普通服务 */
+    /**
+     * 通过 shell 命令启动主进程普通服务。
+     *
+     * 作为前台服务启动失败后的兼容方案；Android 8+ 或定制 ROM 仍可能因后台限制拒绝。
+     */
     private fun startService(): Boolean {
         // 命令执行失败，可能是 Android 12+ 的限制导致的，尝试使用 startservice 作为兼容方案
         val process = ProcessBuilder(

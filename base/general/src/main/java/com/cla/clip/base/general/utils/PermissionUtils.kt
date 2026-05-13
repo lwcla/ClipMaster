@@ -10,6 +10,11 @@ import android.provider.Settings
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 
+/**
+ * 权限相关工具和阈值。
+ *
+ * 集中处理通知、悬浮窗、存储权限和系统设置页跳转；不同 Android 版本权限模型不同，调用方不要绕过这里直接判断。
+ */
 object PermissionUtils {
     /**
      * 判断权限是否呗永久拒绝的间隔时间
@@ -20,7 +25,7 @@ object PermissionUtils {
     const val DENIED_FOREVER_TAKE_TIME = 400
 }
 
-/** 检查某个权限是否被授予 */
+/** 检查普通运行时权限是否已授予；只适用于 Android 标准 dangerous permission，不适用于悬浮窗等特殊权限。 */
 fun Context.hasPermission(permission: String) = ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 
 /**
@@ -39,7 +44,6 @@ fun Context.hasNotificationPermission(): Boolean {
     return notificationEnabled && runtimeGranted
 }
 
-/** 检查悬浮窗权限 */
 /**
  * 判断前台服务启动链路需要的通知运行时权限是否已授予。
  *
@@ -49,9 +53,14 @@ fun Context.hasNotificationRuntimePermission(): Boolean {
     return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || hasPermission(Manifest.permission.POST_NOTIFICATIONS)
 }
 
+/** 检查悬浮窗特殊权限；该权限不能通过普通运行时权限弹窗授予，只能跳系统设置页。 */
 fun Context.hasOverlayPermission() = Settings.canDrawOverlays(this)
 
-/** 跳转到应用的权限设置页面 */
+/**
+ * 跳转到当前应用对应权限的系统设置页面。
+ *
+ * 通知、悬浮窗和完整文件访问权限有专属入口，其余权限回退到应用详情页；部分定制 ROM 可能抛异常，因此会兜底到详情页。
+ */
 fun Context.toPermissionSetting(permission: String) {
     fun newIntent(): Intent {
         when {
@@ -109,6 +118,11 @@ fun Context.hasStoragePermission() = if (Build.VERSION.SDK_INT >= Build.VERSION_
     hasPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)
 }
 
+/**
+ * 返回当前系统需要申请的外部存储权限。
+ *
+ * Android 10+ 只向媒体库写入文件不需要存储权限，因此返回 null；旧系统返回 WRITE_EXTERNAL_STORAGE。
+ */
 fun Context.getStoragePermission() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
     null
 } else {

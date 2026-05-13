@@ -28,23 +28,37 @@ import androidx.room.Upsert
 data class LinkPreviewData(
     @PrimaryKey
     @ColumnInfo(name = "link")
+    /** 预览对应的原始链接 URL，作为主键；多个剪贴板记录可指向同一个预览。 */
     val link: String,
+
     @ColumnInfo(name = "title")
+    /** 网页标题，可能为空；UI 展示时需要回退到链接或剪贴板内容。 */
     val title: String?,
+
     @ColumnInfo(name = "description")
+    /** 网页描述信息，可能为空；仅作为列表/详情辅助展示，不参与主键判断。 */
     val description: String?,
+
     @ColumnInfo(name = "image_url")
+    /** 预览图 URL，可能为空；图片加载失败不影响剪贴板记录本身。 */
     val imageUrl: String?,
+
     @ColumnInfo(name = "site_name")
+    /** 站点名称，可能为空；来自 meta 标签或解析器推断。 */
     val siteName: String?,
 )
 
 @Dao
+/**
+ * 链接预览 DAO。
+ *
+ * 预览记录以链接为主键独立缓存，剪贴板记录只通过 link 字段关联读取，不随单条剪贴板删除而级联删除。
+ */
 interface LinkPreviewDao {
 
     /**
      * 更新或插入一个LinkPreviewData条目。这是所有数据写入的基础，使用更高效的 @Upsert。
-     * @param LinkPreviewData 要更新或插入的LinkPreviewData对象。
+     * @param data 要更新或插入的 LinkPreviewData 对象。
      * @return 更新或插入条目的ID。
      */
     @Upsert

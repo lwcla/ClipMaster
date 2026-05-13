@@ -14,12 +14,20 @@ import com.cla.clip.master.ui.page.search.SearchPage
 import com.cla.clip.master.ui.page.video.VideoDownloadPage
 import com.cla.clip.master.ui.page.video.VideoExtractPage
 
+/**
+ * 应用主导航图。
+ *
+ * 统一注册首页、列表、搜索、详情、视频/图片提取、视频下载和我的页面的路由，并为子页面提供通用的返回和跳转回调。
+ * 下载页返回时会特殊处理导航栈，避免用户从下载完成页返回到已经完成使命的视频提取页。
+ */
 @Composable
 fun AppNavigation(navController: NavHostController) {
+    /** 子页面统一使用的跳转回调，保持所有页面都通过类型安全 Route 导航。 */
     val onNavigate = { route: Route ->
         navController.navigate(route)
     }
 
+    /** 子页面统一返回回调，默认弹出当前目的地。 */
     val onBack = {
         navController.popBackStack()
         Unit

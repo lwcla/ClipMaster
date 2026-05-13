@@ -12,7 +12,11 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.utils.toRelativeTimeSpanString
 
-/** ClipEntity 的扩展函数，用于在 Compose 中记住格式化的时间字符串，并在生命周期内自动更新 */
+/**
+ * 在 Compose 中记住剪贴板记录的相对时间文案。
+ *
+ * 页面处于 STARTED 生命周期时会重新计算一次，避免列表长时间停留后“刚刚/几分钟前”等展示过期；返回值只用于 UI 展示。
+ */
 @Composable
 fun ClipShowEntity.rememberFormattedTime(): String {
     var formattedTime by remember { mutableStateOf(formattedTime) }

@@ -62,9 +62,17 @@ import com.cla.clip.master.ui.widget.TitleBar
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 
+/** 隐藏 WebView 自动探测的最长等待时间，单位毫秒；超过后认为当前轮次没有捕获到视频资源。 */
 private const val HIDDEN_PROBE_TIMEOUT_MS = 10_000L
+
+/** 预留给用户手动播放阶段的最长等待时间，单位毫秒；当前阶段主要作为后续交互增强的状态边界。 */
 private const val USER_PLAY_TIMEOUT_MS = 25_000L
 
+/**
+ * 自动播放页面内 video 标签的脚本。
+ *
+ * 静音和 playsInline 可以提升移动站点允许自动播放的概率；失败时吞掉 Promise 异常，避免 WebView 控制台错误影响探测流程。
+ */
 private const val AUTO_PLAY_JS = """
 (function() {
   try {
@@ -81,7 +89,12 @@ private const val AUTO_PLAY_JS = """
 """
 
 
-/** 视频地址识别页 */
+/**
+ * 视频地址识别页。
+ *
+ * 页面在后台加载目标网页，通过 WebView 请求拦截识别真实视频资源；识别成功后创建下载任务并跳转下载页。
+ * WebView 生命周期在页面内管理，离开页面时必须销毁，避免继续加载第三方页面或持有 Activity。
+ */
 @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
 @Composable
 fun VideoExtractPage(
@@ -93,6 +106,12 @@ fun VideoExtractPage(
 ) {
     val tag = "视频地址识别"
     val context = LocalContext.current
+
+    /**
+     * 当前探测用 WebView 引用。
+     *
+     * 仅在页面生命周期内持有，用于重试加载、执行自动播放脚本和退出时释放资源。
+     */
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
 
     LaunchedEffect(Unit) {
@@ -134,6 +153,11 @@ fun VideoExtractPage(
         }
     }
 
+    /**
+     * 清理探测 WebView。
+     *
+     * 先解绑 WebChromeClient 再停止加载和销毁，降低页面退出后异步回调继续访问 Compose 状态的风险。
+     */
     fun clearWebView() {
         logD(tag) { "clearWebView : " }
         webViewRef?.webChromeClient = null
@@ -147,7 +171,6 @@ fun VideoExtractPage(
         onDispose { clearWebView() }
     }
 
-    //    val link = "https://v.douyin.com/bzLHPnkAbhs/"
     LaunchedEffect(videoExtractVm.sessionId) {
         if (videoExtractVm.probeState is ProbeState.Failed || videoExtractVm.probeState is ProbeState.Success) {
             return@LaunchedEffect
@@ -182,7 +205,7 @@ fun VideoExtractPage(
                 }
             }
 
-            // ========== 前景遮罩层：盖住 WebView，并吞掉触摸，让WebView在后面加载页面，等页面加载完成之后，触发视频播放，拦截视频地址 ==========
+            // 前景遮罩盖住 WebView 并吞掉触摸，让后台页面完成加载、触发播放并被请求拦截识别。
 //            val hideWebView = videoExtractVm.probeState is ProbeState.HiddenProbing || videoExtractVm.probeState is ProbeState.Idle
             Column(
                 modifier = Modifier
@@ -211,7 +234,7 @@ fun VideoExtractPage(
                         is ProbeState.NeedUserPlay -> {
                             // todo 但这个先不做，因为webView播放视频一直是黑屏的状态，还不清楚是为什么
                             // NeedUserPlay 时不加全屏遮罩，让用户可直接操作 WebView
-                            Text("请在下方 WebView 中点击播放")
+                            Text(stringResource(R.string.base_general_tap_video_in_webview))
                         }
 
                         is ProbeState.Failed -> {
@@ -233,7 +256,7 @@ fun VideoExtractPage(
     }
 }
 
-/** 提取失败 */
+/** 视频地址提取失败状态，点击整行会触发新一轮 session 重试。 */
 @Composable
 fun Filed(retry: () -> Unit) {
     Row(
@@ -270,7 +293,7 @@ private fun FailedPreview() {
     }
 }
 
-/** 加载中状态 */
+/** 视频地址探测中的前景提示。 */
 @Composable
 private fun Loading() {
     Row(
@@ -297,7 +320,11 @@ private fun LoadingPreview() {
     }
 }
 
-/** 视频地址识别成功 */
+/**
+ * 视频地址识别成功状态。
+ *
+ * 点击下载前先走存储权限申请；pendingCandidate 额外带时间戳，是为了同一个候选地址重复点击也能重新触发权限组件。
+ */
 @Composable
 private fun Success(
     videoExtractVm: VideoExtractVm,
@@ -314,7 +341,7 @@ private fun Success(
                 RequestStoragePermission(
                     next = {
                         pendingCandidate = null
-                        // 创建下载任务，并且跳转详情页
+                        // 权限确认后再创建下载任务，避免 Worker 启动后才发现没有保存权限。
                         videoExtractVm.startDownloadAndGo(pending.second)
                     }
                 )
@@ -375,6 +402,11 @@ private fun SharedVideoProbeWebViewLayer(
 ) {
     val tag = "webView"
 
+    /**
+     * 复用通用 ProbeWebView 的视频探测层。
+     *
+     * 当前页面只关心请求拦截和候选地址回调，具体 WebView 配置集中在 `ProbeWebView` 中维护。
+     */
     ProbeWebView(
         targetUrl = targetUrl,
         onWebViewReady = onWebViewReady,
@@ -409,6 +441,11 @@ private fun SharedVideoProbeWebViewLayer(
     )
 }
 
+/**
+ * 旧版内联 WebView 探测层。
+ *
+ * 保留用于对比通用 ProbeWebView 的行为差异；如果通用组件稳定覆盖所有站点，这段可以后续删除。
+ */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 private fun VideoProbeWebViewLayer(
@@ -434,23 +471,27 @@ private fun VideoProbeWebViewLayer(
                     databaseEnabled = true
                     loadsImagesAutomatically = true
                     mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                    userAgentString = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Mobile Safari/537.36" // Android手机访问
+                    // 使用 Android 移动 UA，让短视频站点返回移动端播放器资源，命中真实视频请求的概率更高。
+                    userAgentString = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Mobile Safari/537.36"
 //                    userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" // pc浏览器访问
                     javaScriptCanOpenWindowsAutomatically = true
                     allowContentAccess = true
                     allowFileAccess = true
                     cacheMode = WebSettings.LOAD_DEFAULT
-                    builtInZoomControls = true // 隐藏缩放按钮
-                    layoutAlgorithm = WebSettings.LayoutAlgorithm.NORMAL // 排版适应屏幕
-                    useWideViewPort = true // 可任意比例缩放
-                    loadWithOverviewMode = true // 设置webview加载的页面的模式
-                    setGeolocationEnabled(true) // 启动地理定位
+                    // 页面通常被前景遮罩覆盖，保留缩放/宽视口能力只用于调试手动播放阶段。
+                    builtInZoomControls = true
+                    layoutAlgorithm = WebSettings.LayoutAlgorithm.NORMAL
+                    useWideViewPort = true
+                    loadWithOverviewMode = true
+                    // 部分站点会根据定位权限或 API 判断播放能力，这里只开启 WebView 能力，不主动申请系统定位权限。
+                    setGeolocationEnabled(true)
                     setSupportMultipleWindows(true)
                     displayZoomControls = false
                     mediaPlaybackRequiresUserGesture = true
                 }
 
                 val cm = android.webkit.CookieManager.getInstance()
+                // 第三方 Cookie 可能参与防盗链鉴权，下载任务会保存拦截时拿到的 Cookie。
                 cm.setAcceptCookie(true)
                 cm.setAcceptThirdPartyCookies(this, true)
 
@@ -471,7 +512,7 @@ private fun VideoProbeWebViewLayer(
 
                     override fun onPageFinished(view: WebView, url: String?) {
                         super.onPageFinished(view, url)
-                        // 尝试自动触发（成功率非100%）
+                        // 页面加载完成后尝试触发播放，成功率取决于站点的自动播放策略。
                         val progress = view.progress
                         if (progress > 99) {
                             logW(tag) { "onPageFinished: 去触发播放 progress=${progress}" }
@@ -516,10 +557,17 @@ private fun VideoProbeWebViewLayer(
     )
 }
 
+/** 判断 URL scheme 是否应交给外部 App；探测页只允许 WebView 继续处理网页相关 scheme。 */
 private fun isExternalAppScheme(scheme: String): Boolean {
     return scheme !in setOf("http", "https", "about", "data", "blob")
 }
 
+/**
+ * 判断一次 WebView 请求是否可能是真实视频资源。
+ *
+ * 规则结合平台接口特征、常见视频扩展名、关键词和 MIME；宁可接受少量误判也要尽早捕获会话 Cookie 和 Referer，
+ * 后续下载失败再由 Worker/下载页反馈。
+ */
 private fun isLikelyVideoRequest(
     uri: Uri,
     headers: Map<String, String>,
@@ -556,4 +604,3 @@ private fun isLikelyVideoRequest(
 
     return byExt || (byKeyword && byMime) || byMime
 }
-

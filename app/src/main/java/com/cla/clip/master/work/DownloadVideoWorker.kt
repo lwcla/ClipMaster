@@ -37,6 +37,12 @@ import okhttp3.Response
 import java.io.File
 
 @HiltWorker
+/**
+ * 视频下载 Worker。
+ *
+ * 根据 `download_tasks` 中保存的视频 URL 和请求头下载直链或 M3U8 视频，写入 MediaStore/公共目录，
+ * 并通过前台通知和数据库状态向 UI 汇报进度。
+ */
 class DownloadVideoWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted params: WorkerParameters,
@@ -47,18 +53,26 @@ class DownloadVideoWorker @AssistedInject constructor(
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
+        /** 视频下载 Worker 日志标签。 */
         private const val TAG = "DownloadVideoWorker"
 
+        /** WorkManager 标签，用于取消或筛选全部视频下载任务。 */
         const val DOWNLOAD_VIDEO_TASK_TAG = "download_video"
 
+        /** Worker 输入数据中的任务 id key，对应 download_tasks.id。 */
         const val KEY_TASK_ID = "key_task_id"
 
+        /** M3U8 分片临时目录名，最终路径为 cacheDir/m3u8/{taskId}。 */
         const val M3U8_DIR_NAME = "m3u8"
 
+        /** 抖音带水印播放接口路径，下载前会优先尝试替换为无水印路径。 */
         private const val DOU_YIN_PLAYVM = "/playwm/"
+
+        /** 抖音无水印播放接口路径，连接失败时会回退到原始 playwm。 */
         private const val DOU_YIN_PLAY = "/play/"
 
         // todo 不知道能不能设置为如果是同一个taskId，则keep，如果是不同的taskId，则排队
+        /** 入队指定视频下载任务；同一 taskId 的未完成任务会被 KEEP，避免重复下载同一文件。 */
         fun enqueue(context: Context, taskId: Long) {
             logD(TAG) { "enqueue: 启动下载 taskId=$taskId" }
             val data = workDataOf(KEY_TASK_ID to taskId)
@@ -76,11 +90,17 @@ class DownloadVideoWorker @AssistedInject constructor(
             )
         }
 
+        /** 取消所有视频下载 Worker，应用启动时用来避免自动恢复上次遗留任务。 */
         fun cancel(context: Context) {
             WorkManager.getInstance(context).cancelAllWorkByTag(DOWNLOAD_VIDEO_TASK_TAG)
         }
     }
 
+    /**
+     * Worker 执行入口。
+     *
+     * 读取任务、创建输出文件、清理上次失败的 pending 输出和 M3U8 临时目录；下载失败时会清理本次半成品并通知用户。
+     */
     override suspend fun doWork(): Result {
         val taskId = inputData.getLong(KEY_TASK_ID, -1)
         val task = downloadRepo.getTask(taskId) ?: return Result.failure()
@@ -140,6 +160,11 @@ class DownloadVideoWorker @AssistedInject constructor(
         }
     }
 
+    /**
+     * 根据视频 URL 类型执行下载。
+     *
+     * 普通媒体流直接写入输出；M3U8 交给 Download.M3u8 下载分片并合并；抖音 playwm 地址优先尝试无水印 play 地址。
+     */
     private suspend fun downloadVideo(
         taskId: Long,
         videoUrl: String,
@@ -150,6 +175,11 @@ class DownloadVideoWorker @AssistedInject constructor(
         saveVideo: SaveToFile,
         mediaTarget: MediaStoreTarget
     ) {
+        /**
+         * 根据入口响应选择直链或 M3U8 下载器并启动。
+         *
+         * 这里统一桥接下载进度和合并进度回调，避免同一进度重复写数据库和刷新前台通知。
+         */
         suspend fun start(response: Response) {
             val download = if (isM3u8(response)) {
                 Download.M3u8(taskId, response, mediaTarget) { url -> executeRequest(m3u8Client.get(), url, referer, userAgent, cookie) }
@@ -207,6 +237,7 @@ class DownloadVideoWorker @AssistedInject constructor(
         )
     }
 
+    /** 更新数据库进度、WorkManager progress 和前台通知；isMerge 为 true 时展示“合并中”。 */
     private suspend fun updateProgress(taskId: Long, fileName: String, progress: Int, isMerge: Boolean) {
         if (isMerge) {
             downloadRepo.updateMergeProgress(taskId, progress)
@@ -223,6 +254,7 @@ class DownloadVideoWorker @AssistedInject constructor(
         setForeground(buildForegroundInfo(title, fileName.showName, progress))
     }
 
+    /** 判断响应是否为 M3U8：先看 Content-Type，再嗅探响应头部文本，兼容服务端 MIME 不规范的情况。 */
     private fun isM3u8(response: Response): Boolean {
         val contentType = response.header("Content-Type").orEmpty().lowercase()
         val byType = contentType.contains("mpegurl") || contentType.contains("x-mpegurl")
@@ -234,12 +266,14 @@ class DownloadVideoWorker @AssistedInject constructor(
         return looksLikeM3u8(headText)
     }
 
+    /** 判断文本是否像 HLS playlist，要求包含 EXT-M3U 以及分片或子码流标记。 */
     private fun looksLikeM3u8(text: String): Boolean {
         val t = text.trim()
         if (!t.contains("#EXTM3U", ignoreCase = true)) return false
         return t.contains("#EXTINF", true) || t.contains("#EXT-X-STREAM-INF", true)
     }
 
+    /** 执行视频或 M3U8 子资源请求；非成功响应会关闭 body 并抛错，让 Worker 进入失败清理路径。 */
     private fun executeRequest(
         client: OkHttpClient,
         url: String,
@@ -255,6 +289,7 @@ class DownloadVideoWorker @AssistedInject constructor(
         return response
     }
 
+    /** 构建下载请求，按需携带 WebView 捕获到的反盗链上下文。 */
     private fun requestBuilder(
         url: String,
         referer: String?,
@@ -266,6 +301,7 @@ class DownloadVideoWorker @AssistedInject constructor(
         if (!cookie.isNullOrBlank()) header("Cookie", cookie)
     }.build()
 
+    /** 构建视频下载前台通知，Android 10+ 标记为 DATA_SYNC 前台服务类型。 */
     private fun buildForegroundInfo(title: String, fileName: String, progress: Int): ForegroundInfo {
         val notification = notificationHelper.buildDownloadNotification(title, fileName, progress)
 

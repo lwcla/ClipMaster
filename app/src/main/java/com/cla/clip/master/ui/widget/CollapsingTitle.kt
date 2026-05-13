@@ -20,7 +20,11 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 
 
-/** 可折叠标题栏 */
+/**
+ * 带大标题折叠效果的页面脚手架。
+ *
+ * 调用方传入标题和内容区域；内容会拿到 Scaffold 的 paddingValues，用于和 LargeTopAppBar 的折叠滚动行为对齐。
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CollapsingTitle(title: String, content: @Composable (paddingValues: PaddingValues) -> Unit) {

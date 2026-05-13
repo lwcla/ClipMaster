@@ -25,17 +25,32 @@ import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
 @AndroidEntryPoint
+/**
+ * 应用主 Activity。
+ *
+ * 承载 Compose 导航宿主，处理通知点击带来的剪贴板详情页和视频下载页跳转，并在前台/获焦时触发一次剪贴板读取。
+ * 通知参数交给 MainVm 做一次性消费，避免 Activity 重组或重复 intent 导致页面重复打开。
+ */
 class MainActivity : ComponentActivity() {
 
     companion object {
+        /** 主 Activity 日志标签，用于定位通知跳转和剪贴板读取触发时机。 */
         private const val TAG = "MainActivity"
     }
 
+    /** 剪贴板读取助手，使用 Lazy 避免 Activity 创建时立即触发较重的依赖初始化。 */
     @Inject
     lateinit var clipHelper: dagger.Lazy<ClipHelper>
 
+    /** Activity 级 ViewModel，保存来自通知 intent 的一次性跳转目标。 */
     private val mainVm by viewModels<MainVm>()
 
+    /**
+     * 初始化 Compose 内容和导航。
+     *
+     * 启动时先读取通知参数，再通过 LaunchedEffect 消费 pending id；这样既能支持冷启动通知跳转，
+     * 也能避免普通重组重复导航。
+     */
     @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -73,16 +88,23 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Activity 回到前台时主动读取一次剪贴板，补偿系统剪贴板监听可能丢失的情况。 */
     override fun onResume() {
         super.onResume()
         clipHelper.get().readNow(resume = true)
     }
 
+    /** 窗口重新获得焦点时读取剪贴板，覆盖用户从其他应用复制后回到本应用的常见路径。 */
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         clipHelper.get().readNow(hasFocus = hasFocus)
     }
 
+    /**
+     * 处理已存在 Activity 收到的新通知 intent。
+     *
+     * 需要调用 setIntent 更新 Activity 当前 intent，并刷新 MainVm 的一次性跳转目标，让 LaunchedEffect 能继续处理新目标。
+     */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -91,5 +113,4 @@ class MainActivity : ComponentActivity() {
         logI(TAG) { "onNewIntent: pendingClipId=${mainVm.pendingClipId} pendingTaskId=${mainVm.pendingTaskId}" }
     }
 }
-
 

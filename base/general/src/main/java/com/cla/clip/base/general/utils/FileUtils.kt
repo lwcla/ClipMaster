@@ -15,6 +15,7 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.io.OutputStream
 
+/** 文件保存工具日志标签，用于排查 MediaStore 写入、扫描和清理问题。 */
 private const val TAG = "FileUtils"
 
 /** 应用图标缓存目录名称，用于保存剪贴板来源应用的图标文件。 */
@@ -32,11 +33,23 @@ private const val MAX_UNIQUE_FOLDER_ATTEMPTS = 1_000
 /** 进程内已预留的图片文件夹名，避免并发下载任务抢到同一个目录。 */
 private val reservedImageFolderNames = mutableSetOf<String>()
 
+/**
+ * 媒体保存目标描述。
+ *
+ * Video 会固定保存为 mp4；Image 需要调用方提供最终文件名、目录名和 MIME，确保批量图片能按网页标题分目录保存。
+ */
 sealed class SaveToFile(open val fileName: String) {
+    /** 视频保存目标，fileName 不包含扩展名，最终会追加 `.mp4`。 */
     data class Video(override val fileName: String) : SaveToFile(fileName)
+
     data class Image(
+        /** 图片最终文件名，包含扩展名；由 Worker 根据网页顺序和响应类型生成。 */
         override val fileName: String,
+
+        /** 图片批量下载目录名，已经由 createUniqueImageFolderName 做过冲突规避。 */
         val folderName: String,
+
+        /** 图片 MIME 类型，写入 MediaStore 时用于系统识别媒体格式。 */
         val mimeType: String
     ) : SaveToFile(fileName)
 }
@@ -175,10 +188,16 @@ fun SaveToFile.success(context: Context, target: MediaStoreTarget) {
  * 在 Android 10+ 上，直接删除 MediaStore 中的记录即可。
  * 在 Android 10 以下，则需要删除文件，并且调用 MediaScannerConnection.scanFile() 来通知系统更新媒体库。
  */
+/** 使用 MediaStoreTarget 清理下载失败半成品；封装目标对象形式，供 Worker 失败路径直接调用。 */
 suspend fun SaveToFile.failure(context: Context, target: MediaStoreTarget) = withContext(Dispatchers.IO) {
     failure(context, target.uri, target.path)
 }
 
+/**
+ * 按 URI 或真实路径清理下载失败半成品。
+ *
+ * Android 10+ 优先删除 MediaStore 记录；旧系统删除文件路径。调用方应在 IO 线程使用，避免主线程文件操作。
+ */
 suspend fun SaveToFile.failure(context: Context, uri: Uri?, path: String?) = withContext(Dispatchers.IO) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && uri != null) {
         // 删除半成品
@@ -205,6 +224,11 @@ suspend fun SaveToFile.failure(context: Context, uri: Uri?, path: String?) = wit
     }
 }
 
+/**
+ * 递归清理文件或目录。
+ *
+ * 用于删除 M3U8 分片临时目录和异常遗留文件；失败只记录日志，不向外抛出，避免清理失败覆盖原始下载错误。
+ */
 fun File.clear() {
     if (!exists()) {
         return
@@ -230,8 +254,13 @@ fun File.clear() {
 }
 
 data class MediaStoreTarget(
+    /** Android 10+ MediaStore 插入得到的 URI；旧系统直接写文件时为空。 */
     val uri: Uri?,
+
+    /** 可记录或展示的输出位置，Android 10+ 通常是 URI 字符串，旧系统是真实文件路径。 */
     val path: String,
+
+    /** 已打开的输出流，调用方负责写入并关闭。 */
     val outputStream: OutputStream
 )
 
@@ -242,7 +271,10 @@ data class MediaStoreTarget(
  * 这个结构把“目录如何命名”和“目录在媒体库中的相对路径”放在保存工具层统一维护，避免上层 Worker 复制存储规则。
  */
 data class UniqueImageFolder(
+    /** 实际创建文件时使用的目录名，不包含父级 DCIM/clipMaster 前缀。 */
     val folderName: String,
+
+    /** 记录给业务层或用户查看的媒体库相对路径。 */
     val relativePath: String,
 )
 
@@ -294,6 +326,11 @@ private fun Context.mediaStoreImageFolderExists(folderName: String): Boolean {
     } ?: false
 }
 
+/**
+ * 保存来源应用图标到应用私有目录。
+ *
+ * packageName 或 appIcon 为空时返回 null；同一包名会覆盖旧图标，调用方可结合 iconHash 判断是否需要重新保存。
+ */
 fun Context.saveIcon(packageName: String?, appIcon: Bitmap?): String? {
     if (appIcon == null || packageName.isNullOrBlank()) {
         return null

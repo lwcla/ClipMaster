@@ -96,6 +96,7 @@ jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
 # 图片加载
 io-coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
 io-coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil" }
+io-coil-gif = { group = "io.coil-kt.coil3", name = "coil-gif", version.ref = "coil" }
 # palette - 用于从图片中提取颜色信息，提供了Kotlin扩展函数，简化了使用流程
 androidx-palette-ktx = { group = "androidx.palette", name = "palette-ktx", version.ref = "paletteKtx" }
 # paging - 用于实现分页加载功能，特别适用于处理大量数据的列表，如聊天记录
@@ -129,7 +130,7 @@ compose = [
     "androidx-navigation-compose"
 ]
 compose-debug = ["compose-ui-tooling", "compose-ui-test-manifest"]
-io-coil = ["io-coil-compose", "io-coil-network-okhttp"]
+io-coil = ["io-coil-compose", "io-coil-network-okhttp", "io-coil-gif"]
 shizuku = ["shizuku-api", "shizuku-provider"]
 paging = ["paging-runtime", "paging-compose"]
 room = ["room-runtime", "room-ktx", "room-paging"]

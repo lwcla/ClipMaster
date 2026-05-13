@@ -45,7 +45,12 @@ import com.cla.clip.master.ui.navigation.VideoExtractRoute
 import com.cla.clip.master.ui.widget.TitleBar
 import kotlinx.coroutines.flow.collectLatest
 
-/** 详情页 */
+/**
+ * 剪贴详情页。
+ *
+ * 页面根据路由传入的 `clipId` 加载单条剪贴记录，提供删除、复制以及跳转到图片/视频提取的入口。
+ * 数据读取和剪贴操作放在 ViewModel 中，Composable 只负责生命周期触发和状态渲染。
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DetailPage(
@@ -56,14 +61,14 @@ fun DetailPage(
 ) {
     var deleteClip by remember { mutableStateOf<ClipShowEntity?>(null) }
 
-    // 1) 只在 clipId 变化时触发加载，避免每次重组都查库
+    // 只在 clipId 变化时触发加载，避免每次重组都查库。
     LaunchedEffect(clipId) { detailVm.loadClip(clipId) }
-    // 2) 订阅 flow
     val uiState = detailVm.clipFlow.collectAsStateWithLifecycle().value
 
     LaunchedEffect(Unit) {
         detailVm.deleteSuccessFlow.collectLatest {
-            onBack() // 删除成功后返回上一页
+            // 删除成功后返回上一页，避免详情页继续展示已删除记录。
+            onBack()
         }
     }
 
@@ -124,7 +129,7 @@ fun DetailPage(
                         .weight(1f)
                         .padding(12.dp, top = 0.dp, end = 12.dp, bottom = 12.dp)
                 ) {
-                    // 这里包一层card是为了做圆角效果
+                    // 正文可能非常长，Card 内部滚动可以保留顶部标题和底部操作按钮的稳定位置。
                     Card(
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -158,7 +163,11 @@ fun DetailPage(
     )
 }
 
-/** 详情页底部的按钮的容器 */
+/**
+ * 详情页底部操作区。
+ *
+ * 当剪贴内容识别出链接时额外展示图片/视频提取入口；删除和复制始终可用，保证普通文本记录也能操作。
+ */
 @Composable
 private fun ButtonContainer(
     detailVm: DetailViewModel,
@@ -181,7 +190,7 @@ private fun ButtonContainer(
                             style = SpanStyle(color = MaterialTheme.colorScheme.error)
                         )
                     ) {
-                        // 只点击 link 这段时触发
+                        // 只点击链接片段时触发复制，避免整段说明文字都变成可点击区域。
                         detailVm.copyToClipboard(link)
                     }
                 ) {
@@ -201,8 +210,7 @@ private fun ButtonContainer(
                 Button(
                     modifier = Modifier.weight(1f),
                     onClick = {
-                        // https://v.douyin.com/bzLHPnkAbhs/ 这个链接是抖音的一个视频链接，测试用的，实际使用时应该是 clip.link
-                        // https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
+                        // 视频提取页需要原始页面 URL 和一个可读名称，名称用于后续生成下载任务文件名。
                         onNavigate(VideoExtractRoute(link, name = clip.linkTitle ?: clip.content))
                     }
                 ) {

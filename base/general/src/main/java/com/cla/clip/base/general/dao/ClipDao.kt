@@ -44,20 +44,31 @@ import kotlinx.coroutines.flow.Flow
 )
 data class ClipData(
     @PrimaryKey(autoGenerate = true)
+    /** 剪贴板记录自增主键，作为详情页导航和删除/置顶操作的稳定 id。 */
     val id: Long = 0,
+
     @ColumnInfo(name = "content")
+    /** 剪贴板原始文本内容，不能为空；去重逻辑会结合来源应用包名比较该字段。 */
     val content: String,
+
     @ColumnInfo(name = "timestamp")
+    /** 记录最近一次写入或刷新时间，单位毫秒；列表默认按它倒序展示。 */
     val timestamp: Long,
+
     @ColumnInfo(name = "pinned_time")
+    /** 置顶时间，单位毫秒；0 表示未置顶，大于 0 时列表优先按置顶时间排序。 */
     val pinnedTime: Long = 0,
+
     @ColumnInfo(name = "link")
+    /** 从剪贴内容中提取出的首个可预览链接，可能为空；用于关联 LinkPreviewData 和展示提取入口。 */
     val link: String?,
-    // 仅仅保留包名，用于和 SourceApp 表关联
+
     @ColumnInfo(name = "source_app_package")
+    /** 来源应用包名，可能为空；仅保存包名并通过 SourceAppData 延迟关联应用名称、图标和主色。 */
     val sourceAppPackage: String? = null,
-    // 综合搜索字段：content + appName + linkTitle 的拼接，仅用于 FTS 搜索
+
     @ColumnInfo(name = "search_text")
+    /** 综合搜索字段，由内容、来源 App 名称和链接标题拼接而成，仅用于 FTS/LIKE 搜索，不直接展示给用户。 */
     val searchText: String,
 )
 
@@ -69,10 +80,16 @@ data class ClipData(
 @Entity(tableName = "clips_fts")
 data class ClipFts(
     @ColumnInfo(name = "search_text")
+    /** FTS 虚拟表索引内容，必须与 ClipData.searchText 保持同步。 */
     val searchText: String
 )
 
 @Dao
+/**
+ * 剪贴板记录 DAO。
+ *
+ * 负责剪贴内容写入、去重查询、分页列表、全文搜索、置顶、删除和最近记录读取；搜索页和列表页都依赖这里的排序契约。
+ */
 interface ClipDao {
 
     /**
@@ -134,9 +151,14 @@ interface ClipDao {
     """
     )
     fun searchAllClips(
-        query: String,           // FTS 查询（带通配符）
-        exactQuery: String,      // 精确匹配用
-        queryWord: String        // 包含某词用
+        /** FTS 查询表达式，通常由 Repository 清洗并追加通配符。 */
+        query: String,
+
+        /** 精确匹配排序使用的原始查询文本。 */
+        exactQuery: String,
+
+        /** 包含匹配和前缀匹配使用的核心查询词。 */
+        queryWord: String
     ): Flow<List<ClipDetail>>
 
     /**

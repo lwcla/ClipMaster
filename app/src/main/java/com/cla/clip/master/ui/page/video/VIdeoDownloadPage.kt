@@ -37,7 +37,12 @@ import com.cla.clip.master.ui.theme.ClipMaterTheme
 import com.cla.clip.master.ui.widget.TitleBar
 import kotlinx.coroutines.launch
 
-/** 视频下载页面 */
+/**
+ * 视频下载页面。
+ *
+ * 页面进入后立即根据 taskId 启动或恢复下载状态观察，下载执行由 Worker 在后台完成。
+ * 返回键保持普通返回行为，不取消下载任务，避免用户离开页面后任务被意外终止。
+ */
 @Composable
 fun VideoDownloadPage(
     downloadVm: VideoDownloadVm = hiltViewModel(),
@@ -46,12 +51,13 @@ fun VideoDownloadPage(
 ) {
     val state = downloadVm.downloadState.collectAsStateWithLifecycle().value
 
-    // 拦截系统返回键
+    // 拦截系统返回键，保持和标题栏返回一致的导航行为。
     BackHandler {
         onBack()
     }
 
     LaunchedEffect(downloadVm.sessionId) {
+        // sessionId 只在首次进入和点击重试时变化，避免重组重复入队下载 Worker。
         downloadVm.startDownload(downloadVm.sessionId, taskId)
     }
 
@@ -88,7 +94,7 @@ fun VideoDownloadPage(
                     Failed(
                         state,
                         retry = {
-                            // 通过改变 sessionId 来触发重新下载
+                            // 通过改变 sessionId 触发 ViewModel 开启新一轮下载。
                             downloadVm.sessionId++
                         }
                     )
@@ -98,6 +104,7 @@ fun VideoDownloadPage(
     }
 }
 
+/** 下载失败状态，点击整行触发重试。 */
 @Composable
 private fun Failed(
     state: VideoDownloadState.Failed,
@@ -136,6 +143,7 @@ private fun FailedPreview() {
     }
 }
 
+/** 下载成功状态，点击后尝试使用系统播放器打开保存的视频。 */
 @Composable
 private fun Success(state: VideoDownloadState.Success) {
     val context = LocalContext.current
@@ -147,6 +155,7 @@ private fun Success(state: VideoDownloadState.Success) {
         modifier = Modifier.clickable(onClick = {
             val uri = state.savePath?.let(Uri::parse) ?: return@clickable
             val intent = Intent(Intent.ACTION_VIEW).apply {
+                // 下载结果可能是内容 URI，授予临时读取权限给外部播放器。
                 setDataAndType(uri, "video/*")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -184,6 +193,7 @@ private fun SuccessPreview() {
     }
 }
 
+/** 普通视频文件下载进度状态。 */
 @Composable
 private fun Downloading(state: VideoDownloadState.Downloading) {
     Column(
@@ -197,7 +207,7 @@ private fun Downloading(state: VideoDownloadState.Downloading) {
         )
 
         Text(
-            text = "${stringResource(R.string.base_general_download_now)} ${state.progress}%",
+            text = stringResource(R.string.base_general_download_progress, state.progress),
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(start = 12.dp)
         )
@@ -212,6 +222,7 @@ private fun DownloadingPreview() {
     }
 }
 
+/** M3U8 分片下载完成后的合并进度状态。 */
 @Composable
 private fun Merging(state: VideoDownloadState.Merging) {
 
@@ -226,7 +237,7 @@ private fun Merging(state: VideoDownloadState.Merging) {
         )
 
         Text(
-            text = "${stringResource(R.string.base_general_merge_now)} ${state.progress}%",
+            text = stringResource(R.string.base_general_merge_progress, state.progress),
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(start = 12.dp)
         )

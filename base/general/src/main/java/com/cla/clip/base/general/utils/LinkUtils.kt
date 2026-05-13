@@ -3,6 +3,12 @@ package com.cla.clip.base.general.utils
 import java.net.URI
 import java.util.Locale
 
+/**
+ * 链接识别和分类工具。
+ *
+ * 负责从剪贴文本中提取 URL，并区分“适合网页预览”“可直接下载媒体”“图片链接”等场景；这里只处理公网 http/https，
+ * 避免 file、localhost 或内网地址进入 WebView 预览和下载流程。
+ */
 object LinkUtils {
 
     /** URL正则表达式，用于检测内容是否为链接 */
@@ -11,6 +17,7 @@ object LinkUtils {
         RegexOption.IGNORE_CASE
     )
 
+    /** 不适合做网页预览的扩展名集合，命中后应避免走 HTML 元信息解析。 */
     private val NON_PREVIEWABLE_EXTENSIONS = setOf(
         // data / config
         "json", "xml", "txt", "csv", "yml", "yaml",
@@ -28,6 +35,7 @@ object LinkUtils {
         "apk", "ipa", "exe", "dmg", "msi", "iso"
     )
 
+    /** 可直接作为媒体下载入口的扩展名集合，主要用于识别剪贴板里直接复制的音视频地址。 */
     private val DOWNLOADABLE_MEDIA_EXTENSIONS = setOf(
         // streaming playlists / manifests
         "m3u8", "mpd",
@@ -37,6 +45,7 @@ object LinkUtils {
         "mp3", "wav", "aac", "flac", "ogg", "m4a"
     )
 
+    /** 可识别为图片资源的扩展名集合，供图片预览或过滤逻辑使用。 */
     private val IMAGE_EXTENSIONS = setOf(
         "jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", "ico", "avif"
     )
@@ -116,11 +125,20 @@ object LinkUtils {
         return result
     }
 
+    /**
+     * 判断主机是否为 localhost。
+     *
+     * 本工具只允许公网 URL 进入预览/下载，因此 localhost 会被视为不可公开访问地址。
+     */
     private fun isLocalHost(host: String): Boolean {
         return host == "localhost"
     }
 
-    /** 仅允许公网 http/https URL */
+    /**
+     * 解析并校验公网 http/https URL。
+     *
+     * 非 http/https、空 host、localhost 和私有网段都会返回 null，避免 WebView 或下载模块访问本机/内网资源。
+     */
     private fun parsePublicHttpUri(url: String): URI? {
         val uri = runCatching { URI(url) }.getOrNull() ?: return null
 
@@ -134,7 +152,11 @@ object LinkUtils {
         return uri
     }
 
-    /** 本地/局域网地址 */
+    /**
+     * 判断 host 是否属于本地或局域网 IPv4 地址。
+     *
+     * 当前只识别常见 IPv4 私有网段；域名解析后的内网地址不在这里处理，后续如需更严格防护应在网络层补充。
+     */
     private fun isPrivateIp(host: String): Boolean {
         // 127.0.0.1
         if (host.startsWith("127.")) return true

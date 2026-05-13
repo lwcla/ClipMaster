@@ -7,17 +7,40 @@ import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * 图片候选数据。
+ *
+ * 由图片提取页从 DOM 扫描和网络拦截合并得到，保存到数据库前先以轻量结构传递；字段会一一映射到 ImageExtractItemData。
+ */
 data class ImageCandidateData(
+    /** 图片资源 URL，同一批次内会按 URL 去重，不能为空。 */
     val url: String,
+
+    /** 预览和下载使用的 Referer，可能为空；来自 DOM 页面 URL 或网络请求头。 */
     val referer: String?,
+
+    /** 预览和下载使用的 User-Agent，可能为空；来自 WebView 设置或请求头。 */
     val userAgent: String?,
+
+    /** 预览和下载使用的 Cookie，可能为空；来自 WebView CookieManager。 */
     val cookie: String?,
+
+    /** 图片展示顺序，DOM 候选优先保持网页顺序，网络补充候选排在后面。 */
     val displayOrder: Int,
+
+    /** DOM 读取到的图片宽度，单位像素；未知时为空。 */
     val width: Int?,
+
+    /** DOM 读取到的图片高度，单位像素；未知时为空。 */
     val height: Int?,
 )
 
 @Singleton
+/**
+ * 图片提取仓库。
+ *
+ * 负责把页面提取到的图片候选写入批次/图片项表，并为 UI 和 Worker 提供观察、读取和状态回写能力。
+ */
 class ImageExtractRepository @Inject constructor(
     private val imageExtractDao: ImageExtractDao
 ) {
@@ -49,6 +72,11 @@ class ImageExtractRepository @Inject constructor(
         return imageExtractDao.observeBatch(batchId)
     }
 
+    /** 观察当前批次的图片候选，供提取结果页展示缩略图网格和选择状态。 */
+    fun observeItems(batchId: Long): Flow<List<ImageExtractItemData>> {
+        return imageExtractDao.observeItems(batchId)
+    }
+
     /** Worker 读取批次和图片列表，统一按 displayOrder 发布最终文件。 */
     suspend fun getBatchWithItems(batchId: Long): Pair<ImageExtractBatchData, List<ImageExtractItemData>>? {
         val batch = imageExtractDao.getBatch(batchId) ?: return null
@@ -78,5 +106,15 @@ class ImageExtractRepository @Inject constructor(
         errorMsg: String? = null
     ) {
         imageExtractDao.updateItemStatus(itemId, status, tempPath, outputUri, finalName, errorMsg)
+    }
+
+    /**
+     * 用户确认下载前裁剪候选列表。
+     *
+     * 未选中的图片会从本批次删除，批次总数同步改为最终下载数量，这样 Worker 可以继续复用原有读取逻辑，
+     * 也避免把“用户主动取消”误算成下载失败或过滤数量。
+     */
+    suspend fun keepSelectedItems(batchId: Long, selectedItemIds: Set<Long>) {
+        imageExtractDao.keepSelectedItems(batchId, selectedItemIds)
     }
 }

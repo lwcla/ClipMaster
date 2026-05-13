@@ -41,6 +41,12 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 
 @HiltWorker
+/**
+ * 图片批量下载 Worker。
+ *
+ * 按批次读取用户确认后的图片项，先并发下载到临时目录并做内容质量校验，再按网页展示顺序发布到相册目录。
+ * 这种两阶段流程可以避免网络完成顺序影响最终文件名，也能在发布前过滤透明占位图和错误图。
+ */
 class DownloadImagesWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted params: WorkerParameters,
@@ -103,6 +109,11 @@ class DownloadImagesWorker @AssistedInject constructor(
         }
     }
 
+    /**
+     * WorkManager 执行入口。
+     *
+     * 读取批次、创建唯一输出目录、更新批次状态并执行下载/发布；任何顶层异常都会把批次标为失败并发送结果通知。
+     */
     override suspend fun doWork(): Result {
         val batchId = inputData.getLong(KEY_BATCH_ID, -1)
         val (batch, items) = imageExtractRepo.getBatchWithItems(batchId) ?: return Result.failure()
@@ -296,6 +307,11 @@ class DownloadImagesWorker @AssistedInject constructor(
         return PublishResult(successCount, failedCount)
     }
 
+    /**
+     * 执行单张图片下载请求。
+     *
+     * 请求会尽量携带提取阶段保存的 Referer、User-Agent 和 Cookie；非 2xx 响应直接视为下载失败并关闭响应体。
+     */
     private fun executeRequest(url: String, referer: String?, userAgent: String?, cookie: String?): Response {
         val response = okHttpClient.get().newCall(
             Request.Builder().url(url).apply {
@@ -320,6 +336,11 @@ class DownloadImagesWorker @AssistedInject constructor(
         }
     }
 
+    /**
+     * 根据 MIME 和 URL 推断最终文件扩展名。
+     *
+     * MIME 优先，URL 后缀兜底；未知或不支持的扩展统一保存为 jpg，避免生成无扩展名文件。
+     */
     private fun imageExtension(mimeType: String, url: String): String {
         return when (mimeType) {
             "image/png" -> "png"
@@ -422,6 +443,11 @@ class DownloadImagesWorker @AssistedInject constructor(
         return raw.replace(Regex("[\\\\/:*?\"<>|\\r\\n]+"), "_").trim().take(60)
     }
 
+    /**
+     * 发送图片批量下载结果通知。
+     *
+     * 通知内容包含成功、过滤和失败数量；失败数量为 0 时使用下载完成标题，否则使用下载失败标题。
+     */
     private fun notifyResult(batchId: Long, fileName: String, successCount: Int, failedCount: Int, filteredCount: Int) {
         val title = if (failedCount == 0) {
             applicationContext.getString(R.string.base_general_download_completed)
@@ -452,6 +478,7 @@ class DownloadImagesWorker @AssistedInject constructor(
         val failedCount: Int,
     )
 
+    /** 构建前台下载通知信息，Android 10+ 标记为 DATA_SYNC 类型以满足前台服务要求。 */
     private fun buildForegroundInfo(title: String, fileName: String, progress: Int): ForegroundInfo {
         val notification = notificationHelper.buildDownloadNotification(title, fileName, progress)
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -465,10 +492,22 @@ class DownloadImagesWorker @AssistedInject constructor(
         }
     }
 
+    /**
+     * 已通过内容校验的临时图片。
+     *
+     * 发布阶段只处理这个结构，确保无效图片不会进入相册目录。
+     */
     private data class TempImage(
+        /** 原始图片项记录，用于按 displayOrder 排序和回写状态。 */
         val item: ImageExtractItemData,
+
+        /** 下载到缓存目录的临时文件，发布成功或失败后可清理。 */
         val tempFile: File,
+
+        /** 规范化后的 MIME 类型，用于创建 MediaStore 记录。 */
         val mimeType: String,
+
+        /** 最终文件扩展名，不包含点。 */
         val ext: String,
     )
 

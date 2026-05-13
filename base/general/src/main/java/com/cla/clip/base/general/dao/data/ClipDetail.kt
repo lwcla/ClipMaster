@@ -33,17 +33,18 @@ import com.cla.clip.base.general.dao.SourceAppData
  * POJO 是你为了方便业务层使用而定义的数据组合格式。
  */
 data class ClipDetail(
-    // 将 ClipData 的字段展开嵌入到这里
+    /** 主剪贴板记录，Room 会把 ClipData 的字段展开嵌入到当前组合查询结果中。 */
     @Embedded
     val clip: ClipData,
 
-    // 定义关联关系
+    /** 关联到来源应用信息；来源应用未记录或包名为空时为 null，UI 需要使用兜底显示。 */
     @Relation(
         parentColumn = "source_app_package", // ClipData 中的关联字段
         entityColumn = "package_name"        // SourceApp 中的关联字段
     )
     val sourceApp: SourceAppData?, // 如果找不到对应的 App 信息，这里可能为 null
 
+    /** 关联到链接预览信息；剪贴内容没有链接或预览尚未解析成功时为 null。 */
     @Relation(
         parentColumn = "link",        // ClipData.link（URL 字符串）
         entityColumn = "link"         // LinkPreviewData.link（URL 字符串）

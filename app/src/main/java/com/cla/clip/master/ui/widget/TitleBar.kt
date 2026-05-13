@@ -21,8 +21,9 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 
 /**
- * 自定义标题栏
- * 返回按钮+标题
+ * 通用返回标题栏。
+ *
+ * 左侧固定返回按钮，中间单行标题，右侧用同宽 Spacer 占位保证标题视觉居中；适用于二级页面，不负责处理导航栈细节。
  */
 @Composable
 fun TitleBar(
@@ -60,8 +61,8 @@ fun TitleBar(
 }
 
 @Preview(showBackground = true)
+/** 标题栏预览，用于检查返回按钮、标题居中和状态栏 padding 的基础效果。 */
 @Composable
 private fun TitleBarPreview() {
     TitleBar("测试") { }
 }
-

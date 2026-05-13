@@ -56,7 +56,11 @@ import com.cla.clip.master.ui.widget.CollapsingTitle
 import com.cla.clip.shizuku.ShizukuUtils
 import rikka.shizuku.Shizuku
 
-/** 我的页面 */
+/**
+ * 我的页面。
+ *
+ * 当前承载权限说明和授权入口，后续增加设置项时也应保持 ViewModel 只发动作、页面执行系统跳转的边界。
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MinePage(
@@ -76,7 +80,11 @@ fun MinePage(
 }
 
 
-/** 权限说明模块 */
+/**
+ * 权限说明模块。
+ *
+ * 负责展示权限开关、监听生命周期恢复和消费 ViewModel 发出的权限动作；权限真实状态始终从系统刷新。
+ */
 @Composable
 private fun Permission(
     mineVm: MineVm,
@@ -119,6 +127,7 @@ private fun Permission(
     }
 
     val items = listOf(
+        // 每次重组重新生成展示项，确保字符串资源、系统权限状态和开关状态保持同步。
         SettingSwitchItemUi(
             id = SettingSwitchItemUi.Id.Permission.Shizuku,
             title = stringResource(R.string.base_general_shizuku),
@@ -142,12 +151,13 @@ private fun Permission(
     DisposableEffect(owner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                // 在 onResume 时检查 Shizuku 状态
+                // 从系统设置页或 Shizuku 应用返回后刷新状态，避免开关停留在旧值。
                 mineVm.refreshPermissionStatus()
             }
         }
 
         val shizukuPermissionListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
+            // Shizuku 授权结果由 SDK 回调，收到后立即刷新，避免等下一次 onResume。
             mineVm.refreshPermissionStatus()
         }
 
@@ -168,7 +178,6 @@ private fun Permission(
     )
 }
 
-/** 通用：可展开设置卡片 */
 /**
  * 根据通知状态选择设置项说明文案。
  *
@@ -181,6 +190,11 @@ private val MineVm.NotificationStatus.descriptionRes: Int
         MineVm.NotificationStatus.SystemDisabled -> com.cla.clip.master.R.string.host_notification_system_disabled_tip
     }
 
+/**
+ * 可展开的设置卡片。
+ *
+ * 用于承载一组相关设置项；展开状态由调用方管理，便于后续把其他设置分组复用同一布局。
+ */
 @Composable
 private fun ExpandableSettingCard(
     title: String,
@@ -202,7 +216,7 @@ private fun ExpandableSettingCard(
                 .fillMaxWidth()
                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape),
         ) {
-            // 标题行
+            // 标题行整体可点击，比只点击箭头更符合移动端设置项习惯。
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -222,7 +236,7 @@ private fun ExpandableSettingCard(
                     label = "expand_icon_rotation"
                 )
 
-                // 这里用旋转动画也可以；先用静态图标切换更直观
+                // 旋转动画只表达展开状态，不改变布局尺寸，避免列表内容跳动。
                 Icon(
                     imageVector = Icons.Default.ExpandMore,
                     contentDescription = null,
@@ -274,7 +288,11 @@ private fun ExpandableSettingCard(
     }
 }
 
-/** 通用：开关子项行 */
+/**
+ * 设置开关行。
+ *
+ * 行内只展示标题、说明和开关，不直接读取权限；调用方传入的 `onCheckedChange` 决定具体授权或设置跳转行为。
+ */
 @Composable
 private fun SettingSwitchItemRow(
     item: SettingSwitchItemUi,

@@ -17,33 +17,47 @@ import kotlinx.coroutines.flow.Flow
         Index(value = ["create_time"]),
     ]
 )
+/**
+ * 视频下载任务表实体。
+ *
+ * 任务由视频提取页创建，下载页和 DownloadVideoWorker 共同读写；`video_url` 唯一，重复下载同一地址会复用并更新已有任务。
+ */
 data class DownloadTaskData(
     @PrimaryKey(autoGenerate = true)
     @ColumnInfo(name = "id")
+    /** 数据库自增主键，作为导航到视频下载页和 Worker 输入的稳定任务 id。 */
     val id: Long = 0,
 
     @ColumnInfo(name = "video_url")
+    /** 视频资源 URL，不能为空；同时是唯一索引，修改会影响任务去重和历史任务复用。 */
     val videoUrl: String,
 
     @ColumnInfo(name = "referer")
+    /** 下载请求 Referer，来自 WebView 捕获的请求头；为空时下载 Worker 不发送该头。 */
     val referer: String? = null,
 
     @ColumnInfo(name = "user_agent")
+    /** 下载请求 User-Agent，来自 WebView 探测上下文；为空时使用 OkHttp 默认行为。 */
     val userAgent: String? = null,
 
     @ColumnInfo(name = "cookie")
+    /** 下载请求 Cookie，来自 WebView CookieManager；为空时不发送 Cookie，可能影响需要登录态或反盗链的站点。 */
     val cookie: String? = null,
 
     @ColumnInfo(name = "progress")
+    /** 当前下载或合并进度百分比，约定范围为 0..100，UI 会再次收敛范围。 */
     val progress: Int = 0,
 
     @ColumnInfo(name = "status")
+    /** 当前任务状态，只能使用 companion object 中的 STATUS_* 常量，避免 UI 映射失败。 */
     val status: String = STATUS_DOWNLOADING, // downloading, success, failed
 
     @ColumnInfo(name = "error_msg")
+    /** 最近一次失败原因，成功或下载中可以为空；用户可见展示前需兜底通用文案。 */
     val errorMsg: String? = null,
 
     @ColumnInfo(name = "save_path")
+    /** 成功或下载中占用的输出路径/URI 字符串，用于用户点击播放和异常清理半成品。 */
     val savePath: String? = null,
 
     /**
@@ -54,18 +68,23 @@ data class DownloadTaskData(
     val pendingOutputUri: String? = null,
 
     @ColumnInfo(name = "total_size")
+    /** 预留的总字节数，目前直链下载主要通过响应体进度计算，数据库字段暂未完整回写。 */
     val totalSize: Long = 0,
 
     @ColumnInfo(name = "downloaded_size")
+    /** 预留的已下载字节数，后续实现断点续传时可用于恢复进度；当前默认保持 0。 */
     val downloadedSize: Long = 0,
 
     @ColumnInfo(name = "create_time")
+    /** 任务创建时间，单位毫秒；用于历史任务排序或排查问题。 */
     val createTime: Long = System.currentTimeMillis(),
 
     @ColumnInfo(name = "update_time")
+    /** 任务最近更新时间，单位毫秒；每次状态或进度变更时应同步更新。 */
     val updateTime: Long = System.currentTimeMillis(),
 
     @ColumnInfo(name = "file_name")
+    /** 保存视频时使用的基础文件名，不包含最终扩展名；由网页标题或剪贴板内容生成。 */
     val fileName: String,
 ) {
     companion object {
@@ -84,26 +103,38 @@ data class DownloadTaskData(
 }
 
 @Dao
+/**
+ * 视频下载任务 DAO。
+ *
+ * 负责创建、观察、更新和删除 `download_tasks` 记录；下载 Worker 依赖这些方法回写进度与状态。
+ */
 interface DownloadDao {
 
+    /** 插入或更新下载任务；Room 在更新已有任务时返回 -1，Repository 会负责兜底查询真实 id。 */
     @Upsert
     suspend fun upsertTask(task: DownloadTaskData): Long // 在更新旧数据时，返回-1
 
+    /** 按主键读取单个下载任务，Worker 启动时使用。 */
     @Query("SELECT * FROM download_tasks WHERE id = :id")
     suspend fun getTask(id: Long): DownloadTaskData?
 
+    /** 按唯一视频 URL 读取历史任务，用于同一视频地址复用任务记录。 */
     @Query("SELECT * FROM download_tasks WHERE video_url = :url")
     suspend fun getTask(url: String): DownloadTaskData?
 
+    /** 观察单个任务变化，视频下载页用它实时刷新进度和结果状态。 */
     @Query("SELECT * FROM download_tasks WHERE id = :id")
     fun observeTask(id: Long): Flow<DownloadTaskData?>
 
+    /** 找出仍占用 MediaStore pending 输出的未成功任务，用于下次下载前清理半成品。 */
     @Query("SELECT * FROM download_tasks WHERE pending_output_uri IS NOT NULL AND status != :successStatus")
     suspend fun listTasksWithPendingOutput(successStatus: String = DownloadTaskData.STATUS_SUCCESS): List<DownloadTaskData>
 
+    /** 更新下载或合并进度，同时写入状态和更新时间；调用方需要保证 progress 在 0..100。 */
     @Query("UPDATE download_tasks SET progress = :progress, status = :status, update_time = :updateTime WHERE id = :id")
     suspend fun updateProgress(id: Long, progress: Int, status: String, updateTime: Long = System.currentTimeMillis())
 
+    /** 更新任务最终状态和错误信息；成功时 errorMsg 通常为空，失败时用于 UI 和通知展示。 */
     @Query(
         """
             UPDATE download_tasks 
@@ -118,9 +149,11 @@ interface DownloadDao {
         updateTime: Long = System.currentTimeMillis()
     )
 
+    /** 记录当前任务占用的输出位置，失败或异常恢复时依赖它删除半成品。 */
     @Query("UPDATE download_tasks SET pending_output_uri = :pendingOutputUri, save_path =:savePath WHERE id = :id")
     suspend fun updatePath(id: Long, pendingOutputUri: String?, savePath: String?)
 
+    /** 删除指定下载任务记录；不会自动删除已经保存成功的媒体文件。 */
     @Query("DELETE FROM download_tasks WHERE id = :id")
     suspend fun deleteTask(id: Long)
 }

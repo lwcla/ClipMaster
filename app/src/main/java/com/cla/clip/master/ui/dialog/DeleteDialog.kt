@@ -8,7 +8,11 @@ import androidx.compose.ui.res.stringResource
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.utils.showName
 
-/** 删除弹窗 */
+/**
+ * 剪贴板记录删除确认弹窗。
+ *
+ * `clip` 为空时不展示弹窗；确认删除前会先关闭弹窗，再把具体记录交给调用方删除，避免删除过程中 UI 悬挂在旧记录上。
+ */
 @Composable
 fun DeleteDialog(
     clip: ClipShowEntity?,

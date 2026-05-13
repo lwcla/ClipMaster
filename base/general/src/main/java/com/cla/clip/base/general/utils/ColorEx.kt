@@ -4,6 +4,11 @@ import android.graphics.Bitmap
 import androidx.core.graphics.ColorUtils
 import androidx.palette.graphics.Palette
 
+/**
+ * 从 Bitmap 中提取适合 UI 展示的主色。
+ *
+ * 优先选择鲜明且不过亮的调色板颜色；如果只能拿到偏灰或偏亮颜色，会做轻微压暗/增饱和处理，避免列表头像背景过浅看不清。
+ */
 fun Bitmap.extractUsableColor() = runCatching {
     val palette = Palette.from(this).generate()
 
@@ -34,7 +39,7 @@ private fun isTooLowSaturation(color: Int): Boolean {
     return hsl[1] < 0.20f
 }
 
-/** 颜色压深 */
+/** 对过浅或过灰的颜色做轻微修正，保证用于 UI 背景时仍有足够识别度。 */
 private fun adjustColorIfNeeded(color: Int): Int {
     val hsl = FloatArray(3)
     ColorUtils.colorToHSL(color, hsl)
@@ -48,8 +53,9 @@ private fun adjustColorIfNeeded(color: Int): Int {
 }
 
 /**
- * Int color 转成 #AARRGGBB 或 #RRGGBB 字符串
- * @param includeAlpha 是否包含透明度，默认 false
+ * 将 ARGB Int 颜色转为十六进制字符串。
+ *
+ * @param includeAlpha 是否包含透明度；false 时输出 #RRGGBB，true 时输出 #AARRGGBB。
  */
 fun Int.toColorString(includeAlpha: Boolean = false) = if (includeAlpha) {
     String.format("#%08X", this)   // 例：#FF3A7BD5
