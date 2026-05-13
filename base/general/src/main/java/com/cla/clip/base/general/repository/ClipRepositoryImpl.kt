@@ -68,14 +68,17 @@ class ClipRepositoryImpl @Inject constructor(
         userInput: String,
         startTime: Long?,
         endTime: Long?,
-        sourceAppPackage: String?,
+        sourceAppPackages: Set<String>,
     ): PagingSource<Int, ClipDetail> {
         val trimmed = userInput.trim()
+        val sourcePackagesForQuery = buildSourcePackagesForQuery(sourceAppPackages)
+        val sourceAppPackageCount = sourceAppPackages.count { it.isNotBlank() }
         if (trimmed.isBlank()) {
             return clipDao.searchClipsByFilters(
                 startTime = startTime,
                 endTime = endTime,
-                sourceAppPackage = sourceAppPackage
+                sourceAppPackageCount = sourceAppPackageCount,
+                sourceAppPackages = sourcePackagesForQuery
             )
         }
 
@@ -85,7 +88,8 @@ class ClipRepositoryImpl @Inject constructor(
                 keyword = trimmed,
                 startTime = startTime,
                 endTime = endTime,
-                sourceAppPackage = sourceAppPackage
+                sourceAppPackageCount = sourceAppPackageCount,
+                sourceAppPackages = sourcePackagesForQuery
             )
         }
 
@@ -97,8 +101,23 @@ class ClipRepositoryImpl @Inject constructor(
             likeKeyword = trimmed,
             startTime = startTime,
             endTime = endTime,
-            sourceAppPackage = sourceAppPackage
+            sourceAppPackageCount = sourceAppPackageCount,
+            sourceAppPackages = sourcePackagesForQuery
         )
+    }
+
+    /**
+     * 生成 Room `IN (:sourceAppPackages)` 可安全绑定的包名列表。
+     *
+     * 搜索页用空集合表达“全部来源”，但 Room 的集合参数最好始终提供至少一个占位值；
+     * 因此空集合会转换成一个不会生效的哨兵值，并由 `sourceAppPackageCount = 0` 让 SQL 跳过来源过滤。
+     */
+    private fun buildSourcePackagesForQuery(sourceAppPackages: Set<String>): List<String> {
+        val packages = sourceAppPackages
+            .filter { it.isNotBlank() }
+            .distinct()
+            .sorted()
+        return packages.ifEmpty { listOf("__all_source_apps__") }
     }
 
     /**

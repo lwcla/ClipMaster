@@ -156,7 +156,8 @@ interface ClipDao {
      * @param likeKeyword 普通子串匹配用关键词，保留用户输入的连续文本，用来补齐中文模糊搜索。
      * @param startTime 起始时间戳，单位毫秒；为 null 时不限制开始时间。
      * @param endTime 结束时间戳，单位毫秒；为 null 时不限制结束时间，非 null 时使用左闭右开区间。
-     * @param sourceAppPackage 来源 App 包名；为 null 时不过滤来源。
+     * @param sourceAppPackageCount 已选来源 App 数量；为 0 时不过滤来源。
+     * @param sourceAppPackages 已选来源 App 包名列表；非空时命中任一包名即可返回。
      */
     @Transaction
     @Query(
@@ -167,13 +168,13 @@ interface ClipDao {
       WHERE clips_fts MATCH :query
         AND (:startTime IS NULL OR c.timestamp >= :startTime)
         AND (:endTime IS NULL OR c.timestamp < :endTime)
-        AND (:sourceAppPackage IS NULL OR c.source_app_package = :sourceAppPackage)
+        AND (:sourceAppPackageCount = 0 OR c.source_app_package IN (:sourceAppPackages))
       UNION
       SELECT c.* FROM clips c
       WHERE c.search_text LIKE '%' || :likeKeyword || '%'
         AND (:startTime IS NULL OR c.timestamp >= :startTime)
         AND (:endTime IS NULL OR c.timestamp < :endTime)
-        AND (:sourceAppPackage IS NULL OR c.source_app_package = :sourceAppPackage)
+        AND (:sourceAppPackageCount = 0 OR c.source_app_package IN (:sourceAppPackages))
     ) AS c
     ORDER BY
       CASE WHEN c.pinned_time > 0 THEN 1 ELSE 0 END DESC,
@@ -194,14 +195,15 @@ interface ClipDao {
         likeKeyword: String,
         startTime: Long?,
         endTime: Long?,
-        sourceAppPackage: String?,
+        sourceAppPackageCount: Int,
+        sourceAppPackages: List<String>,
     ): PagingSource<Int, ClipDetail>
 
     /**
      * 在没有关键词时按筛选条件分页加载剪贴记录。
      *
      * 关键词为空不能执行 FTS MATCH，否则 SQLite 会抛语法异常；因此搜索页清空输入时走这个查询，
-     * 只保留时间和来源 App 条件，并完全沿用列表页排序。
+     * 只保留时间和来源 App 多选条件，并完全沿用列表页排序。
      */
     @Transaction
     @Query(
@@ -209,7 +211,7 @@ interface ClipDao {
         SELECT * FROM clips
         WHERE (:startTime IS NULL OR timestamp >= :startTime)
           AND (:endTime IS NULL OR timestamp < :endTime)
-          AND (:sourceAppPackage IS NULL OR source_app_package = :sourceAppPackage)
+          AND (:sourceAppPackageCount = 0 OR source_app_package IN (:sourceAppPackages))
         ORDER BY
           CASE WHEN pinned_time > 0 THEN 1 ELSE 0 END DESC,
           pinned_time DESC,
@@ -219,14 +221,15 @@ interface ClipDao {
     fun searchClipsByFilters(
         startTime: Long?,
         endTime: Long?,
-        sourceAppPackage: String?,
+        sourceAppPackageCount: Int,
+        sourceAppPackages: List<String>,
     ): PagingSource<Int, ClipDetail>
 
     /**
      * FTS 查询无法构造时的兜底搜索。
      *
      * 某些输入只包含标点或 FTS 特殊字符，直接拼进 MATCH 会失败；此处退回到普通 LIKE，
-     * 牺牲一点性能换取搜索框对 URL、符号片段等输入的稳定响应。
+     * 牺牲一点性能换取搜索框对 URL、符号片段等输入的稳定响应，同时保留来源 App 多选过滤。
      */
     @Transaction
     @Query(
@@ -235,7 +238,7 @@ interface ClipDao {
         WHERE search_text LIKE '%' || :keyword || '%'
           AND (:startTime IS NULL OR timestamp >= :startTime)
           AND (:endTime IS NULL OR timestamp < :endTime)
-          AND (:sourceAppPackage IS NULL OR source_app_package = :sourceAppPackage)
+          AND (:sourceAppPackageCount = 0 OR source_app_package IN (:sourceAppPackages))
         ORDER BY
           CASE WHEN pinned_time > 0 THEN 1 ELSE 0 END DESC,
           pinned_time DESC,
@@ -246,7 +249,8 @@ interface ClipDao {
         keyword: String,
         startTime: Long?,
         endTime: Long?,
-        sourceAppPackage: String?,
+        sourceAppPackageCount: Int,
+        sourceAppPackages: List<String>,
     ): PagingSource<Int, ClipDetail>
 
     /**

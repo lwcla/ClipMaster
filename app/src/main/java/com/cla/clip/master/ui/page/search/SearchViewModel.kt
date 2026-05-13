@@ -59,14 +59,18 @@ data class SearchFilterState(
     /** 当前选择的时间范围。 */
     val timeFilter: SearchTimeFilter = SearchTimeFilter.ALL,
 
-    /** 当前选择的来源 App 包名；为 null 表示不过滤来源。 */
-    val sourceAppPackage: String? = null,
+    /**
+     * 当前选择的来源 App 包名集合。
+     *
+     * 空集合表示不过滤来源；使用 Set 是为了天然去重，避免用户反复点选同一个 App 后触发重复 SQL 参数。
+     */
+    val sourceAppPackages: Set<String> = emptySet(),
 )
 
 /**
  * 搜索页 ViewModel。
  *
- * 负责把关键词、时间范围和来源 App 组合成 Paging 查询，同时复用剪贴数据处理器提供的复制、删除和置顶能力。
+ * 负责把关键词、时间范围和来源 App 多选条件组合成 Paging 查询，同时复用剪贴数据处理器提供的复制、删除和置顶能力。
  */
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @HiltViewModel
@@ -115,7 +119,7 @@ class SearchViewModel @Inject constructor(
                 userInput = state.query,
                 startTime = timeRange.startTime,
                 endTime = timeRange.endTime,
-                sourceAppPackage = state.sourceAppPackage
+                sourceAppPackages = state.sourceAppPackages
             )
         }.flow.map { pagingData ->
             pagingData.map { clipDetail -> clipDetail.toUi() }
@@ -125,17 +129,29 @@ class SearchViewModel @Inject constructor(
     )
 
     /**
-     * 当前来源 App 的展示名。
+     * 当前已选来源 App 的展示名列表。
      *
      * UI 使用它显示筛选 Chip 文案；当来源列表尚未加载或对应 App 被清理时，回退到包名，避免筛选状态丢失。
+     * 输出顺序优先跟随来源 App 列表，便于弹窗与 Chip 的认知顺序一致；列表里不存在的包名追加在末尾。
      */
-    val selectedSourceAppName: StateFlow<String?> = combine(_filterState, sourceApps) { state, apps ->
-        val packageName = state.sourceAppPackage ?: return@combine null
-        apps.firstOrNull { it.packageName == packageName }?.appName?.takeIf { it.isNotBlank() } ?: packageName
+    val selectedSourceAppNames: StateFlow<List<String>> = combine(_filterState, sourceApps) { state, apps ->
+        val selectedPackages = state.sourceAppPackages
+        if (selectedPackages.isEmpty()) {
+            return@combine emptyList()
+        }
+
+        val appNames = apps
+            .filter { it.packageName in selectedPackages }
+            .map { sourceApp -> sourceApp.appName.takeIf { it.isNotBlank() } ?: sourceApp.packageName }
+        val knownPackages = apps.mapTo(mutableSetOf()) { it.packageName }
+        val missingPackageNames = selectedPackages
+            .filterNot { it in knownPackages }
+            .sorted()
+        appNames + missingPackageNames
     }.stateIn(
         CoroutineScope(viewModelScope.coroutineContext + Dispatchers.IO),
         SharingStarted.WhileSubscribed(5_000),
-        null
+        emptyList()
     )
 
     /** 更新搜索关键词，输入变化后会自动触发新的分页查询。 */
@@ -148,10 +164,20 @@ class SearchViewModel @Inject constructor(
         _filterState.update { it.copy(timeFilter = filter) }
     }
 
-    /** 更新来源 App 筛选条件；传 null 表示恢复全部来源。 */
-    fun updateSourceApp(packageName: String?) {
-        _filterState.update { it.copy(sourceAppPackage = packageName) }
+    /**
+     * 批量更新来源 App 多选条件。
+     *
+     * 弹窗内部会先维护草稿选择，用户点击确认后才调用这里提交；提交时统一去空、去重和排序，
+     * 让相同选择集合不会因为点击顺序不同而造成无意义的筛选状态变化。
+     */
+    fun updateSourceApps(packageNames: Set<String>) {
+        val normalizedPackageNames = packageNames
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .toSortedSet()
+        _filterState.update { it.copy(sourceAppPackages = normalizedPackageNames) }
     }
+
 }
 
 /** 数据库搜索用的左闭右开时间范围。 */

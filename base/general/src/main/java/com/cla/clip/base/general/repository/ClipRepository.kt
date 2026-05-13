@@ -23,13 +23,14 @@ interface ClipRepository {
     /**
      * 按关键词、时间范围和来源 App 分页搜索剪贴记录。
      *
-     * Repository 负责把用户输入转换成 DAO 可执行的查询参数，避免 UI 层理解 FTS 语法或数据库边界。
+     * Repository 负责把用户输入和来源 App 多选集合转换成 DAO 可执行的查询参数，
+     * 避免 UI 层理解 FTS 语法、Room `IN` 查询或空集合边界。
      */
     fun searchClips(
         userInput: String,
         startTime: Long?,
         endTime: Long?,
-        sourceAppPackage: String?,
+        sourceAppPackages: Set<String>,
     ): PagingSource<Int, ClipDetail>
 
     /**

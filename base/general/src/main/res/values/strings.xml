@@ -23,6 +23,7 @@
     <string name="base_general_last_30_days">近 30 天</string>
     <string name="base_general_source_app">来源 App</string>
     <string name="base_general_all_source_apps">全部来源</string>
+    <string name="base_general_selected_source_app_count">已选 %1$d 个来源</string>
     <string name="base_general_selected">已选择</string>
     <string name="base_general_clip_list_empty">还没有数据哦，快去复制点什么吧！</string>
     <string name="base_general_search_result_empty">没有找到相关内容</string>

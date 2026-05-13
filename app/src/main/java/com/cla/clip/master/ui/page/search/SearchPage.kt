@@ -20,6 +20,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -29,12 +31,14 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -66,7 +70,7 @@ fun SearchPage(
 ) {
     val filterState by viewModel.filterState.collectAsStateWithLifecycle()
     val sourceApps by viewModel.sourceApps.collectAsStateWithLifecycle()
-    val selectedSourceAppName by viewModel.selectedSourceAppName.collectAsStateWithLifecycle()
+    val selectedSourceAppNames by viewModel.selectedSourceAppNames.collectAsStateWithLifecycle()
     val pagedClips = viewModel.pagedClips.collectAsLazyPagingItems()
     val gridState = rememberLazyStaggeredGridState()
     var deleteClip by remember { mutableStateOf<ClipShowEntity?>(null) }
@@ -92,7 +96,7 @@ fun SearchPage(
 
             SearchFilters(
                 filterState = filterState,
-                selectedSourceAppName = selectedSourceAppName,
+                selectedSourceAppNames = selectedSourceAppNames,
                 onTimeFilterChange = viewModel::updateTimeFilter,
                 onSourceClick = { showSourcePicker = true }
             )
@@ -128,10 +132,10 @@ fun SearchPage(
     if (showSourcePicker) {
         SourceAppPickerSheet(
             sourceApps = sourceApps,
-            selectedPackageName = filterState.sourceAppPackage,
+            selectedPackageNames = filterState.sourceAppPackages,
             onDismiss = { showSourcePicker = false },
-            onSelect = { packageName ->
-                viewModel.updateSourceApp(packageName)
+            onConfirm = { selectedPackageNames ->
+                viewModel.updateSourceApps(selectedPackageNames)
                 showSourcePicker = false
             }
         )
@@ -182,10 +186,19 @@ private fun SearchBar(
 @Composable
 private fun SearchFilters(
     filterState: SearchFilterState,
-    selectedSourceAppName: String?,
+    selectedSourceAppNames: List<String>,
     onTimeFilterChange: (SearchTimeFilter) -> Unit,
     onSourceClick: () -> Unit,
 ) {
+    val selectedSourceAppLabel = when (selectedSourceAppNames.size) {
+        0 -> stringResource(com.cla.clip.base.general.R.string.base_general_all_source_apps)
+        1 -> selectedSourceAppNames.first()
+        else -> stringResource(
+            com.cla.clip.base.general.R.string.base_general_selected_source_app_count,
+            selectedSourceAppNames.size
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -208,7 +221,7 @@ private fun SearchFilters(
             onClick = onSourceClick,
             label = {
                 Text(
-                    text = selectedSourceAppName ?: stringResource(com.cla.clip.base.general.R.string.base_general_all_source_apps),
+                    text = selectedSourceAppLabel,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -257,16 +270,21 @@ private fun SearchTimeFilter.labelText(): String {
  * 来源 App 选择弹窗。
  *
  * 弹窗内始终提供“全部来源”，即使数据库里暂时没有来源 App，也能让用户清除已有筛选。
+ * 多选场景下点击具体 App 只切换勾选状态，由底部确认按钮统一收起弹窗，方便连续选择多个来源。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SourceAppPickerSheet(
     sourceApps: List<SourceAppData>,
-    selectedPackageName: String?,
+    selectedPackageNames: Set<String>,
     onDismiss: () -> Unit,
-    onSelect: (String?) -> Unit,
+    onConfirm: (Set<String>) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState()
+    val draftSelectedPackageNames = remember(selectedPackageNames) {
+        // 弹窗内使用草稿集合承接连续勾选，点击“确定”前不触发查询，点击“取消”可丢弃本次临时选择。
+        selectedPackageNames.toMutableStateList()
+    }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState
@@ -283,12 +301,16 @@ private fun SourceAppPickerSheet(
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
             )
 
-            LazyColumn {
+            LazyColumn(
+                modifier = Modifier
+                    // 来源 App 数量较多时，列表只占用弹窗剩余空间，把底部确认按钮稳定留在可点击区域。
+                    .weight(1f, fill = false)
+            ) {
                 item {
                     SourceAppRow(
                         title = stringResource(com.cla.clip.base.general.R.string.base_general_all_source_apps),
-                        selected = selectedPackageName == null,
-                        onClick = { onSelect(null) }
+                        selected = draftSelectedPackageNames.isEmpty(),
+                        onClick = { draftSelectedPackageNames.clear() }
                     )
                 }
                 items(
@@ -298,9 +320,33 @@ private fun SourceAppPickerSheet(
                     SourceAppRow(
                         title = sourceApp.appName.takeIf { it.isNotBlank() } ?: sourceApp.packageName,
                         subtitle = sourceApp.packageName,
-                        selected = selectedPackageName == sourceApp.packageName,
-                        onClick = { onSelect(sourceApp.packageName) }
+                        selected = sourceApp.packageName in draftSelectedPackageNames,
+                        onClick = {
+                            if (sourceApp.packageName in draftSelectedPackageNames) {
+                                draftSelectedPackageNames.remove(sourceApp.packageName)
+                            } else {
+                                draftSelectedPackageNames.add(sourceApp.packageName)
+                            }
+                        }
                     )
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(com.cla.clip.base.general.R.string.base_general_cancel))
+                }
+                Button(
+                    modifier = Modifier.padding(start = 8.dp),
+                    onClick = { onConfirm(draftSelectedPackageNames.toSet()) }
+                ) {
+                    Text(stringResource(com.cla.clip.base.general.R.string.base_general_sure))
                 }
             }
         }
@@ -340,12 +386,9 @@ private fun SourceAppRow(
             }
         }
 
-        if (selected) {
-            Text(
-                text = stringResource(com.cla.clip.base.general.R.string.base_general_selected),
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.labelLarge
-            )
-        }
+        Checkbox(
+            checked = selected,
+            onCheckedChange = { onClick() }
+        )
     }
 }
