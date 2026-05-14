@@ -1,6 +1,7 @@
 package com.cla.clip.master.ui.page.video
 
 import android.content.Context
+import android.webkit.WebView
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -11,6 +12,7 @@ import com.cla.clip.base.general.repository.DownloadRepository
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
 import com.cla.clip.master.entity.VideoCandidate
+import com.cla.clip.master.utils.WebViewLinkPreviewExtractor
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -56,6 +58,9 @@ class VideoExtractVm @Inject constructor(
 
     /** 下载任务仓库，用于把识别出的候选视频落库为可观察的下载任务。 */
     private val downloadRepo: DownloadRepository,
+
+    /** WebView 链接预览补全器，用真实页面 DOM 回写列表卡片预览。 */
+    private val linkPreviewExtractor: WebViewLinkPreviewExtractor,
 ) : ViewModel() {
 
     companion object {
@@ -85,6 +90,16 @@ class VideoExtractVm @Inject constructor(
 
     /** 页面订阅的下载任务创建事件，成功时携带任务 ID，失败时携带 -1。 */
     val createDownloadTaskFlow = _createDownloadTaskFlow.asSharedFlow()
+
+    /**
+     * 使用当前 WebView DOM 补全链接预览缓存。
+     *
+     * 视频提取页的 WebView 能带上站点 Cookie、重定向和脚本执行结果，适合补齐 OkHttp/Jsoup 首轮拿不到的标题或封面；
+     * 该操作只影响 `link_previews` 缓存，失败不会影响视频地址识别和下载任务创建。
+     */
+    suspend fun saveWebViewLinkPreview(webView: WebView, pageUrl: String, fallbackImageUrl: String? = null) {
+        linkPreviewExtractor.extractAndSave(webView, pageUrl, fallbackImageUrl)
+    }
 
     /**
      * 根据视频候选地址创建下载任务并通知页面跳转。

@@ -116,6 +116,16 @@ interface ClipDao {
     suspend fun loadClipDetail(id: Long): ClipDetail?
 
     /**
+     * 按链接加载所有关联剪贴记录。
+     *
+     * WebView 后置补全链接预览时需要同步刷新这些记录的搜索索引文本；使用关系查询可以同时拿到来源 App 名称，
+     * 避免 Repository 层为了重建 search_text 再发起多次查询。
+     */
+    @Transaction
+    @Query("SELECT * FROM clips WHERE link = :link")
+    suspend fun loadClipDetailsByLink(link: String): List<ClipDetail>
+
+    /**
      * 核心搜索功能：在FTS虚拟表中进行全文检索。
      *
      * 4 精确匹配

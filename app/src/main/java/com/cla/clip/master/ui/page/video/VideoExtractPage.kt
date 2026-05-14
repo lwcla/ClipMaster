@@ -37,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,6 +62,7 @@ import com.cla.clip.master.ui.widget.ProbeWebView
 import com.cla.clip.master.ui.widget.TitleBar
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 
 /** 隐藏 WebView 自动探测的最长等待时间，单位毫秒；超过后认为当前轮次没有捕获到视频资源。 */
 private const val HIDDEN_PROBE_TIMEOUT_MS = 10_000L
@@ -194,6 +196,9 @@ fun VideoExtractPage(
                         targetUrl = pageUrl,
                         pageName = pageName,
                         onWebViewReady = { webViewRef = it },
+                        onSaveLinkPreview = { view ->
+                            videoExtractVm.saveWebViewLinkPreview(view, pageUrl)
+                        },
                         onVideoCandidate = { candidate ->
                             if (videoExtractVm.probeState !is ProbeState.Success) {
                                 clearWebView()
@@ -398,9 +403,11 @@ private fun SharedVideoProbeWebViewLayer(
     targetUrl: String,
     pageName: String,
     onWebViewReady: (WebView) -> Unit,
+    onSaveLinkPreview: suspend (WebView) -> Unit,
     onVideoCandidate: (VideoCandidate) -> Unit,
 ) {
     val tag = "webView"
+    val coroutineScope = rememberCoroutineScope()
 
     /**
      * 复用通用 ProbeWebView 的视频探测层。
@@ -411,6 +418,10 @@ private fun SharedVideoProbeWebViewLayer(
         targetUrl = targetUrl,
         onWebViewReady = onWebViewReady,
         onPageFinished = { view, _ ->
+            coroutineScope.launch {
+                // WebView 真实加载后补齐链接预览，解决首轮 OkHttp/Jsoup 被 403 拦截时列表只有域名兜底的问题。
+                onSaveLinkPreview(view)
+            }
             // 页面加载完成后尝试触发 video 播放，部分站点只有播放后才会请求真实视频资源。
             val progress = view.progress
             if (progress > 99) {
@@ -433,7 +444,11 @@ private fun SharedVideoProbeWebViewLayer(
                         fileName = pageName
                     )
                     logD(tag) { "candidate=$candidate " }
-                    onVideoCandidate(candidate)
+                    coroutineScope.launch {
+                        // 候选命中后页面即将销毁，先抓取一次 DOM 预览，避免错过 WebView 阶段的封面信息。
+                        onSaveLinkPreview(view)
+                        onVideoCandidate(candidate)
+                    }
                 }
             }
             null

@@ -11,6 +11,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import com.cla.clip.base.general.utils.logD
@@ -38,6 +39,8 @@ fun ProbeWebView(
     shouldInterceptRequest: (WebView, WebResourceRequest) -> WebResourceResponse?,
 ) {
     val tag = "ProbeWebView"
+    val currentOnPageFinished = rememberUpdatedState(onPageFinished)
+    val currentShouldInterceptRequest = rememberUpdatedState(shouldInterceptRequest)
 
     AndroidView(
         modifier = modifier,
@@ -89,14 +92,16 @@ fun ProbeWebView(
 
                     override fun onPageFinished(view: WebView, url: String?) {
                         super.onPageFinished(view, url)
-                        onPageFinished(view, url)
+                        // AndroidView 的 factory 只创建一次 WebViewClient；回调通过最新状态转发，避免重试后继续使用旧会话参数。
+                        currentOnPageFinished.value(view, url)
                     }
 
                     override fun shouldInterceptRequest(
                         view: WebView,
                         request: WebResourceRequest
                     ): WebResourceResponse? {
-                        return shouldInterceptRequest(view, request)
+                        // 网络拦截可能在后台线程触发，仍需要转发到 Compose 当前回调，保证图片/视频探测使用最新会话状态。
+                        return currentShouldInterceptRequest.value(view, request)
                     }
                 }
                 onWebViewReady(this)

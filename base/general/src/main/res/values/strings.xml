@@ -80,6 +80,11 @@
     <string name="base_general_merge_progress">合并中 %1$d%%</string>
     <string name="base_general_image_extract_title">图片提取</string>
     <string name="base_general_image_extract_loading" tools:ignore="TypographyEllipsis">正在提取网页图片...</string>
+    <string name="base_general_image_extract_long_running">图片太多，还在努力提取图片中，请稍后</string>
+    <string name="base_general_image_extract_found_count">已获取 %1$d 张图片</string>
+    <string name="base_general_view_extracted_images">查看已获取图片</string>
+    <string name="base_general_image_extract_still_running">正在继续提取图片</string>
+    <string name="base_general_finish_image_extract">结束提取</string>
     <string name="base_general_image_extract_failed_retry">图片提取失败，点击重试</string>
     <string name="base_general_image_extract_count">已提取到 %1$d 张图片</string>
     <string name="base_general_download_all_images">下载全部图片</string>

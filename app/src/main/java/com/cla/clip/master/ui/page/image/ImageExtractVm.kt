@@ -1,6 +1,8 @@
 package com.cla.clip.master.ui.page.image
 
 import android.content.Context
+import android.webkit.WebView
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -14,12 +16,14 @@ import com.cla.clip.base.general.repository.ImageCandidateData
 import com.cla.clip.base.general.repository.ImageExtractRepository
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
+import com.cla.clip.master.utils.WebViewLinkPreviewExtractor
 import com.cla.clip.master.work.DownloadImagesWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import javax.inject.Provider
@@ -89,12 +93,14 @@ data class ImagePreviewMeta(
  * @param appContext 应用级 Context，用于启动 WorkManager，避免持有页面 Context 造成生命周期泄漏。
  * @param imageExtractRepo 图片提取数据仓库，负责批次和图片项的 Room 读写。
  * @param okHttpClient 延迟获取的 OkHttpClient，用于预览元信息探测，避免 ViewModel 初始化时立即创建网络客户端。
+ * @param linkPreviewExtractor WebView 链接预览补全器，用于在真实页面加载后回写列表卡片预览。
  */
 @HiltViewModel
 class ImageExtractVm @Inject constructor(
     @param:ApplicationContext private val appContext: Context,
     private val imageExtractRepo: ImageExtractRepository,
     private val okHttpClient: Provider<OkHttpClient>,
+    private val linkPreviewExtractor: WebViewLinkPreviewExtractor,
 ) : ViewModel() {
 
     companion object {
@@ -111,32 +117,177 @@ class ImageExtractVm @Inject constructor(
     /** WebView 网络层捕获到的图片候选，用 URL 去重后作为 DOM 扫描遗漏图片的补充来源。 */
     private val networkCandidates = linkedMapOf<String, ImageCandidateData>()
 
+    /**
+     * 当前探测会话内已经发现的阶段性候选。
+     *
+     * 只用于加载页进度、阶段性图片查看和手动结束提取，不直接写入 Room；正式批次仍在自动完成或用户手动结束时统一创建。
+     */
+    val probingCandidates = mutableStateListOf<ImageCandidateData>()
+
+    /** 阶段性候选的线程安全锁，避免 WebView 网络拦截和 DOM 扫描同时合并候选时产生重复或状态错乱。 */
+    private val probingCandidatesLock = Any()
+
+    /**
+     * 当前允许写入阶段性候选的探测会话 id。
+     *
+     * WebView 的网络拦截回调可能在页面重试、失败或销毁后才返回；用独立的会话门闩可以在后台线程里丢弃旧请求，
+     * 避免上一轮候选混入新一轮 UI 或最终批次。
+     */
+    private var activeCandidateSessionId: Int = -1
+
+    /** 当前会话已去重的阶段性候选池，UI 状态从这里复制快照，保证后台回调不会直接修改 Compose 集合。 */
+    private val probingCandidateMap = linkedMapOf<String, ImageCandidateData>()
+
     /** 当前页面内的图片元信息缓存，避免底部预览反复探测同一张图片。 */
     val previewMetaCache = mutableStateMapOf<Long, ImagePreviewMeta>()
 
-    /** 网络拦截只作为 DOM 顺序之外的补充，避免请求顺序影响最终命名顺序。 */
-    fun addNetworkCandidate(candidate: ImageCandidateData) {
-        if (candidate.url.isBlank() || networkCandidates.containsKey(candidate.url)) {
-            return
+    /**
+     * 新一轮 WebView 探测开始前清空旧候选。
+     *
+     * 重试时必须丢弃上一轮网络请求和阶段性候选，避免动态页面的迟到请求混入新批次。
+     */
+    fun resetProbeSession(newSessionId: Int) {
+        synchronized(probingCandidatesLock) {
+            activeCandidateSessionId = newSessionId
+            networkCandidates.clear()
+            probingCandidateMap.clear()
         }
-        networkCandidates[candidate.url] = candidate.copy(displayOrder = Int.MAX_VALUE - networkCandidates.size)
+        probingCandidates.clear()
+    }
+
+    /**
+     * 关闭当前候选写入通道。
+     *
+     * 自动完成、手动结束或失败后会调用这里；已有快照不会被清空，便于后续保存或失败前判断，但迟到的网络/DOM 更新不再写入。
+     */
+    private fun closeProbeSession(expectedSessionId: Int) {
+        synchronized(probingCandidatesLock) {
+            if (activeCandidateSessionId == expectedSessionId) {
+                activeCandidateSessionId = -1
+            }
+        }
+    }
+
+    /** 判断指定会话是否仍允许更新阶段性候选，供主线程发布 UI 快照前做二次校验。 */
+    private fun isCandidateSessionActive(expectedSessionId: Int): Boolean {
+        return synchronized(probingCandidatesLock) {
+            activeCandidateSessionId == expectedSessionId
+        }
+    }
+
+    /**
+     * 合并网络拦截候选并发布阶段性快照。
+     *
+     * `shouldInterceptRequest` 可能运行在后台线程，因此这里只更新线程安全 Map；调用方随后回到主线程同步 Compose 状态。
+     */
+    fun addNetworkCandidate(expectedSessionId: Int, candidate: ImageCandidateData): List<ImageCandidateData>? {
+        return synchronized(probingCandidatesLock) {
+            if (activeCandidateSessionId != expectedSessionId) return@synchronized null
+            if (candidate.url.isBlank()) return@synchronized probingCandidateMap.values.sortedBy { it.displayOrder }
+            if (!networkCandidates.containsKey(candidate.url)) {
+                networkCandidates[candidate.url] = candidate.copy(displayOrder = Int.MAX_VALUE - networkCandidates.size)
+            }
+            mergeProbingCandidateLocked(candidate.copy(displayOrder = probingCandidateMap.size))
+            probingCandidateMap.values.toList()
+        }
+    }
+
+    /**
+     * 合并 DOM 扫描候选并发布阶段性快照。
+     *
+     * DOM 候选携带网页顺序，若同一 URL 先被网络层发现，这里会用 DOM 顺序补齐尺寸和更自然的展示位置。
+     */
+    fun addDomCandidates(expectedSessionId: Int, candidates: List<ImageCandidateData>): List<ImageCandidateData>? {
+        return synchronized(probingCandidatesLock) {
+            if (activeCandidateSessionId != expectedSessionId) return@synchronized null
+            if (candidates.isEmpty()) return@synchronized probingCandidateMap.values.sortedBy { it.displayOrder }
+            candidates.forEachIndexed { index, candidate ->
+                mergeProbingCandidateLocked(candidate.copy(displayOrder = index))
+            }
+            probingCandidateMap.values.sortedBy { it.displayOrder }.toList()
+        }
+    }
+
+    /** 将线程安全候选快照同步给 Compose 状态，只能在主线程调用。 */
+    fun publishProbingCandidates(expectedSessionId: Int, candidates: List<ImageCandidateData>) {
+        if (!isCandidateSessionActive(expectedSessionId)) return
+        probingCandidates.clear()
+        probingCandidates.addAll(candidates.sortedBy { it.displayOrder })
+    }
+
+    /** 返回当前阶段性候选快照，供手动结束或失败兜底判断使用。 */
+    fun snapshotProbingCandidates(): List<ImageCandidateData> {
+        return synchronized(probingCandidatesLock) {
+            probingCandidateMap.values.sortedBy { it.displayOrder }.toList()
+        }
+    }
+
+    /**
+     * 自动完成或手动结束时保存最终候选。
+     *
+     * 保存前校验 session 和状态，避免旧协程在超时、重试或页面退出后迟到写库并覆盖新页面状态。
+     */
+    fun saveExtractedImagesIfActive(
+        expectedSessionId: Int,
+        pageUrl: String,
+        pageName: String,
+        domCandidates: List<ImageCandidateData>,
+    ) {
+        if (probeState != ImageProbeState.Probing(expectedSessionId)) return
+        closeProbeSession(expectedSessionId)
+        saveExtractedImages(expectedSessionId, pageUrl, pageName, domCandidates)
+    }
+
+    /** 当前探测确认失败时切换失败态，旧会话迟到调用会被 session 校验丢弃。 */
+    fun failProbeIfActive(expectedSessionId: Int) {
+        if (probeState == ImageProbeState.Probing(expectedSessionId)) {
+            closeProbeSession(expectedSessionId)
+            probeState = ImageProbeState.Failed
+        }
+    }
+
+    /**
+     * 页面退出或 WebView 被主动销毁时关闭候选更新。
+     *
+     * 这里只截断网络/DOM 迟到回调，不改变 `probeState`，因为调用方可能随后用当前快照保存批次或切换到失败态。
+     */
+    fun closeCandidateUpdates(expectedSessionId: Int) {
+        closeProbeSession(expectedSessionId)
+    }
+
+    /**
+     * 使用当前 WebView DOM 补全链接预览缓存。
+     *
+     * 图片提取页能绕过部分 OkHttp/Jsoup 首轮 403 的限制，因为 WebView 已经按浏览器上下文加载了页面；
+     * 这里只补写 `link_previews`，失败不会改变图片候选落库和下载流程。
+     */
+    suspend fun saveWebViewLinkPreview(webView: WebView, pageUrl: String, fallbackImageUrl: String? = null) {
+        linkPreviewExtractor.extractAndSave(webView, pageUrl, fallbackImageUrl)
     }
 
     /** 保存提取结果到数据库，页面退出后 Worker 仍能读取完整候选列表。 */
-    fun saveExtractedImages(pageUrl: String, pageName: String, domCandidates: List<ImageCandidateData>) {
+    private fun saveExtractedImages(expectedSessionId: Int, pageUrl: String, pageName: String, domCandidates: List<ImageCandidateData>) {
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
                 val merged = mergeCandidates(domCandidates)
                 if (merged.isEmpty()) {
-                    probeState = ImageProbeState.Failed
+                    withContext(Dispatchers.Main) {
+                        failProbeIfActive(expectedSessionId)
+                    }
                     return@launch
                 }
                 val batchId = imageExtractRepo.createBatch(pageUrl, pageName, merged)
                 logD(TAG) { "saveExtractedImages: batchId=$batchId count=${merged.size}" }
-                probeState = ImageProbeState.Extracted(batchId, merged.size)
+                withContext(Dispatchers.Main) {
+                    if (probeState == ImageProbeState.Probing(expectedSessionId)) {
+                        probeState = ImageProbeState.Extracted(batchId, merged.size)
+                    }
+                }
             }.onFailure {
                 logE(TAG, it) { "saveExtractedImages: 保存图片候选失败" }
-                probeState = ImageProbeState.Failed
+                withContext(Dispatchers.Main) {
+                    failProbeIfActive(expectedSessionId)
+                }
             }
         }
     }
@@ -222,14 +373,39 @@ class ImageExtractVm @Inject constructor(
                 result[url] = candidate.copy(displayOrder = index)
             }
         }
-        networkCandidates.values.forEach { candidate ->
-            val url = candidate.url.trim()
-            if (url.isNotBlank() && !result.containsKey(url)) {
-                // 网络补充图排在 DOM 图片后面，确保用户看到的页面顺序优先。
-                result[url] = candidate.copy(displayOrder = result.size)
+        synchronized(probingCandidatesLock) {
+            networkCandidates.values.forEach { candidate ->
+                val url = candidate.url.trim()
+                if (url.isNotBlank() && !result.containsKey(url)) {
+                    // 网络补充图排在 DOM 图片后面，确保用户看到的页面顺序优先。
+                    result[url] = candidate.copy(displayOrder = result.size)
+                }
             }
         }
         return result.values.toList()
+    }
+
+    /**
+     * 合并单个阶段性候选。
+     *
+     * DOM 候选优先保留网页顺序和尺寸；网络候选补充 Referer、User-Agent、Cookie 等下载上下文。
+     */
+    private fun mergeProbingCandidateLocked(candidate: ImageCandidateData) {
+        val url = candidate.url.trim()
+        if (url.isBlank()) return
+        val old = probingCandidateMap[url]
+        probingCandidateMap[url] = if (old == null) {
+            candidate
+        } else {
+            old.copy(
+                referer = old.referer ?: candidate.referer,
+                userAgent = old.userAgent ?: candidate.userAgent,
+                cookie = old.cookie ?: candidate.cookie,
+                displayOrder = minOf(old.displayOrder, candidate.displayOrder),
+                width = old.width ?: candidate.width,
+                height = old.height ?: candidate.height,
+            )
+        }
     }
 
     /**

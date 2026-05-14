@@ -69,6 +69,14 @@ interface ClipRepository {
     /** 根据链接查找历史数据 */
     suspend fun loadLinkPreview(link: String): LinkPreviewData?
 
+    /**
+     * 写入或补全链接预览缓存。
+     *
+     * WebView 提取页会在真实页面加载后调用这里补齐首轮 HTTP 解析拿不到的标题或封面；实现层需要保留旧记录中的非空字段，
+     * 只用新获得的非空字段填补空缺，并同步刷新关联剪贴记录的搜索索引。
+     */
+    suspend fun upsertLinkPreview(preview: LinkPreviewData)
+
     /** 根据id查找剪贴数据 */
     suspend fun loadClipDetail(id: Long): ClipShowEntity?
 

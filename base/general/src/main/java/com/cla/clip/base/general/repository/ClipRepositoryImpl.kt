@@ -248,6 +248,39 @@ class ClipRepositoryImpl @Inject constructor(
         linkPreviewDao.loadByLink(link)
     }
 
+    /**
+     * 写入或补全链接预览缓存。
+     *
+     * 首次剪贴保存时可能只拿到域名兜底；后续 WebView 真实加载网页后会带来更完整的标题、描述或封面。
+     * 这里合并新旧记录时优先保留已有非空字段，避免一次不完整的 DOM 扫描覆盖首轮已经解析成功的内容。
+     */
+    override suspend fun upsertLinkPreview(preview: LinkPreviewData) = withContext(Dispatchers.IO) {
+        if (preview.link.isBlank()) return@withContext
+        val old = linkPreviewDao.loadByLink(preview.link)
+        val merged = LinkPreviewData(
+            link = preview.link,
+            title = old?.title.takeUnless { it.isNullOrBlank() } ?: preview.title,
+            description = old?.description.takeUnless { it.isNullOrBlank() } ?: preview.description,
+            imageUrl = old?.imageUrl.takeUnless { it.isNullOrBlank() } ?: preview.imageUrl,
+            siteName = old?.siteName.takeUnless { it.isNullOrBlank() } ?: preview.siteName,
+        )
+        linkPreviewDao.upsert(merged)
+
+        clipDao.loadClipDetailsByLink(preview.link).forEach { detail ->
+            val clip = detail.clip
+            val sourceApp = detail.sourceApp
+            // search_text 是本地搜索唯一读取的综合索引；预览补齐后同步刷新，保证后续能搜到新标题/描述。
+            val searchText = clip.content
+                .plus(clip.link)
+                .plus(sourceApp?.appName)
+                .plus(sourceApp?.packageName)
+                .plus(merged.title)
+                .plus(merged.description)
+                .plus(merged.siteName)
+            clipDao.upsertClip(clip.copy(searchText = searchText))
+        }
+    }
+
     override suspend fun loadClipDetail(id: Long) = withContext(Dispatchers.IO) {
         clipDao.loadClipDetail(id)?.toUi()
     }
