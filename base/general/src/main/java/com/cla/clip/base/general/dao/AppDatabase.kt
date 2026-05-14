@@ -2,7 +2,9 @@ package com.cla.clip.base.general.dao
 
 import androidx.room.AutoMigration
 import androidx.room.Database
+import androidx.room.migration.Migration
 import androidx.room.RoomDatabase
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
  * Room 数据库入口，集中声明应用内所有表和 DAO。
@@ -19,7 +21,7 @@ import androidx.room.RoomDatabase
         ImageExtractBatchData::class,
         ImageExtractItemData::class
     ],
-    version = 4, // 版本4：图片批量下载新增 filtered_count，用于区分主动过滤和真实失败。
+    version = 5, // 版本5：下载记录允许同一 video_url 生成多条任务，去掉唯一索引。
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
@@ -43,4 +45,19 @@ abstract class AppDatabase : RoomDatabase() {
 
     /** 提供网页图片批量提取任务访问入口。 */
     abstract fun imageExtractDao(): ImageExtractDao
+
+    companion object {
+        /**
+         * 版本 4 -> 5 手动迁移。
+         *
+         * 下载记录页要求“重新下载”创建新任务记录，因此 `video_url` 不能继续保持唯一索引；
+         * 迁移时只替换索引，不改动任何已有下载任务行和媒体路径。
+         */
+        val MIGRATION_4_5: Migration = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP INDEX IF EXISTS `index_download_tasks_video_url`")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_download_tasks_video_url` ON `download_tasks` (`video_url`)")
+            }
+        }
+    }
 }

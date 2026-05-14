@@ -1,0 +1,738 @@
+package com.cla.clip.master.ui.page.download
+
+import android.app.RecoverableSecurityException
+import android.content.Context
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
+import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
+import androidx.activity.result.IntentSenderRequest
+import androidx.core.net.toUri
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.cla.clip.base.general.R
+import com.cla.clip.base.general.dao.DownloadTaskData
+import com.cla.clip.base.general.dao.ImageExtractBatchData
+import com.cla.clip.base.general.dao.ImageExtractItemData
+import com.cla.clip.base.general.repository.DownloadRepository
+import com.cla.clip.base.general.repository.ImageExtractRepository
+import com.cla.clip.base.general.utils.logD
+import com.cla.clip.base.general.utils.logE
+import com.cla.clip.master.work.DownloadImagesWorker
+import com.cla.clip.master.work.DownloadVideoWorker
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import javax.inject.Inject
+
+/** 下载记录页日志标签，用于定位历史映射、重新下载和删除结果。 */
+private const val TAG = "DownloadHistoryVm"
+
+/** 内容 URI scheme 常量；删除和播放时用它区分 MediaStore URI 与旧系统文件路径。 */
+private const val URI_SCHEME_CONTENT = "content"
+
+/** 视频首帧缩略图最大边长，限制内存占用，避免历史列表一次性持有原始尺寸帧。 */
+private const val VIDEO_THUMB_MAX_EDGE = 320
+
+/**
+ * 下载记录页 Tab。
+ *
+ * 页面只在视频和图片两类历史之间切换；选中状态只对当前 Tab 生效，切换时会清空选择，避免误删另一类记录。
+ */
+enum class DownloadHistoryTab {
+    /** 视频下载任务历史，对应 `download_tasks` 表。 */
+    VIDEO,
+
+    /** 图片批量下载历史，对应 `image_extract_batches` 和其级联图片项。 */
+    IMAGE
+}
+
+/**
+ * 下载记录页整体 UI 状态。
+ *
+ * ViewModel 将数据库记录、媒体可读性、选中态和操作提示聚合成这个对象，页面只做展示和用户事件分发。
+ */
+data class DownloadHistoryUiState(
+    /** 当前选中的分类 Tab。 */
+    val selectedTab: DownloadHistoryTab = DownloadHistoryTab.VIDEO,
+
+    /** 视频历史列表，按更新时间倒序排列。 */
+    val videos: List<DownloadHistoryVideoItem> = emptyList(),
+
+    /** 图片批次历史列表，按更新时间倒序排列。 */
+    val images: List<DownloadHistoryImageBatch> = emptyList(),
+
+    /** 当前 Tab 是否处于多选管理态。 */
+    val selectionMode: Boolean = false,
+
+    /** 当前 Tab 选中的记录 id 集合。 */
+    val selectedIds: Set<Long> = emptySet(),
+
+    /** 删除或重新下载等后台操作是否正在执行。 */
+    val busy: Boolean = false,
+
+    /** 一次性结果提示文案；页面展示后应调用 clearMessage 清空，避免旋转重组重复提示。 */
+    val message: String? = null,
+)
+
+/**
+ * 视频下载历史展示模型。
+ *
+ * 该模型不直接暴露 Room 实体，避免 UI 依赖数据库字段细节；媒体元信息来自本地 URI/路径实时读取，读取失败会标记为已删除。
+ */
+data class DownloadHistoryVideoItem(
+    /** 视频下载任务 id，也是重新下载、删除和进入下载页的导航主键。 */
+    val id: Long,
+
+    /** 用户可见标题，来源于下载任务保存的文件基础名。 */
+    val title: String,
+
+    /** 原始下载任务状态，页面会映射为本地化展示文案。 */
+    val status: String,
+
+    /** 下载或合并进度百分比，下载中状态用于展示。 */
+    val progress: Int,
+
+    /** 最近失败原因，失败态展示时使用。 */
+    val errorMsg: String?,
+
+    /** 最近更新时间，单位毫秒，用于相对时间展示。 */
+    val updateTime: Long,
+
+    /** 当前记录关联的本地媒体 URI 或旧系统路径；为空说明任务尚未创建输出目标。 */
+    val localPath: String?,
+
+    /** 本地媒体是否仍可读取；成功记录不可读时页面展示已删除状态。 */
+    val localExists: Boolean,
+
+    /** 视频文件大小，单位字节；无法读取时为空。 */
+    val sizeBytes: Long?,
+
+    /** 视频时长，单位毫秒；无法读取时为空。 */
+    val durationMs: Long?,
+
+    /** 本地首帧缩略图；只有本地媒体可读时才尽力生成，失败时为空并展示占位。 */
+    val thumbnail: Bitmap?,
+) {
+    /** 任务是否仍在后台下载或合并，用于删除确认提示和列表状态展示。 */
+    val running: Boolean
+        get() = status == DownloadTaskData.STATUS_DOWNLOADING || status == DownloadTaskData.STATUS_MERGING
+
+    /** 成功记录但本地文件不可读时认为本地文件已删除。 */
+    val deletedLocal: Boolean
+        get() = status == DownloadTaskData.STATUS_SUCCESS && !localExists
+}
+
+/**
+ * 图片批量下载历史展示模型。
+ *
+ * 每个批次保留自己的输出目录和成功图片 URI，页面只展示前若干张缩略图；点击缩略图预览当前单张图片。
+ */
+data class DownloadHistoryImageBatch(
+    /** 图片下载批次 id，也是重新下载、删除和 Worker 取消的主键。 */
+    val id: Long,
+
+    /** 批次标题，通常来自网页标题或剪贴板内容。 */
+    val title: String,
+
+    /** 批次状态，页面映射为本地化展示文案。 */
+    val status: String,
+
+    /** 本批次需要处理的图片总数。 */
+    val totalCount: Int,
+
+    /** 已成功保存的图片数量。 */
+    val successCount: Int,
+
+    /** 下载或发布失败数量。 */
+    val failedCount: Int,
+
+    /** 主动过滤的无效图片数量。 */
+    val filteredCount: Int,
+
+    /** 批次输出目录展示值；Android 10+ 只是辅助展示，不作为删除身份。 */
+    val outputDir: String?,
+
+    /** 最近更新时间，单位毫秒，用于相对时间展示。 */
+    val updateTime: Long,
+
+    /** 可读取的成功图片 URI 列表，页面截取前若干张作为双行横向缩略图。 */
+    val imageUris: List<String>,
+) {
+    /** 批次是否还在下载，用于删除前先取消对应 Worker。 */
+    val running: Boolean
+        get() = status == ImageExtractBatchData.STATUS_DOWNLOADING
+
+    /** 有成功计数但没有任何可读图片 URI 时，说明本地图片可能已被删除或旧记录缺少可靠路径。 */
+    val deletedLocal: Boolean
+        get() = successCount > 0 && imageUris.isEmpty()
+}
+
+/**
+ * 下载记录页一次性动作。
+ *
+ * 需要 Activity/Composable 参与的动作通过 SharedFlow 发出，例如系统删除授权和导航；普通状态仍保存在 UiState。
+ */
+sealed class DownloadHistoryAction {
+    /** 跳转到视频下载页并观察新创建的重新下载任务。 */
+    data class NavigateVideoDownload(val taskId: Long) : DownloadHistoryAction()
+
+    /** 请求系统公共媒体删除授权，用户确认后页面需要把结果回传给 ViewModel。 */
+    data class RequestMediaDeletePermission(val request: IntentSenderRequest) : DownloadHistoryAction()
+}
+
+/** 待系统授权后继续执行的删除上下文，确保用户取消授权时记录不会消失。 */
+private data class PendingDelete(
+    /** 删除发生在哪个 Tab，用于授权成功后删除对应表行。 */
+    val tab: DownloadHistoryTab,
+
+    /** 本次要删除的记录 id 集合。 */
+    val ids: Set<Long>,
+
+    /** 本次要删除的本地媒体引用；授权成功后只处理这些精确关联的文件。 */
+    val mediaRefs: List<HistoryMediaRef>,
+)
+
+/** 下载记录关联的单个本地媒体引用；只能是 content URI 或旧系统文件路径之一。 */
+private data class HistoryMediaRef(
+    /** Android 10+ MediaStore URI；不为空时优先作为读取和删除身份。 */
+    val uri: Uri? = null,
+
+    /** Android 10 以下或临时缓存文件路径；为空时不做文件路径删除。 */
+    val path: String? = null,
+)
+
+/** 单个媒体删除结果，用于决定是否保留记录和生成结果汇总。 */
+private sealed class MediaDeleteResult {
+    /** 已成功删除，或文件原本就不存在且可以继续删除记录。 */
+    data object SuccessOrMissing : MediaDeleteResult()
+
+    /** 删除失败但没有可恢复授权，调用方应保留记录或提示失败。 */
+    data object Failed : MediaDeleteResult()
+
+    /** Android 10 单个媒体需要系统授权；授权完成后应继续当前删除流程。 */
+    data class NeedsPermission(val request: IntentSenderRequest) : MediaDeleteResult()
+}
+
+/**
+ * 下载记录页 ViewModel。
+ *
+ * 负责观察视频任务和图片批次历史、读取本地媒体元信息、处理多选删除、清空当前分类和重新下载。
+ * 文件删除严格按数据库保存的 URI/路径执行，不做同名反查，避免误删公共目录里的其他媒体。
+ */
+@HiltViewModel
+class DownloadHistoryVm @Inject constructor(
+    /** 应用级 Context，用于读取 MediaStore、启动 WorkManager 任务和获取字符串资源。 */
+    @param:ApplicationContext private val appContext: Context,
+
+    /** 视频下载仓库，提供历史流、任务克隆和精确删除接口。 */
+    private val downloadRepository: DownloadRepository,
+
+    /** 图片提取仓库，提供批次历史、批次克隆和精确删除接口。 */
+    private val imageExtractRepository: ImageExtractRepository,
+) : ViewModel() {
+
+    /** 当前选中的下载记录分类。 */
+    private val selectedTab = MutableStateFlow(DownloadHistoryTab.VIDEO)
+
+    /** 当前 Tab 是否处于多选管理态。 */
+    private val selectionMode = MutableStateFlow(false)
+
+    /** 当前 Tab 已选择的记录 id。 */
+    private val selectedIds = MutableStateFlow<Set<Long>>(emptySet())
+
+    /** 后台操作忙碌状态，防止删除或重新下载期间重复点击。 */
+    private val busy = MutableStateFlow(false)
+
+    /** 操作结果提示；页面展示后会清空。 */
+    private val message = MutableStateFlow<String?>(null)
+
+    /** 等待系统媒体删除授权的上下文；为空表示没有未完成授权流程。 */
+    private var pendingDelete: PendingDelete? = null
+
+    /** 下载记录页一次性动作流。 */
+    private val _actions = MutableSharedFlow<DownloadHistoryAction>(extraBufferCapacity = 1)
+
+    /** 页面订阅的一次性动作流，主要用于导航和系统授权。 */
+    val actions = _actions.asSharedFlow()
+
+    /** 视频历史流，数据库变化后在 IO 线程补齐媒体存在性、大小、时长和首帧。 */
+    private val videoItems = downloadRepository.observeHistory().map { tasks ->
+        withContext(Dispatchers.IO) {
+            tasks.map { task -> task.toVideoHistoryItem() }
+        }
+    }
+
+    /** 图片历史流，批次变化后读取对应图片项，并只保留当前仍可读取的成功图片 URI。 */
+    private val imageItems = imageExtractRepository.observeHistory().map { batches ->
+        withContext(Dispatchers.IO) {
+            val ids = batches.map { it.id }.toSet()
+            val itemsByBatch = imageExtractRepository.getBatchesWithItems(ids).associate { (batch, items) -> batch.id to items }
+            batches.map { batch -> batch.toImageHistoryBatch(itemsByBatch[batch.id].orEmpty()) }
+        }
+    }
+
+    /** 列表与选中态组合后的中间状态，避免使用过多 Flow 参数导致重载不清晰。 */
+    private val contentState = combine(
+        selectedTab,
+        videoItems,
+        imageItems,
+        selectionMode,
+        selectedIds
+    ) { tab, videos, images, inSelection, ids ->
+        DownloadHistoryUiState(
+            selectedTab = tab,
+            videos = videos,
+            images = images,
+            selectionMode = inSelection,
+            selectedIds = ids
+        )
+    }
+
+    /** 页面观察的统一状态。 */
+    val uiState = combine(
+        contentState,
+        busy,
+        message
+    ) { content, isBusy, msg ->
+        content.copy(
+            busy = isBusy,
+            message = msg
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = DownloadHistoryUiState()
+    )
+
+    /** 切换分类 Tab，并清空多选状态，避免跨分类复用 id 导致误删。 */
+    fun selectTab(tab: DownloadHistoryTab) {
+        if (selectedTab.value == tab) return
+        selectedTab.value = tab
+        exitSelection()
+    }
+
+    /** 进入多选管理态；如果传入记录 id，会同时选中该记录，适配长按进入管理。 */
+    fun enterSelection(id: Long? = null) {
+        selectionMode.value = true
+        if (id != null) {
+            selectedIds.value = selectedIds.value + id
+        }
+    }
+
+    /** 退出多选态并清空当前选择。 */
+    fun exitSelection() {
+        selectionMode.value = false
+        selectedIds.value = emptySet()
+    }
+
+    /** 切换单条记录选中状态；取消到空集合时保留多选态，方便用户继续选择。 */
+    fun toggleSelected(id: Long) {
+        val cur = selectedIds.value
+        selectedIds.value = if (id in cur) cur - id else cur + id
+        selectionMode.value = true
+    }
+
+    /** 全选当前 Tab 中的全部记录；没有记录时保持空选择。 */
+    fun selectAllCurrentTab() {
+        val ids = when (selectedTab.value) {
+            DownloadHistoryTab.VIDEO -> uiState.value.videos.map { it.id }
+            DownloadHistoryTab.IMAGE -> uiState.value.images.map { it.id }
+        }.toSet()
+        selectedIds.value = ids
+        selectionMode.value = ids.isNotEmpty()
+    }
+
+    /** 清空当前提示文案，避免 Toast/Snackbar 因状态恢复重复展示。 */
+    fun clearMessage() {
+        message.value = null
+    }
+
+    /** 重新下载视频：创建全新任务、入队 Worker，并通知页面跳转到下载页观察新任务。 */
+    fun retryVideo(taskId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            busy.value = true
+            val newTaskId = downloadRepository.createRetryTask(taskId)
+            if (newTaskId == null) {
+                message.value = appContext.getString(R.string.base_general_the_download_task_was_not_found)
+            } else {
+                DownloadVideoWorker.enqueue(appContext, newTaskId)
+                _actions.emit(DownloadHistoryAction.NavigateVideoDownload(newTaskId))
+            }
+            busy.value = false
+        }
+    }
+
+    /** 重新下载图片批次：克隆旧批次候选为新批次并入队图片下载 Worker，旧记录和旧公共文件保持不变。 */
+    fun retryImageBatch(batchId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            busy.value = true
+            val newBatchId = imageExtractRepository.cloneBatchForRetry(batchId)
+            if (newBatchId == null) {
+                message.value = appContext.getString(R.string.base_general_download_history_retry_failed)
+            } else {
+                DownloadImagesWorker.enqueue(appContext, newBatchId)
+                message.value = appContext.getString(R.string.base_general_download_history_retry_started)
+            }
+            busy.value = false
+        }
+    }
+
+    /** 删除当前选中的记录；deleteFiles 为 true 时会先删除记录精确关联的本地媒体。 */
+    fun deleteSelected(deleteFiles: Boolean) {
+        val ids = selectedIds.value
+        if (ids.isEmpty()) return
+        deleteRecords(selectedTab.value, ids, deleteFiles)
+    }
+
+    /** 清空当前分类下所有记录；只作用于当前 Tab，不影响另一类下载历史或其他业务表。 */
+    fun clearCurrentTab(deleteFiles: Boolean) {
+        val ids = when (selectedTab.value) {
+            DownloadHistoryTab.VIDEO -> uiState.value.videos.map { it.id }
+            DownloadHistoryTab.IMAGE -> uiState.value.images.map { it.id }
+        }.toSet()
+        if (ids.isEmpty()) return
+        deleteRecords(selectedTab.value, ids, deleteFiles)
+    }
+
+    /** 系统媒体删除授权返回后继续处理；用户取消时保留记录，避免记录消失但文件仍在。 */
+    fun onMediaDeletePermissionResult(granted: Boolean) {
+        val pending = pendingDelete ?: return
+        if (!granted) {
+            pendingDelete = null
+            message.value = appContext.getString(R.string.base_general_download_history_delete_cancelled_keep_records)
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            busy.value = true
+            val result = deleteMediaRefsDirectly(pending.mediaRefs)
+            if (result.needsPermission != null) {
+                // Android 10 只能对单个媒体项走 RecoverableSecurityException 授权；若授权后仍有其它媒体项要求授权，
+                // 为避免连续弹出多个系统确认框，保留记录让用户稍后重试或改选“仅删除记录”。
+                pendingDelete = null
+                message.value = appContext.getString(R.string.base_general_download_history_more_permission_required_keep_records)
+                busy.value = false
+                return@launch
+            }
+
+            finishDeleteRecords(pending.tab, pending.ids, result.failedCount)
+            pendingDelete = null
+            busy.value = false
+        }
+    }
+
+    /**
+     * 执行记录删除。
+     *
+     * 进行中任务会先取消 Worker；如果需要删除本地文件，Android 11+ 先发起合并系统授权，授权成功后再删数据库记录。
+     */
+    private fun deleteRecords(tab: DownloadHistoryTab, ids: Set<Long>, deleteFiles: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            busy.value = true
+            val mediaRefs = collectMediaRefsAndCancelRunning(tab, ids)
+            if (!deleteFiles) {
+                finishDeleteRecords(tab, ids, failedFileCount = 0, deletedFiles = false)
+                busy.value = false
+                return@launch
+            }
+
+            val contentUris = mediaRefs.mapNotNull { it.uri }.distinct()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && contentUris.isNotEmpty()) {
+                val request = MediaStore.createDeleteRequest(appContext.contentResolver, contentUris)
+                pendingDelete = PendingDelete(tab, ids, mediaRefs)
+                _actions.emit(DownloadHistoryAction.RequestMediaDeletePermission(IntentSenderRequest.Builder(request.intentSender).build()))
+                busy.value = false
+                return@launch
+            }
+
+            val result = deleteMediaRefsDirectly(mediaRefs)
+            if (result.needsPermission != null) {
+                pendingDelete = PendingDelete(tab, ids, mediaRefs)
+                _actions.emit(DownloadHistoryAction.RequestMediaDeletePermission(result.needsPermission))
+                busy.value = false
+                return@launch
+            }
+
+            finishDeleteRecords(tab, ids, result.failedCount)
+            busy.value = false
+        }
+    }
+
+    /** 收集记录精确关联的媒体 URI/路径，并取消正在进行的 Worker，保证后续删除不会被迟到回写覆盖。 */
+    private suspend fun collectMediaRefsAndCancelRunning(tab: DownloadHistoryTab, ids: Set<Long>): List<HistoryMediaRef> {
+        return when (tab) {
+            DownloadHistoryTab.VIDEO -> {
+                downloadRepository.getTasks(ids).flatMap { task ->
+                    if (task.status == DownloadTaskData.STATUS_DOWNLOADING || task.status == DownloadTaskData.STATUS_MERGING) {
+                        DownloadVideoWorker.cancel(appContext, task.id)
+                    }
+                    buildList {
+                        add(task.savePath.toMediaRef())
+                        add(task.pendingOutputUri.toMediaRef())
+                    }.filterNotNull()
+                }
+            }
+
+            DownloadHistoryTab.IMAGE -> {
+                imageExtractRepository.getBatchesWithItems(ids).flatMap { (batch, items) ->
+                    if (batch.status == ImageExtractBatchData.STATUS_DOWNLOADING) {
+                        DownloadImagesWorker.cancel(appContext, batch.id)
+                    }
+                    items.flatMap { item ->
+                        buildList {
+                            add(item.outputUri.toMediaRef())
+                            add(item.tempPath.toMediaRef())
+                        }.filterNotNull()
+                    }
+                }
+            }
+        }.distinct()
+    }
+
+    /** 删除数据库记录并更新选择态和结果提示；本地文件删除失败时保留对应提示，但仍删除记录。 */
+    private suspend fun finishDeleteRecords(
+        tab: DownloadHistoryTab,
+        ids: Set<Long>,
+        failedFileCount: Int,
+        deletedFiles: Boolean = true,
+    ) {
+        when (tab) {
+            DownloadHistoryTab.VIDEO -> downloadRepository.deleteTasks(ids)
+            DownloadHistoryTab.IMAGE -> imageExtractRepository.deleteBatches(ids)
+        }
+        exitSelection()
+        message.value = when {
+            !deletedFiles -> appContext.getString(R.string.base_general_download_history_delete_record_summary, ids.size)
+            failedFileCount > 0 -> appContext.getString(R.string.base_general_download_history_delete_with_file_failed_summary, ids.size, failedFileCount)
+            else -> appContext.getString(R.string.base_general_download_history_delete_with_file_summary, ids.size)
+        }
+    }
+
+    /** 直接删除一组媒体引用；遇到 Android 10 可恢复授权时返回授权请求并暂停数据库删除。 */
+    private fun deleteMediaRefsDirectly(mediaRefs: List<HistoryMediaRef>): BatchDeleteResult {
+        var failedCount = 0
+        mediaRefs.distinct().forEach { ref ->
+            when (val result = deleteSingleMediaRef(ref)) {
+                MediaDeleteResult.SuccessOrMissing -> Unit
+                MediaDeleteResult.Failed -> failedCount += 1
+                is MediaDeleteResult.NeedsPermission -> return BatchDeleteResult(failedCount, result.request)
+            }
+        }
+        return BatchDeleteResult(failedCount, null)
+    }
+
+    /** 删除单个媒体引用；content URI 使用 ContentResolver，旧系统路径使用 File.delete。 */
+    private fun deleteSingleMediaRef(ref: HistoryMediaRef): MediaDeleteResult {
+        ref.uri?.let { uri ->
+            if (!uri.existsAsContentUri()) return MediaDeleteResult.SuccessOrMissing
+            return runCatching {
+                val count = appContext.contentResolver.delete(uri, null, null)
+                if (count >= 0) MediaDeleteResult.SuccessOrMissing else MediaDeleteResult.Failed
+            }.getOrElse { tr ->
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && tr is RecoverableSecurityException) {
+                    MediaDeleteResult.NeedsPermission(IntentSenderRequest.Builder(tr.userAction.actionIntent.intentSender).build())
+                } else {
+                    logE(TAG, tr) { "deleteSingleMediaRef: 删除 content URI 失败 uri=$uri" }
+                    MediaDeleteResult.Failed
+                }
+            }
+        }
+
+        val path = ref.path?.takeIf { it.isNotBlank() } ?: return MediaDeleteResult.SuccessOrMissing
+        val file = File(path)
+        if (!file.exists()) return MediaDeleteResult.SuccessOrMissing
+        return if (runCatching { file.delete() }.getOrDefault(false)) {
+            MediaDeleteResult.SuccessOrMissing
+        } else {
+            logD(TAG) { "deleteSingleMediaRef: 删除文件失败 path=$path" }
+            MediaDeleteResult.Failed
+        }
+    }
+
+    /** 将 Room 视频任务映射为历史页模型，并同步读取本地媒体元信息。 */
+    private fun DownloadTaskData.toVideoHistoryItem(): DownloadHistoryVideoItem {
+        val ref = savePath.toMediaRef() ?: pendingOutputUri.toMediaRef()
+        val localExists = ref?.exists() ?: false
+        val readableRef = ref?.takeIf { localExists }
+        val metadata = readableRef?.let(::readVideoMetadata) ?: VideoMetadata()
+        val thumbnail = readableRef?.let(::readVideoThumbnail)
+        return DownloadHistoryVideoItem(
+            id = id,
+            title = fileName,
+            status = status,
+            progress = progress.coerceIn(0, 100),
+            errorMsg = errorMsg,
+            updateTime = updateTime,
+            localPath = savePath ?: pendingOutputUri,
+            localExists = localExists,
+            sizeBytes = metadata.sizeBytes,
+            durationMs = metadata.durationMs,
+            thumbnail = thumbnail
+        )
+    }
+
+    /** 将图片批次和图片项映射为历史页模型，只保留可读取的成功图片 URI 作为缩略图和预览来源。 */
+    private fun ImageExtractBatchData.toImageHistoryBatch(items: List<ImageExtractItemData>): DownloadHistoryImageBatch {
+        val imageUris = items
+            .filter { it.status == ImageExtractItemData.STATUS_SUCCESS }
+            .mapNotNull { it.outputUri }
+            .filter { it.toMediaRef()?.exists() == true }
+        return DownloadHistoryImageBatch(
+            id = id,
+            title = pageName,
+            status = status,
+            totalCount = totalCount,
+            successCount = successCount,
+            failedCount = failedCount,
+            filteredCount = filteredCount,
+            outputDir = outputDir,
+            updateTime = updateTime,
+            imageUris = imageUris
+        )
+    }
+
+    /** 将字符串路径转换为媒体引用；content:// 作为 URI，其余字符串作为旧系统文件路径处理。 */
+    private fun String?.toMediaRef(): HistoryMediaRef? {
+        val raw = this?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        val uri = runCatching { raw.toUri() }.getOrNull()
+        return if (uri?.scheme == URI_SCHEME_CONTENT) {
+            HistoryMediaRef(uri = uri)
+        } else {
+            HistoryMediaRef(path = raw)
+        }
+    }
+
+    /** 判断媒体引用当前是否仍可读取；失败表示记录页应展示已删除或占位状态。 */
+    private fun HistoryMediaRef.exists(): Boolean {
+        uri?.let { return it.existsAsContentUri() }
+        val path = path ?: return false
+        return File(path).exists()
+    }
+
+    /** 判断 content URI 是否仍存在；查询失败时再尝试打开文件描述符做兜底验证。 */
+    private fun Uri.existsAsContentUri(): Boolean {
+        val queried = runCatching {
+            appContext.contentResolver.query(this, arrayOf(MediaStore.MediaColumns._ID), null, null, null)?.use { cursor ->
+                cursor.moveToFirst()
+            }
+        }.getOrNull()
+        if (queried == true) return true
+
+        return runCatching {
+            appContext.contentResolver.openAssetFileDescriptor(this, "r")?.use { true } == true
+        }.getOrDefault(false)
+    }
+
+    /** 读取视频大小和时长；content URI 优先通过 MediaStore 查询，时长缺失时交给 MediaMetadataRetriever 兜底。 */
+    private fun readVideoMetadata(ref: HistoryMediaRef): VideoMetadata {
+        val size = ref.uri?.let(::queryContentSize) ?: ref.path?.let { File(it).takeIf(File::exists)?.length() }
+        val durationFromQuery = ref.uri?.let(::queryVideoDuration)
+        val duration = durationFromQuery ?: readVideoDurationWithRetriever(ref)
+        return VideoMetadata(sizeBytes = size?.takeIf { it > 0L }, durationMs = duration?.takeIf { it > 0L })
+    }
+
+    /** 从 MediaStore 查询媒体大小，失败时返回空值，让 UI 展示未知。 */
+    private fun queryContentSize(uri: Uri): Long? {
+        return runCatching {
+            appContext.contentResolver.query(uri, arrayOf(MediaStore.MediaColumns.SIZE), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getLongOrNull(MediaStore.MediaColumns.SIZE) else null
+            }
+        }.getOrNull()
+    }
+
+    /** 从 MediaStore 查询视频时长，部分第三方 URI 不支持该列时自动返回空。 */
+    private fun queryVideoDuration(uri: Uri): Long? {
+        return runCatching {
+            appContext.contentResolver.query(uri, arrayOf(MediaStore.Video.Media.DURATION), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getLongOrNull(MediaStore.Video.Media.DURATION) else null
+            }
+        }.getOrNull()
+    }
+
+    /** 使用 MediaMetadataRetriever 读取视频时长，兼容旧系统路径和 MediaStore 时长列缺失的情况。 */
+    private fun readVideoDurationWithRetriever(ref: HistoryMediaRef): Long? {
+        return runCatching {
+            MediaMetadataRetriever().useCompat { retriever ->
+                retriever.setSource(ref)
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+            }
+        }.getOrNull()
+    }
+
+    /** 读取本地视频首帧并缩放到列表可用尺寸；失败时返回空，由页面展示视频占位图。 */
+    private fun readVideoThumbnail(ref: HistoryMediaRef): Bitmap? {
+        return runCatching {
+            MediaMetadataRetriever().useCompat { retriever ->
+                retriever.setSource(ref)
+                retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)?.scaleDown(VIDEO_THUMB_MAX_EDGE)
+            }
+        }.getOrNull()
+    }
+
+    /** 为 MediaMetadataRetriever 设置数据源；content URI 与旧系统路径分别处理。 */
+    private fun MediaMetadataRetriever.setSource(ref: HistoryMediaRef) {
+        ref.uri?.let {
+            setDataSource(appContext, it)
+            return
+        }
+        setDataSource(ref.path ?: error("Video path is null"))
+    }
+
+    /** 兼容不同 API 的 MediaMetadataRetriever 释放方式，保证异常时也不泄漏底层解码资源。 */
+    private inline fun <T> MediaMetadataRetriever.useCompat(block: (MediaMetadataRetriever) -> T): T {
+        return try {
+            block(this)
+        } finally {
+            release()
+        }
+    }
+
+    /** 将过大的首帧按最大边长等比缩小，降低 Compose 列表持有 Bitmap 的内存压力。 */
+    private fun Bitmap.scaleDown(maxEdge: Int): Bitmap {
+        val edge = maxOf(width, height)
+        if (edge <= maxEdge || edge <= 0) return this
+        val scale = maxEdge.toFloat() / edge.toFloat()
+        val targetWidth = (width * scale).toInt().coerceAtLeast(1)
+        val targetHeight = (height * scale).toInt().coerceAtLeast(1)
+        val scaled = Bitmap.createScaledBitmap(this, targetWidth, targetHeight, true)
+        if (scaled !== this) recycle()
+        return scaled
+    }
+
+    /** 安全读取 Cursor Long 列，列不存在、为空或读取失败时返回 null。 */
+    private fun android.database.Cursor.getLongOrNull(columnName: String): Long? {
+        val index = getColumnIndex(columnName)
+        if (index < 0 || isNull(index)) return null
+        return runCatching { getLong(index) }.getOrNull()
+    }
+}
+
+/** 批量媒体删除结果，needsPermission 不为空时调用方必须先请求系统授权再删除数据库记录。 */
+private data class BatchDeleteResult(
+    /** 删除失败的本地文件数量；已不存在的文件不计为失败。 */
+    val failedCount: Int,
+
+    /** Android 10 可恢复删除授权请求；为空表示无需额外授权。 */
+    val needsPermission: IntentSenderRequest?,
+)
+
+/** 视频元信息读取结果，字段为空表示本地媒体不可读或系统未提供该信息。 */
+private data class VideoMetadata(
+    /** 视频文件大小，单位字节。 */
+    val sizeBytes: Long? = null,
+
+    /** 视频时长，单位毫秒。 */
+    val durationMs: Long? = null,
+)

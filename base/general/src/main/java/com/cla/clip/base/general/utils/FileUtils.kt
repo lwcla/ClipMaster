@@ -30,8 +30,14 @@ private const val IMAGE_MEDIA_RELATIVE_PREFIX = "DCIM/$MEDIA_ROOT_DIR"
 /** 生成不重名图片文件夹时的最大尝试次数，避免异常情况下无限循环。 */
 private const val MAX_UNIQUE_FOLDER_ATTEMPTS = 1_000
 
+/** 生成不重名视频文件名时的最大尝试次数，避免媒体库异常时无限循环。 */
+private const val MAX_UNIQUE_VIDEO_ATTEMPTS = 1_000
+
 /** 进程内已预留的图片文件夹名，避免并发下载任务抢到同一个目录。 */
 private val reservedImageFolderNames = mutableSetOf<String>()
+
+/** 进程内已预留的视频文件名，避免并发重新下载同名视频时抢到同一个输出名。 */
+private val reservedVideoFileNames = mutableSetOf<String>()
 
 /**
  * 媒体保存目标描述。
@@ -61,7 +67,7 @@ sealed class SaveToFile(open val fileName: String) {
 fun SaveToFile.createPath(context: Context): MediaStoreTarget {
     runCatching {
         val name = when (this@createPath) {
-            is SaveToFile.Video -> "${fileName}.mp4"
+            is SaveToFile.Video -> context.createUniqueVideoDisplayName(fileName)
             is SaveToFile.Image -> fileName
         }
 
@@ -143,6 +149,66 @@ fun SaveToFile.createPath(context: Context): MediaStoreTarget {
         logE(TAG, it) { "创建文件失败 22" }
         throw Exception("创建文件失败", it)
     }
+}
+
+/**
+ * 为视频下载生成不重名的最终文件名。
+ *
+ * 同一个视频地址重新下载会创建新记录，也必须创建新公共文件；因此同名时显式追加 `_1`、`_2` 等序号，
+ * 避免旧系统直接覆盖旧文件，也避免 Android 10+ 交给系统隐式副本命名后 UI 展示不可预期。
+ */
+private fun Context.createUniqueVideoDisplayName(baseFileName: String): String {
+    // 视频标题可能来自网页标题或剪贴板正文，先清理路径非法字符，避免旧系统把 "/" 等字符当成目录层级。
+    val safeBaseName = baseFileName
+        .replace(Regex("[\\\\/:*?\"<>|\\r\\n]+"), "_")
+        .trim()
+        .take(80)
+        .ifBlank { "video_${System.currentTimeMillis()}" }
+    synchronized(reservedVideoFileNames) {
+        repeat(MAX_UNIQUE_VIDEO_ATTEMPTS) { index ->
+            val candidate = if (index == 0) "$safeBaseName.mp4" else "${safeBaseName}_${index}.mp4"
+            if (!reservedVideoFileNames.contains(candidate) && !videoFileExists(candidate)) {
+                // 先预留名称，避免两个并发 Worker 在媒体库真正写入前拿到同一个文件名。
+                reservedVideoFileNames.add(candidate)
+                return candidate
+            }
+        }
+
+        val fallback = "${safeBaseName}_${System.currentTimeMillis()}.mp4"
+        reservedVideoFileNames.add(fallback)
+        return fallback
+    }
+}
+
+/** 按系统版本判断视频文件名是否已存在：Android 10+ 查询媒体库，旧系统查询真实目录。 */
+private fun Context.videoFileExists(displayName: String): Boolean {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        mediaStoreVideoFileExists(displayName)
+    } else {
+        val parentDir = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+            MEDIA_ROOT_DIR
+        )
+        File(parentDir, displayName).exists()
+    }
+}
+
+/** Android 10+ 的视频保存目录由 MediaStore 管理，生成名称时只用 DISPLAY_NAME + RELATIVE_PATH 做冲突检测。 */
+private fun Context.mediaStoreVideoFileExists(displayName: String): Boolean {
+    val relativePath = IMAGE_MEDIA_RELATIVE_PREFIX
+    val projection = arrayOf(MediaStore.Video.Media._ID)
+    val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ? AND ${MediaStore.MediaColumns.RELATIVE_PATH} IN (?, ?)"
+    val selectionArgs = arrayOf(displayName, relativePath, "$relativePath/")
+
+    return contentResolver.query(
+        MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+        projection,
+        selection,
+        selectionArgs,
+        null
+    )?.use { cursor ->
+        cursor.moveToFirst()
+    } ?: false
 }
 
 /**

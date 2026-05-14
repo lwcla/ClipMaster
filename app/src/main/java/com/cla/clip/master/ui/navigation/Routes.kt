@@ -55,6 +55,10 @@ data class VideoDownloadRoute(
     val taskId: Long
 ) : Route()
 
+/** 下载记录页 */
+@Serializable
+data object DownloadHistoryRoute : Route()
+
 /** 我的页面 */
 @Serializable
 data object MineRoute : Route()

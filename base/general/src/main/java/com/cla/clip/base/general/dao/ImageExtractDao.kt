@@ -219,9 +219,17 @@ interface ImageExtractDao {
     @Query("SELECT * FROM image_extract_batches WHERE id = :batchId")
     suspend fun getBatch(batchId: Long): ImageExtractBatchData?
 
+    /** 批量读取选中的图片下载批次，供删除、清空和重新下载前组装精确操作范围。 */
+    @Query("SELECT * FROM image_extract_batches WHERE id IN (:batchIds)")
+    suspend fun getBatches(batchIds: Set<Long>): List<ImageExtractBatchData>
+
     /** 观察批次变化，图片提取页用它刷新下载进度和结果统计。 */
     @Query("SELECT * FROM image_extract_batches WHERE id = :batchId")
     fun observeBatch(batchId: Long): Flow<ImageExtractBatchData?>
+
+    /** 观察图片下载历史；未确认下载的提取候选批次不进入下载记录页，避免把草稿当成下载结果。 */
+    @Query("SELECT * FROM image_extract_batches WHERE status != :extractedStatus ORDER BY update_time DESC, id DESC")
+    fun observeHistory(extractedStatus: String = ImageExtractBatchData.STATUS_EXTRACTED): Flow<List<ImageExtractBatchData>>
 
     /** 按网页顺序读取批次内全部图片项，Worker 下载前使用。 */
     @Query("SELECT * FROM image_extract_items WHERE batch_id = :batchId ORDER BY display_order ASC")
@@ -295,6 +303,10 @@ interface ImageExtractDao {
     /** 删除批次记录；图片项会因外键级联同步删除。 */
     @Query("DELETE FROM image_extract_batches WHERE id = :batchId")
     suspend fun deleteBatch(batchId: Long)
+
+    /** 精确删除选中的图片下载批次；图片项仅通过外键级联删除这些批次下的数据。 */
+    @Query("DELETE FROM image_extract_batches WHERE id IN (:batchIds)")
+    suspend fun deleteBatches(batchIds: Set<Long>)
 
     /** 在同一事务中创建批次并写入图片项，保证 Worker 不会看到只有批次没有图片项的中间状态。 */
     @Transaction

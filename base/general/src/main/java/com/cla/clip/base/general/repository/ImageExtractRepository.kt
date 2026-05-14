@@ -67,6 +67,36 @@ class ImageExtractRepository @Inject constructor(
         return imageExtractDao.replaceBatchItems(batch, items)
     }
 
+    /** 观察图片下载历史；Repository 隐藏“未确认提取批次不展示”的 SQL 细节，页面只关心历史列表。 */
+    fun observeHistory(): Flow<List<ImageExtractBatchData>> {
+        return imageExtractDao.observeHistory()
+    }
+
+    /**
+     * 基于旧图片批次创建重新下载批次。
+     *
+     * 只复制 URL、反盗链上下文、尺寸和展示顺序，输出目录、状态、计数和错误信息都重新开始，避免覆盖旧批次和旧公共文件夹。
+     */
+    suspend fun cloneBatchForRetry(batchId: Long): Long? {
+        val batch = imageExtractDao.getBatch(batchId) ?: return null
+        val items = imageExtractDao.getItems(batchId)
+            .filter { it.url.isNotBlank() }
+            .sortedBy { it.displayOrder }
+            .mapIndexed { index, item ->
+                ImageCandidateData(
+                    url = item.url,
+                    referer = item.referer,
+                    userAgent = item.userAgent,
+                    cookie = item.cookie,
+                    displayOrder = index,
+                    width = item.width,
+                    height = item.height
+                )
+            }
+        if (items.isEmpty()) return null
+        return createBatch(batch.pageUrl, batch.pageName, items)
+    }
+
     /** 观察批量任务状态，用于页面展示下载进度和最终成功/失败数量。 */
     fun observeBatch(batchId: Long): Flow<ImageExtractBatchData?> {
         return imageExtractDao.observeBatch(batchId)
@@ -81,6 +111,16 @@ class ImageExtractRepository @Inject constructor(
     suspend fun getBatchWithItems(batchId: Long): Pair<ImageExtractBatchData, List<ImageExtractItemData>>? {
         val batch = imageExtractDao.getBatch(batchId) ?: return null
         return batch to imageExtractDao.getItems(batchId)
+    }
+
+    /** 批量读取批次及其图片项，供下载记录页删除本地文件和生成缩略图列表。 */
+    suspend fun getBatchesWithItems(batchIds: Set<Long>): List<Pair<ImageExtractBatchData, List<ImageExtractItemData>>> {
+        if (batchIds.isEmpty()) return emptyList()
+        val batches = imageExtractDao.getBatches(batchIds).associateBy { it.id }
+        return batchIds.mapNotNull { id ->
+            val batch = batches[id] ?: return@mapNotNull null
+            batch to imageExtractDao.getItems(id)
+        }
     }
 
     /** 更新批量任务汇总状态，让 UI 和通知能看到最新结果。 */
@@ -116,5 +156,11 @@ class ImageExtractRepository @Inject constructor(
      */
     suspend fun keepSelectedItems(batchId: Long, selectedItemIds: Set<Long>) {
         imageExtractDao.keepSelectedItems(batchId, selectedItemIds)
+    }
+
+    /** 精确删除选中图片批次；图片项只通过外键级联删除这些批次下的数据。 */
+    suspend fun deleteBatches(batchIds: Set<Long>) {
+        if (batchIds.isEmpty()) return
+        imageExtractDao.deleteBatches(batchIds)
     }
 }

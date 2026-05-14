@@ -60,7 +60,7 @@ class DownloadImagesWorker @AssistedInject constructor(
         private const val TAG = "DownloadImagesWorker"
 
         /** WorkManager 任务标签，便于统一识别图片批量下载任务。 */
-        private const val DOWNLOAD_IMAGES_TASK_TAG = "download_images"
+        const val DOWNLOAD_IMAGES_TASK_TAG = "download_images"
 
         /** Worker 输入参数中的批次 ID 键名，用于读取本次需要下载的图片批次。 */
         private const val KEY_BATCH_ID = "key_batch_id"
@@ -106,6 +106,11 @@ class DownloadImagesWorker @AssistedInject constructor(
                 ExistingWorkPolicy.KEEP,
                 request
             )
+        }
+
+        /** 取消指定图片批量下载任务；删除进行中批次前必须先取消，避免 Worker 迟到回写已删除批次。 */
+        fun cancel(context: Context, batchId: Long) {
+            WorkManager.getInstance(context).cancelUniqueWork("${DOWNLOAD_IMAGES_TASK_TAG}:$batchId")
         }
     }
 

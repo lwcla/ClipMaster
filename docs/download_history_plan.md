@@ -1,4 +1,4 @@
-状态：已确认
+状态：已完成
 
 # 下载记录页面方案
 
@@ -6,7 +6,7 @@
 
 应用已经有视频下载任务表 `download_tasks`、图片提取批次表 `image_extract_batches` 和图片项表 `image_extract_items`。视频下载完成后，Android 10 及以上会通过 MediaStore 写入公共媒体库，并把 `ContentResolver.insert()` 返回的 `content://` URI 记录到任务的 `savePath`；Android 10 以下记录真实文件路径。图片批量下载完成后，批次记录保存 `outputDir`，每张成功图片项保存 `output_uri`。
 
-当前还没有独立的下载记录页。用户只能从下载完成页或通知查看最近一次结果，不能统一浏览已下载过的视频和图片，也不能批量删除历史记录。
+当前已新增独立下载记录页，入口位于“我的”页。页面用“视频 / 图片”顶部 Tab 统一浏览已下载、失败、进行中和部分完成的记录；支持视频本地首帧/大小/时长展示、图片批次缩略图展示、重新下载、多选删除、清空当前分类以及删除本地文件授权流程。
 
 ## 目标
 
@@ -42,13 +42,15 @@
 - 新增 `DownloadHistoryRoute` 和下载记录页面，入口放在 `MinePage`。
 - 下载记录页面使用顶部 Tab 区分视频和图片，记录范围包含成功、部分成功、失败、已过滤和进行中；图片未确认下载的 `STATUS_EXTRACTED` 批次不展示。
 - 视频列表按下载记录更新时间倒序展示，使用数据库保存的媒体 URI/路径读取首帧、大小、时长和存在性；Android 10+ 严格以保存的 `content://` URI 为准。
-- 图片列表按批次更新时间倒序展示，缩略图优先读取每个图片项的 `output_uri`，必要时使用后续补充的路径字段兜底；不可读取时展示占位。
+- 图片列表按批次更新时间倒序展示，缩略图读取每个成功图片项的 `output_uri`；当前旧系统图片项尚无最终路径字段，`output_uri` 为空或不可读取时展示占位。
 - 视频重新下载创建新的 `download_tasks` 记录，新记录指向新下载文件；旧公共文件和旧记录都保留。
 - 图片重新下载克隆旧批次候选为新批次并启动下载；旧批次状态、旧图片项和旧公共文件夹都保留。
 - 删除本地文件只删除记录精确关联的媒体项：视频删除对应任务的 `savePath` 或 pending 输出；图片逐个删除成功图片项的 `output_uri` 或路径兜底，不删除公共父目录或整个图片文件夹。
 - Android 11+ 删除多个 `content://` 媒体项时，用 `MediaStore.createDeleteRequest` 合并 URI 后一次请求用户确认；Android 10 遇到 `RecoverableSecurityException` 时走系统授权流程，避免逐张图片连续弹窗。
 - 删除进行中记录必须先取消 WorkManager，再按用户选择清理 pending/已发布文件，最后删除对应表行，避免 Worker 迟到回写已删除记录。
 - 删除数据库数据必须精确到选中记录：视频只删 `download_tasks WHERE id IN (...)`；图片只删 `image_extract_batches WHERE id IN (...)`，图片项仅通过外键级联删除这些批次下的数据。
+- Room 数据库版本提升到 5，`download_tasks.video_url` 从唯一索引迁移为普通索引；新下载和重新下载均插入新任务记录。
+- 视频成功历史进入下载页时只观察和播放，不再自动重置进度或重新入队 Worker；重新下载由下载记录页创建新任务后再跳转下载页。
 
 ## 媒体身份与同名副本
 
@@ -71,8 +73,8 @@
 ## 数据流
 
 - 下载记录页进入后，ViewModel 分别观察视频历史任务流和图片历史批次流，并映射为页面模型。
-- 视频模型读取 `savePath`、`pendingOutputUri`、`totalSize`、`durationMs`、`updateTime` 和状态，按需异步生成首帧缓存。
-- 图片模型读取批次状态、计数和图片项列表，按 `displayOrder` 取成功图片项展示横向缩略图。
+- 视频模型读取 `savePath`、`pendingOutputUri`、`updateTime` 和状态，并从本地媒体 URI/路径查询大小、时长与首帧。
+- 图片模型读取批次状态、计数和图片项列表，按 `displayOrder` 取成功且仍可读取的图片项展示横向缩略图。
 - 重新下载视频时，Repository 使用原任务的 URL、Referer、User-Agent、Cookie 和标题创建新任务，Worker 生成新的唯一文件名后下载。
 - 重新下载图片时，Repository 复制旧批次仍可下载的图片 URL 和请求上下文为新批次，Worker 使用唯一文件夹名保存。
 - 删除进行中视频时，先取消 `download_video:<taskId>`，再按用户选择删除 pending/已发布媒体，最后删除 `download_tasks` 对应行。
@@ -89,11 +91,17 @@
 - `app/src/main/java/com/cla/clip/master/ui/page/download/DownloadHistoryPage.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/download/DownloadHistoryVm.kt`
 - `base/general/src/main/java/com/cla/clip/base/general/dao/DownloadDao.kt`
+- `base/general/src/main/java/com/cla/clip/base/general/dao/AppDatabase.kt`
+- `base/general/src/main/java/com/cla/clip/base/general/dao/DatabaseModule.kt`
 - `base/general/src/main/java/com/cla/clip/base/general/dao/ImageExtractDao.kt`
 - `base/general/src/main/java/com/cla/clip/base/general/repository/DownloadRepository.kt`
 - `base/general/src/main/java/com/cla/clip/base/general/repository/ImageExtractRepository.kt`
 - `base/general/src/main/java/com/cla/clip/base/general/utils/FileUtils.kt`
 - `base/general/src/main/res/values/strings.xml`
+- `app/src/main/java/com/cla/clip/master/work/DownloadVideoWorker.kt`
+- `app/src/main/java/com/cla/clip/master/work/DownloadImagesWorker.kt`
+- `app/src/main/java/com/cla/clip/master/ui/page/video/VideoDownloadVm.kt`
+- `base/general/schemas/com.cla.clip.base.general.dao.AppDatabase/5.json`
 
 ## 实现步骤
 
@@ -126,6 +134,7 @@
 - 视频重新下载创建新记录会让同一 URL 多次出现，但更符合“下载历史按次数保存”的语义，也能保留每次下载指向的本地文件。
 - Android 10+ 删除公共媒体可能需要系统确认；为保证记录和文件一致，用户取消授权时保留记录。
 - 删除本地文件只按数据库保存的 URI/路径执行，不尝试搜索同名文件；这会避免误删，但如果早期记录没有保存可靠 URI/路径，只能删除记录或提示文件不可定位。
+- 当前图片记录只把成功图片项的 `output_uri` 作为缩略图和删除身份；旧系统图片项尚未保存最终文件路径，因此旧系统图片删除本地文件能力依赖后续补充路径字段。
 - 图片删除本地文件按图片项逐个删除，不删除整个文件夹；如果文件夹只剩空目录，也不主动删除父目录，避免误删用户后来放入的内容。
 - 批量删除的授权、取消和结果汇总会让实现复杂度高于单条删除，但能避免多次系统弹窗和状态不一致。
 
@@ -133,10 +142,13 @@
 
 - 后续是否需要提供按状态筛选，例如只看已删除、失败或进行中记录。
 - 后续是否需要在下载记录页提供“重新打开相册”或“复制文件位置”。
-- 旧版本已存在的视频任务如果缺少时长或可靠 URI，是否需要在记录页空闲时做一次媒体信息补齐。
-- 视频 `video_url` 唯一索引调整后，是否需要新增来源分组字段来把同一 URL 的多次下载聚合展示。
+- 旧版本已存在的视频任务如果缺少可靠 URI，是否需要在记录页空闲时做一次媒体信息补齐。
+- 视频 `video_url` 调整为普通索引后，是否需要新增来源分组字段来把同一 URL 的多次下载聚合展示。
+- 是否需要为 Android 10 以下图片项补充最终保存路径字段，完善旧系统图片缩略图读取和精确删除本地文件能力。
 
 ## 变更记录
 
 - 2026-05-14：新增下载记录页面方案文档；原因是后续需要统一展示已下载视频和图片，并明确重新下载、同名副本、删除记录和本地文件删除的跨模块契约。
 - 2026-05-14：补充视频重新下载创建新记录、删除结果汇总、批量系统删除授权、清空当前分类二次确认和进行中记录删除顺序；原因是下载记录页需要表达每一次下载结果，并避免误删公共文件、误删整个数据库或让 Worker 回写已删除记录。
+- 2026-05-14：将状态更新为实现中，开始落地下载记录页入口、视频/图片历史查询、重新下载新记录、精确删除和 Room 索引迁移；原因是用户要求按照本文档添加下载记录功能。
+- 2026-05-14：完成下载记录页第一版实现并将状态更新为已完成，补充 `video_url` 普通索引迁移、成功历史不自动重新下载、旧系统图片路径取舍和编译验证结果；原因是页面、数据层、删除授权、重新下载和入口已经落地。

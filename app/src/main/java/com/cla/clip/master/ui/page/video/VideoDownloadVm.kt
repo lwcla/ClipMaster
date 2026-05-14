@@ -97,14 +97,14 @@ class VideoDownloadVm @Inject constructor(
 
         viewModelScope.launch(Dispatchers.IO) {
             val task = downloadRepository.getTask(taskId)
-            if (task != null) {
+            if (task != null && task.status != com.cla.clip.base.general.dao.DownloadTaskData.STATUS_SUCCESS) {
                 // 开启下载任务之前，把之前的下载状态重置为 downloading，避免 UI 卡在完成或失败状态
-                // todo 如果要做断点续传的话，这里就需要改
+                // 已成功的历史记录只进入观察和播放，不自动重新下载；重新下载由下载记录页创建新任务后再进入本页。
                 downloadRepository.updateProgress(taskId, 0)
+                DownloadVideoWorker.enqueue(appContext, taskId)
             }
-            DownloadVideoWorker.enqueue(appContext, taskId)
 
-            logD(TAG) { "startDownload 开始下载，sessionId=$id, taskId=$taskId" }
+            logD(TAG) { "startDownload 处理下载页进入，sessionId=$id, taskId=$taskId, taskStatus=${task?.status}" }
             _downloadState.tryEmit(taskId)
         }
     }

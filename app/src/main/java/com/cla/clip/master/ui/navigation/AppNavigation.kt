@@ -6,6 +6,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
 import com.cla.clip.master.ui.page.detail.DetailPage
+import com.cla.clip.master.ui.page.download.DownloadHistoryPage
 import com.cla.clip.master.ui.page.image.ImageExtractPage
 import com.cla.clip.master.ui.page.list.ClipListPage
 import com.cla.clip.master.ui.page.main.MainPage
@@ -105,6 +106,14 @@ fun AppNavigation(navController: NavHostController) {
                 pageUrl = route.url,
                 pageName = route.name,
                 onBack = onBack
+            )
+        }
+
+        // 下载记录页
+        composable<DownloadHistoryRoute> {
+            DownloadHistoryPage(
+                onBack = onBack,
+                onNavigate = onNavigate
             )
         }
 

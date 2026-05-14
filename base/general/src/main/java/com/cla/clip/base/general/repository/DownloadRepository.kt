@@ -27,10 +27,10 @@ class DownloadRepository @Inject constructor(
     }
 
     /**
-     * 创建或复用视频下载任务。
+     * 创建视频下载任务。
      *
-     * `videoUrl` 是唯一键；如果历史任务已存在，会更新请求上下文、文件名和 pending 输出信息，并返回旧任务 id。
-     * 这样同一视频地址不会在数据库里产生多条任务，同时能用最新 Referer/User-Agent/Cookie 重试下载。
+     * 每次用户确认下载都插入新记录，不再按 `videoUrl` 去重；这样下载记录页可以保留同一地址的多次下载结果，
+     * 每条记录都独立指向本次创建的 MediaStore URI 或旧系统文件路径。
      */
     suspend fun createTask(
         videoUrl: String,
@@ -39,14 +39,8 @@ class DownloadRepository @Inject constructor(
         userAgent: String? = null,
         cookie: String? = null,
     ): Long {
-        val history = downloadDao.getTask(videoUrl)
-        val task = history?.copy(
-            referer = referer,
-            userAgent = userAgent,
-            cookie = cookie,
-            fileName = fileName,
-            pendingOutputUri = null
-        ) ?: DownloadTaskData(
+        val now = System.currentTimeMillis()
+        val task = DownloadTaskData(
             videoUrl = videoUrl,
             referer = referer,
             userAgent = userAgent,
@@ -54,18 +48,33 @@ class DownloadRepository @Inject constructor(
             status = STATUS_DOWNLOADING,
             progress = 0,
             pendingOutputUri = null,
+            createTime = now,
+            updateTime = now,
             fileName = fileName
         )
 
-        val rowId = downloadDao.upsertTask(task)
+        return downloadDao.insertTask(task)
+    }
 
-        // 关键：如果是更新旧任务，直接返回旧 id
-        return when {
-            history != null -> history.id
-            rowId > 0L -> rowId
-            else -> downloadDao.getTask(videoUrl)?.id
-                ?: error("createTask: upsert 后未找到任务, videoUrl=$videoUrl")
-        }
+    /** 观察全部视频下载历史，按最近更新倒序返回，供下载记录页展示和多选管理。 */
+    fun observeHistory(): Flow<List<DownloadTaskData>> {
+        return downloadDao.observeHistory()
+    }
+
+    /**
+     * 基于旧任务创建一条重新下载记录。
+     *
+     * 只复制 URL、请求上下文和文件名，不复制进度、状态、错误和输出路径，确保新任务拥有独立生命周期和本地文件身份。
+     */
+    suspend fun createRetryTask(sourceTaskId: Long): Long? {
+        val source = downloadDao.getTask(sourceTaskId) ?: return null
+        return createTask(
+            videoUrl = source.videoUrl,
+            fileName = source.fileName,
+            referer = source.referer,
+            userAgent = source.userAgent,
+            cookie = source.cookie
+        )
     }
 
     /** 观察下载任务变化，下载页用它实时映射为 UI 状态。 */
@@ -106,5 +115,17 @@ class DownloadRepository @Inject constructor(
     /** 删除任务记录；不会删除已经发布到媒体库的视频文件。 */
     suspend fun deleteTask(taskId: Long) {
         downloadDao.deleteTask(taskId)
+    }
+
+    /** 批量读取任务，用于删除前取消 Worker、清理精确关联的媒体项或生成结果汇总。 */
+    suspend fun getTasks(taskIds: Set<Long>): List<DownloadTaskData> {
+        if (taskIds.isEmpty()) return emptyList()
+        return downloadDao.getTasks(taskIds)
+    }
+
+    /** 精确删除选中任务记录；调用方负责在需要时先处理本地文件和 Worker 取消。 */
+    suspend fun deleteTasks(taskIds: Set<Long>) {
+        if (taskIds.isEmpty()) return
+        downloadDao.deleteTasks(taskIds)
     }
 }

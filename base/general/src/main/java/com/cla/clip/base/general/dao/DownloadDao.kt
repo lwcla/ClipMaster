@@ -4,6 +4,7 @@ import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Entity
 import androidx.room.Index
+import androidx.room.Insert
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Upsert
@@ -12,7 +13,7 @@ import kotlinx.coroutines.flow.Flow
 @Entity(
     tableName = "download_tasks",
     indices = [
-        Index(value = ["video_url"], unique = true), // unique = true 的作用是：该索引列的值必须全表唯一，不能重复。 数据库层会创建唯一索引，插入/更新产生重复值时会报冲突错误
+        Index(value = ["video_url"]),
         Index(value = ["status"]),
         Index(value = ["create_time"]),
     ]
@@ -20,7 +21,8 @@ import kotlinx.coroutines.flow.Flow
 /**
  * 视频下载任务表实体。
  *
- * 任务由视频提取页创建，下载页和 DownloadVideoWorker 共同读写；`video_url` 唯一，重复下载同一地址会复用并更新已有任务。
+ * 任务由视频提取页或下载记录页创建，下载页和 DownloadVideoWorker 共同读写。
+ * `video_url` 只作为普通索引用于按来源排查和后续聚合，同一地址允许产生多条记录，以保留每一次下载对应的本地媒体文件。
  */
 data class DownloadTaskData(
     @PrimaryKey(autoGenerate = true)
@@ -29,7 +31,7 @@ data class DownloadTaskData(
     val id: Long = 0,
 
     @ColumnInfo(name = "video_url")
-    /** 视频资源 URL，不能为空；同时是唯一索引，修改会影响任务去重和历史任务复用。 */
+    /** 视频资源 URL，不能为空；同一 URL 可多次下载，每条记录都独立指向自己的输出 URI 或路径。 */
     val videoUrl: String,
 
     @ColumnInfo(name = "referer")
@@ -114,13 +116,25 @@ interface DownloadDao {
     @Upsert
     suspend fun upsertTask(task: DownloadTaskData): Long // 在更新旧数据时，返回-1
 
+    /** 插入一条全新下载任务，用于保留同一视频地址的多次下载历史。 */
+    @Insert
+    suspend fun insertTask(task: DownloadTaskData): Long
+
     /** 按主键读取单个下载任务，Worker 启动时使用。 */
     @Query("SELECT * FROM download_tasks WHERE id = :id")
     suspend fun getTask(id: Long): DownloadTaskData?
 
-    /** 按唯一视频 URL 读取历史任务，用于同一视频地址复用任务记录。 */
-    @Query("SELECT * FROM download_tasks WHERE video_url = :url")
+    /** 按视频 URL 读取最近一条历史任务；仅作兼容旧调用和调试，不用于去重创建。 */
+    @Query("SELECT * FROM download_tasks WHERE video_url = :url ORDER BY update_time DESC, id DESC LIMIT 1")
     suspend fun getTask(url: String): DownloadTaskData?
+
+    /** 按更新时间倒序观察全部视频下载历史，下载记录页用它展示列表。 */
+    @Query("SELECT * FROM download_tasks ORDER BY update_time DESC, id DESC")
+    fun observeHistory(): Flow<List<DownloadTaskData>>
+
+    /** 批量读取待删除或待重新下载的任务，调用方会先过滤空集合，避免 SQL IN 空列表歧义。 */
+    @Query("SELECT * FROM download_tasks WHERE id IN (:ids)")
+    suspend fun getTasks(ids: Set<Long>): List<DownloadTaskData>
 
     /** 观察单个任务变化，视频下载页用它实时刷新进度和结果状态。 */
     @Query("SELECT * FROM download_tasks WHERE id = :id")
@@ -156,4 +170,8 @@ interface DownloadDao {
     /** 删除指定下载任务记录；不会自动删除已经保存成功的媒体文件。 */
     @Query("DELETE FROM download_tasks WHERE id = :id")
     suspend fun deleteTask(id: Long)
+
+    /** 精确删除选中的下载任务记录；不会影响剪贴板、图片批次或未选中的下载记录。 */
+    @Query("DELETE FROM download_tasks WHERE id IN (:ids)")
+    suspend fun deleteTasks(ids: Set<Long>)
 }

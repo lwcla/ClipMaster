@@ -31,7 +31,10 @@ object DatabaseModule {
             context,
             AppDatabase::class.java,
             "clip_master_database" // 数据库文件名
-        ).build()
+        )
+            // 4->5 只调整视频 URL 索引唯一性，保留所有既有下载记录和媒体路径。
+            .addMigrations(AppDatabase.MIGRATION_4_5)
+            .build()
     }
 
     /**
