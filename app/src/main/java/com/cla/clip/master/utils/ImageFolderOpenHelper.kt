@@ -3,93 +3,59 @@ package com.cla.clip.master.utils
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
-import android.provider.DocumentsContract
 import android.provider.MediaStore
-import com.cla.clip.base.general.R
 import com.cla.clip.base.general.utils.imageOutputDirToPublicFile
 import com.cla.clip.base.general.utils.normalizeImageOutputDir
 
 /**
- * 图片批量下载目录打开工具。
+ * 图片批量下载结果查看入口工具。
  *
- * Android 没有稳定统一的“打开公共媒体文件夹”协议，不同文件管理器对目录 URI、DocumentsUI 初始目录和相册入口支持各不相同。
- * 这里把多种 Intent 按成功率排序集中维护，页面完成态和通知点击都复用同一套兜底链路，避免各处打开结果不一致。
+ * 用户已经确认文件夹直达在目标设备体验不稳定，因此下载完成后不再尝试 DocumentsUI 或文件管理器，
+ * 只打开系统相册入口；如果相册支持 bucket 参数，会尽量进入本次保存目录对应的相册。
  */
 object ImageFolderOpenHelper {
 
-    /** 外部存储 DocumentsProvider authority，用于把公共目录转换成可被 DocumentsUI 理解的 tree/document URI。 */
-    private const val EXTERNAL_STORAGE_AUTHORITY = "com.android.externalstorage.documents"
-
-    /** 外部主存储卷 id，公共相册目录位于这个卷下。 */
-    private const val PRIMARY_VOLUME_ID = "primary"
-
     /**
-     * 打开图片批量下载目录。
+     * 打开图片批量下载结果所在相册。
      *
      * @param context 任意 Context；函数会为非 Activity Context 自动添加 NEW_TASK。
-     * @param outputDir 批次记录的相对目录，例如 `DCIM/clipMaster/foo`；为空时直接进入相册兜底。
-     * @return true 表示至少有一个外部入口已成功启动，false 表示设备没有可用应用可打开。
+     * @param outputDir 批次记录的相对目录，例如 `DCIM/clipMaster/foo`；为空时直接打开普通相册。
+     * @return 打开结果，用于调用方判断系统是否存在可处理图片媒体库的应用。
      */
-    fun openDownloadedImageFolder(context: Context, outputDir: String?): Boolean {
+    fun openDownloadedImageFolder(context: Context, outputDir: String?): ImageFolderOpenResult {
         val normalizedOutputDir = normalizeImageOutputDir(outputDir)
-        val candidates = buildList {
+        val galleryCandidates = buildList {
             if (normalizedOutputDir != null) {
-                add(openDocumentsTreeIntent(normalizedOutputDir))
-                add(openDocumentsRootWithInitialUriIntent(normalizedOutputDir))
-                openFileManagerIntent(context, normalizedOutputDir)?.let(::add)
+                add(openGalleryBucketIntent(context, normalizedOutputDir))
             }
             add(openGalleryIntent())
-            add(openImagePickerIntent(context))
         }
-
-        return candidates.any { intent ->
-            runCatching {
-                context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                true
-            }.getOrDefault(false)
+        return if (galleryCandidates.any { context.tryStartActivity(it) }) {
+            ImageFolderOpenResult.Gallery
+        } else {
+            ImageFolderOpenResult.None
         }
     }
 
     /**
-     * 构建直接查看目标目录的 DocumentsProvider URI。
+     * 构建按相册 bucket 定位的图片媒体库 Intent。
      *
-     * 这是最接近“打开对应文件夹”的路径；部分系统 DocumentsUI 会直接进入目标目录，部分第三方 ROM 可能拒绝该 URI，
-     * 因此调用方仍需要继续尝试后续兜底 Intent。
+     * 这不是标准文件夹协议，但不少相册应用会按 bucketId 打开对应相册；如果不支持，通常会退到普通图片媒体库。
      */
-    private fun openDocumentsTreeIntent(outputDir: String): Intent {
-        val treeUri = externalStorageTreeUri(outputDir)
-        val documentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, externalStorageDocumentId(outputDir))
-        return Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(documentUri, DocumentsContract.Document.MIME_TYPE_DIR)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-    }
-
-    /**
-     * 构建 DocumentsUI 初始目录 Intent。
-     *
-     * 当系统不接受直接查看目录 URI 时，ACTION_OPEN_DOCUMENT_TREE 仍可能把文件选择器定位到目标目录，让用户少点几层目录。
-     */
-    private fun openDocumentsRootWithInitialUriIntent(outputDir: String): Intent {
-        return Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                putExtra(DocumentsContract.EXTRA_INITIAL_URI, externalStorageTreeUri(outputDir))
+    private fun openGalleryBucketIntent(context: Context, outputDir: String): Intent {
+        val bucketId = context.imageOutputDirToPublicFile(outputDir)
+            ?.absolutePath
+            ?.lowercase()
+            ?.hashCode()
+            ?.toString()
+        val uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI.buildUpon().apply {
+            if (bucketId != null) {
+                appendQueryParameter("bucketId", bucketId)
             }
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-    }
-
-    /**
-     * 构建旧式文件管理器目录 Intent。
-     *
-     * Android 10 以下或部分厂商文件管理器仍支持 `file://` 目录打开；Android 10+ 不能依赖真实路径访问，所以只作为兜底候选。
-     */
-    private fun openFileManagerIntent(context: Context, outputDir: String): Intent? {
-        val dir = context.imageOutputDirToPublicFile(outputDir) ?: return null
+        }.build()
         return Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(Uri.fromFile(dir), DocumentsContract.Document.MIME_TYPE_DIR)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            // 必须用 setDataAndType；单独设置 type 会清掉前面设置的 data，导致相册仍打开默认图片入口。
+            setDataAndType(uri, "vnd.android.cursor.dir/image")
         }
     }
 
@@ -102,36 +68,24 @@ object ImageFolderOpenHelper {
         return Intent(Intent.ACTION_VIEW, MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
     }
 
-    /**
-     * 构建图片查看入口选择器。
-     *
-     * 某些设备没有相册应用但有文件管理器或第三方图片应用；选择器作为最后兜底，不要求能定位到本批次目录。
-     */
-    private fun openImagePickerIntent(context: Context): Intent {
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            type = "image/*"
-        }
-        return Intent.createChooser(intent, context.getString(R.string.base_general_open_image_folder_chooser))
+    /** 尝试启动外部 Activity；失败只返回 false，让上层继续尝试下一种目录/相册入口。 */
+    private fun Context.tryStartActivity(intent: Intent): Boolean {
+        return runCatching {
+            startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            true
+        }.getOrDefault(false)
     }
 
     /**
-     * 将相对保存目录转换成 DocumentsProvider tree URI。
+     * 图片保存位置打开结果。
      *
-     * 路径中的斜杠需要作为 document id 的一部分参与编码，不能拆成普通 path segment；否则 DocumentsUI 无法识别目标目录。
+     * Gallery 表示已打开相册或对应相册 bucket；None 表示没有任何可用应用能处理图片媒体库。
      */
-    private fun externalStorageTreeUri(outputDir: String): Uri {
-        return DocumentsContract.buildTreeDocumentUri(
-            EXTERNAL_STORAGE_AUTHORITY,
-            externalStorageDocumentId(outputDir)
-        )
-    }
+    enum class ImageFolderOpenResult {
+        /** 已打开相册或对应相册 bucket 作为查看入口。 */
+        Gallery,
 
-    /**
-     * 生成外部主存储的 document id。
-     *
-     * DocumentsProvider 使用 `primary:DCIM/...` 表示公共目录；目录已经过 normalizeImageOutputDir 清洗，避免前导斜杠导致错误定位。
-     */
-    private fun externalStorageDocumentId(outputDir: String): String {
-        return "$PRIMARY_VOLUME_ID:${outputDir.trimStart('/')}"
+        /** 没有任何可用应用能处理相册查看。 */
+        None
     }
 }

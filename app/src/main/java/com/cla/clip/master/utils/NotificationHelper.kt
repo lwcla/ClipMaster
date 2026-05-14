@@ -78,7 +78,6 @@ class NotificationHelper @Inject constructor(
         const val TARGET_IMAGE_FOLDER = "target_image_folder"
         /** 图片下载结果通知携带的批次输出目录。 */
         const val EXTRA_IMAGE_OUTPUT_DIR = "extra_image_output_dir"
-
         /**
          * 从通知 Intent 中解析剪贴详情跳转数据。
          *
@@ -128,7 +127,7 @@ class NotificationHelper @Inject constructor(
         /**
          * 从通知 Intent 中解析图片保存目录打开数据。
          *
-         * 图片下载结果通知不再复用视频下载页跳转，而是把批次输出目录交给 MainActivity 直接打开文件夹；timestamp 用于区分同一目录的多次点击。
+         * 图片下载结果通知不再复用视频下载页跳转，而是把批次输出目录交给 MainActivity 直接打开相册；timestamp 用于区分同一批次的多次点击。
          */
         fun Intent?.extractImageFolderOpenData(): ImageFolderOpenData? {
             if (this == null) return null
@@ -233,8 +232,8 @@ class NotificationHelper @Inject constructor(
     /**
      * 展示图片批量下载结果通知。
      *
-     * 点击通知会把本批次 outputDir 带回 MainActivity，由统一的目录打开工具优先打开对应保存文件夹；requestCode 使用批次 id，
-     * 避免不同图片批次的 PendingIntent extras 互相覆盖。
+     * 点击通知会把本批次 outputDir 带回 MainActivity，由统一工具直接打开相册；
+     * requestCode 使用批次 id，避免不同图片批次的 PendingIntent extras 互相覆盖。
      */
     fun notifyImageDownloadResult(batchId: Long, outputDir: String?, title: String, fileName: String, content: String?) {
         createChannels()

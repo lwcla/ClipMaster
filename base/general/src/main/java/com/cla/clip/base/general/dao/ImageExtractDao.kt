@@ -166,7 +166,7 @@ data class ImageExtractItemData(
     val tempPath: String? = null,
 
     @ColumnInfo(name = "output_uri")
-    /** 最终保存到 MediaStore 后的 URI 字符串；Android 10 以下可能为空或使用路径兜底。 */
+    /** 最终保存到 MediaStore 后的 URI 字符串；Android 10 以下直接写文件时可能为空。 */
     val outputUri: String? = null,
 
     @ColumnInfo(name = "final_name")

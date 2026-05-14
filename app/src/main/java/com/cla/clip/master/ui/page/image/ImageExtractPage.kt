@@ -89,6 +89,7 @@ import com.cla.clip.base.general.repository.ImageCandidateData
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.toast
 import com.cla.clip.master.utils.ImageFolderOpenHelper
+import com.cla.clip.master.utils.ImageFolderOpenHelper.ImageFolderOpenResult
 import com.cla.clip.master.ui.widget.ProbeWebView
 import com.cla.clip.master.ui.widget.TitleBar
 import kotlinx.coroutines.Job
@@ -478,11 +479,16 @@ fun ImageExtractPage(
                 viewModel = imageExtractVm,
                 onRetry = { imageExtractVm.sessionId += 1 },
                 onOpen = { outputDir ->
-                    // 下载完成后直接按批次 outputDir 打开本次目录；失败时给用户一个轻量 Toast，而不是重新弹选择对话框。
-                    val opened = ImageFolderOpenHelper.openDownloadedImageFolder(context, outputDir)
-                    if (!opened) {
-                        coroutineScope.launch {
-                            context.toast(R.string.base_general_no_available_app_to_open_image_folder)
+                    // 下载完成后直接打开相册；不再尝试文件夹直达，避免不同系统文件管理器带来的不稳定体验。
+                    when (ImageFolderOpenHelper.openDownloadedImageFolder(context, outputDir)) {
+                        ImageFolderOpenResult.Gallery -> {
+                            Unit
+                        }
+
+                        ImageFolderOpenResult.None -> {
+                            coroutineScope.launch {
+                                context.toast(R.string.base_general_no_available_app_to_open_image_folder)
+                            }
                         }
                     }
                 },
@@ -581,9 +587,8 @@ private fun BatchStatusContent(
             }
 
             ImageExtractBatchData.STATUS_FILTERED -> {
-                SuccessText(buildImageDownloadResultText(curBatch, includeOpenText = true)) {
-                    onOpen(curBatch.outputDir)
-                }
+                // 全部被过滤时没有任何成功保存的图片，不展示“点击打开”，避免把用户带到空目录或默认相册。
+                SuccessText(buildImageDownloadResultText(curBatch, includeOpenText = false))
             }
 
             ImageExtractBatchData.STATUS_FAILED -> {
@@ -1052,13 +1057,13 @@ private fun LoadingText(text: String) {
 /**
  * 可点击的成功提示。
  *
- * 用于下载完成或部分完成后的结果展示，点击后交给外层打开相册/文件查看入口。
+ * 用于下载完成、部分完成或过滤完成后的结果展示；只有存在可查看下载内容时才传入 onOpen 让外层打开相册/文件查看入口。
  */
 @Composable
-private fun SuccessText(text: String, onOpen: () -> Unit) {
+private fun SuccessText(text: String, onOpen: (() -> Unit)? = null) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.clickable(onClick = onOpen)
+        modifier = if (onOpen != null) Modifier.clickable(onClick = onOpen) else Modifier
     ) {
         Icon(
             painter = rememberVectorPainter(Icons.Default.Done),

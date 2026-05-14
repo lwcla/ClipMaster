@@ -282,7 +282,7 @@ data class UniqueImageFolder(
  * 规范化图片批量下载目录。
  *
  * 批次表里保存的是 `DCIM/clipMaster/<目录名>` 这类相对路径；不同调用方可能传入空字符串、带首尾斜杠或尾部 `/` 的值。
- * 打开文件夹前统一清洗，可以避免 DocumentsUI 或文件管理器因为路径格式细节无法定位目录。
+ * 打开相册前统一清洗，可以避免相册 bucket 计算因为路径格式细节产生不一致结果。
  */
 fun normalizeImageOutputDir(outputDir: String?): String? {
     return outputDir
@@ -295,7 +295,7 @@ fun normalizeImageOutputDir(outputDir: String?): String? {
 /**
  * 将图片批量下载相对目录转换成公共存储 File。
  *
- * 这个方法只用于构建旧式文件管理器兜底 Intent；Android 10+ 主流程仍应依赖 MediaStore/DocumentsUI，不能把真实路径当作唯一可用入口。
+ * 当前只用于根据最终公共路径计算相册 bucketId；它不再参与文件夹打开或真实路径访问。
  */
 fun Context.imageOutputDirToPublicFile(outputDir: String?): File? {
     val normalizedOutputDir = normalizeImageOutputDir(outputDir) ?: return null

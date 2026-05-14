@@ -23,6 +23,7 @@ import com.cla.clip.master.ui.navigation.VideoDownloadRoute
 import com.cla.clip.master.ui.theme.ClipMaterTheme
 import com.cla.clip.master.utils.ClipHelper
 import com.cla.clip.master.utils.ImageFolderOpenHelper
+import com.cla.clip.master.utils.ImageFolderOpenHelper.ImageFolderOpenResult
 import com.cla.clip.master.utils.NotificationHelper.Companion.extractClipId
 import com.cla.clip.master.utils.NotificationHelper.Companion.extractImageFolderOpenData
 import com.cla.clip.master.utils.NotificationHelper.Companion.extractTaskId
@@ -94,11 +95,16 @@ class MainActivity : ComponentActivity() {
 
                         LaunchedEffect(mainVm.pendingImageFolderOpenData) {
                             mainVm.pendingImageFolderOpenData()?.let { data ->
-                                logI(TAG) { "onCreate: 打开图片保存目录 outputDir=${data.outputDir}" }
-                                val opened = ImageFolderOpenHelper.openDownloadedImageFolder(this@MainActivity, data.outputDir)
-                                if (!opened) {
-                                    coroutineScope.launch {
-                                        this@MainActivity.toast(R.string.base_general_no_available_app_to_open_image_folder)
+                                logI(TAG) { "onCreate: 打开图片相册 outputDir=${data.outputDir}" }
+                                when (ImageFolderOpenHelper.openDownloadedImageFolder(this@MainActivity, data.outputDir)) {
+                                    ImageFolderOpenResult.Gallery -> {
+                                        Unit
+                                    }
+
+                                    ImageFolderOpenResult.None -> {
+                                        coroutineScope.launch {
+                                            this@MainActivity.toast(R.string.base_general_no_available_app_to_open_image_folder)
+                                        }
                                     }
                                 }
                             }

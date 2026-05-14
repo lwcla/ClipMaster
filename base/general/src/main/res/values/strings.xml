@@ -111,7 +111,7 @@
     <string name="base_general_open_images">打开图片</string>
     <string name="base_general_choose_saved_image_location">选择查看已保存图片的位置</string>
     <string name="base_general_open_image_folder_chooser">打开图片文件夹</string>
-    <string name="base_general_no_available_app_to_open_image_folder">没有可用应用打开图片文件夹</string>
+    <string name="base_general_no_available_app_to_open_image_folder">没有可用应用打开相册</string>
     <string name="base_general_the_clipboard_is_being_read">正在读取剪贴板</string>
     <string name="base_general_unknow">未知</string>
     <string name="base_general_there_is_no_available_application_to_open_this_video">没有可用的应用打开该视频</string>
