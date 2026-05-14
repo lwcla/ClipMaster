@@ -13,6 +13,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,6 +32,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.CheckCircle
@@ -49,10 +51,12 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -60,6 +64,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -234,7 +239,7 @@ fun DownloadHistoryPage(
     }
 
     previewImageUri?.let { uri ->
-        ImagePreviewDialog(
+        ImagePreviewBottomSheet(
             uri = uri,
             onDismiss = { previewImageUri = null }
         )
@@ -528,33 +533,80 @@ private fun ImageHistoryCard(
                 HistoryChip(text = stringResource(R.string.base_general_download_history_image_count, item.successCount, item.totalCount))
                 if (item.failedCount > 0) HistoryChip(text = stringResource(R.string.base_general_image_failed_count, item.failedCount))
                 if (item.filteredCount > 0) HistoryChip(text = stringResource(R.string.base_general_image_filtered_count, item.filteredCount))
+                if (item.unreadableCount > 0) HistoryChip(text = stringResource(R.string.base_general_download_history_unreadable_image_count, item.unreadableCount))
             }
 
             Spacer(Modifier.height(8.dp))
             if (item.imageUris.isEmpty()) {
                 DeletedPlaceholder(text = stringResource(R.string.base_general_download_history_local_file_deleted))
             } else {
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    contentPadding = PaddingValues(vertical = 2.dp)
-                ) {
-                    items(item.imageUris.take(12)) { uri ->
-                        AsyncImage(
-                            model = uri,
-                            contentDescription = null,
-                            modifier = Modifier
-                                .size(ImageThumbSize)
-                                .clip(RoundedCornerShape(6.dp))
-                                .clickable(enabled = !selectionMode) { onPreviewImage(uri) },
-                            contentScale = ContentScale.Crop,
-                            error = rememberVectorPainter(Icons.Default.BrokenImage),
-                            placeholder = rememberVectorPainter(Icons.Default.Image)
-                        )
-                    }
+                HistoryImagePreviewGrid(
+                    imageUris = item.imageUris,
+                    selectionMode = selectionMode,
+                    onPreviewImage = onPreviewImage
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 图片批次横向缩略图。
+ *
+ * 8 张以内维持单行，便于快速浏览小批次；超过 8 张后每列最多放两张图，减少长批次横向滑动距离。
+ * LazyRow 只按列懒加载，因此可以展示全部可读成功图片，同时避免一次性把大批量缩略图全部组合出来。
+ */
+@Composable
+private fun HistoryImagePreviewGrid(
+    imageUris: List<String>,
+    selectionMode: Boolean,
+    onPreviewImage: (String) -> Unit,
+) {
+    // 超过 8 张才启用双行，避免小批次记录因为第二行留白而显得过重。
+    val useTwoRows = imageUris.size > 8
+    // LazyRow 的 item 是“列”；单行模式每列 1 张，双行模式每列最多 2 张。
+    val columns = remember(imageUris, useTwoRows) {
+        if (useTwoRows) imageUris.chunked(2) else imageUris.map { listOf(it) }
+    }
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        contentPadding = PaddingValues(vertical = 2.dp)
+    ) {
+        items(columns) { column ->
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                column.forEach { uri ->
+                    HistoryImageThumb(
+                        uri = uri,
+                        selectionMode = selectionMode,
+                        onPreviewImage = onPreviewImage
+                    )
+                }
+                if (useTwoRows && column.size == 1) {
+                    Spacer(Modifier.size(ImageThumbSize))
                 }
             }
         }
     }
+}
+
+/** 单张历史图片缩略图，点击只预览当前图片，不进入左右切换相册。 */
+@Composable
+private fun HistoryImageThumb(
+    uri: String,
+    selectionMode: Boolean,
+    onPreviewImage: (String) -> Unit,
+) {
+    AsyncImage(
+        model = uri,
+        contentDescription = null,
+        modifier = Modifier
+            .size(ImageThumbSize)
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(enabled = !selectionMode) { onPreviewImage(uri) },
+        contentScale = ContentScale.Crop,
+        error = rememberVectorPainter(Icons.Default.BrokenImage),
+        placeholder = rememberVectorPainter(Icons.Default.Image)
+    )
 }
 
 /** 可选中的视频缩略图区域，统一处理首帧、已删除和选择覆盖层。 */
@@ -733,38 +785,64 @@ private fun DeleteModeDialog(
     )
 }
 
-/** 单张图片预览弹窗；只展示当前图片，不提供左右切换，保持实现范围与方案一致。 */
+/**
+ * 单张图片预览底部弹窗。
+ *
+ * 图片按弹窗宽度完整排版，并把图片区域做成纵向滚动容器；高图不会被固定高度裁切，用户可以继续向下滑查看完整内容。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ImagePreviewDialog(
+private fun ImagePreviewBottomSheet(
     uri: String,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
+    // 跳过半展开态，打开后直接给图片预览尽量多的垂直空间；真正超出屏幕的部分交给图片区域滚动。
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // 每次打开预览都使用独立滚动状态，避免上一张高图的滚动位置影响下一张图片。
+    val imageScrollState = rememberScrollState()
+
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.base_general_sure))
+        sheetState = sheetState
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 16.dp, bottom = 24.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.base_general_image_preview),
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.base_general_sure))
+                }
             }
-        },
-        title = { Text(stringResource(R.string.base_general_image_preview)) },
-        text = {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(360.dp),
-                contentAlignment = Alignment.Center
+                    .verticalScroll(imageScrollState),
+                contentAlignment = Alignment.TopCenter
             ) {
                 AsyncImage(
                     model = uri,
                     contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxWidth(),
+                    contentScale = ContentScale.FillWidth,
                     error = rememberVectorPainter(Icons.Default.BrokenImage),
                     placeholder = rememberVectorPainter(Icons.Default.Image)
                 )
             }
         }
-    )
+    }
 }
 
 /** 删除弹窗的来源，决定确认后调用删除选中记录还是清空当前分类。 */

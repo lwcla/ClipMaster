@@ -177,6 +177,10 @@ data class DownloadHistoryImageBatch(
     /** 有成功计数但没有任何可读图片 URI 时，说明本地图片可能已被删除或旧记录缺少可靠路径。 */
     val deletedLocal: Boolean
         get() = successCount > 0 && imageUris.isEmpty()
+
+    /** 成功计数里当前不可读取的图片数量；用于提示用户本地文件可能已删除或旧记录缺少可靠 URI。 */
+    val unreadableCount: Int
+        get() = (successCount - imageUris.size).coerceAtLeast(0)
 }
 
 /**
