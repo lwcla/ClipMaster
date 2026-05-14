@@ -341,6 +341,80 @@ private const val COLLECT_IMAGES_JS = """
     });
   }
 
+  function collectBiliOpusStateImages() {
+    try {
+      var state = window.__INITIAL_STATE__ || {};
+      var modules = (((state.opus || {}).detail || {}).modules || []);
+      modules.forEach(function(module) {
+        var paragraphs = (((module || {}).module_content || {}).paragraphs || []);
+        paragraphs.forEach(function(paragraph) {
+          var pics = (((paragraph || {}).pic || {}).pics || []);
+          pics.forEach(function(pic) {
+            // B 站动态页的正文原图常在初始状态中，页面渲染层可能只暴露带 @ 样式后缀的预览地址。
+            push(pic && pic.url, pic && pic.width, pic && pic.height, "state:bili-opus-pic", document.baseURI);
+            push(pic && pic.live_url, pic && pic.width, pic && pic.height, "state:bili-opus-live", document.baseURI);
+          });
+        });
+      });
+    } catch(e) {
+      // 只作为站点增强，失败时继续使用通用 DOM/网络候选。
+    }
+  }
+
+  function collectFromStateObject(value, source, depth) {
+    if (depth > 8 || value == null) return;
+    if (typeof value === "string") {
+      if (looksLikeImageUrl(value)) {
+        push(value, null, null, source, document.baseURI);
+      }
+      return;
+    }
+    if (typeof value !== "object") return;
+    if (Array.isArray(value)) {
+      value.slice(0, 800).forEach(function(item) {
+        collectFromStateObject(item, source, depth + 1);
+      });
+      return;
+    }
+    Object.keys(value).slice(0, 800).forEach(function(key) {
+      collectFromStateObject(value[key], source + ":" + key, depth + 1);
+    });
+  }
+
+  function collectGenericInitialStateImages() {
+    [
+      "__INITIAL_STATE__",
+      "__NEXT_DATA__",
+      "__NUXT__",
+      "__APOLLO_STATE__",
+      "__RELAY_STORE__",
+      "__PRELOADED_STATE__",
+      "__INITIAL_DATA__",
+      "__DATA__"
+    ].forEach(function(name) {
+      try {
+        collectFromStateObject(window[name], "state:" + name, 0);
+      } catch(e) {
+      }
+    });
+  }
+
+  function collectInlineScriptImageUrls() {
+    var literalRe = /(?:https?:)?\/\/[^"'\s<>]+?(?:\.(?:jpe?g|png|webp|gif|avif|bmp|svg)(?:@[^"'\s<>]+)?)(?:[?#][^"'\s<>]*)?/ig;
+    document.querySelectorAll("script:not([src])").forEach(function(script) {
+      var text = (script.textContent || "").replace(/\\u002F/ig, "/").replace(/\\\//g, "/").replace(/&amp;/g, "&");
+      if (!text || text.length > 1500000) return;
+      var match;
+      while ((match = literalRe.exec(text)) !== null) {
+        var url = match[0];
+        push(url, null, null, "script:inline-url", document.baseURI);
+      }
+    });
+  }
+
+  collectGenericInitialStateImages();
+  collectBiliOpusStateImages();
+  collectInlineScriptImageUrls();
   collectRoot(document, document.baseURI);
   return JSON.stringify(out);
 })()

@@ -1,6 +1,7 @@
 package com.cla.clip.master.ui.page.image
 
 import android.content.Context
+import android.net.Uri
 import android.webkit.WebView
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -106,6 +107,12 @@ class ImageExtractVm @Inject constructor(
     companion object {
         /** 日志标签，仅用于图片提取 ViewModel 内部调试，不展示给用户。 */
         private const val TAG = "ImageExtractVm"
+
+        /** B 站图片 CDN 的公共路径特征，用于把原图和 `@...webp` 这类样式图合并为同一候选。 */
+        private const val BILI_BFS_PATH_MARKER = "/bfs/"
+
+        /** 图片文件路径扩展名匹配，用于识别 `原图@样式后缀` 这种通用转码 URL。 */
+        private val IMAGE_FILE_PATH_REGEX = Regex(""".*\.(?:jpe?g|png|webp|gif|avif|bmp|svg)$""", RegexOption.IGNORE_CASE)
     }
 
     /** 当前图片提取页面状态，驱动 UI 在探测中、已提取、失败重试之间切换。 */
@@ -369,20 +376,20 @@ class ImageExtractVm @Inject constructor(
         val result = linkedMapOf<String, ImageCandidateData>()
         domCandidates.forEachIndexed { index, candidate ->
             val url = candidate.url.trim()
-            if (url.isNotBlank() && !result.containsKey(url)) {
-                result[url] = candidate.copy(displayOrder = index)
+            if (url.isNotBlank()) {
+                putPreferredCandidate(result, candidate.copy(displayOrder = index))
             }
         }
         synchronized(probingCandidatesLock) {
             networkCandidates.values.forEach { candidate ->
                 val url = candidate.url.trim()
-                if (url.isNotBlank() && !result.containsKey(url)) {
+                if (url.isNotBlank()) {
                     // 网络补充图排在 DOM 图片后面，确保用户看到的页面顺序优先。
-                    result[url] = candidate.copy(displayOrder = result.size)
+                    putPreferredCandidate(result, candidate.copy(displayOrder = result.size))
                 }
             }
         }
-        return result.values.toList()
+        return result.values.sortedBy { it.displayOrder }
     }
 
     /**
@@ -393,19 +400,117 @@ class ImageExtractVm @Inject constructor(
     private fun mergeProbingCandidateLocked(candidate: ImageCandidateData) {
         val url = candidate.url.trim()
         if (url.isBlank()) return
-        val old = probingCandidateMap[url]
-        probingCandidateMap[url] = if (old == null) {
+        val key = candidate.dedupKey()
+        val old = probingCandidateMap[key]
+        probingCandidateMap[key] = if (old == null) {
             candidate
         } else {
-            old.copy(
-                referer = old.referer ?: candidate.referer,
-                userAgent = old.userAgent ?: candidate.userAgent,
-                cookie = old.cookie ?: candidate.cookie,
-                displayOrder = minOf(old.displayOrder, candidate.displayOrder),
-                width = old.width ?: candidate.width,
-                height = old.height ?: candidate.height,
-            )
+            mergePreferredCandidate(old, candidate)
         }
+    }
+
+    /**
+     * 写入最终候选 Map，并在同一资源存在原图和转码预览时保留更适合下载的地址。
+     *
+     * 普通 URL 仍按完整地址去重；只有 `@` 前已经是图片文件的样式/转码 URL 会回退到原图键。
+     * 这意味着多个不同 GIF 会各自保留，只有同一原图的 `xxx.gif`、`xxx.gif@...webp` 这类变体会合并。
+     */
+    private fun putPreferredCandidate(target: LinkedHashMap<String, ImageCandidateData>, candidate: ImageCandidateData) {
+        val key = candidate.dedupKey()
+        val old = target[key]
+        target[key] = if (old == null) candidate else mergePreferredCandidate(old, candidate)
+    }
+
+    /**
+     * 合并同一图片资源的两个候选。
+     *
+     * 下载 URL 优先选择 GIF 原图或无样式后缀的原始地址；展示顺序取两者更靠前的位置，请求上下文和尺寸尽量互补。
+     * 如果页面中存在多个不同动图，它们的原始路径不同，会落在不同去重键上，不会互相覆盖。
+     */
+    private fun mergePreferredCandidate(old: ImageCandidateData, candidate: ImageCandidateData): ImageCandidateData {
+        val preferred = preferredDownloadCandidate(old, candidate)
+        val other = if (preferred === old) candidate else old
+        return preferred.copy(
+            referer = preferred.referer ?: other.referer,
+            userAgent = preferred.userAgent ?: other.userAgent,
+            cookie = preferred.cookie ?: other.cookie,
+            displayOrder = minOf(old.displayOrder, candidate.displayOrder),
+            width = preferred.width ?: other.width,
+            height = preferred.height ?: other.height,
+        )
+    }
+
+    /**
+     * 判断两个同源候选中哪个更适合最终下载。
+     *
+     * 一些图片 CDN 会把原始 GIF 以 `xxx.gif@...webp` 形式转码给页面组件；候选预览可能仍会动，
+     * 但系统相册对转码格式支持不稳定，因此优先保存原始 `.gif` 地址，其次选择没有 `@` 样式后缀的原图地址。
+     */
+    private fun preferredDownloadCandidate(first: ImageCandidateData, second: ImageCandidateData): ImageCandidateData {
+        val firstScore = first.downloadPriorityScore()
+        val secondScore = second.downloadPriorityScore()
+        return if (secondScore > firstScore) second else first
+    }
+
+    /** 候选下载优先级；分值越高越适合作为最终保存地址。 */
+    private fun ImageCandidateData.downloadPriorityScore(): Int {
+        val normalized = url.substringBefore("?").substringBefore("#").lowercase()
+        var score = 0
+        if (normalized.endsWith(".gif")) score += 100
+        if (normalized.endsWith(".webp")) score += 40
+        if (normalized.endsWith(".png")) score += 20
+        if (normalized.endsWith(".jpg") || normalized.endsWith(".jpeg")) score += 10
+        if (isStyledImageVariant()) score -= 30
+        return score
+    }
+
+    /**
+     * 候选去重键。
+     *
+     * 通用处理 `xxx.gif@672w_...webp` 这类“原始图片 + 样式/转码后缀”URL；只有 `@` 前已经是明确图片文件时才归并到原图，
+     * 避免把普通路径参数或查询签名误删。B 站 BFS 是主要触发来源，但规则本身不依赖具体链接。
+     */
+    private fun ImageCandidateData.dedupKey(): String {
+        val uri = runCatching { android.net.Uri.parse(url) }.getOrNull()
+        val host = uri?.host.orEmpty().lowercase()
+        val path = uri?.encodedPath.orEmpty()
+        val normalizedPath = normalizedImageStylePath(path)
+        return if (normalizedPath != null) {
+            uri!!
+                .buildUpon()
+                .encodedPath(normalizedPath)
+                .encodedQuery(uri.encodedQuery)
+                .fragment(null)
+                .build()
+                .toString()
+        } else {
+            url.trim()
+        }
+    }
+
+    /**
+     * 判断当前 URL 是否是样式转码变体，例如 `xxx.gif@672w_378h_1c.webp`。
+     *
+     * 只要满足 `@` 前是图片文件，就走相同优先级；这覆盖 B 站 BFS，也覆盖其他同类 CDN 样式图。
+     */
+    private fun ImageCandidateData.isStyledImageVariant(): Boolean {
+        val uri = runCatching { android.net.Uri.parse(url) }.getOrNull() ?: return false
+        val host = uri.host.orEmpty().lowercase()
+        val path = uri.encodedPath.orEmpty()
+        return path.contains("@") && normalizedImageStylePath(path) != null ||
+            host.endsWith("hdslb.com") && path.contains(BILI_BFS_PATH_MARKER) && path.contains("@")
+    }
+
+    /**
+     * 从样式/转码 URL 路径中恢复原始图片路径。
+     *
+     * 只在 `@` 前缀本身已经以图片扩展名结束时返回原路径，例如 `/a/b/c.gif@672w.webp` -> `/a/b/c.gif`；
+     * 普通 URL 或 `@` 前不是图片文件的路径保持不合并。
+     */
+    private fun normalizedImageStylePath(path: String): String? {
+        if (!path.contains("@")) return null
+        val rawPath = path.substringBefore("@")
+        return rawPath.takeIf { IMAGE_FILE_PATH_REGEX.matches(Uri.decode(it)) }
     }
 
     /**

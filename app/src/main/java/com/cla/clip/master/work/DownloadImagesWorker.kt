@@ -202,18 +202,20 @@ class DownloadImagesWorker @AssistedInject constructor(
                     if (isStopped) error("Worker stopped")
                     val tempImage = runCatching {
                         val response = executeRequest(item.url, item.referer ?: pageUrl, item.userAgent, item.cookie)
-                        val mimeType = normalizeImageMimeType(response)
-                        val ext = imageExtension(mimeType, item.url)
-                        val tempFile = File(tempDir, "${item.id}.$ext")
+                        // 响应头经常被 CDN 或图片代理写错，先保留为兜底值，真正入库前会以文件头识别结果为准。
+                        val responseMimeType = normalizeResponseImageMimeType(response)
+                        // 临时文件不使用响应头推断扩展名，避免错误后缀影响后续发布到相册的真实格式判断。
+                        val tempFile = File(tempDir, "${item.id}.download")
                         response.use { resp ->
                             val body = resp.body ?: error("Empty image body")
                             body.byteStream().use { input ->
                                 tempFile.outputStream().use { output -> input.copyTo(output) }
                             }
                         }
-                        validateDownloadedImage(tempFile, mimeType)
+                        val imageFormat = detectDownloadedImageFormat(tempFile, responseMimeType, item.url)
+                        validateDownloadedImage(tempFile, imageFormat.mimeType)
                         imageExtractRepo.updateItemStatus(item.id, ImageExtractItemData.STATUS_TEMP_READY, tempFile.absolutePath)
-                        TempImage(item, tempFile, mimeType, ext)
+                        TempImage(item, tempFile, imageFormat.mimeType, imageFormat.extension)
                     }.getOrElse { tr ->
                         if (tr is FilteredImageException) {
                             imageExtractRepo.updateItemStatus(item.id, ImageExtractItemData.STATUS_FILTERED, errorMsg = tr.message)
@@ -327,30 +329,127 @@ class DownloadImagesWorker @AssistedInject constructor(
         return response
     }
 
-    /** 优先使用响应头判断图片类型，避免 URL 无后缀时无法生成合适扩展名。 */
-    private fun normalizeImageMimeType(response: Response): String {
+    /** 从响应头提取可用图片 MIME，只作为真实文件识别失败时的兜底，不直接决定最终相册媒体类型。 */
+    private fun normalizeResponseImageMimeType(response: Response): String? {
         val contentType = response.header("Content-Type").orEmpty().substringBefore(";").trim().lowercase()
-        return when (contentType) {
-            "image/png", "image/webp", "image/gif", "image/avif", "image/jpeg" -> contentType
-            else -> "image/jpeg"
-        }
+        return normalizeImageMimeType(contentType)
     }
 
     /**
-     * 根据 MIME 和 URL 推断最终文件扩展名。
+     * 识别已经下载到本地的真实图片格式。
      *
-     * MIME 优先，URL 后缀兜底；未知或不支持的扩展统一保存为 jpg，避免生成无扩展名文件。
+     * 优先读取文件头，能避开响应头或 URL 后缀不可信导致 GIF/Animated WebP 被当成 JPEG 入库的问题；如果文件头无法识别，
+     * 再退回 Android 解码器、响应头和 URL 后缀，最后才使用 JPEG 兜底。
      */
-    private fun imageExtension(mimeType: String, url: String): String {
+    private fun detectDownloadedImageFormat(file: File, responseMimeType: String?, url: String): ImageFileFormat {
+        sniffImageFormat(file)?.let { return it }
+
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        normalizeImageMimeType(bounds.outMimeType)?.let { mimeType ->
+            return ImageFileFormat(mimeType = mimeType, extension = imageExtensionForMimeType(mimeType))
+        }
+
+        normalizeImageMimeType(responseMimeType)?.let { mimeType ->
+            return ImageFileFormat(mimeType = mimeType, extension = imageExtensionForMimeType(mimeType))
+        }
+
+        imageExtensionFromUrl(url)?.let { extension ->
+            mimeTypeForImageExtension(extension)?.let { mimeType ->
+                return ImageFileFormat(mimeType = mimeType, extension = extension)
+            }
+        }
+
+        return ImageFileFormat(mimeType = "image/jpeg", extension = "jpg")
+    }
+
+    /**
+     * 按文件头识别常见图片格式。
+     *
+     * 动图问题主要发生在 GIF/WebP 被错误 MIME 标成 JPEG；这里直接检查魔数，确保后续写入 MediaStore 的类型与真实字节一致。
+     */
+    private fun sniffImageFormat(file: File): ImageFileFormat? {
+        val header = ByteArray(32)
+        val readSize = file.inputStream().use { input -> input.read(header) }
+        if (readSize < 4) return null
+
+        return when {
+            header.matchesBytes(readSize, 0, 0xff, 0xd8, 0xff) -> ImageFileFormat("image/jpeg", "jpg")
+            header.matchesBytes(readSize, 0, 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a) -> ImageFileFormat("image/png", "png")
+            header.matchesAscii(readSize, 0, "GIF87a") || header.matchesAscii(readSize, 0, "GIF89a") -> ImageFileFormat("image/gif", "gif")
+            header.matchesAscii(readSize, 0, "RIFF") && header.matchesAscii(readSize, 8, "WEBP") -> ImageFileFormat("image/webp", "webp")
+            header.matchesAscii(readSize, 0, "BM") -> ImageFileFormat("image/bmp", "bmp")
+            header.isAvifHeader(readSize) -> ImageFileFormat("image/avif", "avif")
+            else -> null
+        }
+    }
+
+    /** 将外部来源的 MIME 规范化到本 Worker 支持写入相册的图片类型。 */
+    private fun normalizeImageMimeType(rawMimeType: String?): String? {
+        return when (rawMimeType?.substringBefore(";")?.trim()?.lowercase()) {
+            "image/jpeg", "image/jpg", "image/pjpeg" -> "image/jpeg"
+            "image/png", "image/x-png" -> "image/png"
+            "image/webp" -> "image/webp"
+            "image/gif" -> "image/gif"
+            "image/avif" -> "image/avif"
+            "image/bmp", "image/x-bmp", "image/x-ms-bmp" -> "image/bmp"
+            else -> null
+        }
+    }
+
+    /** 根据规范化 MIME 生成最终扩展名，确保文件名和 MediaStore MIME 保持一致。 */
+    private fun imageExtensionForMimeType(mimeType: String): String {
         return when (mimeType) {
             "image/png" -> "png"
             "image/webp" -> "webp"
             "image/gif" -> "gif"
             "image/avif" -> "avif"
-            else -> url.substringBefore("?").substringAfterLast('.', "jpg").lowercase()
-                .takeIf { it in setOf("jpg", "jpeg", "png", "webp", "gif", "avif") }
-                ?: "jpg"
+            "image/bmp" -> "bmp"
+            else -> "jpg"
         }
+    }
+
+    /** 从 URL 路径提取图片扩展名，只作为文件头和 MIME 都不可用时的兜底。 */
+    private fun imageExtensionFromUrl(url: String): String? {
+        return url.substringBefore("?")
+            .substringBefore("#")
+            .substringAfterLast('.', "")
+            .lowercase()
+            .takeIf { it in setOf("jpg", "jpeg", "png", "webp", "gif", "avif", "bmp") }
+            ?.let { if (it == "jpeg") "jpg" else it }
+    }
+
+    /** 将 URL 扩展名映射回 MIME，避免兜底路径生成扩展名和媒体类型不一致的文件。 */
+    private fun mimeTypeForImageExtension(extension: String): String? {
+        return when (extension) {
+            "jpg", "jpeg" -> "image/jpeg"
+            "png" -> "image/png"
+            "webp" -> "image/webp"
+            "gif" -> "image/gif"
+            "avif" -> "image/avif"
+            "bmp" -> "image/bmp"
+            else -> null
+        }
+    }
+
+    /** 检查字节数组指定位置是否匹配一组无符号字节，供文件头格式识别复用。 */
+    private fun ByteArray.matchesBytes(readSize: Int, offset: Int, vararg expected: Int): Boolean {
+        if (readSize < offset + expected.size) return false
+        return expected.indices.all { index -> this[offset + index].toInt() and 0xff == expected[index] }
+    }
+
+    /** 检查字节数组指定位置是否匹配 ASCII 文本，避免把二进制头转成字符串后再做模糊判断。 */
+    private fun ByteArray.matchesAscii(readSize: Int, offset: Int, expected: String): Boolean {
+        if (readSize < offset + expected.length) return false
+        return expected.indices.all { index -> this[offset + index].toInt().toChar() == expected[index] }
+    }
+
+    /** 判断 ISO BMFF 文件头是否声明 AVIF/AVIS 品牌，用于识别 URL 无后缀的 AVIF 图片。 */
+    private fun ByteArray.isAvifHeader(readSize: Int): Boolean {
+        if (!matchesAscii(readSize, 4, "ftyp")) return false
+        // AVIF 的主品牌或兼容品牌会出现在 ftyp box 中；只扫描已读取头部，避免额外读完整文件。
+        val brandText = copyOfRange(8, readSize).toString(Charsets.US_ASCII)
+        return brandText.contains("avif") || brandText.contains("avis")
     }
 
     /** 下载后校验真实图片 内容，主动过滤透明像素、占位图和反盗链返回的纯色错误图。 */
@@ -478,6 +577,15 @@ class DownloadImagesWorker @AssistedInject constructor(
     private data class PublishResult(
         val successCount: Int,
         val failedCount: Int,
+    )
+
+    /** 已识别出的真实图片格式，发布相册时同时决定 MediaStore MIME 和最终文件扩展名。 */
+    private data class ImageFileFormat(
+        /** 规范化后的图片 MIME 类型，例如 image/gif 或 image/webp；写入 MediaStore 供系统相册识别。 */
+        val mimeType: String,
+
+        /** 与 MIME 对应的文件扩展名，不包含点；用于生成 001.gif、002.webp 这类最终文件名。 */
+        val extension: String,
     )
 
     /** 构建前台下载通知信息，Android 10+ 标记为 DATA_SYNC 类型以满足前台服务要求。 */
