@@ -33,6 +33,9 @@ private const val MAX_UNIQUE_FOLDER_ATTEMPTS = 1_000
 /** 生成不重名视频文件名时的最大尝试次数，避免媒体库异常时无限循环。 */
 private const val MAX_UNIQUE_VIDEO_ATTEMPTS = 1_000
 
+/** 图片批量下载最终文件夹名最大长度；记录页会展示该名称，过长会影响同标题批次辨认。 */
+private const val MAX_IMAGE_FOLDER_NAME_LENGTH = 42
+
 /** 进程内已预留的图片文件夹名，避免并发下载任务抢到同一个目录。 */
 private val reservedImageFolderNames = mutableSetOf<String>()
 
@@ -368,21 +371,35 @@ fun Context.imageOutputDirToPublicFile(outputDir: String?): File? {
     return File(Environment.getExternalStorageDirectory(), normalizedOutputDir)
 }
 
-/** 为图片批量下载选择未占用的文件夹，避免同名网页任务保存到同一个相册目录。 */
+/** 为图片批量下载选择未占用且长度受控的文件夹，避免同名网页任务保存到同一个相册目录。 */
 fun Context.createUniqueImageFolderName(baseFolderName: String): UniqueImageFolder {
+    // baseFolderName 来自网页标题，先在工具层再次兜底清理长度，保证所有调用方得到的最终目录名都适合记录页展示。
+    val safeBaseName = baseFolderName
+        .trim()
+        .take(MAX_IMAGE_FOLDER_NAME_LENGTH)
+        .ifBlank { "images_${System.currentTimeMillis()}" }
     synchronized(reservedImageFolderNames) {
         repeat(MAX_UNIQUE_FOLDER_ATTEMPTS) { index ->
-            val candidate = if (index == 0) baseFolderName else "${baseFolderName}_${index}"
+            val suffix = if (index == 0) "" else "_$index"
+            val candidate = safeBaseName.withReservedSuffix(suffix, MAX_IMAGE_FOLDER_NAME_LENGTH)
             if (!reservedImageFolderNames.contains(candidate) && !imageFolderExists(candidate)) {
                 // 先预留名称，避免并发下载在媒体库记录创建前同时拿到同一个文件夹。
                 reservedImageFolderNames.add(candidate)
                 return UniqueImageFolder(candidate, "$IMAGE_MEDIA_RELATIVE_PREFIX/$candidate")
             }
         }
-        val fallback = "${baseFolderName}_${System.currentTimeMillis()}"
+        val fallbackSuffix = "_${System.currentTimeMillis()}"
+        val fallback = safeBaseName.withReservedSuffix(fallbackSuffix, MAX_IMAGE_FOLDER_NAME_LENGTH)
         reservedImageFolderNames.add(fallback)
         return UniqueImageFolder(fallback, "$IMAGE_MEDIA_RELATIVE_PREFIX/$fallback")
     }
+}
+
+/** 为唯一后缀预留长度后再拼接，确保 `_1` 或时间戳兜底不会把最终文件夹名撑得过长。 */
+private fun String.withReservedSuffix(suffix: String, maxLength: Int): String {
+    if (suffix.isEmpty()) return take(maxLength).ifBlank { "images" }
+    val baseLimit = (maxLength - suffix.length).coerceAtLeast(1)
+    return take(baseLimit).trimEnd('.', ' ', '_') + suffix
 }
 
 /** 按系统版本判断图片文件夹是否存在：Android 10+ 查询媒体库，旧系统查询真实目录。 */

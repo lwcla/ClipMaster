@@ -196,6 +196,30 @@ data class ImageExtractItemData(
     }
 }
 
+/**
+ * 图片下载历史列表校验本地文件时使用的轻量投影。
+ *
+ * 下载记录页只需要最终媒体身份、最终文件名和网页顺序来判断图片是否还可读取；不读取 URL、请求头、尺寸和错误信息，
+ * 可以避免一个批次包含几百张图片时把完整实体全部加载到内存后再做存在性判断。
+ */
+data class ImageHistoryFileRef(
+    /** 图片项自增主键，用于调试和后续必要时定位单张图片，不直接参与 UI 展示。 */
+    @ColumnInfo(name = "id")
+    val id: Long,
+
+    /** 最终保存到 MediaStore 后的 URI；Android 10 以下直接写文件时可能为空。 */
+    @ColumnInfo(name = "output_uri")
+    val outputUri: String?,
+
+    /** 最终公开文件名，旧系统需要用它和批次目录组合定位图片文件。 */
+    @ColumnInfo(name = "final_name")
+    val finalName: String?,
+
+    /** 图片在网页中的展示顺序，列表缩略图需要继续保持用户下载时的顺序。 */
+    @ColumnInfo(name = "display_order")
+    val displayOrder: Int,
+)
+
 @Dao
 /**
  * 图片提取 DAO。
@@ -258,6 +282,20 @@ interface ImageExtractDao {
     /** 按网页顺序读取批次内全部图片项，Worker 下载前使用。 */
     @Query("SELECT * FROM image_extract_items WHERE batch_id = :batchId ORDER BY display_order ASC")
     suspend fun getItems(batchId: Long): List<ImageExtractItemData>
+
+    /** 读取下载记录页存在性校验所需的成功图片轻量字段，避免历史列表加载完整图片项实体。 */
+    @Query(
+        """
+            SELECT id, output_uri, final_name, display_order
+            FROM image_extract_items
+            WHERE batch_id = :batchId AND status = :successStatus
+            ORDER BY display_order ASC
+        """
+    )
+    suspend fun getHistoryFileRefs(
+        batchId: Long,
+        successStatus: String = ImageExtractItemData.STATUS_SUCCESS
+    ): List<ImageHistoryFileRef>
 
     /** 观察批次图片项列表，选择页用它展示候选网格。 */
     @Query("SELECT * FROM image_extract_items WHERE batch_id = :batchId ORDER BY display_order ASC")

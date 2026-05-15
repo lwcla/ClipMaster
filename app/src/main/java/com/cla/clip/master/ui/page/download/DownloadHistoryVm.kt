@@ -1,11 +1,13 @@
 package com.cla.clip.master.ui.page.download
 
 import android.app.RecoverableSecurityException
+import android.content.ContentUris
 import android.content.Context
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
 import android.provider.MediaStore
 import androidx.activity.result.IntentSenderRequest
 import androidx.core.net.toUri
@@ -19,11 +21,13 @@ import androidx.paging.map
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.dao.DownloadTaskData
 import com.cla.clip.base.general.dao.ImageExtractBatchData
+import com.cla.clip.base.general.dao.ImageHistoryFileRef
 import com.cla.clip.base.general.dao.ImageExtractItemData
 import com.cla.clip.base.general.repository.DownloadRepository
 import com.cla.clip.base.general.repository.ImageExtractRepository
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
+import com.cla.clip.base.general.utils.normalizeImageOutputDir
 import com.cla.clip.master.work.DownloadImagesWorker
 import com.cla.clip.master.work.DownloadVideoWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -52,6 +56,12 @@ private const val VIDEO_THUMB_MAX_EDGE = 320
 
 /** 下载记录分页每页大小；列表卡片会读取媒体元信息，页大小过大容易拖慢首屏。 */
 private const val HISTORY_PAGE_SIZE = 20
+
+/** MediaStore IN 查询分块大小，低于常见 999 参数上限，给其它 selection 参数留出余量。 */
+private const val MEDIASTORE_QUERY_CHUNK_SIZE = 600
+
+/** 图片批量下载在旧系统真实保存的父目录名称；需与 FileUtils 中保存实现保持一致。 */
+private const val LEGACY_IMAGE_PARENT_DIR = "clipMaster"
 
 /**
  * 下载记录页 Tab。
@@ -184,20 +194,25 @@ data class DownloadHistoryImageBatch(
     /** 最近更新时间，单位毫秒，用于相对时间展示。 */
     val updateTime: Long,
 
-    /** 可读取的成功图片 URI 列表，页面截取前若干张作为双行横向缩略图。 */
+    /** 可读取的成功图片引用列表；Android 10+ 通常是 content URI，旧系统可能是真实文件路径。 */
     val imageUris: List<String>,
 ) {
     /** 批次是否还在下载，用于删除前先取消对应 Worker。 */
     val running: Boolean
         get() = status == ImageExtractBatchData.STATUS_DOWNLOADING
 
-    /** 有成功计数但没有任何可读图片 URI 时，说明本地图片可能已被删除或旧记录缺少可靠路径。 */
+    /** 有成功计数的终态批次没有任何可读图片时，说明本地图片可能已被删除或旧记录缺少可靠路径。 */
     val deletedLocal: Boolean
-        get() = successCount > 0 && imageUris.isEmpty()
+        get() = shouldCheckLocalImages && imageUris.isEmpty()
 
-    /** 成功计数里当前不可读取的图片数量；用于提示用户本地文件可能已删除或旧记录缺少可靠 URI。 */
+    /** 成功计数里当前不可读取的图片数量；下载中或无成功文件的终态不做本地删除误判。 */
     val unreadableCount: Int
-        get() = (successCount - imageUris.size).coerceAtLeast(0)
+        get() = if (shouldCheckLocalImages) (successCount - imageUris.size).coerceAtLeast(0) else 0
+
+    /** 只有成功或部分成功且已有成功文件的终态批次才需要执行本地存在性语义。 */
+    private val shouldCheckLocalImages: Boolean
+        get() = successCount > 0 &&
+                (status == ImageExtractBatchData.STATUS_SUCCESS || status == ImageExtractBatchData.STATUS_PARTIAL_SUCCESS)
 }
 
 /**
@@ -344,8 +359,8 @@ class DownloadHistoryVm @Inject constructor(
     }.flow.map { pagingData: PagingData<ImageExtractBatchData> ->
         pagingData.map { batch ->
             withContext(Dispatchers.IO) {
-                val items = imageExtractRepository.getBatchWithItems(batch.id)?.second.orEmpty()
-                batch.toImageHistoryBatch(items)
+                val fileRefs = imageExtractRepository.getHistoryFileRefs(batch.id)
+                batch.toImageHistoryBatch(fileRefs)
             }
         }
     }.cachedIn(viewModelScope)
@@ -597,15 +612,52 @@ class DownloadHistoryVm @Inject constructor(
                     if (batch.status == ImageExtractBatchData.STATUS_DOWNLOADING) {
                         DownloadImagesWorker.cancel(appContext, batch.id)
                     }
-                    items.flatMap { item ->
-                        buildList {
-                            add(item.outputUri.toMediaRef())
-                            add(item.tempPath.toMediaRef())
-                        }.filterNotNull()
-                    }
+                    collectImageMediaRefs(batch, items)
                 }
             }
         }.distinct()
+    }
+
+    /** 收集图片批次关联的精确媒体引用；旧系统成功图片需要用 outputDir + finalName 定位最终公开文件。 */
+    private fun collectImageMediaRefs(
+        batch: ImageExtractBatchData,
+        items: List<ImageExtractItemData>
+    ): List<HistoryMediaRef> {
+        val itemFinalNames = items.mapNotNull { it.finalName?.takeIf(String::isNotBlank) }.toSet()
+        val refs = buildList {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                addAll(collectLegacyImageDeleteRefs(batch.outputDir, itemFinalNames))
+            }
+            items.forEach { item ->
+                add(item.outputUri.toMediaRef())
+                add(item.tempPath.toMediaRef())
+            }
+        }.filterNotNull()
+        return refs
+    }
+
+    /**
+     * 旧系统删除图片时优先利用批次目录。
+     *
+     * 如果目录内全部文件都属于当前批次，可以直接删除整个目录；如果用户后来放入了额外文件或子目录，
+     * 只删除记录匹配的最终图片，避免误删不属于本批次的数据。
+     */
+    private fun collectLegacyImageDeleteRefs(outputDir: String?, finalNames: Set<String>): List<HistoryMediaRef> {
+        if (finalNames.isEmpty()) return emptyList()
+        val folder = resolveLegacyImageFolder(outputDir) ?: return emptyList()
+        val children = runCatching { folder.listFiles()?.toList().orEmpty() }.getOrDefault(emptyList())
+        if (children.isEmpty()) return emptyList()
+
+        val childFileNames = children.filter { it.isFile }.map { it.name }.toSet()
+        val hasUntrackedFiles = childFileNames.any { it !in finalNames }
+        val hasSubDirectories = children.any { it.isDirectory }
+        return if (!hasUntrackedFiles && !hasSubDirectories && childFileNames.isNotEmpty()) {
+            listOf(HistoryMediaRef(path = folder.absolutePath))
+        } else {
+            finalNames
+                .filter { it in childFileNames }
+                .map { HistoryMediaRef(path = File(folder, it).absolutePath) }
+        }
     }
 
     /** 删除数据库记录并更新选择态和结果提示；本地文件删除失败时保留对应提示，但仍删除记录。 */
@@ -640,7 +692,7 @@ class DownloadHistoryVm @Inject constructor(
         return BatchDeleteResult(failedCount, null)
     }
 
-    /** 删除单个媒体引用；content URI 使用 ContentResolver，旧系统路径使用 File.delete。 */
+    /** 删除单个媒体引用；content URI 使用 ContentResolver，旧系统路径支持文件和安全确认后的批次目录。 */
     private fun deleteSingleMediaRef(ref: HistoryMediaRef): MediaDeleteResult {
         ref.uri?.let { uri ->
             if (!uri.existsAsContentUri()) return MediaDeleteResult.SuccessOrMissing
@@ -660,7 +712,14 @@ class DownloadHistoryVm @Inject constructor(
         val path = ref.path?.takeIf { it.isNotBlank() } ?: return MediaDeleteResult.SuccessOrMissing
         val file = File(path)
         if (!file.exists()) return MediaDeleteResult.SuccessOrMissing
-        return if (runCatching { file.delete() }.getOrDefault(false)) {
+        val deleted = runCatching {
+            if (file.isDirectory) {
+                file.deleteRecursively()
+            } else {
+                file.delete()
+            }
+        }.getOrDefault(false)
+        return if (deleted) {
             MediaDeleteResult.SuccessOrMissing
         } else {
             logD(TAG) { "deleteSingleMediaRef: 删除文件失败 path=$path" }
@@ -690,12 +749,14 @@ class DownloadHistoryVm @Inject constructor(
         )
     }
 
-    /** 将图片批次和图片项映射为历史页模型，只保留可读取的成功图片 URI 作为缩略图和预览来源。 */
-    private fun ImageExtractBatchData.toImageHistoryBatch(items: List<ImageExtractItemData>): DownloadHistoryImageBatch {
-        val imageUris = items
-            .filter { it.status == ImageExtractItemData.STATUS_SUCCESS }
-            .mapNotNull { it.outputUri }
-            .filter { it.toMediaRef()?.exists() == true }
+    /** 将图片批次和轻量文件引用映射为历史页模型，通过文件夹短路和批量查询避免逐张判断本地文件是否被删除。 */
+    private fun ImageExtractBatchData.toImageHistoryBatch(fileRefs: List<ImageHistoryFileRef>): DownloadHistoryImageBatch {
+        val imageRefs = if (shouldCheckLocalImages()) {
+            readableImageRefs(outputDir, fileRefs)
+        } else {
+            // 下载中批次可能已经写入 outputDir 但尚未发布图片；此时跳过本地校验，避免误判和无意义查询。
+            emptyList()
+        }
         return DownloadHistoryImageBatch(
             id = id,
             title = pageName,
@@ -706,8 +767,159 @@ class DownloadHistoryVm @Inject constructor(
             filteredCount = filteredCount,
             outputDir = outputDir,
             updateTime = updateTime,
-            imageUris = imageUris
+            imageUris = imageRefs
         )
+    }
+
+    /** 只有已产生成功文件的终态批次才需要检查本地图片是否仍可读取。 */
+    private fun ImageExtractBatchData.shouldCheckLocalImages(): Boolean {
+        return successCount > 0 &&
+                (status == ImageExtractBatchData.STATUS_SUCCESS || status == ImageExtractBatchData.STATUS_PARTIAL_SUCCESS)
+    }
+
+    /** 按系统版本批量判断图片批次中哪些文件仍可读取，避免几百张图片逐个查询拖慢列表刷新。 */
+    private fun readableImageRefs(outputDir: String?, fileRefs: List<ImageHistoryFileRef>): List<String> {
+        if (fileRefs.isEmpty()) return emptyList()
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            readableMediaStoreImageUris(outputDir, fileRefs)
+        } else {
+            readableLegacyImagePaths(outputDir, fileRefs)
+        }
+    }
+
+    /** Android 10+ 先按 RELATIVE_PATH 判断目录是否还有未回收站媒体项，再用 MediaStore id 分块批量校验。 */
+    private fun readableMediaStoreImageUris(outputDir: String?, fileRefs: List<ImageHistoryFileRef>): List<String> {
+        val relativePath = normalizeImageOutputDir(outputDir)
+        if (relativePath != null && !mediaStoreImageFolderHasVisibleItems(relativePath)) {
+            return emptyList()
+        }
+
+        val standardRefs = mutableListOf<Pair<ImageHistoryFileRef, Long>>()
+        val fallbackRefs = mutableListOf<ImageHistoryFileRef>()
+        fileRefs.forEach { ref ->
+            val uri = ref.outputUri?.toUriOrNull()
+            val mediaId = uri
+                ?.takeIf { it.isStandardMediaStoreImageUri() }
+                ?.let { runCatching { ContentUris.parseId(it) }.getOrNull() }
+            if (mediaId != null && mediaId >= 0) {
+                standardRefs += ref to mediaId
+            } else {
+                fallbackRefs += ref
+            }
+        }
+
+        val visibleIds = queryVisibleImageIds(standardRefs.map { it.second })
+        val visibleStandardUris = standardRefs
+            .filter { (_, mediaId) -> mediaId in visibleIds }
+            .mapNotNull { (ref, _) -> ref.outputUri }
+            .toSet()
+        val readableFallbackUris = fallbackRefs
+            .mapNotNull { ref -> ref.outputUri?.takeIf { it.toMediaRef()?.exists() == true } }
+            .toSet()
+        val readableUris = visibleStandardUris + readableFallbackUris
+        return fileRefs.mapNotNull { ref -> ref.outputUri?.takeIf { it in readableUris } }
+    }
+
+    /** 查询指定 MediaStore 图片目录下是否还有未被 Android 11+ 回收站隐藏的媒体项。 */
+    private fun mediaStoreImageFolderHasVisibleItems(relativePath: String): Boolean {
+        val selectionParts = mutableListOf("${MediaStore.MediaColumns.RELATIVE_PATH} IN (?, ?)")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            selectionParts += "${MediaStore.MediaColumns.IS_TRASHED} != 1"
+        }
+        return runCatching {
+            appContext.contentResolver.query(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                arrayOf(MediaStore.Images.Media._ID),
+                selectionParts.joinToString(" AND "),
+                arrayOf(relativePath, "$relativePath/"),
+                null
+            )?.use { cursor -> cursor.moveToFirst() } == true
+        }.getOrDefault(false)
+    }
+
+    /** 分块查询仍在 MediaStore 中可见的图片 id；Android 11+ 已进回收站的图片按不可读处理。 */
+    private fun queryVisibleImageIds(mediaIds: List<Long>): Set<Long> {
+        if (mediaIds.isEmpty()) return emptySet()
+        val result = mutableSetOf<Long>()
+        mediaIds.distinct().chunked(MEDIASTORE_QUERY_CHUNK_SIZE).forEach { chunk ->
+            val placeholders = chunk.joinToString(",") { "?" }
+            val selectionParts = mutableListOf("${MediaStore.Images.Media._ID} IN ($placeholders)")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                selectionParts += "${MediaStore.MediaColumns.IS_TRASHED} != 1"
+            }
+            val selectionArgs = chunk.map(Long::toString).toTypedArray()
+            runCatching {
+                appContext.contentResolver.query(
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                    arrayOf(MediaStore.Images.Media._ID),
+                    selectionParts.joinToString(" AND "),
+                    selectionArgs,
+                    null
+                )?.use { cursor ->
+                    val idIndex = cursor.getColumnIndex(MediaStore.Images.Media._ID)
+                    while (idIndex >= 0 && cursor.moveToNext()) {
+                        result += cursor.getLong(idIndex)
+                    }
+                }
+            }.onFailure { tr ->
+                logE(TAG, tr) { "queryVisibleImageIds: 批量查询图片可读状态失败 count=${chunk.size}" }
+            }
+        }
+        return result
+    }
+
+    /** Android 9 及以下通过一次读取批次目录文件名集合来判断成功图片是否仍存在。 */
+    private fun readableLegacyImagePaths(outputDir: String?, fileRefs: List<ImageHistoryFileRef>): List<String> {
+        val folder = resolveLegacyImageFolder(outputDir) ?: return emptyList()
+        val existingNames = runCatching {
+            folder.listFiles()
+                ?.filter { it.isFile }
+                ?.map { it.name }
+                ?.toSet()
+                .orEmpty()
+        }.getOrDefault(emptySet())
+        if (existingNames.isEmpty()) return emptyList()
+
+        return fileRefs.mapNotNull { ref ->
+            val finalName = ref.finalName?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            File(folder, finalName).absolutePath.takeIf { finalName in existingNames }
+        }
+    }
+
+    /** 旧系统真实保存目录是 Pictures/clipMaster/<folderName>，必要时兼容检查 outputDir 形态对应的 DCIM 目录。 */
+    private fun resolveLegacyImageFolder(outputDir: String?): File? {
+        val folderName = outputDir.extractImageFolderName() ?: return null
+        val picturesFolder = File(
+            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), LEGACY_IMAGE_PARENT_DIR),
+            folderName
+        )
+        if (picturesFolder.isDirectory) return picturesFolder
+
+        val dcimFolder = File(
+            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), LEGACY_IMAGE_PARENT_DIR),
+            folderName
+        )
+        return dcimFolder.takeIf { it.isDirectory }
+    }
+
+    /** 从批次 outputDir 中提取最后一级目录名；outputDir 是展示/相册定位值，不直接当作旧系统真实路径。 */
+    private fun String?.extractImageFolderName(): String? {
+        return normalizeImageOutputDir(this)
+            ?.substringAfterLast('/')
+            ?.takeIf { it.isNotBlank() }
+    }
+
+    /** 安全解析 URI 字符串；解析失败返回 null，让调用方走兜底路径。 */
+    private fun String.toUriOrNull(): Uri? {
+        return runCatching { toUri() }.getOrNull()
+    }
+
+    /** 判断是否为当前保存链路产生的标准 MediaStore 图片 URI，只有这类 URI 才能可靠解析 id 后批量查询。 */
+    private fun Uri.isStandardMediaStoreImageUri(): Boolean {
+        return scheme == URI_SCHEME_CONTENT &&
+                authority == MediaStore.AUTHORITY &&
+                pathSegments.contains("images") &&
+                pathSegments.contains("media")
     }
 
     /** 将字符串路径转换为媒体引用；content:// 作为 URI，其余字符串作为旧系统文件路径处理。 */

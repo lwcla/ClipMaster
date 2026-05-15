@@ -3,6 +3,7 @@ package com.cla.clip.base.general.repository
 import androidx.paging.PagingSource
 import com.cla.clip.base.general.dao.ImageExtractBatchData
 import com.cla.clip.base.general.dao.ImageExtractDao
+import com.cla.clip.base.general.dao.ImageHistoryFileRef
 import com.cla.clip.base.general.dao.ImageExtractItemData
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
@@ -138,6 +139,11 @@ class ImageExtractRepository @Inject constructor(
     suspend fun getBatchWithItems(batchId: Long): Pair<ImageExtractBatchData, List<ImageExtractItemData>>? {
         val batch = imageExtractDao.getBatch(batchId) ?: return null
         return batch to imageExtractDao.getItems(batchId)
+    }
+
+    /** 读取图片下载历史页校验本地文件所需的轻量图片引用，避免列表分页映射完整加载每张图片实体。 */
+    suspend fun getHistoryFileRefs(batchId: Long): List<ImageHistoryFileRef> {
+        return imageExtractDao.getHistoryFileRefs(batchId)
     }
 
     /** 批量读取批次及其图片项，供下载记录页删除本地文件和生成缩略图列表。 */

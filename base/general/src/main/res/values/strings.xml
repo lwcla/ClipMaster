@@ -139,6 +139,7 @@
     <string name="base_general_download_history_local_file_deleted">本地文件已删除</string>
     <string name="base_general_download_history_deleted_short">已删除</string>
     <string name="base_general_download_history_image_count">图片 %1$d/%2$d</string>
+    <string name="base_general_download_history_image_folder">文件夹</string>
     <string name="base_general_download_history_unreadable_image_count">%1$d 张不可读取</string>
     <string name="base_general_download_history_partial_success">部分完成</string>
     <string name="base_general_download_history_filtered">已过滤</string>

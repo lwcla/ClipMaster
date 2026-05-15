@@ -747,6 +747,11 @@ private fun ImageHistoryCard(
                 if (item.unreadableCount > 0) HistoryChip(text = stringResource(R.string.base_general_download_history_unreadable_image_count, item.unreadableCount))
             }
 
+            item.outputFolderName()?.let { folderName ->
+                Spacer(Modifier.height(6.dp))
+                FolderNameText(folderName = folderName)
+            }
+
             Spacer(Modifier.height(8.dp))
             if (item.imageUris.isEmpty()) {
                 DeletedPlaceholder(text = stringResource(R.string.base_general_download_history_local_file_deleted))
@@ -758,6 +763,25 @@ private fun ImageHistoryCard(
                 )
             }
         }
+    }
+}
+
+/** 图片批次输出文件夹展示区；文件夹名允许多行，避免同标题下载只靠被省略的 chip 无法区分。 */
+@Composable
+private fun FolderNameText(folderName: String) {
+    Column {
+        Text(
+            text = stringResource(R.string.base_general_download_history_image_folder),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = folderName,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -1180,6 +1204,16 @@ private fun imageStatusText(item: DownloadHistoryImageBatch): String {
         item.status == ImageExtractBatchData.STATUS_DOWNLOADING -> stringResource(R.string.base_general_image_download_progress, item.successCount + item.failedCount + item.filteredCount, item.totalCount)
         else -> stringResource(R.string.base_general_download_failed)
     }
+}
+
+/** 从图片批次输出目录中提取最后一级文件夹名，用于区分同标题多次下载的不同保存位置。 */
+private fun DownloadHistoryImageBatch.outputFolderName(): String? {
+    return outputDir
+        ?.trim()
+        ?.replace('\\', '/')
+        ?.trim('/')
+        ?.substringAfterLast('/')
+        ?.takeIf { it.isNotBlank() }
 }
 
 /** 格式化文件大小，保持和图片提取页相同的 B/KB/MB/GB 粒度。 */

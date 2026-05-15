@@ -542,9 +542,9 @@ class DownloadImagesWorker @AssistedInject constructor(
         )
     }
 
-    /** 清理文件夹名里的非法字符，避免网页标题直接作为目录名时创建失败。 */
+    /** 清理文件夹名里的非法字符，避免网页标题直接作为目录名时创建失败；最终长度由保存工具统一限制。 */
     private fun sanitizeFileName(raw: String): String {
-        return raw.replace(Regex("[\\\\/:*?\"<>|\\r\\n]+"), "_").trim().take(60)
+        return raw.replace(Regex("[\\\\/:*?\"<>|\\r\\n]+"), "_").trim()
     }
 
     /**
