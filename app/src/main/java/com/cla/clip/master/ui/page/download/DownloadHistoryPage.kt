@@ -111,6 +111,7 @@ import com.cla.clip.base.general.utils.toast
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.navigation.VideoDownloadRoute
 import com.cla.clip.master.ui.widget.TitleBar
+import com.cla.clip.master.ui.widget.TitleBarText
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 
@@ -310,7 +311,7 @@ fun DownloadHistoryPage(
     }
 }
 
-/** 标题栏区域，根据普通态和多选态切换右侧操作。 */
+/** 标题栏区域，复用通用插槽标题栏统一状态栏、安全高度和按钮垂直对齐规则。 */
 @Composable
 private fun DownloadHistoryTitleBar(
     state: DownloadHistoryUiState,
@@ -321,37 +322,28 @@ private fun DownloadHistoryTitleBar(
     onClearTab: () -> Unit,
 ) {
     if (state.selectionMode) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 28.dp, start = 4.dp, end = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            TextButton(onClick = onExitSelection) {
-                Text(stringResource(R.string.base_general_cancel))
+        TitleBar(
+            navigation = {
+                TextButton(onClick = onExitSelection) {
+                    Text(stringResource(R.string.base_general_cancel))
+                }
+            },
+            title = {
+                TitleBarText(
+                    text = stringResource(R.string.base_general_download_history_selected_count, state.selectedIds.size),
+                )
+            },
+            actions = {
+                TextButton(onClick = onSelectAll, enabled = state.currentItemsCount > 0) {
+                    Text(stringResource(R.string.base_general_select_all))
+                }
             }
-            Text(
-                text = stringResource(R.string.base_general_download_history_selected_count, state.selectedIds.size),
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            TextButton(onClick = onSelectAll, enabled = state.currentItemsCount > 0) {
-                Text(stringResource(R.string.base_general_select_all))
-            }
-        }
+        )
     } else {
-        Box {
-            TitleBar(
-                title = stringResource(R.string.base_general_download_history),
-                onBack = onBack
-            )
-            Row(
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+        TitleBar(
+            title = stringResource(R.string.base_general_download_history),
+            onBack = onBack,
+            actions = {
                 IconButton(onClick = onEnterSelection, enabled = state.currentItemsCount > 0) {
                     Icon(Icons.Default.CheckCircle, contentDescription = stringResource(R.string.base_general_download_history_multi_select))
                 }
@@ -359,7 +351,7 @@ private fun DownloadHistoryTitleBar(
                     Icon(Icons.Default.DeleteSweep, contentDescription = stringResource(R.string.base_general_download_history_clear_current_tab))
                 }
             }
-        }
+        )
     }
 }
 

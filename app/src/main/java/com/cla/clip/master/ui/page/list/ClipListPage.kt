@@ -39,8 +39,8 @@ import com.cla.clip.master.ui.dialog.DeleteDialog
 import com.cla.clip.master.ui.navigation.DetailRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.navigation.SearchRoute
-import com.cla.clip.master.ui.widget.CollapsingTitle
 import com.cla.clip.master.ui.widget.ShizukuServiceUnavailableTip
+import com.cla.clip.master.ui.widget.TopLevelTitleBar
 
 /**
  * 剪贴数据列表页
@@ -73,76 +73,74 @@ fun ClipListPage(
 
     logD("MainPage", { "MainPage: pagedClips itemCount = ${pagedClips.itemCount}, loadState = ${pagedClips.loadState}" })
 
-    CollapsingTitle(stringResource(com.cla.clip.base.general.R.string.base_general_list)) { paddingValues ->
-        Column(
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+    ) {
+        TopLevelTitleBar(title = stringResource(com.cla.clip.base.general.R.string.base_general_list))
+        ShizukuServiceUnavailableTip()
+
+        Box(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
+                .fillMaxWidth()
+                // 列表区域只占用权限提示下方的剩余空间，避免子级 fillMaxSize 反向撑开整个 Column。
+                .weight(1f)
         ) {
-            ShizukuServiceUnavailableTip()
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    // 列表区域只占用权限提示下方的剩余空间，避免子级 fillMaxSize 反向撑开整个 Column。
-                    .weight(1f)
-            ) {
-                ClipResultList(
-                    gridState = gridState,
-                    pagedClips = pagedClips,
-                    emptyText = stringResource(com.cla.clip.base.general.R.string.base_general_clip_list_empty),
-                    // 列表页右下角增加搜索按钮后，底部多留空间，避免最后一行卡片被悬浮按钮遮挡。
-                    contentPadding = PaddingValues(start = 10.dp, top = 10.dp, end = 10.dp, bottom = 96.dp),
-                    onPinToggle = { viewModel.updatePinStatus(it, !it.isPinned) },
-                    onDelete = { clip -> deleteClip = clip },
-                    onCopy = { viewModel.copyToClipboard(it) },
-                    onClick = { onNavigate(DetailRoute(it.id)) },
-                    onLongClick = { clip ->
-                        // 长按时，设置选中的 Clip，触发 BottomSheet 显示
+            ClipResultList(
+                gridState = gridState,
+                pagedClips = pagedClips,
+                emptyText = stringResource(com.cla.clip.base.general.R.string.base_general_clip_list_empty),
+                // 列表页右下角增加搜索按钮后，底部多留空间，避免最后一行卡片被悬浮按钮遮挡。
+                contentPadding = PaddingValues(start = 10.dp, top = 10.dp, end = 10.dp, bottom = 96.dp),
+                onPinToggle = { viewModel.updatePinStatus(it, !it.isPinned) },
+                onDelete = { clip -> deleteClip = clip },
+                onCopy = { viewModel.copyToClipboard(it) },
+                onClick = { onNavigate(DetailRoute(it.id)) },
+                onLongClick = { clip ->
+                    // 长按时，设置选中的 Clip，触发 BottomSheet 显示
 //                selectedClipForSheet = clip
-                    },
-                )
+                },
+            )
 
-                FloatingActionButton(
-                    onClick = { onNavigate(SearchRoute) },
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(24.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = stringResource(com.cla.clip.base.general.R.string.base_general_search)
-                    )
+            FloatingActionButton(
+                onClick = { onNavigate(SearchRoute) },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(24.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = stringResource(com.cla.clip.base.general.R.string.base_general_search)
+                )
+            }
+
+            DeleteDialog(
+                clip = deleteClip,
+                onDismiss = { deleteClip = null },
+                onConfirmDelete = { clip ->
+                    viewModel.deleteClip(clip)
                 }
+            )
 
-                DeleteDialog(
-                    clip = deleteClip,
-                    onDismiss = { deleteClip = null },
-                    onConfirmDelete = { clip ->
-                        viewModel.deleteClip(clip)
-                    }
-                )
-
-                // 底部弹出窗口
-                val clip = selectedClipForSheet
-                if (clip != null) {
-                    ModalBottomSheet(
-                        onDismissRequest = { selectedClipForSheet = null },
-                        sheetState = sheetState
+            // 底部弹出窗口
+            val clip = selectedClipForSheet
+            if (clip != null) {
+                ModalBottomSheet(
+                    onDismissRequest = { selectedClipForSheet = null },
+                    sheetState = sheetState
+                ) {
+                    // BottomSheet 的内容
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            // 添加垂直滚动修饰符
+                            .verticalScroll(rememberScrollState())
+                            .padding(start = 20.dp, end = 20.dp, bottom = 20.dp)
                     ) {
-                        // BottomSheet 的内容
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                // 添加垂直滚动修饰符
-                                .verticalScroll(rememberScrollState())
-                                .padding(start = 20.dp, end = 20.dp, bottom = 20.dp)
-                        ) {
-                            Text(
-                                text = clip.content,
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                        }
+                        Text(
+                            text = clip.content,
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
                     }
                 }
             }

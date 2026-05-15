@@ -8,6 +8,7 @@
     <string name="base_general_to_authorize">去授权</string>
     <string name="base_general_sure">确定</string>
     <string name="base_general_cancel">取消</string>
+    <string name="base_general_back">返回</string>
     <string name="base_general_to_authorize_again">重新授权</string>
     <string name="base_general_pinned">置顶</string>
     <string name="base_general_unpinned">取消置顶</string>
