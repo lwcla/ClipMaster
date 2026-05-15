@@ -43,11 +43,11 @@ class ClipListModel @Inject constructor(
      */
     val pagedClips = Pager(
         config = PagingConfig(
-            // 每页 20 条兼顾数据库读取开销和瀑布流首屏填充速度，后续如卡片内容变重再评估。
+            // 每页 20 条兼顾数据库读取开销和竖向列表首屏填充速度，后续如卡片内容变重再评估。
             pageSize = 20,
             // 距离底部 5 个 item 时预加载，减少快速滑动时的空白感。
             prefetchDistance = 5,
-            // 剪贴记录没有稳定总数展示需求，关闭占位能减少瀑布流测量复杂度。
+            // 剪贴记录没有稳定总数展示需求，关闭占位能减少列表测量和占位渲染复杂度。
             enablePlaceholders = false
         )
     ) {

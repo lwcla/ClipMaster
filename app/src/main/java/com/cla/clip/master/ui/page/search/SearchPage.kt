@@ -12,8 +12,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -72,7 +72,7 @@ fun SearchPage(
     val sourceApps by viewModel.sourceApps.collectAsStateWithLifecycle()
     val selectedSourceAppNames by viewModel.selectedSourceAppNames.collectAsStateWithLifecycle()
     val pagedClips = viewModel.pagedClips.collectAsLazyPagingItems()
-    val gridState = rememberLazyStaggeredGridState()
+    val listState = rememberLazyListState()
     var deleteClip by remember { mutableStateOf<ClipShowEntity?>(null) }
     var showSourcePicker by remember { mutableStateOf(false) }
 
@@ -104,11 +104,11 @@ fun SearchPage(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    // 结果区占用搜索框和筛选器下方的剩余高度，避免瀑布流在 Column 中抢占顶部控件空间。
+                    // 结果区占用搜索框和筛选器下方的剩余高度，避免列表在 Column 中抢占顶部控件空间。
                     .weight(1f)
             ) {
                 ClipResultList(
-                    gridState = gridState,
+                    listState = listState,
                     pagedClips = pagedClips,
                     emptyText = stringResource(com.cla.clip.base.general.R.string.base_general_search_result_empty),
                     highlightQuery = filterState.query,

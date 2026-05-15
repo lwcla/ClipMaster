@@ -5,23 +5,25 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
-import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
-import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
-import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
-import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ReportGmailerrorred
@@ -33,14 +35,20 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
@@ -68,14 +76,14 @@ import com.cla.clip.master.ui.widget.rememberFormattedTime
 import kotlin.math.max
 
 /**
- * 剪贴结果瀑布流列表。
+ * 剪贴结果竖向列表。
  *
  * 该组件同时服务普通列表页和搜索页：列表页传空 `highlightQuery`，搜索页传当前关键词。
- * 这样卡片布局、按钮行为和分页加载状态只维护一份，避免两个页面在后续迭代中出现体验分叉。
+ * 这里统一维护单列 item、侧滑操作、复制入口和分页加载状态，避免两个页面在后续迭代中出现体验分叉。
  */
 @Composable
 fun ClipResultList(
-    gridState: LazyStaggeredGridState,
+    listState: LazyListState,
     pagedClips: LazyPagingItems<ClipShowEntity>,
     emptyText: String,
     onPinToggle: (ClipShowEntity) -> Unit,
@@ -87,71 +95,82 @@ fun ClipResultList(
     contentPadding: PaddingValues = PaddingValues(10.dp),
     highlightQuery: String? = null,
 ) {
-    if (pagedClips.loadState.refresh is LoadState.NotLoading && pagedClips.itemCount == 0) {
-        EmptyScreen(text = emptyText, modifier = modifier)
-    } else {
-        LazyVerticalStaggeredGrid(
-            state = gridState,
-            // 固定两列与原列表页保持一致，搜索页复用时不会改变用户对结果密度的预期。
-            columns = StaggeredGridCells.Fixed(2),
-            modifier = modifier.fillMaxSize(),
-            contentPadding = contentPadding,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalItemSpacing = 10.dp
-        ) {
-            if (pagedClips.itemCount > 0) {
-                items(
-                    count = pagedClips.itemCount,
-                    // Paging key 使用数据库主键，保证置顶、删除、搜索条件变化时 Compose 复用稳定。
-                    key = pagedClips.itemKey { it.id },
-                    contentType = pagedClips.itemContentType { "ClipCard" }
-                ) { index ->
-                    val clip = pagedClips[index]
-                    if (clip != null) {
-                        ClipCard(
-                            clip = clip,
-                            highlightQuery = highlightQuery,
-                            onPinToggle = onPinToggle,
-                            onDelete = onDelete,
-                            onCopy = onCopy,
-                            onClick = onClick,
-                            onLongClick = onLongClick
-                        )
-                    }
-                }
+    when {
+        pagedClips.loadState.refresh is LoadState.NotLoading && pagedClips.itemCount == 0 -> {
+            EmptyScreen(text = emptyText, modifier = modifier)
+        }
+
+        pagedClips.loadState.refresh is LoadState.Loading && pagedClips.itemCount == 0 -> {
+            // Paging 重新收集时可能短暂出现空快照；此时不组合绑定 listState 的空 LazyColumn，避免把保留的滚动位置钳回顶部。
+            Box(
+                modifier = modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(26.dp))
             }
+        }
 
-            when (pagedClips.loadState.append) {
-                is LoadState.Loading -> {
-                    item(span = StaggeredGridItemSpan.FullLine) {
-                        CircularProgressIndicator(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .wrapContentWidth(Alignment.CenterHorizontally)
-                                .size(26.dp)
-                        )
+        else -> {
+            LazyColumn(
+                state = listState,
+                modifier = modifier.fillMaxSize(),
+                contentPadding = contentPadding,
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (pagedClips.itemCount > 0) {
+                    items(
+                        count = pagedClips.itemCount,
+                        // Paging key 使用数据库主键，保证置顶、删除、搜索条件变化和侧滑状态保存时 Compose 复用稳定。
+                        key = pagedClips.itemKey { it.id },
+                        contentType = pagedClips.itemContentType { "ClipCard" }
+                    ) { index ->
+                        val clip = pagedClips[index]
+                        if (clip != null) {
+                            ClipCard(
+                                clip = clip,
+                                highlightQuery = highlightQuery,
+                                onPinToggle = onPinToggle,
+                                onDelete = onDelete,
+                                onCopy = onCopy,
+                                onClick = onClick,
+                                onLongClick = onLongClick
+                            )
+                        }
                     }
                 }
 
-                is LoadState.Error -> {
-                    item(span = StaggeredGridItemSpan.FullLine) {
-                        Text(
-                            text = stringResource(com.cla.clip.base.general.R.string.base_general_data_load_failed_retry),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable(onClick = {
-                                    // append 加载失败时直接使用 Paging 的 retry，避免页面自己维护重试状态。
-                                    pagedClips.retry()
-                                })
-                                .padding(16.dp),
-                            style = MaterialTheme.typography.bodyLarge,
-                            textAlign = TextAlign.Center,
-                            fontSize = 14.sp
-                        )
+                when (pagedClips.loadState.append) {
+                    is LoadState.Loading -> {
+                        item {
+                            CircularProgressIndicator(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .wrapContentWidth(Alignment.CenterHorizontally)
+                                    .size(26.dp)
+                            )
+                        }
                     }
-                }
 
-                else -> {}
+                    is LoadState.Error -> {
+                        item {
+                            Text(
+                                text = stringResource(com.cla.clip.base.general.R.string.base_general_data_load_failed_retry),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable(onClick = {
+                                        // append 加载失败时直接使用 Paging 的 retry，避免页面自己维护重试状态。
+                                        pagedClips.retry()
+                                    })
+                                    .padding(16.dp),
+                                style = MaterialTheme.typography.bodyLarge,
+                                textAlign = TextAlign.Center,
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+
+                    else -> {}
+                }
             }
         }
     }
@@ -178,52 +197,177 @@ fun ClipCard(
     val appColor = clip.appColor ?: MaterialTheme.colorScheme.outlineVariant
     val borderColor = appColor.copy(alpha = 0.3f)
     val lineColor = appColor.copy(alpha = 0.3f)
-    // 外层 Card 和内层点击区域共用同一个圆角，保证阴影、水波纹和边框视觉一致。
+    val density = LocalDensity.current
+    val actionWidth = 64.dp
+    val actionDividerWidth = 1.dp
+    val actionAreaWidth = actionWidth * 2 + actionDividerWidth
+    val maxOffsetPx = with(density) { actionAreaWidth.toPx() }
+    // 侧滑偏移按 clip.id 保存，避免 LazyColumn 复用 item 时把上一条记录的展开状态带给其他记录。
+    var offsetPx by rememberSaveable(clip.id) { mutableStateOf(0f) }
+    val offsetDp = with(density) { offsetPx.toDp() }
+    val pinDescription = stringResource(
+        if (clip.isPinned) {
+            com.cla.clip.base.general.R.string.base_general_unpinned
+        } else {
+            com.cla.clip.base.general.R.string.base_general_pinned
+        }
+    )
+    val deleteDescription = stringResource(com.cla.clip.base.general.R.string.base_general_delete)
+    val copyDescription = stringResource(com.cla.clip.base.general.R.string.base_general_copy)
+    // 外层 Card、侧滑内容和边框共用同一个圆角，保证阴影、水波纹和裁剪视觉一致。
     val cardShape = cardCornerShape
 
-    Box(modifier = modifier) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(cardShape)
+            .clipToBounds()
+    ) {
+        // 右侧操作区固定贴在 item 右边，内容卡片左滑后露出置顶和删除按钮。
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .align(Alignment.CenterEnd),
+            contentAlignment = Alignment.CenterEnd
+        ) {
+            Row(
+                modifier = Modifier
+                    .width(actionAreaWidth)
+                    .fillMaxHeight(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                SwipeActionButton(
+                    modifier = Modifier
+                        .width(actionWidth)
+                        .fillMaxHeight(),
+                    backgroundColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    iconTint = MaterialTheme.colorScheme.onTertiaryContainer,
+                    iconContentDescription = pinDescription,
+                    painterRes = if (clip.isPinned) {
+                        R.drawable.host_icon_unpinned
+                    } else {
+                        R.drawable.host_icon_to_pinned
+                    },
+                    onClick = {
+                        offsetPx = 0f
+                        onPinToggle(clip)
+                    }
+                )
+
+                Box(
+                    modifier = Modifier
+                        .width(actionDividerWidth)
+                        .fillMaxHeight()
+                        .background(MaterialTheme.colorScheme.outlineVariant)
+                )
+
+                SwipeActionButton(
+                    modifier = Modifier
+                        .width(actionWidth)
+                        .fillMaxHeight(),
+                    backgroundColor = MaterialTheme.colorScheme.errorContainer,
+                    iconTint = MaterialTheme.colorScheme.onErrorContainer,
+                    iconContentDescription = deleteDescription,
+                    painterRes = R.drawable.host_icon_delete,
+                    onClick = {
+                        offsetPx = 0f
+                        onDelete(clip)
+                    }
+                )
+            }
+        }
+
         ElevatedCard(
             shape = cardShape,
-            modifier = modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .offset(x = -offsetDp)
+                .pointerInput(clip.id, maxOffsetPx) {
+                    detectHorizontalDragGestures(
+                        onDragEnd = {
+                            // 松手时按操作区一半作为吸附阈值，短距离误滑会自动回收，明显左滑会保持展开。
+                            offsetPx = if (offsetPx > maxOffsetPx / 2f) {
+                                maxOffsetPx
+                            } else {
+                                0f
+                            }
+                        },
+                        onDragCancel = {
+                            // 手势被系统或父级中断时同样做吸附，避免停在半展开的不可预期位置。
+                            offsetPx = if (offsetPx > maxOffsetPx / 2f) {
+                                maxOffsetPx
+                            } else {
+                                0f
+                            }
+                        },
+                        onHorizontalDrag = { change, dragAmount ->
+                            val nextOffset = offsetPx - dragAmount
+                            // 只允许向左展开、向右收回，最大偏移限制为右侧操作区宽度，避免拖出额外空白。
+                            offsetPx = nextOffset.coerceIn(0f, maxOffsetPx)
+                            if (offsetPx > 0f) {
+                                change.consume()
+                            }
+                        }
+                    )
+                },
             elevation = CardDefaults.cardElevation(2.dp)
         ) {
-            Box {
-                Column(
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Min)
+                    .clip(cardShape)
+                    .border(1.dp, borderColor, cardShape)
+            ) {
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .weight(1f)
                         .combinedClickable(
                             onClick = { onClick(clip) },
                             onLongClick = { onLongClick(clip) }
                         )
-                        .clip(cardShape)
-                        .border(1.dp, borderColor, cardShape)
-                        .padding(start = 12.dp, end = 12.dp, top = 12.dp)
+                        .padding(start = 12.dp, top = 12.dp, bottom = 12.dp, end = 12.dp)
                 ) {
-                    ClipContent(clip, highlightQuery)
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        ClipContent(clip, highlightQuery)
 
-                    Spacer(Modifier.height(8.dp))
-                    SourceAppNameWithTime(clip, highlightQuery)
+                        Spacer(Modifier.height(8.dp))
+                        SourceAppNameWithTime(clip, highlightQuery)
+                    }
 
-                    Box(
-                        modifier = Modifier
-                            .padding(top = 8.dp)
-                            .fillMaxWidth()
-                            .height(1.dp)
-                            .background(lineColor)
-                    )
-                    CardButtonContainer(clip, lineColor, onPinToggle, onDelete, onCopy)
+                    if (clip.isPinned) {
+                        Icon(
+                            painterResource(R.drawable.host_icon_pinned),
+                            contentDescription = null,
+                            modifier = Modifier
+                                // 置顶角标只占用内容区右上角一小块区域，避免遮挡常驻复制按钮。
+                                .width(42.dp)
+                                .align(Alignment.TopEnd)
+                                .alpha(0.6f),
+                            tint = appColor
+                        )
+                    }
                 }
 
-                if (clip.isPinned) {
+                Box(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .fillMaxHeight()
+                        .background(lineColor)
+                )
+
+                Box(
+                    modifier = Modifier
+                        .width(56.dp)
+                        .fillMaxHeight()
+                        .clickable(onClick = { onCopy(clip) }),
+                    contentAlignment = Alignment.Center
+                ) {
                     Icon(
-                        painterResource(R.drawable.host_icon_pinned),
-                        contentDescription = null,
-                        modifier = Modifier
-                            // 置顶角标只占用右上角一小块区域，避免遮挡正文和链接预览标题。
-                            .fillMaxWidth(0.25f)
-                            .align(Alignment.TopEnd)
-                            .alpha(0.6f),
-                        tint = appColor
+                        painterResource(R.drawable.host_icon_copy),
+                        contentDescription = copyDescription,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(26.dp)
                     )
                 }
             }
@@ -306,139 +450,125 @@ private fun SourceAppNameWithTime(clip: ClipShowEntity, highlightQuery: String?)
     }
 }
 
-/** 剪贴数据的内容显示。 */
+/**
+ * 剪贴数据的内容显示。
+ *
+ * 链接预览、链接标题和链接地址优先集中显示在顶部，原始剪贴字符串始终保留三行以内，
+ * 让列表 item 在保留必要上下文的同时不会被长文本撑得过高。
+ */
 @Composable
 private fun ClipContent(clip: ClipShowEntity, highlightQuery: String?) {
-    val imageUrl = clip.linkImgUrl
-    if (imageUrl.isNullOrBlank()) {
+    Column {
+        LinkPreviewContent(clip, highlightQuery)
+
         HighlightableText(
             text = clip.content,
             highlightQuery = highlightQuery,
             style = MaterialTheme.typography.bodyLarge,
-            maxLines = 7
+            maxLines = 3
         )
-    } else {
-        Column {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .padding(4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                AsyncImage(
-                    model = imageUrl,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .size(55.dp)
-                        .clip(RoundedCornerShape(8.dp)),
-                    contentScale = ContentScale.Crop
-                )
-
-                val title = clip.linkTitle
-                if (title.isNullOrBlank().not()) {
-                    Spacer(modifier = Modifier.width(4.dp))
-                    HighlightableText(
-                        text = title,
-                        highlightQuery = highlightQuery,
-                        style = MaterialTheme.typography.labelMedium,
-                        maxLines = 2
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-            HighlightableText(
-                text = clip.content,
-                highlightQuery = highlightQuery,
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 6
-            )
-        }
     }
 }
 
 /**
- * 底部操作按钮区域。
+ * 链接预览内容区。
  *
- * 三个按钮保持等宽，搜索页复用后不会因为页面来源不同导致操作入口位置变化。
+ * 只要记录里存在链接、标题或预览图就展示该区域；如果剪贴字符串本身就是链接，
+ * 链接地址不再重复显示，避免一个 item 内出现两段完全相同的 URL。
  */
 @Composable
-private fun CardButtonContainer(
-    clip: ClipShowEntity,
-    lineColor: Color,
-    onPinToggle: (ClipShowEntity) -> Unit,
-    onDelete: (ClipShowEntity) -> Unit,
-    onCopy: (ClipShowEntity) -> Unit,
+private fun LinkPreviewContent(clip: ClipShowEntity, highlightQuery: String?) {
+    val link = clip.link?.takeIf { it.isNotBlank() }
+    val title = clip.linkTitle?.takeIf { it.isNotBlank() }
+    val imageUrl = clip.linkImgUrl?.takeIf { it.isNotBlank() }
+    val shouldShowLink = link != null && link != clip.content
+
+    if ((link == null || !shouldShowLink) && title == null && imageUrl == null) {
+        return
+    }
+
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .padding(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (imageUrl != null) {
+                AsyncImage(
+                    model = imageUrl,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(RoundedCornerShape(8.dp)),
+                    contentScale = ContentScale.Crop
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    if (title != null) {
+                        HighlightableText(
+                            text = title,
+                            highlightQuery = highlightQuery,
+                            style = MaterialTheme.typography.labelMedium,
+                            maxLines = 2
+                        )
+                    }
+
+                    if (shouldShowLink) {
+                        if (title != null) {
+                            Spacer(modifier = Modifier.height(2.dp))
+                        }
+                        HighlightableText(
+                            text = link.orEmpty(),
+                            highlightQuery = highlightQuery,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+    }
+}
+
+/**
+ * 侧滑露出的单个操作按钮。
+ *
+ * 按钮高度由外层 item 决定，图标始终放在点击区域中心；背景色由调用方传入，
+ * 用于清晰区分置顶和删除两个相邻操作区域。
+ */
+@Composable
+private fun SwipeActionButton(
+    painterRes: Int,
+    iconContentDescription: String,
+    backgroundColor: Color,
+    iconTint: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .clickable(onClick = { onPinToggle(clip) })
-        ) {
-            Icon(
-                if (clip.isPinned) {
-                    painterResource(R.drawable.host_icon_unpinned)
-                } else {
-                    painterResource(R.drawable.host_icon_to_pinned)
-                },
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.tertiary,
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .size(38.dp)
-                    .padding(top = 8.dp, bottom = 12.dp)
-
-            )
-        }
-
-        Box(
-            modifier = Modifier
-                .width(1.dp)
-                .height(18.dp)
-                .background(lineColor)
+    Box(
+        modifier = modifier
+            .background(backgroundColor)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            painter = painterResource(painterRes),
+            contentDescription = iconContentDescription,
+            tint = iconTint,
+            modifier = Modifier.size(28.dp)
         )
-
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .clickable(onClick = { onDelete(clip) })
-        ) {
-            Icon(
-                painterResource(R.drawable.host_icon_delete),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.error,
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .size(38.dp)
-                    .padding(top = 8.dp, bottom = 12.dp)
-            )
-        }
-
-        Box(
-            modifier = Modifier
-                .width(1.dp)
-                .height(18.dp)
-                .background(lineColor)
-        )
-
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .clickable(onClick = { onCopy(clip) })
-        ) {
-            Icon(
-                painterResource(R.drawable.host_icon_copy),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .size(38.dp)
-                    .padding(top = 8.dp, bottom = 12.dp)
-            )
-        }
     }
 }
 

@@ -6,8 +6,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
-import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -49,14 +49,14 @@ import com.cla.clip.master.ui.widget.TopLevelTitleBar
  * 具体卡片渲染交给 `ClipResultList`，方便搜索页复用完全一致的结果样式。
  *
  * @param viewModel Hilt 自动注入的列表 ViewModel。
- * @param gridState 外部传入瀑布流状态，首页底部 Tab 再次点击列表时可以滚回顶部。
+ * @param listState 外部传入竖向列表状态，首页底部 Tab 再次点击列表时可以滚回顶部。
  * @param onNavigate 统一页面跳转入口。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ClipListPage(
     viewModel: ClipListModel = hiltViewModel(),
-    gridState: LazyStaggeredGridState = rememberLazyStaggeredGridState(),
+    listState: LazyListState = rememberLazyListState(),
     onNavigate: (Route) -> Unit  // 跳转页面
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -87,7 +87,7 @@ fun ClipListPage(
                 .weight(1f)
         ) {
             ClipResultList(
-                gridState = gridState,
+                listState = listState,
                 pagedClips = pagedClips,
                 emptyText = stringResource(com.cla.clip.base.general.R.string.base_general_clip_list_empty),
                 // 列表页右下角增加搜索按钮后，底部多留空间，避免最后一行卡片被悬浮按钮遮挡。

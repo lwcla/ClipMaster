@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
@@ -61,7 +61,7 @@ private sealed class TabPage {
  * 应用主页面。
  *
  * 使用 HorizontalPager 承载剪贴列表和我的页，底部 Tab 控制页面切换；
- * 列表页的瀑布流状态放在主页面持有，便于重复点击列表 Tab 时滚回顶部。
+ * 列表页的竖向列表状态放在主页面持有，便于重复点击列表 Tab 时滚回顶部。
  */
 @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
 @Composable
@@ -75,7 +75,7 @@ fun MainPage(
 
     val pagerState = rememberPagerState(pageCount = { tabs.size })
     val scope = rememberCoroutineScope()
-    val gridState = rememberLazyStaggeredGridState()
+    val listState = rememberLazyListState()
 
     Scaffold(
         bottomBar = {
@@ -103,7 +103,7 @@ fun MainPage(
                                     val isListTab = tab.page == TabPage.List
                                     if (isCurrentTab && isListTab) {
                                         // 当前已经停留在列表页时，再次点击列表入口需要回到顶部，避免依赖页面下标判断列表身份。
-                                        gridState.scrollToItem(0)
+                                        listState.scrollToItem(0)
                                     } else {
                                         // 点击其他入口时执行正常分页切换。
                                         pagerState.animateScrollToPage(index)
@@ -127,7 +127,7 @@ fun MainPage(
         ) { index ->
             val tab = tabs[index]
             when (tab.page) {
-                TabPage.List -> ClipListPage(gridState = gridState, onNavigate = onNavigate)
+                TabPage.List -> ClipListPage(listState = listState, onNavigate = onNavigate)
                 TabPage.Mine -> MinePage(onNavigate = onNavigate)
             }
         }
