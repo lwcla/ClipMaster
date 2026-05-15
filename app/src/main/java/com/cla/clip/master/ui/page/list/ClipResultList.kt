@@ -45,6 +45,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -147,6 +148,8 @@ fun ClipResultList(
 ) {
     // 取消置顶的排序变化由数据库/Paging 异步返回，先保存待恢复视口，再在快照确认后执行恢复。
     var pendingPinScrollRestore by remember { mutableStateOf<PendingPinScrollRestore?>(null) }
+    // 共享列表只允许一个右滑菜单保持展开；新 item 开始右滑时写入该 id，其他 item 会观察到并自动收回。
+    var openedMenuClipId by rememberSaveable { mutableStateOf<Long?>(null) }
 
     LaunchedEffect(pagedClips, listState) {
         snapshotFlow {
@@ -208,6 +211,17 @@ fun ClipResultList(
                                 onLongClick = onLongClick,
                                 selected = clip.id in selectedIds,
                                 timeMode = timeMode,
+                                openedMenuClipId = openedMenuClipId,
+                                onMenuActive = { clipId ->
+                                    if (openedMenuClipId != clipId) {
+                                        openedMenuClipId = clipId
+                                    }
+                                },
+                                onMenuInactive = { clipId ->
+                                    if (openedMenuClipId == clipId) {
+                                        openedMenuClipId = null
+                                    }
+                                },
                                 swipePastActionText = swipePastActionText,
                                 onKeepCurrentScrollPosition = {
                                     pendingPinScrollRestore = PendingPinScrollRestore(
@@ -280,6 +294,9 @@ fun ClipCard(
     swipePastActionText: String? = null,
     selected: Boolean = false,
     timeMode: ClipCardTimeMode = ClipCardTimeMode.ClipTime,
+    openedMenuClipId: Long? = null,
+    onMenuActive: (Long) -> Unit = {},
+    onMenuInactive: (Long) -> Unit = {},
 ) {
     val appColor = clip.appColor ?: MaterialTheme.colorScheme.outlineVariant
     val borderColor = appColor.copy(alpha = 0.3f)
@@ -327,6 +344,8 @@ fun ClipCard(
     )
     val deleteDescription = stringResource(com.cla.clip.base.general.R.string.base_general_delete)
     val copyDescription = stringResource(com.cla.clip.base.general.R.string.base_general_copy)
+    val currentOnMenuActive by rememberUpdatedState(onMenuActive)
+    val currentOnMenuInactive by rememberUpdatedState(onMenuInactive)
     // 外层 Card、侧滑内容和边框共用同一个圆角，保证阴影、水波纹和裁剪视觉一致。
     val cardShape = cardCornerShape
     /**
@@ -356,6 +375,35 @@ fun ClipCard(
                 isSwipeOffsetAnimating = false
             }
             onFinished?.invoke()
+        }
+    }
+
+    /**
+     * 根据吸附后的最终位置同步父层的单展开菜单归属。
+     *
+     * 只有真正停在菜单展开位置时才登记当前 item；回到 0、触发第二段动作或被其他 item 抢占时都释放当前归属。
+     */
+    fun syncMenuOwnerAfterSettle(targetOffsetPx: Float) {
+        if (showActionMenu && targetOffsetPx > 0f) {
+            currentOnMenuActive(clip.id)
+        } else {
+            currentOnMenuInactive(clip.id)
+        }
+    }
+
+    val shouldCloseForOtherMenu = showActionMenu &&
+        openedMenuClipId != null &&
+        openedMenuClipId != clip.id &&
+        offsetPx > 0f
+
+    LaunchedEffect(shouldCloseForOtherMenu, isSwipeOffsetAnimating) {
+        if (shouldCloseForOtherMenu && !isSwipeOffsetAnimating) {
+            // 父层已经把菜单归属切到其他 item，本 item 如果还展开着，需要自动收回，保证列表里最多只有一个菜单可见。
+            animateOffsetTo(
+                targetOffsetPx = 0f,
+                durationMillis = swipeSettleAnimationMs,
+                onFinished = { currentOnMenuInactive(clip.id) }
+            )
         }
     }
 
@@ -401,6 +449,7 @@ fun ClipCard(
                                     onKeepCurrentScrollPosition()
                                 }
                                 offsetPx = 0f
+                                currentOnMenuInactive(clip.id)
                                 onPinToggle?.invoke(clip)
                             }
                         )
@@ -427,6 +476,7 @@ fun ClipCard(
                             painterRes = R.drawable.host_icon_delete,
                             onClick = {
                                 offsetPx = 0f
+                                currentOnMenuInactive(clip.id)
                                 onDelete?.invoke(clip)
                             }
                         )
@@ -472,6 +522,10 @@ fun ClipCard(
                         onDrag = { dragAmount ->
                             if (!isSwipeOffsetAnimating) {
                                 val nextOffset = offsetPx + dragAmount
+                                if (showActionMenu && nextOffset > 0f) {
+                                    // 当前 item 一旦开始展开菜单，就抢占单展开归属，让上一个已展开 item 自动收回。
+                                    currentOnMenuActive(clip.id)
+                                }
                                 // 只允许向右展开、向左收回；存在继续滑动动作时允许进入第二段提示区，但仍限制最大距离避免 item 被拖离过远。
                                 val dragMaxOffset = if (swipePastActionText == null) maxOffsetPx else swipePastDragMaxPx
                                 offsetPx = nextOffset.coerceIn(0f, dragMaxOffset)
@@ -487,14 +541,18 @@ fun ClipCard(
                                     targetOffsetPx = targetOffsetPx,
                                     durationMillis = swipePastExitAnimationMs,
                                     keepAnimatingAfterEnd = true,
-                                    onFinished = { onSwipePastAction?.invoke(clip) }
+                                    onFinished = {
+                                        currentOnMenuInactive(clip.id)
+                                        onSwipePastAction?.invoke(clip)
+                                    }
                                 )
                             } else {
                                 // 松手时按操作区一半作为吸附阈值，短距离误滑会自动回收，明显右滑会保持展开。
                                 val targetOffsetPx = if (showActionMenu && offsetPx > maxOffsetPx / 2f) maxOffsetPx else 0f
                                 animateOffsetTo(
                                     targetOffsetPx = targetOffsetPx,
-                                    durationMillis = swipeSettleAnimationMs
+                                    durationMillis = swipeSettleAnimationMs,
+                                    onFinished = { syncMenuOwnerAfterSettle(targetOffsetPx) }
                                 )
                             }
                         },
@@ -507,7 +565,8 @@ fun ClipCard(
                             }
                             animateOffsetTo(
                                 targetOffsetPx = targetOffsetPx,
-                                durationMillis = swipeSettleAnimationMs
+                                durationMillis = swipeSettleAnimationMs,
+                                onFinished = { syncMenuOwnerAfterSettle(targetOffsetPx) }
                             )
                         }
                     )
