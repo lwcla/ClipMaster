@@ -1,5 +1,6 @@
 package com.cla.clip.base.general.repository
 
+import androidx.paging.PagingSource
 import com.cla.clip.base.general.dao.ImageExtractBatchData
 import com.cla.clip.base.general.dao.ImageExtractDao
 import com.cla.clip.base.general.dao.ImageExtractItemData
@@ -70,6 +71,32 @@ class ImageExtractRepository @Inject constructor(
     /** 观察图片下载历史；Repository 隐藏“未确认提取批次不展示”的 SQL 细节，页面只关心历史列表。 */
     fun observeHistory(): Flow<List<ImageExtractBatchData>> {
         return imageExtractDao.observeHistory()
+    }
+
+    /** 分页加载图片下载历史，避免下载记录页一次性读取大量批次和图片项。 */
+    fun pagingHistory(): PagingSource<Int, ImageExtractBatchData> {
+        return imageExtractDao.pagingHistory()
+    }
+
+    /** 观察图片历史总数；用于标题栏动作可用性和清空确认，不触发批次实体全量加载。 */
+    fun observeHistoryCount(): Flow<Int> {
+        return imageExtractDao.observeHistoryCount()
+    }
+
+    /** 观察进行中的图片批次数量；用于清空当前分类前提示会先停止后台任务。 */
+    fun observeRunningHistoryCount(): Flow<Int> {
+        return imageExtractDao.observeRunningHistoryCount()
+    }
+
+    /** 按当前排序读取全部图片历史批次 id；只在全选或清空时调用。 */
+    suspend fun getHistoryIds(): List<Long> {
+        return imageExtractDao.getHistoryIds()
+    }
+
+    /** 统计选中图片批次中仍在下载的数量；用于删除确认提示。 */
+    suspend fun countRunningBatches(batchIds: Set<Long>): Int {
+        if (batchIds.isEmpty()) return 0
+        return imageExtractDao.countRunningBatches(batchIds)
     }
 
     /**

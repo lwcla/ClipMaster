@@ -11,6 +11,7 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
+import androidx.paging.PagingSource
 import kotlinx.coroutines.flow.Flow
 
 @Entity(
@@ -227,9 +228,32 @@ interface ImageExtractDao {
     @Query("SELECT * FROM image_extract_batches WHERE id = :batchId")
     fun observeBatch(batchId: Long): Flow<ImageExtractBatchData?>
 
-    /** 观察图片下载历史；未确认下载的提取候选批次不进入下载记录页，避免把草稿当成下载结果。 */
+    /** 观察图片下载历史；保留给少量全量观察场景，下载记录列表优先使用分页接口。 */
     @Query("SELECT * FROM image_extract_batches WHERE status != :extractedStatus ORDER BY update_time DESC, id DESC")
     fun observeHistory(extractedStatus: String = ImageExtractBatchData.STATUS_EXTRACTED): Flow<List<ImageExtractBatchData>>
+
+    /** 分页加载图片下载历史；未确认下载的提取候选批次不进入下载记录页，避免一次性读取大量批次。 */
+    @Query("SELECT * FROM image_extract_batches WHERE status != :extractedStatus ORDER BY update_time DESC, id DESC")
+    fun pagingHistory(extractedStatus: String = ImageExtractBatchData.STATUS_EXTRACTED): PagingSource<Int, ImageExtractBatchData>
+
+    /** 观察图片下载历史总数；只读取 COUNT，用于标题栏按钮和清空确认数量。 */
+    @Query("SELECT COUNT(*) FROM image_extract_batches WHERE status != :extractedStatus")
+    fun observeHistoryCount(extractedStatus: String = ImageExtractBatchData.STATUS_EXTRACTED): Flow<Int>
+
+    /** 观察仍在下载的图片批次数量，用于清空当前分类前提示会先停止后台任务。 */
+    @Query("SELECT COUNT(*) FROM image_extract_batches WHERE status = :downloadingStatus")
+    fun observeRunningHistoryCount(downloadingStatus: String = ImageExtractBatchData.STATUS_DOWNLOADING): Flow<Int>
+
+    /** 按当前排序读取全部图片历史批次 id；只在全选或清空时调用，避免常规浏览加载完整实体。 */
+    @Query("SELECT id FROM image_extract_batches WHERE status != :extractedStatus ORDER BY update_time DESC, id DESC")
+    suspend fun getHistoryIds(extractedStatus: String = ImageExtractBatchData.STATUS_EXTRACTED): List<Long>
+
+    /** 统计选中图片批次中仍在下载的任务数量，供删除确认文案判断是否需要提示停止下载。 */
+    @Query("SELECT COUNT(*) FROM image_extract_batches WHERE id IN (:batchIds) AND status = :downloadingStatus")
+    suspend fun countRunningBatches(
+        batchIds: Set<Long>,
+        downloadingStatus: String = ImageExtractBatchData.STATUS_DOWNLOADING
+    ): Int
 
     /** 按网页顺序读取批次内全部图片项，Worker 下载前使用。 */
     @Query("SELECT * FROM image_extract_items WHERE batch_id = :batchId ORDER BY display_order ASC")

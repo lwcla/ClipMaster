@@ -1,6 +1,7 @@
 package com.cla.clip.base.general.repository
 
 import android.content.Context
+import androidx.paging.PagingSource
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.dao.DownloadDao
 import com.cla.clip.base.general.dao.DownloadTaskData
@@ -59,6 +60,32 @@ class DownloadRepository @Inject constructor(
     /** 观察全部视频下载历史，按最近更新倒序返回，供下载记录页展示和多选管理。 */
     fun observeHistory(): Flow<List<DownloadTaskData>> {
         return downloadDao.observeHistory()
+    }
+
+    /** 分页加载视频下载历史，下载记录页使用它避免一次性读取全部任务和媒体元信息。 */
+    fun pagingHistory(): PagingSource<Int, DownloadTaskData> {
+        return downloadDao.pagingHistory()
+    }
+
+    /** 观察视频历史总数；用于标题栏动作可用性和清空确认，不触发实体全量加载。 */
+    fun observeHistoryCount(): Flow<Int> {
+        return downloadDao.observeHistoryCount()
+    }
+
+    /** 观察进行中的视频历史数量；用于清空当前分类前提示会先停止后台任务。 */
+    fun observeRunningHistoryCount(): Flow<Int> {
+        return downloadDao.observeRunningHistoryCount()
+    }
+
+    /** 按当前排序读取全部视频历史 id；只在全选或清空时调用。 */
+    suspend fun getHistoryIds(): List<Long> {
+        return downloadDao.getHistoryIds()
+    }
+
+    /** 统计选中视频任务中仍在下载或合并的数量；用于删除确认提示。 */
+    suspend fun countRunningTasks(taskIds: Set<Long>): Int {
+        if (taskIds.isEmpty()) return 0
+        return downloadDao.countRunningTasks(taskIds)
     }
 
     /**

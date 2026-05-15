@@ -8,6 +8,7 @@ import androidx.room.Insert
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Upsert
+import androidx.paging.PagingSource
 import kotlinx.coroutines.flow.Flow
 
 @Entity(
@@ -128,9 +129,36 @@ interface DownloadDao {
     @Query("SELECT * FROM download_tasks WHERE video_url = :url ORDER BY update_time DESC, id DESC LIMIT 1")
     suspend fun getTask(url: String): DownloadTaskData?
 
-    /** 按更新时间倒序观察全部视频下载历史，下载记录页用它展示列表。 */
+    /** 按更新时间倒序观察全部视频下载历史；保留给少量全量观察场景，下载记录列表优先使用分页接口。 */
     @Query("SELECT * FROM download_tasks ORDER BY update_time DESC, id DESC")
     fun observeHistory(): Flow<List<DownloadTaskData>>
+
+    /** 按更新时间倒序分页加载视频下载历史，避免下载记录页一次性读取大量任务和本地媒体元信息。 */
+    @Query("SELECT * FROM download_tasks ORDER BY update_time DESC, id DESC")
+    fun pagingHistory(): PagingSource<Int, DownloadTaskData>
+
+    /** 观察视频历史总数；只读取 COUNT，不加载完整记录，用于标题栏按钮和清空确认数量。 */
+    @Query("SELECT COUNT(*) FROM download_tasks")
+    fun observeHistoryCount(): Flow<Int>
+
+    /** 观察仍在下载或合并的视频任务数量，用于清空当前分类前提示会先停止后台任务。 */
+    @Query("SELECT COUNT(*) FROM download_tasks WHERE status = :downloadingStatus OR status = :mergingStatus")
+    fun observeRunningHistoryCount(
+        downloadingStatus: String = DownloadTaskData.STATUS_DOWNLOADING,
+        mergingStatus: String = DownloadTaskData.STATUS_MERGING
+    ): Flow<Int>
+
+    /** 按当前排序读取全部视频历史 id；只在全选或清空时调用，避免常规浏览加载完整实体。 */
+    @Query("SELECT id FROM download_tasks ORDER BY update_time DESC, id DESC")
+    suspend fun getHistoryIds(): List<Long>
+
+    /** 统计选中视频记录中仍在运行的任务数量，供删除确认文案判断是否需要提示停止下载。 */
+    @Query("SELECT COUNT(*) FROM download_tasks WHERE id IN (:ids) AND (status = :downloadingStatus OR status = :mergingStatus)")
+    suspend fun countRunningTasks(
+        ids: Set<Long>,
+        downloadingStatus: String = DownloadTaskData.STATUS_DOWNLOADING,
+        mergingStatus: String = DownloadTaskData.STATUS_MERGING
+    ): Int
 
     /** 批量读取待删除或待重新下载的任务，调用方会先过滤空集合，避免 SQL IN 空列表歧义。 */
     @Query("SELECT * FROM download_tasks WHERE id IN (:ids)")

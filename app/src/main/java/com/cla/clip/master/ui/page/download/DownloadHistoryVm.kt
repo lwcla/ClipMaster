@@ -11,6 +11,11 @@ import androidx.activity.result.IntentSenderRequest
 import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
+import androidx.paging.map
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.dao.DownloadTaskData
 import com.cla.clip.base.general.dao.ImageExtractBatchData
@@ -45,6 +50,9 @@ private const val URI_SCHEME_CONTENT = "content"
 /** 视频首帧缩略图最大边长，限制内存占用，避免历史列表一次性持有原始尺寸帧。 */
 private const val VIDEO_THUMB_MAX_EDGE = 320
 
+/** 下载记录分页每页大小；列表卡片会读取媒体元信息，页大小过大容易拖慢首屏。 */
+private const val HISTORY_PAGE_SIZE = 20
+
 /**
  * 下载记录页 Tab。
  *
@@ -67,17 +75,26 @@ data class DownloadHistoryUiState(
     /** 当前选中的分类 Tab。 */
     val selectedTab: DownloadHistoryTab = DownloadHistoryTab.VIDEO,
 
-    /** 视频历史列表，按更新时间倒序排列。 */
-    val videos: List<DownloadHistoryVideoItem> = emptyList(),
+    /** 视频历史总数，只通过 COUNT 查询获得，用于标题栏动作和清空确认数量。 */
+    val videoCount: Int = 0,
 
-    /** 图片批次历史列表，按更新时间倒序排列。 */
-    val images: List<DownloadHistoryImageBatch> = emptyList(),
+    /** 图片批次历史总数，只通过 COUNT 查询获得，用于标题栏动作和清空确认数量。 */
+    val imageCount: Int = 0,
+
+    /** 仍在下载或合并的视频记录数量，用于清空确认时提示会停止后台任务。 */
+    val videoRunningCount: Int = 0,
+
+    /** 仍在下载的图片批次数量，用于清空确认时提示会停止后台任务。 */
+    val imageRunningCount: Int = 0,
 
     /** 当前 Tab 是否处于多选管理态。 */
     val selectionMode: Boolean = false,
 
     /** 当前 Tab 选中的记录 id 集合。 */
     val selectedIds: Set<Long> = emptySet(),
+
+    /** 当前选中记录里是否包含后台运行任务；用轻量 COUNT 查询计算，避免依赖已分页加载的可见卡片。 */
+    val selectedHasRunning: Boolean = false,
 
     /** 删除或重新下载等后台操作是否正在执行。 */
     val busy: Boolean = false,
@@ -230,9 +247,29 @@ private sealed class MediaDeleteResult {
 }
 
 /**
+ * 下载记录总数和运行中数量。
+ *
+ * 这些值来自数据库 COUNT 查询，不触发下载记录实体或媒体文件的全量读取；页面用它们控制标题栏按钮和清空提示。
+ */
+private data class DownloadHistoryCounts(
+    /** 视频历史总数。 */
+    val videoCount: Int,
+
+    /** 图片历史总数。 */
+    val imageCount: Int,
+
+    /** 仍在下载或合并的视频任务数量。 */
+    val videoRunningCount: Int,
+
+    /** 仍在下载的图片批次数量。 */
+    val imageRunningCount: Int,
+)
+
+/**
  * 下载记录页 ViewModel。
  *
- * 负责观察视频任务和图片批次历史、读取本地媒体元信息、处理多选删除、清空当前分类和重新下载。
+ * 负责提供视频/图片分页历史流、读取分页项的本地媒体元信息、处理多选删除、清空当前分类和重新下载。
+ * 分页流是冷流，只有页面在 STARTED 生命周期内收集当前 Tab 时才会触发数据库分页加载，避免 ViewModel 初始化时抢先扫描媒体。
  * 文件删除严格按数据库保存的 URI/路径执行，不做同名反查，避免误删公共目录里的其他媒体。
  */
 @HiltViewModel
@@ -271,36 +308,95 @@ class DownloadHistoryVm @Inject constructor(
     /** 页面订阅的一次性动作流，主要用于导航和系统授权。 */
     val actions = _actions.asSharedFlow()
 
-    /** 视频历史流，数据库变化后在 IO 线程补齐媒体存在性、大小、时长和首帧。 */
-    private val videoItems = downloadRepository.observeHistory().map { tasks ->
-        withContext(Dispatchers.IO) {
-            tasks.map { task -> task.toVideoHistoryItem() }
+    /**
+     * 视频历史分页流。
+     *
+     * 与剪贴列表页一致，分页流本身保持稳定并缓存到 ViewModel 生命周期；页面层负责在 STARTED 生命周期和当前 Tab 可见时收集。
+     * 这样切走 Tab 不会用空流覆盖 LazyPagingItems，切回时可以复用 Paging 缓存和列表位置。
+     */
+    val pagedVideos = Pager(
+        config = PagingConfig(
+            pageSize = HISTORY_PAGE_SIZE,
+            prefetchDistance = 5,
+            enablePlaceholders = false
+        )
+    ) {
+        downloadRepository.pagingHistory()
+    }.flow.map { pagingData: PagingData<DownloadTaskData> ->
+        pagingData.map { task ->
+            withContext(Dispatchers.IO) { task.toVideoHistoryItem() }
         }
+    }.cachedIn(viewModelScope)
+
+    /**
+     * 图片历史分页流。
+     *
+     * 分页流对象保持稳定，页面切到图片 Tab 后再收集；切走时由 Compose 释放收集者，但 ViewModel 内的 cachedIn 缓存仍可服务下次切回。
+     */
+    val pagedImages = Pager(
+        config = PagingConfig(
+            pageSize = HISTORY_PAGE_SIZE,
+            prefetchDistance = 5,
+            enablePlaceholders = false
+        )
+    ) {
+        imageExtractRepository.pagingHistory()
+    }.flow.map { pagingData: PagingData<ImageExtractBatchData> ->
+        pagingData.map { batch ->
+            withContext(Dispatchers.IO) {
+                val items = imageExtractRepository.getBatchWithItems(batch.id)?.second.orEmpty()
+                batch.toImageHistoryBatch(items)
+            }
+        }
+    }.cachedIn(viewModelScope)
+
+    /** 历史总数和运行中数量；只做 COUNT 级查询，不加载完整记录。 */
+    private val historyCounts = combine(
+        downloadRepository.observeHistoryCount(),
+        imageExtractRepository.observeHistoryCount(),
+        downloadRepository.observeRunningHistoryCount(),
+        imageExtractRepository.observeRunningHistoryCount()
+    ) { videoCount, imageCount, videoRunningCount, imageRunningCount ->
+        DownloadHistoryCounts(
+            videoCount = videoCount,
+            imageCount = imageCount,
+            videoRunningCount = videoRunningCount,
+            imageRunningCount = imageRunningCount
+        )
     }
 
-    /** 图片历史流，批次变化后读取对应图片项，并只保留当前仍可读取的成功图片 URI。 */
-    private val imageItems = imageExtractRepository.observeHistory().map { batches ->
-        withContext(Dispatchers.IO) {
-            val ids = batches.map { it.id }.toSet()
-            val itemsByBatch = imageExtractRepository.getBatchesWithItems(ids).associate { (batch, items) -> batch.id to items }
-            batches.map { batch -> batch.toImageHistoryBatch(itemsByBatch[batch.id].orEmpty()) }
+    /** 当前选中项里是否有运行中任务；按 id 做 COUNT 查询，避免分页列表未加载完整导致误判。 */
+    private val selectedHasRunning = combine(selectedTab, selectedIds) { tab, ids -> tab to ids }
+        .map { (tab, ids) ->
+            if (ids.isEmpty()) {
+                false
+            } else {
+                withContext(Dispatchers.IO) {
+                    when (tab) {
+                        DownloadHistoryTab.VIDEO -> downloadRepository.countRunningTasks(ids) > 0
+                        DownloadHistoryTab.IMAGE -> imageExtractRepository.countRunningBatches(ids) > 0
+                    }
+                }
+            }
         }
-    }
 
     /** 列表与选中态组合后的中间状态，避免使用过多 Flow 参数导致重载不清晰。 */
     private val contentState = combine(
         selectedTab,
-        videoItems,
-        imageItems,
+        historyCounts,
         selectionMode,
-        selectedIds
-    ) { tab, videos, images, inSelection, ids ->
+        selectedIds,
+        selectedHasRunning
+    ) { tab, counts, inSelection, ids, hasRunning ->
         DownloadHistoryUiState(
             selectedTab = tab,
-            videos = videos,
-            images = images,
+            videoCount = counts.videoCount,
+            imageCount = counts.imageCount,
+            videoRunningCount = counts.videoRunningCount,
+            imageRunningCount = counts.imageRunningCount,
             selectionMode = inSelection,
-            selectedIds = ids
+            selectedIds = ids,
+            selectedHasRunning = hasRunning
         )
     }
 
@@ -323,8 +419,8 @@ class DownloadHistoryVm @Inject constructor(
     /** 切换分类 Tab，并清空多选状态，避免跨分类复用 id 导致误删。 */
     fun selectTab(tab: DownloadHistoryTab) {
         if (selectedTab.value == tab) return
-        selectedTab.value = tab
         exitSelection()
+        selectedTab.value = tab
     }
 
     /** 进入多选管理态；如果传入记录 id，会同时选中该记录，适配长按进入管理。 */
@@ -350,12 +446,16 @@ class DownloadHistoryVm @Inject constructor(
 
     /** 全选当前 Tab 中的全部记录；没有记录时保持空选择。 */
     fun selectAllCurrentTab() {
-        val ids = when (selectedTab.value) {
-            DownloadHistoryTab.VIDEO -> uiState.value.videos.map { it.id }
-            DownloadHistoryTab.IMAGE -> uiState.value.images.map { it.id }
-        }.toSet()
-        selectedIds.value = ids
-        selectionMode.value = ids.isNotEmpty()
+        val tab = selectedTab.value
+        viewModelScope.launch(Dispatchers.IO) {
+            val ids = when (tab) {
+                DownloadHistoryTab.VIDEO -> downloadRepository.getHistoryIds()
+                DownloadHistoryTab.IMAGE -> imageExtractRepository.getHistoryIds()
+            }.toSet()
+            if (selectedTab.value != tab) return@launch
+            selectedIds.value = ids
+            selectionMode.value = ids.isNotEmpty()
+        }
     }
 
     /** 清空当前提示文案，避免 Toast/Snackbar 因状态恢复重复展示。 */
@@ -402,12 +502,15 @@ class DownloadHistoryVm @Inject constructor(
 
     /** 清空当前分类下所有记录；只作用于当前 Tab，不影响另一类下载历史或其他业务表。 */
     fun clearCurrentTab(deleteFiles: Boolean) {
-        val ids = when (selectedTab.value) {
-            DownloadHistoryTab.VIDEO -> uiState.value.videos.map { it.id }
-            DownloadHistoryTab.IMAGE -> uiState.value.images.map { it.id }
-        }.toSet()
-        if (ids.isEmpty()) return
-        deleteRecords(selectedTab.value, ids, deleteFiles)
+        val tab = selectedTab.value
+        viewModelScope.launch(Dispatchers.IO) {
+            val ids = when (tab) {
+                DownloadHistoryTab.VIDEO -> downloadRepository.getHistoryIds()
+                DownloadHistoryTab.IMAGE -> imageExtractRepository.getHistoryIds()
+            }.toSet()
+            if (ids.isEmpty() || selectedTab.value != tab) return@launch
+            deleteRecords(tab, ids, deleteFiles)
+        }
     }
 
     /** 系统媒体删除授权返回后继续处理；用户取消时保留记录，避免记录消失但文件仍在。 */
@@ -625,14 +728,25 @@ class DownloadHistoryVm @Inject constructor(
         return File(path).exists()
     }
 
-    /** 判断 content URI 是否仍存在；查询失败时再尝试打开文件描述符做兜底验证。 */
+    /** 判断 content URI 是否仍存在；Android 11+ 相册删除可能先进入回收站，查到已回收时也按不可读处理。 */
     private fun Uri.existsAsContentUri(): Boolean {
         val queried = runCatching {
-            appContext.contentResolver.query(this, arrayOf(MediaStore.MediaColumns._ID), null, null, null)?.use { cursor ->
-                cursor.moveToFirst()
+            val projection = buildList {
+                add(MediaStore.MediaColumns._ID)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    add(MediaStore.MediaColumns.IS_TRASHED)
+                }
+            }.toTypedArray()
+            appContext.contentResolver.query(this, projection, null, null, null)?.use { cursor ->
+                if (!cursor.moveToFirst()) return@use false
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    val trashedIndex = cursor.getColumnIndex(MediaStore.MediaColumns.IS_TRASHED)
+                    if (trashedIndex >= 0 && cursor.getInt(trashedIndex) != 0) return@use false
+                }
+                true
             }
         }.getOrNull()
-        if (queried == true) return true
+        if (queried != null) return queried
 
         return runCatching {
             appContext.contentResolver.openAssetFileDescriptor(this, "r")?.use { true } == true

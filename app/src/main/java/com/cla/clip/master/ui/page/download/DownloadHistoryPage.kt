@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.ActivityResult
 import androidx.activity.result.IntentSenderRequest
@@ -29,8 +30,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -66,12 +71,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -84,7 +92,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.flowWithLifecycle
+import androidx.paging.LoadState
+import androidx.paging.PagingData
+import androidx.paging.compose.LazyPagingItems
+import androidx.paging.compose.collectAsLazyPagingItems
+import androidx.paging.compose.itemKey
 import coil3.compose.AsyncImage
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.dao.DownloadTaskData
@@ -94,6 +111,7 @@ import com.cla.clip.base.general.utils.toast
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.navigation.VideoDownloadRoute
 import com.cla.clip.master.ui.widget.TitleBar
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 
 /** 图片记录横向缩略图尺寸，固定尺寸可避免加载成功/失败时列表高度抖动。 */
@@ -105,7 +123,11 @@ private val HistoryCardShape = RoundedCornerShape(8.dp)
 /**
  * 下载记录页面入口。
  *
- * 页面订阅 ViewModel 的历史流和一次性动作，负责展示 Tab、列表、多选删除弹窗、系统删除授权和本地视频播放。
+ * 页面订阅 ViewModel 的历史流和一次性动作，负责展示 Tab、横向分页列表、多选删除弹窗、系统删除授权和本地视频播放。
+ * 横向 Pager 只保存在 Compose 层，用于提供左右滑动切换分类的交互；最终分类状态仍同步回 ViewModel，保证标题栏数量和删除目标一致。
+ * 视频和图片记录使用 Paging 分页加载，且只在页面 STARTED 生命周期内收集当前 Tab 的分页流，避免页面不可见时继续读取媒体。
+ * 每个 Tab 的列表滚动状态在页面入口独立持有，切换 Tab、主题重组或横竖屏恢复时尽量保留原滚动位置。
+ * 多选态是页面内的临时管理状态，系统返回键会优先退出多选，避免用户误离开下载记录页面。
  */
 @Composable
 fun DownloadHistoryPage(
@@ -114,11 +136,34 @@ fun DownloadHistoryPage(
     onNavigate: (Route) -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     var pendingDelete by remember { mutableStateOf<DeleteRequestUi?>(null) }
     var previewImageUri by remember { mutableStateOf<String?>(null) }
+    // 下载记录只包含视频和图片两个一级分类，列表顺序需要同时驱动 Tab 指示器和横向 Pager 页码。
+    val historyTabs = remember { listOf(DownloadHistoryTab.VIDEO, DownloadHistoryTab.IMAGE) }
+    // Pager 状态放在页面层持有，避免 ViewModel 依赖 Compose 类型；初始页跟随 ViewModel 当前分类。
+    val pagerState = rememberPagerState(
+        initialPage = historyTabs.indexOf(state.selectedTab).coerceAtLeast(0),
+        pageCount = { historyTabs.size }
+    )
+    // 和剪贴列表页保持一致：分页 Flow 对象稳定，只跟随页面 STARTED 生命周期收集；具体是否收集由当前 Tab 的内容分支决定。
+    val videoPagingFlow = remember(viewModel.pagedVideos, lifecycle) {
+        viewModel.pagedVideos.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
+    }
+    val imagePagingFlow = remember(viewModel.pagedImages, lifecycle) {
+        viewModel.pagedImages.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
+    }
+    // 每个分类持有自己的可保存列表状态；切换 Tab、主题重组或 Activity 重建后都尽量回到原位置。
+    val videoListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+    val imageListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+
+    BackHandler(enabled = state.selectionMode && pendingDelete == null && previewImageUri == null) {
+        // 删除弹窗和图片预览存在时应优先响应自己的返回关闭逻辑；普通多选态返回只清空选择，不退出页面。
+        viewModel.exitSelection()
+    }
 
     val deletePermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult(),
@@ -142,6 +187,13 @@ fun DownloadHistoryPage(
         viewModel.clearMessage()
     }
 
+    LaunchedEffect(pagerState, historyTabs) {
+        snapshotFlow { pagerState.settledPage }.collect { page ->
+            // 只在滑动最终停稳后同步 ViewModel，避免拖拽过程中频繁清空多选状态或让标题栏数量抖动。
+            historyTabs.getOrNull(page)?.let(viewModel::selectTab)
+        }
+    }
+
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             DownloadHistoryTitleBar(
@@ -161,15 +213,27 @@ fun DownloadHistoryPage(
 
             DownloadHistoryTabs(
                 selectedTab = state.selectedTab,
-                onSelected = viewModel::selectTab
+                onSelected = { tab ->
+                    val page = historyTabs.indexOf(tab)
+                    if (page < 0) return@DownloadHistoryTabs
+                    // 点击 Tab 时立即更新分类状态以刷新标题栏动作，再平滑滚动内容页保持视觉联动。
+                    viewModel.selectTab(tab)
+                    scope.launch { pagerState.animateScrollToPage(page) }
+                }
             )
 
-            DownloadHistoryContent(
+            DownloadHistoryPager(
+                tabs = historyTabs,
+                pagerState = pagerState,
                 state = state,
+                videoPagingFlow = videoPagingFlow,
+                imagePagingFlow = imagePagingFlow,
+                videoListState = videoListState,
+                imageListState = imageListState,
                 onToggleSelected = viewModel::toggleSelected,
                 onEnterSelection = viewModel::enterSelection,
                 onOpenVideo = { item ->
-                    if (item.localPath.isNullOrBlank()) return@DownloadHistoryContent
+                    if (item.localPath.isNullOrBlank()) return@DownloadHistoryPager
                     val intent = Intent(Intent.ACTION_VIEW).apply {
                         setDataAndType(Uri.parse(item.localPath), "video/*")
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -299,7 +363,7 @@ private fun DownloadHistoryTitleBar(
     }
 }
 
-/** 视频/图片顶部 Tab，切换时由 ViewModel 清理选择状态。 */
+/** 视频/图片顶部 Tab；这里仅展示文字，不配置图标，避免 Tab 过高挤占下方历史列表空间。 */
 @Composable
 private fun DownloadHistoryTabs(
     selectedTab: DownloadHistoryTab,
@@ -314,22 +378,26 @@ private fun DownloadHistoryTabs(
             Tab(
                 selected = selectedTab == tab,
                 onClick = { onSelected(tab) },
-                text = { Text(title) },
-                icon = {
-                    Icon(
-                        imageVector = if (tab == DownloadHistoryTab.VIDEO) Icons.Default.Movie else Icons.Default.Image,
-                        contentDescription = null
-                    )
-                }
+                text = { Text(title) }
             )
         }
     }
 }
 
-/** 根据当前 Tab 展示对应历史列表或空状态。 */
+/**
+ * 下载记录横向分页容器。
+ *
+ * Pager 负责承载视频页和图片页的左右滑动体验；具体列表仍交给 DownloadHistoryContent 渲染，避免分页状态进入 ViewModel。
+ */
 @Composable
-private fun DownloadHistoryContent(
+private fun DownloadHistoryPager(
+    tabs: List<DownloadHistoryTab>,
+    pagerState: androidx.compose.foundation.pager.PagerState,
     state: DownloadHistoryUiState,
+    videoPagingFlow: Flow<PagingData<DownloadHistoryVideoItem>>,
+    imagePagingFlow: Flow<PagingData<DownloadHistoryImageBatch>>,
+    videoListState: LazyListState,
+    imageListState: LazyListState,
     onToggleSelected: (Long) -> Unit,
     onEnterSelection: (Long) -> Unit,
     onOpenVideo: (DownloadHistoryVideoItem) -> Unit,
@@ -337,17 +405,109 @@ private fun DownloadHistoryContent(
     onRetryImage: (Long) -> Unit,
     onPreviewImage: (String) -> Unit,
 ) {
-    when (state.selectedTab) {
+    HorizontalPager(
+        state = pagerState,
+        modifier = Modifier.fillMaxSize()
+    ) { page ->
+        DownloadHistoryContent(
+            tab = tabs.getOrElse(page) { DownloadHistoryTab.VIDEO },
+            state = state,
+            videoPagingFlow = videoPagingFlow,
+            imagePagingFlow = imagePagingFlow,
+            videoListState = videoListState,
+            imageListState = imageListState,
+            onToggleSelected = onToggleSelected,
+            onEnterSelection = onEnterSelection,
+            onOpenVideo = onOpenVideo,
+            onRetryVideo = onRetryVideo,
+            onRetryImage = onRetryImage,
+            onPreviewImage = onPreviewImage
+        )
+    }
+}
+
+/** 根据指定 Tab 展示对应历史列表或空状态；由 Pager 传入分类，避免渲染时只依赖当前选中态。 */
+@Composable
+private fun DownloadHistoryContent(
+    tab: DownloadHistoryTab,
+    state: DownloadHistoryUiState,
+    videoPagingFlow: Flow<PagingData<DownloadHistoryVideoItem>>,
+    imagePagingFlow: Flow<PagingData<DownloadHistoryImageBatch>>,
+    videoListState: LazyListState,
+    imageListState: LazyListState,
+    onToggleSelected: (Long) -> Unit,
+    onEnterSelection: (Long) -> Unit,
+    onOpenVideo: (DownloadHistoryVideoItem) -> Unit,
+    onRetryVideo: (Long) -> Unit,
+    onRetryImage: (Long) -> Unit,
+    onPreviewImage: (String) -> Unit,
+) {
+    when (tab) {
         DownloadHistoryTab.VIDEO -> {
-            if (state.videos.isEmpty()) {
-                EmptyHistory(text = stringResource(R.string.base_general_download_history_video_empty))
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    items(state.videos, key = { it.id }) { item ->
+            if (state.selectedTab == DownloadHistoryTab.VIDEO) {
+                val pagedVideos = videoPagingFlow.collectAsLazyPagingItems()
+                VideoHistoryList(
+                    pagedVideos = pagedVideos,
+                    listState = videoListState,
+                    state = state,
+                    onToggleSelected = onToggleSelected,
+                    onEnterSelection = onEnterSelection,
+                    onOpenVideo = onOpenVideo,
+                    onRetryVideo = onRetryVideo
+                )
+            }
+        }
+
+        DownloadHistoryTab.IMAGE -> {
+            if (state.selectedTab == DownloadHistoryTab.IMAGE) {
+                val pagedImages = imagePagingFlow.collectAsLazyPagingItems()
+                ImageHistoryList(
+                    pagedImages = pagedImages,
+                    listState = imageListState,
+                    state = state,
+                    onToggleSelected = onToggleSelected,
+                    onEnterSelection = onEnterSelection,
+                    onRetryImage = onRetryImage,
+                    onPreviewImage = onPreviewImage
+                )
+            }
+        }
+    }
+}
+
+/** 视频历史分页列表；Paging 只组合当前可见页附近的数据，避免一次性读取全部视频首帧。 */
+@Composable
+private fun VideoHistoryList(
+    pagedVideos: LazyPagingItems<DownloadHistoryVideoItem>,
+    listState: LazyListState,
+    state: DownloadHistoryUiState,
+    onToggleSelected: (Long) -> Unit,
+    onEnterSelection: (Long) -> Unit,
+    onOpenVideo: (DownloadHistoryVideoItem) -> Unit,
+    onRetryVideo: (Long) -> Unit,
+) {
+    when {
+        pagedVideos.loadState.refresh is LoadState.Loading -> LoadingHistory()
+        pagedVideos.loadState.refresh is LoadState.NotLoading && pagedVideos.itemCount == 0 -> {
+            EmptyHistory(text = stringResource(R.string.base_general_download_history_video_empty))
+        }
+
+        pagedVideos.loadState.refresh is LoadState.Error && pagedVideos.itemCount == 0 -> {
+            PagingErrorHistory(onRetry = pagedVideos::retry)
+        }
+
+        else -> {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(
+                    count = pagedVideos.itemCount,
+                    key = pagedVideos.itemKey { it.id }
+                ) { index ->
+                    pagedVideos[index]?.let { item ->
                         VideoHistoryCard(
                             item = item,
                             selected = item.id in state.selectedIds,
@@ -359,19 +519,47 @@ private fun DownloadHistoryContent(
                         )
                     }
                 }
+                pagingAppendState(pagedVideos.loadState.append, onRetry = pagedVideos::retry)
             }
         }
+    }
+}
 
-        DownloadHistoryTab.IMAGE -> {
-            if (state.images.isEmpty()) {
-                EmptyHistory(text = stringResource(R.string.base_general_download_history_image_empty))
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    items(state.images, key = { it.id }) { item ->
+/** 图片历史分页列表；每个批次进入当前页附近时才读取自己的图片项和可读缩略图 URI。 */
+@Composable
+private fun ImageHistoryList(
+    pagedImages: LazyPagingItems<DownloadHistoryImageBatch>,
+    listState: LazyListState,
+    state: DownloadHistoryUiState,
+    onToggleSelected: (Long) -> Unit,
+    onEnterSelection: (Long) -> Unit,
+    onRetryImage: (Long) -> Unit,
+    onPreviewImage: (String) -> Unit,
+) {
+    RefreshImageHistoryWhenVisible(pagedImages)
+
+    when {
+        pagedImages.loadState.refresh is LoadState.Loading && pagedImages.itemCount == 0 -> LoadingHistory()
+        pagedImages.loadState.refresh is LoadState.NotLoading && pagedImages.itemCount == 0 -> {
+            EmptyHistory(text = stringResource(R.string.base_general_download_history_image_empty))
+        }
+
+        pagedImages.loadState.refresh is LoadState.Error && pagedImages.itemCount == 0 -> {
+            PagingErrorHistory(onRetry = pagedImages::retry)
+        }
+
+        else -> {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(
+                    count = pagedImages.itemCount,
+                    key = pagedImages.itemKey { it.id }
+                ) { index ->
+                    pagedImages[index]?.let { item ->
                         ImageHistoryCard(
                             item = item,
                             selected = item.id in state.selectedIds,
@@ -383,8 +571,31 @@ private fun DownloadHistoryContent(
                         )
                     }
                 }
+                pagingAppendState(pagedImages.loadState.append, onRetry = pagedImages::retry)
             }
         }
+    }
+}
+
+/** 图片页可见或页面回到前台时刷新分页数据，确保外部相册删除后的本地可读性状态能重新校验。 */
+@Composable
+private fun RefreshImageHistoryWhenVisible(pagedImages: LazyPagingItems<DownloadHistoryImageBatch>) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    LaunchedEffect(pagedImages) {
+        // `cachedIn` 会保留旧分页结果；图片页重新进入组合时主动 refresh，避免继续展示相册已删除的旧 URI。
+        pagedImages.refresh()
+    }
+
+    DisposableEffect(lifecycleOwner, pagedImages) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                // 用户从系统相册删除图片后回到本页时，Room 数据不会变化，只能通过刷新 Paging 重新触发 URI 可读性检查。
+                pagedImages.refresh()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 }
 
@@ -680,6 +891,72 @@ private fun EmptyHistory(text: String) {
     }
 }
 
+/** 首次分页加载状态；只在当前 Tab 的 Paging refresh 期间展示，避免用户误以为空记录。 */
+@Composable
+private fun LoadingHistory() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        CircularProgressIndicator()
+    }
+}
+
+/** 首次分页加载失败状态；点击文案直接调用 Paging retry，继续复用当前分页源。 */
+@Composable
+private fun PagingErrorHistory(onRetry: () -> Unit) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = stringResource(R.string.base_general_data_load_failed_retry),
+            modifier = Modifier
+                .clickable(onClick = onRetry)
+                .padding(16.dp),
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodyMedium
+        )
+    }
+}
+
+/** 追加分页状态；滚动到底部加载下一页时给出轻量反馈，失败时允许用户点击重试。 */
+private fun LazyListScope.pagingAppendState(
+    loadState: LoadState,
+    onRetry: () -> Unit,
+) {
+    when (loadState) {
+        is LoadState.Loading -> {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                }
+            }
+        }
+
+        is LoadState.Error -> {
+            item {
+                Text(
+                    text = stringResource(R.string.base_general_data_load_failed_retry),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onRetry)
+                        .padding(14.dp),
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+
+        else -> Unit
+    }
+}
+
 /** 本地文件不可读占位，既用于视频首帧区域，也用于图片批次缩略图区。 */
 @Composable
 private fun DeletedPlaceholder(text: String) {
@@ -869,22 +1146,15 @@ private data class DeleteRequestUi(
 /** 当前 Tab 的记录总数，用于标题栏按钮可用性和清空弹窗数量。 */
 private val DownloadHistoryUiState.currentItemsCount: Int
     get() = when (selectedTab) {
-        DownloadHistoryTab.VIDEO -> videos.size
-        DownloadHistoryTab.IMAGE -> images.size
+        DownloadHistoryTab.VIDEO -> videoCount
+        DownloadHistoryTab.IMAGE -> imageCount
     }
 
 /** 当前 Tab 是否包含进行中记录，用于清空确认文案。 */
 private val DownloadHistoryUiState.currentTabHasRunning: Boolean
     get() = when (selectedTab) {
-        DownloadHistoryTab.VIDEO -> videos.any { it.running }
-        DownloadHistoryTab.IMAGE -> images.any { it.running }
-    }
-
-/** 当前选中记录是否包含进行中任务，用于删除确认文案。 */
-private val DownloadHistoryUiState.selectedHasRunning: Boolean
-    get() = when (selectedTab) {
-        DownloadHistoryTab.VIDEO -> videos.any { it.id in selectedIds && it.running }
-        DownloadHistoryTab.IMAGE -> images.any { it.id in selectedIds && it.running }
+        DownloadHistoryTab.VIDEO -> videoRunningCount > 0
+        DownloadHistoryTab.IMAGE -> imageRunningCount > 0
     }
 
 /** 将视频任务状态映射为用户可见文案；失败态优先展示具体错误。 */
