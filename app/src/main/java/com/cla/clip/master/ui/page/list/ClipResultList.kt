@@ -9,7 +9,6 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -35,11 +34,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -61,7 +62,9 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.paging.LoadState
@@ -74,6 +77,23 @@ import com.cla.clip.master.R
 import com.cla.clip.master.ui.theme.cardCornerShape
 import com.cla.clip.master.ui.widget.rememberFormattedTime
 import kotlin.math.max
+
+/**
+ * 取消置顶会触发分页结果重新排序，LazyColumn 默认会按稳定 key 跟随被移动的 item。
+ *
+ * 这里记录用户点击时的视口 index/offset，并在 Paging 快照确认目标记录已完成置顶状态变化后恢复该视口，
+ * 让列表停留在用户发起操作时看到的位置。
+ */
+private data class PendingPinScrollRestore(
+    /** 点击操作发生时列表首个可见 item 的 index。 */
+    val index: Int,
+
+    /** 点击操作发生时列表首个可见 item 的滚动偏移。 */
+    val offset: Int,
+
+    /** 操作前分页快照的顺序和置顶状态签名，用于判断异步排序刷新是否已经到达 UI。 */
+    val snapshotSignature: List<Pair<Long, Boolean>>,
+)
 
 /**
  * 剪贴结果竖向列表。
@@ -95,6 +115,27 @@ fun ClipResultList(
     contentPadding: PaddingValues = PaddingValues(10.dp),
     highlightQuery: String? = null,
 ) {
+    // 取消置顶的排序变化由数据库/Paging 异步返回，先保存待恢复视口，再在快照确认后执行恢复。
+    var pendingPinScrollRestore by remember { mutableStateOf<PendingPinScrollRestore?>(null) }
+
+    LaunchedEffect(pagedClips, listState) {
+        snapshotFlow {
+            val pending = pendingPinScrollRestore
+            val currentSignature = pagedClips.itemSnapshotList.items.map { it.id to it.isPinned }
+            pending?.takeIf {
+                currentSignature.isNotEmpty() && currentSignature != it.snapshotSignature
+            }
+        }.collect { pending ->
+            if (pending != null && pagedClips.itemCount > 0) {
+                val targetIndex = pending.index.coerceIn(0, pagedClips.itemCount - 1)
+                // 数据重排完成后再恢复视口，并覆盖下一次 remeasure 的 key 锚点策略，抵消 LazyColumn 自动跟随被移动 item 的默认行为。
+                listState.requestScrollToItem(targetIndex, pending.offset)
+                listState.scrollToItem(targetIndex, pending.offset)
+                pendingPinScrollRestore = null
+            }
+        }
+    }
+
     when {
         pagedClips.loadState.refresh is LoadState.NotLoading && pagedClips.itemCount == 0 -> {
             EmptyScreen(text = emptyText, modifier = modifier)
@@ -133,7 +174,14 @@ fun ClipResultList(
                                 onDelete = onDelete,
                                 onCopy = onCopy,
                                 onClick = onClick,
-                                onLongClick = onLongClick
+                                onLongClick = onLongClick,
+                                onKeepCurrentScrollPosition = {
+                                    pendingPinScrollRestore = PendingPinScrollRestore(
+                                        index = listState.firstVisibleItemIndex,
+                                        offset = listState.firstVisibleItemScrollOffset,
+                                        snapshotSignature = pagedClips.itemSnapshotList.items.map { it.id to it.isPinned }
+                                    )
+                                }
                             )
                         }
                     }
@@ -191,17 +239,19 @@ fun ClipCard(
     onCopy: (ClipShowEntity) -> Unit,
     onClick: (ClipShowEntity) -> Unit,
     onLongClick: (ClipShowEntity) -> Unit,
+    onKeepCurrentScrollPosition: () -> Unit,
     modifier: Modifier = Modifier,
     highlightQuery: String? = null,
 ) {
     val appColor = clip.appColor ?: MaterialTheme.colorScheme.outlineVariant
     val borderColor = appColor.copy(alpha = 0.3f)
-    val lineColor = appColor.copy(alpha = 0.3f)
     val density = LocalDensity.current
-    val actionWidth = 64.dp
-    // 分割线只承担视觉分区，不作为主要点击边界；略细于 1dp 并上下内缩，避免把卡片切得过硬。
+    val actionWidth = 48.dp
+    val copyActionWidth = 48.dp
+    // 分割线只承担视觉分区，不作为主要点击边界；高度按图标尺寸增加 10dp，并在按钮区域内竖向居中。
+    val actionIconSize = 24.dp
     val dividerWidth = 0.5.dp
-    val dividerVerticalPadding = 10.dp
+    val dividerHeight = actionIconSize + 10.dp
     val actionAreaWidth = actionWidth * 2 + dividerWidth
     val maxOffsetPx = with(density) { actionAreaWidth.toPx() }
     // 侧滑偏移按 clip.id 保存，避免 LazyColumn 复用 item 时把上一条记录的展开状态带给其他记录。
@@ -244,12 +294,16 @@ fun ClipCard(
                         .fillMaxHeight(),
                     iconTint = MaterialTheme.colorScheme.tertiary,
                     iconContentDescription = pinDescription,
+                    iconSize = actionIconSize,
                     painterRes = if (clip.isPinned) {
                         R.drawable.host_icon_unpinned
                     } else {
                         R.drawable.host_icon_to_pinned
                     },
                     onClick = {
+                        if (clip.isPinned) {
+                            onKeepCurrentScrollPosition()
+                        }
                         offsetPx = 0f
                         onPinToggle(clip)
                     }
@@ -258,9 +312,9 @@ fun ClipCard(
                 Box(
                     modifier = Modifier
                         .width(dividerWidth)
-                        .fillMaxHeight()
-                        .padding(vertical = dividerVerticalPadding)
-                        .background(MaterialTheme.colorScheme.outlineVariant)
+                        .height(dividerHeight)
+                        .align(Alignment.CenterVertically)
+                        .background(borderColor)
                 )
 
                 SwipeActionButton(
@@ -269,6 +323,7 @@ fun ClipCard(
                         .fillMaxHeight(),
                     iconTint = MaterialTheme.colorScheme.error,
                     iconContentDescription = deleteDescription,
+                    iconSize = actionIconSize,
                     painterRes = R.drawable.host_icon_delete,
                     onClick = {
                         offsetPx = 0f
@@ -313,64 +368,105 @@ fun ClipCard(
                 },
             elevation = CardDefaults.cardElevation(2.dp)
         ) {
-            Row(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(IntrinsicSize.Min)
                     .clip(cardShape)
                     .border(1.dp, borderColor, cardShape)
             ) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .combinedClickable(
-                            onClick = { onClick(clip) },
-                            onLongClick = { onLongClick(clip) }
-                        )
-                        .padding(start = 12.dp, top = 12.dp, bottom = 12.dp, end = 12.dp)
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        ClipContent(clip, highlightQuery)
-
-                        Spacer(Modifier.height(8.dp))
-                        SourceAppNameWithTime(clip, highlightQuery)
-                    }
-
-                    if (clip.isPinned) {
-                        Icon(
-                            painterResource(R.drawable.host_icon_pinned),
-                            contentDescription = null,
-                            modifier = Modifier
-                                // 置顶角标只占用内容区右上角一小块区域，避免遮挡常驻复制按钮。
-                                .width(42.dp)
-                                .align(Alignment.TopEnd)
-                                .alpha(0.6f),
-                            tint = appColor
-                        )
-                    }
+                if (clip.isPinned) {
+                    Icon(
+                        painterResource(R.drawable.host_icon_pinned),
+                        contentDescription = null,
+                        modifier = Modifier
+                            // 置顶角标是卡片级装饰，不挂点击；先于内容层绘制，和复制按钮重叠时位于复制按钮下方。
+                            .width(42.dp)
+                            .align(Alignment.TopEnd)
+                            .alpha(0.6f),
+                        tint = appColor
+                    )
                 }
 
-                Box(
-                    modifier = Modifier
-                        .width(dividerWidth)
-                        .fillMaxHeight()
-                        .padding(vertical = dividerVerticalPadding)
-                        .background(lineColor)
-                )
+                Layout(
+                    modifier = Modifier.fillMaxWidth(),
+                    content = {
+                    Box(
+                        modifier = Modifier
+                            .combinedClickable(
+                                onClick = { onClick(clip) },
+                                onLongClick = { onLongClick(clip) }
+                            )
+                            .padding(start = 12.dp, top = 12.dp, bottom = 12.dp, end = 12.dp)
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            ClipContent(clip, highlightQuery)
 
-                Box(
-                    modifier = Modifier
-                        .width(56.dp)
-                        .fillMaxHeight()
-                        .clickable(onClick = { onCopy(clip) }),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        painterResource(R.drawable.host_icon_copy),
-                        contentDescription = copyDescription,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(26.dp)
+                            Spacer(Modifier.height(8.dp))
+                            SourceAppNameWithTime(clip, highlightQuery)
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .width(dividerWidth)
+                            .height(dividerHeight)
+                            .background(borderColor)
                     )
+
+                    Box(
+                        modifier = Modifier
+                            .width(copyActionWidth)
+                            .clickable(onClick = { onCopy(clip) }),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            painterResource(R.drawable.host_icon_copy),
+                            contentDescription = copyDescription,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(actionIconSize)
+                        )
+                    }
+                    }
+                ) { measurables, constraints ->
+                    val dividerWidthPx = dividerWidth.roundToPx()
+                    val dividerHeightPx = dividerHeight.roundToPx()
+                    val copyWidthPx = copyActionWidth.roundToPx()
+                    val minActionHeightPx = copyActionWidth.roundToPx()
+                    val contentWidthPx = (constraints.maxWidth - dividerWidthPx - copyWidthPx).coerceAtLeast(0)
+
+                    // 先按可用宽度测量真实内容高度，再让复制按钮区域跟随该高度，避免 Lazy 重排后继承旧位置高度。
+                    val contentPlaceable = measurables[0].measure(
+                        constraints.copy(
+                            minWidth = contentWidthPx,
+                            maxWidth = contentWidthPx,
+                            minHeight = 0
+                        )
+                    )
+                    val rowHeightPx = maxOf(contentPlaceable.height, minActionHeightPx, constraints.minHeight)
+                    val dividerPlaceable = measurables[1].measure(
+                        Constraints.fixed(
+                            width = dividerWidthPx,
+                            height = dividerHeightPx.coerceAtMost(rowHeightPx)
+                        )
+                    )
+                    val copyPlaceable = measurables[2].measure(
+                        Constraints.fixed(
+                            width = copyWidthPx,
+                            height = rowHeightPx
+                        )
+                    )
+
+                    layout(width = constraints.maxWidth, height = rowHeightPx) {
+                        contentPlaceable.placeRelative(x = 0, y = 0)
+                        dividerPlaceable.placeRelative(
+                            x = contentWidthPx,
+                            y = (rowHeightPx - dividerPlaceable.height) / 2
+                        )
+                        copyPlaceable.placeRelative(
+                            x = contentWidthPx + dividerWidthPx,
+                            y = 0
+                        )
+                    }
                 }
             }
         }
@@ -555,6 +651,7 @@ private fun SwipeActionButton(
     painterRes: Int,
     iconContentDescription: String,
     iconTint: Color,
+    iconSize: Dp,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -567,7 +664,7 @@ private fun SwipeActionButton(
             painter = painterResource(painterRes),
             contentDescription = iconContentDescription,
             tint = iconTint,
-            modifier = Modifier.size(28.dp)
+            modifier = Modifier.size(iconSize)
         )
     }
 }
@@ -687,6 +784,7 @@ private fun ClipCardPreview() {
         onDelete = {},
         onCopy = {},
         onClick = {},
-        onLongClick = {}
+        onLongClick = {},
+        onKeepCurrentScrollPosition = {}
     )
 }
