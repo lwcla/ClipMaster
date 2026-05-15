@@ -51,7 +51,7 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import com.cla.clip.base.general.dao.SourceAppData
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.entity.ClipVisibilityScope
-import com.cla.clip.master.ui.dialog.DeleteDialog
+import com.cla.clip.master.ui.dialog.ClipDeleteChoiceDialog
 import com.cla.clip.master.ui.navigation.DetailRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.navigation.SearchScope
@@ -139,10 +139,11 @@ fun SearchPage(
         }
     }
 
-    DeleteDialog(
+    ClipDeleteChoiceDialog(
         clip = deleteClip,
         onDismiss = { deleteClip = null },
-        onConfirmDelete = viewModel::deleteClip
+        onMoveToRecycleBin = viewModel::deleteClip,
+        onDeletePermanently = viewModel::deleteClipPermanently
     )
 
     if (showSourcePicker) {

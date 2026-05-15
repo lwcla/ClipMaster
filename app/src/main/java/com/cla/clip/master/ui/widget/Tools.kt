@@ -30,3 +30,22 @@ fun ClipShowEntity.rememberFormattedTime(): String {
 
     return formattedTime
 }
+
+/**
+ * 在 Compose 中记住回收站删除时间的相对展示文案。
+ *
+ * 回收站按删除时间排序，如果继续展示原剪贴时间会让用户误解排序；这里使用 `deletedAt` 生成“删除于 X”的动态文案。
+ */
+@Composable
+fun ClipShowEntity.rememberDeletedFormattedTime(prefix: String): String {
+    var formattedTime by remember { mutableStateOf("$prefix${deletedAt.toRelativeTimeSpanString()}") }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+
+    LaunchedEffect(deletedAt, prefix, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            formattedTime = "$prefix${deletedAt.toRelativeTimeSpanString()}"
+        }
+    }
+
+    return formattedTime
+}

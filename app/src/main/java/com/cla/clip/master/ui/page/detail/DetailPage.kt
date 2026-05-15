@@ -38,7 +38,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.entity.ClipShowEntity
-import com.cla.clip.master.ui.dialog.DeleteDialog
+import com.cla.clip.master.ui.dialog.ClipDeleteChoiceDialog
 import com.cla.clip.master.ui.navigation.ImageExtractRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.navigation.VideoExtractRoute
@@ -154,12 +154,11 @@ fun DetailPage(
         }
     }
 
-    DeleteDialog(
+    ClipDeleteChoiceDialog(
         clip = deleteClip,
         onDismiss = { deleteClip = null },
-        onConfirmDelete = { clip ->
-            detailVm.deleteClip(clip, sendEvent = true)
-        }
+        onMoveToRecycleBin = { clip -> detailVm.deleteClip(clip, sendEvent = true) },
+        onDeletePermanently = { clip -> detailVm.deleteClipPermanently(clip, sendEvent = true) }
     )
 }
 

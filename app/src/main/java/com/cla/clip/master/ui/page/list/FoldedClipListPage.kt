@@ -27,7 +27,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.flowWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
 import com.cla.clip.base.general.entity.ClipShowEntity
-import com.cla.clip.master.ui.dialog.DeleteDialog
+import com.cla.clip.master.ui.dialog.ClipDeleteChoiceDialog
 import com.cla.clip.master.ui.navigation.DetailRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.navigation.SearchRoute
@@ -91,12 +91,11 @@ fun FoldedClipListPage(
                 )
             }
 
-            DeleteDialog(
+            ClipDeleteChoiceDialog(
                 clip = deleteClip,
                 onDismiss = { deleteClip = null },
-                onConfirmDelete = { clip ->
-                    viewModel.deleteClip(clip)
-                }
+                onMoveToRecycleBin = viewModel::deleteClip,
+                onDeletePermanently = viewModel::deleteClipPermanently
             )
         }
     }

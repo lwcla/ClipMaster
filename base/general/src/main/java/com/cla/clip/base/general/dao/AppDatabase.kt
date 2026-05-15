@@ -21,7 +21,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ImageExtractBatchData::class,
         ImageExtractItemData::class
     ],
-    version = 6, // 版本6：剪贴记录增加折叠状态，普通列表/搜索默认隐藏折叠数据。
+    version = 7, // 版本7：剪贴记录增加回收站删除时间，普通范围默认隐藏回收站数据。
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
@@ -70,6 +70,20 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `clips` ADD COLUMN `is_folded` INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_clips_is_folded` ON `clips` (`is_folded`)")
+            }
+        }
+
+        /**
+         * 版本 6 -> 7 手动迁移。
+         *
+         * 回收站使用 `deleted_at` 软删除字段表达删除时间；旧数据升级后全部保持正常可见，因此默认值为 0。
+         * 同时补充单列和组合索引，分别服务回收站分页、普通/折叠范围过滤和数量统计。
+         */
+        val MIGRATION_6_7: Migration = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `clips` ADD COLUMN `deleted_at` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_clips_deleted_at` ON `clips` (`deleted_at`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_clips_deleted_at_is_folded` ON `clips` (`deleted_at`, `is_folded`)")
             }
         }
     }

@@ -40,12 +40,23 @@ interface ClipRepository {
      */
     suspend fun addNewClip(captureEntity: ClipCaptureEntity): Long
 
-    /**
-     * 删除一个剪贴板内容
-     *
-     * @param clip
-     */
+    /** 将一个剪贴板内容移入回收站。 */
     suspend fun deleteClip(clip: ClipShowEntity): Boolean
+
+    /** 将指定剪贴记录移入回收站；同一批次使用统一删除时间，保证回收站排序稳定。 */
+    suspend fun moveClipsToRecycleBin(ids: Set<Long>): Int
+
+    /** 永久删除单条剪贴记录，不进入回收站。 */
+    suspend fun deleteClipPermanently(clip: ClipShowEntity): Boolean
+
+    /** 永久删除指定剪贴记录；调用方可传入正常数据或回收站数据 id，已不存在的 id 会被忽略。 */
+    suspend fun deleteClipsPermanently(ids: Set<Long>): Int
+
+    /** 从回收站恢复指定剪贴记录；只清除删除时间，不改变折叠、置顶和原始时间。 */
+    suspend fun restoreClipsFromRecycleBin(ids: Set<Long>): Int
+
+    /** 分页加载回收站剪贴记录，排序为删除时间倒序。 */
+    fun loadRecycleBinClips(): PagingSource<Int, ClipDetail>
 
     /** 更新置顶状态 */
     suspend fun updatePinStatus(clipId: Long, isPinned: Boolean)
@@ -64,6 +75,15 @@ interface ClipRepository {
 
     /** 观察折叠记录数量，供入口展示；实现层应使用轻量 COUNT 查询。 */
     fun observeFoldedClipCount(): Flow<Int>
+
+    /** 观察回收站记录数量，供“我的”入口展示；实现层应使用轻量 COUNT 查询。 */
+    fun observeRecycleBinCount(): Flow<Int>
+
+    /** 永久清空回收站，返回实际删除的记录数。 */
+    suspend fun clearRecycleBinPermanently(): Int
+
+    /** 按保留天数清理过期回收站记录；days 按滚动 24 小时窗口计算。 */
+    suspend fun cleanupExpiredRecycleBinClips(days: Int): Int
 
     /** 清空所有剪贴板数据。 */
     suspend fun clearAll()

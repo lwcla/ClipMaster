@@ -1,6 +1,7 @@
 package com.cla.clip.master.ui.dialog
 
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -9,9 +10,58 @@ import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.utils.showName
 
 /**
- * 剪贴板记录删除确认弹窗。
+ * 剪贴删除选择弹窗。
  *
- * `clip` 为空时不展示弹窗；确认删除前会先关闭弹窗，再把具体记录交给调用方删除，避免删除过程中 UI 悬挂在旧记录上。
+ * 其他剪贴页面删除时统一复用该组件，避免“移入回收站 / 彻底删除 / 不可恢复提示”的文案和危险按钮样式分叉。
+ */
+@Composable
+fun ClipDeleteChoiceDialog(
+    clip: ClipShowEntity?,
+    onDismiss: () -> Unit,
+    onMoveToRecycleBin: (ClipShowEntity) -> Unit,
+    onDeletePermanently: (ClipShowEntity) -> Unit,
+) {
+    if (clip == null) {
+        return
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(com.cla.clip.base.general.R.string.base_general_delete_clip_title)) },
+        text = {
+            Text(
+                stringResource(
+                    com.cla.clip.base.general.R.string.base_general_delete_clip_choice_message,
+                    clip.content.showName
+                )
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onDismiss()
+                onMoveToRecycleBin(clip)
+            }) {
+                Text(stringResource(com.cla.clip.base.general.R.string.base_general_move_to_recycle_bin))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = {
+                onDismiss()
+                onDeletePermanently(clip)
+            }) {
+                Text(
+                    text = stringResource(com.cla.clip.base.general.R.string.base_general_delete_permanently),
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+    )
+}
+
+/**
+ * 兼容旧调用点的单动作删除弹窗。
+ *
+ * 新剪贴页面应优先使用 `ClipDeleteChoiceDialog`；该组件保留给尚未迁移或非回收站语义的简单确认场景。
  */
 @Composable
 fun DeleteDialog(

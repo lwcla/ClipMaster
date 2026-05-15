@@ -7,6 +7,7 @@ import com.cla.clip.base.general.BaseApplication
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.master.utils.ShizukuConnector
 import com.cla.clip.master.work.DownloadVideoWorker
+import com.cla.clip.master.work.RecycleBinCleanupScheduler
 import com.cla.clip.master.work.ShizukuWorkScheduler
 import dagger.Lazy
 import dagger.hilt.android.HiltAndroidApp
@@ -57,6 +58,8 @@ class App : BaseApplication(), Configuration.Provider {
 
             ShizukuWorkScheduler.schedulePeriodic(this)
             ShizukuWorkScheduler.checkNow(this)
+            RecycleBinCleanupScheduler.schedulePeriodic(this)
+            RecycleBinCleanupScheduler.cleanupNow(this)
 
             shizukuConnector.connect()
         }

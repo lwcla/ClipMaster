@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.HorizontalDivider
@@ -54,6 +55,7 @@ import com.cla.clip.base.general.utils.toPermissionSetting
 import com.cla.clip.master.entity.SettingSwitchItemUi
 import com.cla.clip.master.ui.navigation.DownloadHistoryRoute
 import com.cla.clip.master.ui.navigation.FoldedClipsRoute
+import com.cla.clip.master.ui.navigation.RecycleBinRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.theme.cardCornerShape
 import com.cla.clip.master.ui.widget.TopLevelTitleBar
@@ -71,6 +73,7 @@ fun MinePage(
     onNavigate: (route: Route) -> Unit
 ) {
     val foldedClipCount by mineVm.foldedClipCount.collectAsStateWithLifecycle()
+    val recycleBinCount by mineVm.recycleBinCount.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier
@@ -83,9 +86,34 @@ fun MinePage(
         ) {
             item { DownloadHistoryEntry(onNavigate = onNavigate) }
             item { FoldedClipsEntry(foldedClipCount = foldedClipCount, onNavigate = onNavigate) }
+            item { RecycleBinEntry(recycleBinCount = recycleBinCount, onNavigate = onNavigate) }
             item { Permission(mineVm = mineVm) }
         }
     }
+}
+
+/**
+ * 回收站入口。
+ *
+ * 数量来自轻量 COUNT Flow，入口只负责展示统计和导航，不加载回收站分页列表，避免“我的”页承担重型数据读取。
+ */
+@Composable
+private fun RecycleBinEntry(
+    recycleBinCount: Int,
+    onNavigate: (route: Route) -> Unit,
+) {
+    MineEntryCard(
+        icon = {
+            Icon(
+                imageVector = Icons.Default.DeleteOutline,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+        },
+        title = stringResource(com.cla.clip.base.general.R.string.base_general_recycle_bin),
+        description = stringResource(com.cla.clip.base.general.R.string.base_general_recycle_bin_entry_desc, recycleBinCount),
+        onClick = { onNavigate(RecycleBinRoute) }
+    )
 }
 
 /**

@@ -41,6 +41,8 @@ import kotlinx.coroutines.flow.Flow
         Index(value = ["content"]),
         Index(value = ["pinned_time"]),
         Index(value = ["is_folded"]),
+        Index(value = ["deleted_at"]),
+        Index(value = ["deleted_at", "is_folded"]),
         Index(value = ["link"]),
     ]
 )
@@ -64,6 +66,10 @@ data class ClipData(
     @ColumnInfo(name = "is_folded")
     /** 是否折叠隐藏；true 表示从普通列表和普通搜索移出，只在折叠数据页和折叠搜索中展示。 */
     val isFolded: Boolean = false,
+
+    @ColumnInfo(name = "deleted_at")
+    /** 进入回收站的时间戳，单位毫秒；0 表示正常数据，大于 0 表示仅在回收站中展示并等待还原或彻底删除。 */
+    val deletedAt: Long = 0,
 
     @ColumnInfo(name = "link")
     /** 从剪贴内容中提取出的首个可预览链接，可能为空；用于关联 LinkPreviewData 和展示提取入口。 */
@@ -113,12 +119,12 @@ interface ClipDao {
      * @return
      */
     @Transaction
-    @Query("SELECT * FROM clips WHERE content = :content AND source_app_package=:packageName LIMIT 1")
+    @Query("SELECT * FROM clips WHERE content = :content AND source_app_package=:packageName AND deleted_at = 0 LIMIT 1")
     suspend fun loadClipDetail(content: String, packageName: String): ClipDetail?
 
-    /** 根据id查询剪贴数据 */
+    /** 根据 id 查询正常剪贴数据；回收站数据不进入普通详情页，避免误展示删除和复制入口。 */
     @Transaction
-    @Query("SELECT * FROM clips WHERE id = :id LIMIT 1")
+    @Query("SELECT * FROM clips WHERE id = :id AND deleted_at = 0 LIMIT 1")
     suspend fun loadClipDetail(id: Long): ClipDetail?
 
     /**
@@ -128,7 +134,7 @@ interface ClipDao {
      * 避免 Repository 层为了重建 search_text 再发起多次查询。
      */
     @Transaction
-    @Query("SELECT * FROM clips WHERE link = :link")
+    @Query("SELECT * FROM clips WHERE link = :link AND deleted_at = 0")
     suspend fun loadClipDetailsByLink(link: String): List<ClipDetail>
 
     /**
@@ -153,6 +159,7 @@ interface ClipDao {
     JOIN clips_fts fts ON c.id = fts.rowid
     WHERE clips_fts MATCH :query
       AND c.is_folded = 0
+      AND c.deleted_at = 0
     ORDER BY 
       CASE 
         -- 1. 精确匹配
@@ -208,6 +215,7 @@ interface ClipDao {
       JOIN clips_fts fts ON c.id = fts.rowid
       WHERE clips_fts MATCH :query
         AND c.is_folded = :isFolded
+        AND c.deleted_at = 0
         AND (:startTime IS NULL OR c.timestamp >= :startTime)
         AND (:endTime IS NULL OR c.timestamp < :endTime)
         AND (:sourceAppPackageCount = 0 OR c.source_app_package IN (:sourceAppPackages))
@@ -215,6 +223,7 @@ interface ClipDao {
       SELECT c.* FROM clips c
       WHERE c.search_text LIKE '%' || :likeKeyword || '%'
         AND c.is_folded = :isFolded
+        AND c.deleted_at = 0
         AND (:startTime IS NULL OR c.timestamp >= :startTime)
         AND (:endTime IS NULL OR c.timestamp < :endTime)
         AND (:sourceAppPackageCount = 0 OR c.source_app_package IN (:sourceAppPackages))
@@ -256,6 +265,7 @@ interface ClipDao {
         """
         SELECT * FROM clips
         WHERE is_folded = :isFolded
+          AND deleted_at = 0
           AND (:startTime IS NULL OR timestamp >= :startTime)
           AND (:endTime IS NULL OR timestamp < :endTime)
           AND (:sourceAppPackageCount = 0 OR source_app_package IN (:sourceAppPackages))
@@ -286,6 +296,7 @@ interface ClipDao {
         """
         SELECT * FROM clips
         WHERE is_folded = :isFolded
+          AND deleted_at = 0
           AND search_text LIKE '%' || :keyword || '%'
           AND (:startTime IS NULL OR timestamp >= :startTime)
           AND (:endTime IS NULL OR timestamp < :endTime)
@@ -306,11 +317,47 @@ interface ClipDao {
     ): PagingSource<Int, ClipDetail>
 
     /**
-     * 删除一个具体的剪贴板条目。
-     * @param id 要删除的Clip id。
+     * 永久删除一个具体的剪贴板条目。
+     *
+     * 该方法只删除 `clips` 行，不级联清理来源 App 或链接预览缓存；这些缓存可能被其他剪贴记录复用。
      */
     @Query("DELETE FROM clips WHERE id = :id")
     suspend fun deleteClipById(id: Long): Int
+
+    /** 批量永久删除剪贴记录；Repository 负责分块调用，避免 SQLite 参数数量超限。 */
+    @Query("DELETE FROM clips WHERE id IN (:ids)")
+    suspend fun deleteClipsByIds(ids: List<Long>): Int
+
+    /** 将指定剪贴记录移入回收站；同一批次由 Repository 传入相同 deletedAt，保证排序稳定。 */
+    @Query("UPDATE clips SET deleted_at = :deletedAt WHERE id IN (:ids) AND deleted_at = 0")
+    suspend fun moveClipsToRecycleBin(ids: List<Long>, deletedAt: Long): Int
+
+    /** 从回收站恢复指定剪贴记录；只清除删除时间，不改变折叠、置顶、内容和原始时间。 */
+    @Query("UPDATE clips SET deleted_at = 0 WHERE id IN (:ids) AND deleted_at > 0")
+    suspend fun restoreClipsFromRecycleBin(ids: List<Long>): Int
+
+    /** 分页加载回收站数据，最近删除的记录优先展示，时间相同再按原剪贴时间倒序稳定排序。 */
+    @Transaction
+    @Query(
+        """
+        SELECT * FROM clips
+        WHERE deleted_at > 0
+        ORDER BY deleted_at DESC, timestamp DESC
+    """
+    )
+    fun loadRecycleBinClips(): PagingSource<Int, ClipDetail>
+
+    /** 轻量统计回收站记录数量，供“我的”入口展示，不通过分页列表统计。 */
+    @Query("SELECT COUNT(*) FROM clips WHERE deleted_at > 0")
+    fun observeRecycleBinCount(): Flow<Int>
+
+    /** 永久清空回收站；使用条件 SQL 直接删除，避免先加载全部 id。 */
+    @Query("DELETE FROM clips WHERE deleted_at > 0")
+    suspend fun clearRecycleBinPermanently(): Int
+
+    /** 删除超过保留窗口的回收站记录；cutoffMillis 由 Repository 按滚动时间窗口计算。 */
+    @Query("DELETE FROM clips WHERE deleted_at > 0 AND deleted_at < :cutoffMillis")
+    suspend fun cleanupExpiredRecycleBinClips(cutoffMillis: Long): Int
 
     /** 更新置顶状态 */
     @Query("UPDATE clips SET pinned_time = :pinnedTime WHERE id = :id")
@@ -338,6 +385,7 @@ interface ClipDao {
         """
         SELECT * FROM clips 
         WHERE is_folded = :isFolded
+          AND deleted_at = 0
         ORDER BY 
           CASE WHEN pinned_time > 0 THEN 1 ELSE 0 END DESC, 
           pinned_time DESC, 
@@ -347,7 +395,7 @@ interface ClipDao {
     fun loadClipsByFoldState(isFolded: Boolean): PagingSource<Int, ClipDetail>
 
     /** 轻量统计折叠记录数量，供“我的”入口展示，不通过加载分页列表统计。 */
-    @Query("SELECT COUNT(*) FROM clips WHERE is_folded = 1")
+    @Query("SELECT COUNT(*) FROM clips WHERE is_folded = 1 AND deleted_at = 0")
     fun observeFoldedClipCount(): Flow<Int>
 
     /**
@@ -358,16 +406,17 @@ interface ClipDao {
 
     /** 获取最新的一条剪贴板记录 */
     @Transaction
-    @Query("SELECT * FROM clips ORDER BY timestamp DESC LIMIT 1")
+    @Query("SELECT * FROM clips WHERE deleted_at = 0 ORDER BY timestamp DESC LIMIT 1")
     suspend fun getLatestClip(): ClipDetail?
 
-    /** 获取最新的一条剪贴板数据，用于剪贴采集去重；即使最新记录已折叠，重复复制同内容也不应再次保存。 */
+    /** 获取最新的一条正常剪贴板数据，用于剪贴采集去重；回收站数据不参与去重，重复复制应生成新的可见记录。 */
     @Query(
         """
     SELECT 
         content,
         source_app_package AS sourceAppPackage
     FROM clips
+    WHERE deleted_at = 0
     ORDER BY timestamp DESC
     LIMIT 1
     """

@@ -13,6 +13,7 @@ data class ClipShowEntity(
     val id: Long,
     val content: String,
     val timestamp: Long,
+    val deletedAt: Long,
     val formattedTime: String,
     val appName: String?,
     val appIconPath: String?,
@@ -37,6 +38,7 @@ fun ClipDetail.toUi(): ClipShowEntity {
         id = clip.id,
         content = clip.content,
         timestamp = clip.timestamp,
+        deletedAt = clip.deletedAt,
         formattedTime = timeStr,
         // 如果关联不到 App，显示默认名
         appName = app?.appName?.takeIf { it.isNotBlank() },

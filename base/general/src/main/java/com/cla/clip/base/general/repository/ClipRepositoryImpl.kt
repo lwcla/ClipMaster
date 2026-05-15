@@ -1,6 +1,8 @@
 package com.cla.clip.base.general.repository
 
 import androidx.paging.PagingSource
+import androidx.room.withTransaction
+import com.cla.clip.base.general.dao.AppDatabase
 import com.cla.clip.base.general.dao.ClipDao
 import com.cla.clip.base.general.dao.ClipData
 import com.cla.clip.base.general.dao.LinkPreviewDao
@@ -24,12 +26,22 @@ import javax.inject.Inject
  * 使用 @Inject constructor() 使Hilt能够创建这个类的实例。
  */
 class ClipRepositoryImpl @Inject constructor(
+    private val appDatabase: AppDatabase,
     private val clipDao: ClipDao,
     private val sourceAppDao: SourceAppDao,
     private val linkPreviewDao: LinkPreviewDao,
 ) : ClipRepository {
 
     companion object {
+        /** SQLite 单条语句可绑定参数数量有限，批量 id 操作按 500 分块，给 Room 生成 SQL 留出余量。 */
+        private const val ID_BATCH_SIZE = 500
+
+        /** 回收站保留天数的最小值，避免 0 或负数导致保存设置后立即清空全部数据。 */
+        private const val MIN_RETENTION_DAYS = 1
+
+        /** 回收站保留天数的最大值，防止异常输入换算毫秒时溢出或形成过大的业务承诺。 */
+        private const val MAX_RETENTION_DAYS = 3650
+
         /**
          * FTS 查询只保留字母和数字参与 MATCH。
          *
@@ -234,7 +246,46 @@ class ClipRepositoryImpl @Inject constructor(
     }
 
     override suspend fun deleteClip(clip: ClipShowEntity) = withContext(Dispatchers.IO) {
-        clipDao.deleteClipById(clip.id) > 0
+        moveClipsToRecycleBin(setOf(clip.id)) > 0
+    }
+
+    override suspend fun moveClipsToRecycleBin(ids: Set<Long>): Int = withContext(Dispatchers.IO) {
+        val normalizedIds = ids.filter { it > 0L }.distinct()
+        if (normalizedIds.isEmpty()) return@withContext 0
+        val deletedAt = System.currentTimeMillis()
+        appDatabase.withTransaction {
+            normalizedIds.chunked(ID_BATCH_SIZE).sumOf { chunk ->
+                clipDao.moveClipsToRecycleBin(chunk, deletedAt)
+            }
+        }
+    }
+
+    override suspend fun deleteClipPermanently(clip: ClipShowEntity) = withContext(Dispatchers.IO) {
+        deleteClipsPermanently(setOf(clip.id)) > 0
+    }
+
+    override suspend fun deleteClipsPermanently(ids: Set<Long>): Int = withContext(Dispatchers.IO) {
+        val normalizedIds = ids.filter { it > 0L }.distinct()
+        if (normalizedIds.isEmpty()) return@withContext 0
+        appDatabase.withTransaction {
+            normalizedIds.chunked(ID_BATCH_SIZE).sumOf { chunk ->
+                clipDao.deleteClipsByIds(chunk)
+            }
+        }
+    }
+
+    override suspend fun restoreClipsFromRecycleBin(ids: Set<Long>): Int = withContext(Dispatchers.IO) {
+        val normalizedIds = ids.filter { it > 0L }.distinct()
+        if (normalizedIds.isEmpty()) return@withContext 0
+        appDatabase.withTransaction {
+            normalizedIds.chunked(ID_BATCH_SIZE).sumOf { chunk ->
+                clipDao.restoreClipsFromRecycleBin(chunk)
+            }
+        }
+    }
+
+    override fun loadRecycleBinClips(): PagingSource<Int, ClipDetail> {
+        return clipDao.loadRecycleBinClips()
     }
 
     override suspend fun updatePinStatus(clipId: Long, isPinned: Boolean) {
@@ -258,6 +309,20 @@ class ClipRepositoryImpl @Inject constructor(
 
     override fun observeFoldedClipCount(): Flow<Int> {
         return clipDao.observeFoldedClipCount()
+    }
+
+    override fun observeRecycleBinCount(): Flow<Int> {
+        return clipDao.observeRecycleBinCount()
+    }
+
+    override suspend fun clearRecycleBinPermanently(): Int = withContext(Dispatchers.IO) {
+        clipDao.clearRecycleBinPermanently()
+    }
+
+    override suspend fun cleanupExpiredRecycleBinClips(days: Int): Int = withContext(Dispatchers.IO) {
+        val safeDays = days.coerceIn(MIN_RETENTION_DAYS, MAX_RETENTION_DAYS)
+        val cutoffMillis = System.currentTimeMillis() - safeDays * 24L * 60L * 60L * 1_000L
+        clipDao.cleanupExpiredRecycleBinClips(cutoffMillis)
     }
 
     override suspend fun clearAll() = withContext(Dispatchers.IO) {

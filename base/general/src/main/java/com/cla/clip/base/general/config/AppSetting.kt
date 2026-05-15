@@ -74,4 +74,27 @@ object AppSetting {
         set(value) {
             mmkv.putBoolean(KEY_PERMISSION_EXPANDED, value)
         }
+
+    /** 回收站默认保留天数，单位天；默认 30 天，和产品默认自动清理策略保持一致。 */
+    const val DEFAULT_RECYCLE_BIN_RETENTION_DAYS = 30
+
+    /** 回收站保留天数最小值，避免保存 0 或负数导致所有回收站数据立即过期。 */
+    const val MIN_RECYCLE_BIN_RETENTION_DAYS = 1
+
+    /** 回收站保留天数最大值，限制自定义输入范围，避免毫秒换算溢出或产生不合理承诺。 */
+    const val MAX_RECYCLE_BIN_RETENTION_DAYS = 3650
+
+    /** 回收站保留天数配置 key；值按滚动 24 小时窗口解释，不按自然日零点截断。 */
+    private const val KEY_RECYCLE_BIN_RETENTION_DAYS = "recycle_bin_retention_days"
+
+    /** 回收站保留天数；保存时会裁剪到 1 到 3650 天之间。 */
+    var recycleBinRetentionDays: Int
+        get() = mmkv.getInt(KEY_RECYCLE_BIN_RETENTION_DAYS, DEFAULT_RECYCLE_BIN_RETENTION_DAYS)
+            .coerceIn(MIN_RECYCLE_BIN_RETENTION_DAYS, MAX_RECYCLE_BIN_RETENTION_DAYS)
+        set(value) {
+            mmkv.putInt(
+                KEY_RECYCLE_BIN_RETENTION_DAYS,
+                value.coerceIn(MIN_RECYCLE_BIN_RETENTION_DAYS, MAX_RECYCLE_BIN_RETENTION_DAYS)
+            )
+        }
 }

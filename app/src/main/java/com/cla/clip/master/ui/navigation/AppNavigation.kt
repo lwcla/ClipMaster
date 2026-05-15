@@ -12,6 +12,7 @@ import com.cla.clip.master.ui.page.list.ClipListPage
 import com.cla.clip.master.ui.page.list.FoldedClipListPage
 import com.cla.clip.master.ui.page.main.MainPage
 import com.cla.clip.master.ui.page.mine.MinePage
+import com.cla.clip.master.ui.page.recycle.RecycleBinPage
 import com.cla.clip.master.ui.page.search.SearchPage
 import com.cla.clip.master.ui.page.video.VideoDownloadPage
 import com.cla.clip.master.ui.page.video.VideoExtractPage
@@ -125,6 +126,13 @@ fun AppNavigation(navController: NavHostController) {
             FoldedClipListPage(
                 onBack = onBack,
                 onNavigate = onNavigate
+            )
+        }
+
+        // 回收站
+        composable<RecycleBinRoute> {
+            RecycleBinPage(
+                onBack = onBack
             )
         }
 

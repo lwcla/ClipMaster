@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-列表页是首页底部 Tab 的默认一级页面，负责展示本地未折叠剪贴记录、进入搜索页、进入详情页，以及承接复制、删除、置顶/取消置顶和折叠等剪贴记录操作。当前列表页使用固定一级标题、Shizuku 状态提示、右下角搜索 FloatingActionButton，并通过共享 `ClipResultList` 渲染剪贴结果。
+列表页是首页底部 Tab 的默认一级页面，负责展示本地未折叠且未进入回收站的剪贴记录、进入搜索页、进入详情页，以及承接复制、删除、置顶/取消置顶和折叠等剪贴记录操作。当前列表页使用固定一级标题、Shizuku 状态提示、右下角搜索 FloatingActionButton，并通过共享 `ClipResultList` 渲染剪贴结果。
 
 本文件用于指导列表页页面结构、分页生命周期、普通列表数据范围、搜索入口、删除弹窗和首页 Tab 协作。`ClipResultList` 的卡片结构、按钮布局、侧滑方向、动画阈值、测量、关键词高亮和通用测试验证以 `docs/clip_result_list_plan.md` 为主文档；本文只记录列表页如何使用共享组件以及普通列表的页面级差异。
 
@@ -12,6 +12,7 @@
 
 - 首页列表 Tab 展示剪贴记录的主浏览入口。
 - 普通列表只展示未折叠剪贴记录，折叠数据从“我的 > 折叠数据”入口管理。
+- 普通列表不展示回收站数据，删除弹窗提供移入回收站和彻底删除两个动作，完整方案见 `docs/recycle_bin_plan.md`。
 - 使用生命周期感知分页收集，页面可见时工作，离开页面时停止不必要收集。
 - 通过共享 `ClipResultList` 展示剪贴结果，组件细节由 `docs/clip_result_list_plan.md` 维护。
 - 保留稳定的列表滚动体验：切回列表保持位置，重复点击列表 Tab 回到顶部，取消置顶后不跟随被移动 item 跳转。
@@ -72,7 +73,7 @@
 
 - 详情：`onClick` 跳转 `DetailRoute(clip.id)`。
 - 复制：`onCopy` 委托 ViewModel 写入系统剪贴板。
-- 删除：`onDelete` 先记录 `deleteClip` 并显示 `DeleteDialog`，确认后调用 `viewModel.deleteClip(clip)`。
+- 删除：`onDelete` 先记录 `deleteClip` 并显示 `ClipDeleteChoiceDialog`；移入回收站调用 `viewModel.deleteClip(clip)`，彻底删除调用 `viewModel.deleteClipPermanently(clip)`。
 - 置顶/取消置顶：`onPinToggle` 调用 `viewModel.updatePinStatus(clip, !clip.isPinned)`。
 - 折叠：`onSwipePastAction` 调用 `viewModel.updateFoldStatus(clip, true)`。
 - 长按：当前传空回调，不展示长按底部弹窗。
@@ -136,3 +137,4 @@
 - 2026-05-15：将剪贴 item 菜单、折叠和取消折叠整体改为右滑，左滑恢复为列表页切到“我的”的 Pager 手势；原因是 item 左滑和页面左滑冲突，右滑更适合承载单条数据操作。
 - 2026-05-15：曾将本文临时作为 `ClipResultList` 共享结果 item 的主方案入口；原因是搜索页和折叠页都会复用同一套 item，当时需要先把共享交互细节从页面文档中收拢。
 - 2026-05-15：将 `ClipResultList` 共享 item 细节拆分到 `docs/clip_result_list_plan.md`；原因是列表页文档应只描述列表页面职责，组件级卡片、侧滑、动画和测量规则由独立组件文档统一维护。
+- 2026-05-15：补充回收站删除语义；原因是列表页删除不再只有直接删除，需要通过统一删除选择弹窗在移入回收站和彻底删除之间选择。

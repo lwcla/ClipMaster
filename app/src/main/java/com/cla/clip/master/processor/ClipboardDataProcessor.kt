@@ -40,6 +40,9 @@ interface ClipboardDataProcessor {
      */
     fun deleteClip(clip: ClipShowEntity, sendEvent: Boolean = false)
 
+    /** 彻底删除剪贴 item，不进入回收站。 */
+    fun deleteClipPermanently(clip: ClipShowEntity, sendEvent: Boolean = false)
+
     /** 更新置顶状态；true 会写入当前时间，false 会清零置顶时间。 */
     fun updatePinStatus(clip: ClipShowEntity, isPinned: Boolean)
 
@@ -92,8 +95,24 @@ class DefaultClipboardDataProcessor @Inject constructor(
 
     override fun deleteClip(clip: ClipShowEntity, sendEvent: Boolean) {
         scope.launch(Dispatchers.IO) {
-            if (clipRepository.get().deleteClip(clip) && sendEvent) {
-                _deleteSuccessFlow.emit(clip.id)
+            val success = clipRepository.get().deleteClip(clip)
+            if (success) {
+                if (sendEvent) {
+                    _deleteSuccessFlow.emit(clip.id)
+                }
+                appContext.toast(appContext.getString(R.string.base_general_moved_to_recycle_bin))
+            }
+        }
+    }
+
+    override fun deleteClipPermanently(clip: ClipShowEntity, sendEvent: Boolean) {
+        scope.launch(Dispatchers.IO) {
+            val success = clipRepository.get().deleteClipPermanently(clip)
+            if (success) {
+                if (sendEvent) {
+                    _deleteSuccessFlow.emit(clip.id)
+                }
+                appContext.toast(appContext.getString(R.string.base_general_deleted_permanently))
             }
         }
     }

@@ -80,6 +80,10 @@ data object DownloadHistoryRoute : Route()
 @Serializable
 data object FoldedClipsRoute : Route()
 
+/** 回收站页 */
+@Serializable
+data object RecycleBinRoute : Route()
+
 /** 我的页面 */
 @Serializable
 data object MineRoute : Route()

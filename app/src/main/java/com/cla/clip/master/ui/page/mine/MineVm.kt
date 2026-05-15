@@ -87,6 +87,19 @@ class MineVm @Inject constructor(
             0
         )
 
+    /**
+     * 回收站记录数量。
+     *
+     * 与折叠数量一样使用轻量 COUNT Flow，只为“我的”入口展示数字，不加载回收站分页数据。
+     */
+    val recycleBinCount = clipRepository.get()
+        .observeRecycleBinCount()
+        .stateIn(
+            CoroutineScope(viewModelScope.coroutineContext + Dispatchers.IO),
+            SharingStarted.WhileSubscribed(5_000),
+            0
+        )
+
     init {
         // 初始化时读取一次系统权限状态，确保页面首次展示的开关状态准确。
         refreshPermissionStatus()
