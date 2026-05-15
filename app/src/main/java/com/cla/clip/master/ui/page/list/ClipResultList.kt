@@ -199,8 +199,10 @@ fun ClipCard(
     val lineColor = appColor.copy(alpha = 0.3f)
     val density = LocalDensity.current
     val actionWidth = 64.dp
-    val actionDividerWidth = 1.dp
-    val actionAreaWidth = actionWidth * 2 + actionDividerWidth
+    // 分割线只承担视觉分区，不作为主要点击边界；略细于 1dp 并上下内缩，避免把卡片切得过硬。
+    val dividerWidth = 0.5.dp
+    val dividerVerticalPadding = 10.dp
+    val actionAreaWidth = actionWidth * 2 + dividerWidth
     val maxOffsetPx = with(density) { actionAreaWidth.toPx() }
     // 侧滑偏移按 clip.id 保存，避免 LazyColumn 复用 item 时把上一条记录的展开状态带给其他记录。
     var offsetPx by rememberSaveable(clip.id) { mutableStateOf(0f) }
@@ -240,8 +242,7 @@ fun ClipCard(
                     modifier = Modifier
                         .width(actionWidth)
                         .fillMaxHeight(),
-                    backgroundColor = MaterialTheme.colorScheme.tertiaryContainer,
-                    iconTint = MaterialTheme.colorScheme.onTertiaryContainer,
+                    iconTint = MaterialTheme.colorScheme.tertiary,
                     iconContentDescription = pinDescription,
                     painterRes = if (clip.isPinned) {
                         R.drawable.host_icon_unpinned
@@ -256,8 +257,9 @@ fun ClipCard(
 
                 Box(
                     modifier = Modifier
-                        .width(actionDividerWidth)
+                        .width(dividerWidth)
                         .fillMaxHeight()
+                        .padding(vertical = dividerVerticalPadding)
                         .background(MaterialTheme.colorScheme.outlineVariant)
                 )
 
@@ -265,8 +267,7 @@ fun ClipCard(
                     modifier = Modifier
                         .width(actionWidth)
                         .fillMaxHeight(),
-                    backgroundColor = MaterialTheme.colorScheme.errorContainer,
-                    iconTint = MaterialTheme.colorScheme.onErrorContainer,
+                    iconTint = MaterialTheme.colorScheme.error,
                     iconContentDescription = deleteDescription,
                     painterRes = R.drawable.host_icon_delete,
                     onClick = {
@@ -351,8 +352,9 @@ fun ClipCard(
 
                 Box(
                     modifier = Modifier
-                        .width(1.dp)
+                        .width(dividerWidth)
                         .fillMaxHeight()
+                        .padding(vertical = dividerVerticalPadding)
                         .background(lineColor)
                 )
 
@@ -545,21 +547,19 @@ private fun LinkPreviewContent(clip: ClipShowEntity, highlightQuery: String?) {
 /**
  * 侧滑露出的单个操作按钮。
  *
- * 按钮高度由外层 item 决定，图标始终放在点击区域中心；背景色由调用方传入，
- * 用于清晰区分置顶和删除两个相邻操作区域。
+ * 按钮高度由外层 item 决定，图标始终放在点击区域中心；点击区域保持透明，
+ * 让侧滑操作区沿用卡片背后的整体底色。
  */
 @Composable
 private fun SwipeActionButton(
     painterRes: Int,
     iconContentDescription: String,
-    backgroundColor: Color,
     iconTint: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(
         modifier = modifier
-            .background(backgroundColor)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
