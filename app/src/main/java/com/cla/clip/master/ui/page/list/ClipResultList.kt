@@ -109,11 +109,13 @@ fun ClipResultList(
     onPinToggle: (ClipShowEntity) -> Unit,
     onDelete: (ClipShowEntity) -> Unit,
     onCopy: (ClipShowEntity) -> Unit,
+    onSwipePastAction: (ClipShowEntity) -> Unit,
     onClick: (ClipShowEntity) -> Unit,
     onLongClick: (ClipShowEntity) -> Unit,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(10.dp),
     highlightQuery: String? = null,
+    swipePastActionText: String? = null,
 ) {
     // 取消置顶的排序变化由数据库/Paging 异步返回，先保存待恢复视口，再在快照确认后执行恢复。
     var pendingPinScrollRestore by remember { mutableStateOf<PendingPinScrollRestore?>(null) }
@@ -173,8 +175,10 @@ fun ClipResultList(
                                 onPinToggle = onPinToggle,
                                 onDelete = onDelete,
                                 onCopy = onCopy,
+                                onSwipePastAction = onSwipePastAction,
                                 onClick = onClick,
                                 onLongClick = onLongClick,
+                                swipePastActionText = swipePastActionText,
                                 onKeepCurrentScrollPosition = {
                                     pendingPinScrollRestore = PendingPinScrollRestore(
                                         index = listState.firstVisibleItemIndex,
@@ -237,11 +241,13 @@ fun ClipCard(
     onPinToggle: (ClipShowEntity) -> Unit,
     onDelete: (ClipShowEntity) -> Unit,
     onCopy: (ClipShowEntity) -> Unit,
+    onSwipePastAction: (ClipShowEntity) -> Unit,
     onClick: (ClipShowEntity) -> Unit,
     onLongClick: (ClipShowEntity) -> Unit,
     onKeepCurrentScrollPosition: () -> Unit,
     modifier: Modifier = Modifier,
     highlightQuery: String? = null,
+    swipePastActionText: String? = null,
 ) {
     val appColor = clip.appColor ?: MaterialTheme.colorScheme.outlineVariant
     val borderColor = appColor.copy(alpha = 0.3f)
@@ -253,7 +259,10 @@ fun ClipCard(
     val dividerWidth = 0.5.dp
     val dividerHeight = actionIconSize + 10.dp
     val actionAreaWidth = actionWidth * 2 + dividerWidth
+    val swipePastWidth = 96.dp
     val maxOffsetPx = with(density) { actionAreaWidth.toPx() }
+    val maxSwipePastOffsetPx = with(density) { (actionAreaWidth + swipePastWidth).toPx() }
+    val swipePastTriggerPx = with(density) { (actionAreaWidth + swipePastWidth * 0.65f).toPx() }
     // 侧滑偏移按 clip.id 保存，避免 LazyColumn 复用 item 时把上一条记录的展开状态带给其他记录。
     var offsetPx by rememberSaveable(clip.id) { mutableStateOf(0f) }
     val offsetDp = with(density) { offsetPx.toDp() }
@@ -333,19 +342,49 @@ fun ClipCard(
             }
         }
 
+        if (swipePastActionText != null) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .align(Alignment.CenterEnd)
+                    .padding(end = actionAreaWidth),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                val progress = ((offsetPx - maxOffsetPx) / (swipePastTriggerPx - maxOffsetPx))
+                    .coerceIn(0f, 1f)
+                Text(
+                    text = swipePastActionText,
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp)
+                        .alpha(progress),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
         ElevatedCard(
             shape = cardShape,
             modifier = Modifier
                 .fillMaxWidth()
                 .offset(x = -offsetDp)
-                .pointerInput(clip.id, maxOffsetPx) {
+                .pointerInput(clip.id, maxOffsetPx, maxSwipePastOffsetPx, swipePastTriggerPx, swipePastActionText) {
                     detectHorizontalDragGestures(
                         onDragEnd = {
-                            // 松手时按操作区一半作为吸附阈值，短距离误滑会自动回收，明显左滑会保持展开。
-                            offsetPx = if (offsetPx > maxOffsetPx / 2f) {
-                                maxOffsetPx
+                            // 第二段继续左滑只在松手且超过阈值时触发，避免用户只是查看菜单时误折叠或误取消折叠。
+                            val shouldRunSwipePastAction = swipePastActionText != null && offsetPx >= swipePastTriggerPx
+                            if (shouldRunSwipePastAction) {
+                                offsetPx = 0f
+                                onSwipePastAction(clip)
                             } else {
-                                0f
+                                // 松手时按操作区一半作为吸附阈值，短距离误滑会自动回收，明显左滑会保持展开。
+                                offsetPx = if (offsetPx > maxOffsetPx / 2f) {
+                                    maxOffsetPx
+                                } else {
+                                    0f
+                                }
                             }
                         },
                         onDragCancel = {
@@ -358,8 +397,9 @@ fun ClipCard(
                         },
                         onHorizontalDrag = { change, dragAmount ->
                             val nextOffset = offsetPx - dragAmount
-                            // 只允许向左展开、向右收回，最大偏移限制为右侧操作区宽度，避免拖出额外空白。
-                            offsetPx = nextOffset.coerceIn(0f, maxOffsetPx)
+                            // 只允许向左展开、向右收回；存在继续滑动动作时允许进入第二段提示区，但仍限制最大距离避免 item 被拖离过远。
+                            val dragMaxOffset = if (swipePastActionText == null) maxOffsetPx else maxSwipePastOffsetPx
+                            offsetPx = nextOffset.coerceIn(0f, dragMaxOffset)
                             if (offsetPx > 0f) {
                                 change.consume()
                             }
@@ -772,6 +812,7 @@ private fun ClipCardPreview() {
         appIconPath = "https://img2.baidu.com/it/u=3546907450,5411894&fm=253&fmt=auto&app=120&f=JPEG?w=500&h=500",
         appColor = MaterialTheme.colorScheme.error,
         isPinned = false,
+        isFolded = false,
         link = "https://www.wanandroid.com/",
         linkImgUrl = "https://img0.baidu.com/it/u=2280054277,2128244139&fm=253&fmt=auto&app=138&f=JPEG?w=973&h=304",
         linkTitle = "这是链接的标题这是链接的标题这是链接的标题"
@@ -783,8 +824,10 @@ private fun ClipCardPreview() {
         onPinToggle = {},
         onDelete = {},
         onCopy = {},
+        onSwipePastAction = {},
         onClick = {},
         onLongClick = {},
+        swipePastActionText = "继续滑动折叠数据",
         onKeepCurrentScrollPosition = {}
     )
 }

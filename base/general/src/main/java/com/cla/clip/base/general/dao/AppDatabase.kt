@@ -21,7 +21,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ImageExtractBatchData::class,
         ImageExtractItemData::class
     ],
-    version = 5, // 版本5：下载记录允许同一 video_url 生成多条任务，去掉唯一索引。
+    version = 6, // 版本6：剪贴记录增加折叠状态，普通列表/搜索默认隐藏折叠数据。
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
@@ -57,6 +57,19 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("DROP INDEX IF EXISTS `index_download_tasks_video_url`")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_download_tasks_video_url` ON `download_tasks` (`video_url`)")
+            }
+        }
+
+        /**
+         * 版本 5 -> 6 手动迁移。
+         *
+         * 折叠状态是新增的可见性字段，旧用户升级后所有历史剪贴记录都应继续出现在普通列表和普通搜索中；
+         * 因此新增列使用 NOT NULL DEFAULT 0，并补充索引用于普通/折叠范围过滤。
+         */
+        val MIGRATION_5_6: Migration = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `clips` ADD COLUMN `is_folded` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_clips_is_folded` ON `clips` (`is_folded`)")
             }
         }
     }

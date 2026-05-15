@@ -7,6 +7,7 @@ import androidx.paging.PagingConfig
 import androidx.paging.cachedIn
 import androidx.paging.map
 import com.cla.clip.base.general.dao.SourceAppData
+import com.cla.clip.base.general.entity.ClipVisibilityScope
 import com.cla.clip.base.general.entity.toUi
 import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.master.processor.ClipboardDataProcessor
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -82,6 +84,14 @@ class SearchViewModel @Inject constructor(
     private val _filterState = MutableStateFlow(SearchFilterState())
 
     /**
+     * 当前搜索页的数据范围。
+     *
+     * 同一个 SearchPage 会被普通搜索和折叠搜索复用；范围由导航路由在页面创建后写入，
+     * 查询流会在路由写入范围后才创建 Pager，并随范围变化重新创建，保证折叠搜索首帧也不会读取普通数据。
+     */
+    private val visibilityScope = MutableStateFlow<ClipVisibilityScope?>(null)
+
+    /**
      * 搜索页当前筛选条件。
      *
      * 暴露只读 StateFlow 是为了让 UI 能响应用户输入，同时防止页面层直接改内部状态造成查询流不同步。
@@ -106,7 +116,7 @@ class SearchViewModel @Inject constructor(
      *
      * 每次筛选条件变化都会创建新的 Pager，Paging 会丢弃旧查询并加载新条件下的数据。
      */
-    val pagedClips = _filterState.flatMapLatest { state ->
+    val pagedClips = combine(_filterState, visibilityScope.filterNotNull()) { state, scope -> state to scope }.flatMapLatest { (state, scope) ->
         val timeRange = state.timeFilter.toTimeRange()
         Pager(
             config = PagingConfig(
@@ -119,7 +129,8 @@ class SearchViewModel @Inject constructor(
                 userInput = state.query,
                 startTime = timeRange.startTime,
                 endTime = timeRange.endTime,
-                sourceAppPackages = state.sourceAppPackages
+                sourceAppPackages = state.sourceAppPackages,
+                visibilityScope = scope
             )
         }.flow.map { pagingData ->
             pagingData.map { clipDetail -> clipDetail.toUi() }
@@ -157,6 +168,15 @@ class SearchViewModel @Inject constructor(
     /** 更新搜索关键词，输入变化后会自动触发新的分页查询。 */
     fun updateQuery(query: String) {
         _filterState.update { it.copy(query = query) }
+    }
+
+    /**
+     * 更新当前搜索范围。
+     *
+     * 页面只在路由范围变化时调用；如果范围未变，StateFlow 不会触发无意义的分页重建。
+     */
+    fun updateVisibilityScope(scope: ClipVisibilityScope) {
+        visibilityScope.update { scope }
     }
 
     /** 更新时间筛选条件。 */

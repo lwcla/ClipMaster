@@ -18,6 +18,7 @@ data class ClipShowEntity(
     val appIconPath: String?,
     val appColor: Color?,
     val isPinned: Boolean,
+    val isFolded: Boolean,
     val linkImgUrl: String?,
     val link: String?,
     val linkTitle: String?,
@@ -42,6 +43,7 @@ fun ClipDetail.toUi(): ClipShowEntity {
         appIconPath = app?.iconPath,
         appColor = appColor?.let { Color(it.red, it.green, it.blue) },
         isPinned = clip.pinnedTime != 0L,
+        isFolded = clip.isFolded,
         link = linkPreview?.link,
         linkImgUrl = linkPreview?.imageUrl,
         linkTitle = linkPreview?.title

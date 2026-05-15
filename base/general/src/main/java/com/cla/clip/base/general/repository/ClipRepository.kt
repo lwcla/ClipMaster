@@ -7,6 +7,7 @@ import com.cla.clip.base.general.dao.data.ClipDetail
 import com.cla.clip.base.general.dao.data.LastClipData
 import com.cla.clip.base.general.entity.ClipCaptureEntity
 import com.cla.clip.base.general.entity.ClipShowEntity
+import com.cla.clip.base.general.entity.ClipVisibilityScope
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -31,6 +32,7 @@ interface ClipRepository {
         startTime: Long?,
         endTime: Long?,
         sourceAppPackages: Set<String>,
+        visibilityScope: ClipVisibilityScope,
     ): PagingSource<Int, ClipDetail>
 
     /**
@@ -48,6 +50,9 @@ interface ClipRepository {
     /** 更新置顶状态 */
     suspend fun updatePinStatus(clipId: Long, isPinned: Boolean)
 
+    /** 更新折叠状态；折叠数据会从普通列表/普通搜索隐藏，只在折叠范围展示。 */
+    suspend fun updateFoldStatus(clipId: Long, isFolded: Boolean)
+
     /** 更新时间戳 */
     suspend fun updateTimestamp(clipId: Long)
 
@@ -55,7 +60,10 @@ interface ClipRepository {
      * 加载所有的剪贴板数据，供分页使用。这个方法会被 PagingSource 调用，返回一个 PagingSource 对象。
      * 排序规则：置顶在前，其余按时间倒序。
      */
-    fun loadAllClips(): PagingSource<Int, ClipDetail>
+    fun loadClips(visibilityScope: ClipVisibilityScope): PagingSource<Int, ClipDetail>
+
+    /** 观察折叠记录数量，供入口展示；实现层应使用轻量 COUNT 查询。 */
+    fun observeFoldedClipCount(): Flow<Int>
 
     /** 清空所有剪贴板数据。 */
     suspend fun clearAll()

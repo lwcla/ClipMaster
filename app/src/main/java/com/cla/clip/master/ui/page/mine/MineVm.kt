@@ -5,6 +5,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.base.general.utils.hasNotificationPermission
 import com.cla.clip.base.general.utils.hasNotificationRuntimePermission
 import com.cla.clip.base.general.utils.hasOverlayPermission
@@ -12,10 +14,15 @@ import com.cla.clip.base.general.utils.logD
 import com.cla.clip.master.entity.SettingSwitchItemUi
 import com.cla.clip.shizuku.ShizukuStatus
 import com.cla.clip.shizuku.ShizukuUtils
+import dagger.Lazy
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
 /**
@@ -28,6 +35,9 @@ import javax.inject.Inject
 class MineVm @Inject constructor(
     /** 应用级 Context，仅用于读取系统权限状态，不持有页面实例。 */
     @param:ApplicationContext private val appContext: Context,
+
+    /** 剪贴数据仓库使用 Lazy，避免我的页只查看权限时提前创建数据库依赖。 */
+    private val clipRepository: Lazy<ClipRepository>,
 ) : ViewModel() {
 
     companion object {
@@ -63,6 +73,19 @@ class MineVm @Inject constructor(
 
     /** 页面订阅的权限动作流。 */
     val permissionActions = _permissionActions.asSharedFlow()
+
+    /**
+     * 折叠记录数量。
+     *
+     * “我的”入口只需要显示数量，使用 DAO 的 COUNT Flow，避免为了统计加载折叠分页列表。
+     */
+    val foldedClipCount = clipRepository.get()
+        .observeFoldedClipCount()
+        .stateIn(
+            CoroutineScope(viewModelScope.coroutineContext + Dispatchers.IO),
+            SharingStarted.WhileSubscribed(5_000),
+            0
+        )
 
     init {
         // 初始化时读取一次系统权限状态，确保页面首次展示的开关状态准确。

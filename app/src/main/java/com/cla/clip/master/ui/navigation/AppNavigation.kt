@@ -9,6 +9,7 @@ import com.cla.clip.master.ui.page.detail.DetailPage
 import com.cla.clip.master.ui.page.download.DownloadHistoryPage
 import com.cla.clip.master.ui.page.image.ImageExtractPage
 import com.cla.clip.master.ui.page.list.ClipListPage
+import com.cla.clip.master.ui.page.list.FoldedClipListPage
 import com.cla.clip.master.ui.page.main.MainPage
 import com.cla.clip.master.ui.page.mine.MinePage
 import com.cla.clip.master.ui.page.search.SearchPage
@@ -53,8 +54,10 @@ fun AppNavigation(navController: NavHostController) {
         }
 
         // 剪贴搜索页
-        composable<SearchRoute> {
+        composable<SearchRoute> { backStackEntry ->
+            val route = backStackEntry.toRoute<SearchRoute>()
             SearchPage(
+                scope = route.scope,
                 onBack = onBack,
                 onNavigate = onNavigate
             )
@@ -112,6 +115,14 @@ fun AppNavigation(navController: NavHostController) {
         // 下载记录页
         composable<DownloadHistoryRoute> {
             DownloadHistoryPage(
+                onBack = onBack,
+                onNavigate = onNavigate
+            )
+        }
+
+        // 折叠数据页
+        composable<FoldedClipsRoute> {
+            FoldedClipListPage(
                 onBack = onBack,
                 onNavigate = onNavigate
             )

@@ -6,6 +6,7 @@ import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.cachedIn
 import androidx.paging.map
+import com.cla.clip.base.general.entity.ClipVisibilityScope
 import com.cla.clip.base.general.entity.toUi
 import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.master.utils.ShizukuConnector
@@ -51,7 +52,7 @@ class ClipListModel @Inject constructor(
             enablePlaceholders = false
         )
     ) {
-        clipRepository.get().loadAllClips()
+        clipRepository.get().loadClips(ClipVisibilityScope.VisibleOnly)
     }.flow.map { it.map { data -> data.toUi() } }.cachedIn(
         CoroutineScope(viewModelScope.coroutineContext + Dispatchers.IO)
     )

@@ -29,6 +29,13 @@
     <string name="base_general_selected">已选择</string>
     <string name="base_general_clip_list_empty">还没有数据哦，快去复制点什么吧！</string>
     <string name="base_general_search_result_empty">没有找到相关内容</string>
+    <string name="base_general_folded_clips">折叠数据</string>
+    <string name="base_general_folded_clips_entry_desc">已折叠 %1$d 条剪贴数据</string>
+    <string name="base_general_folded_clip_list_empty">还没有折叠数据</string>
+    <string name="base_general_search_folded_clips">搜索折叠数据</string>
+    <string name="base_general_folded_search_result_empty">没有找到相关折叠数据</string>
+    <string name="base_general_continue_swipe_to_fold_clip">继续滑动折叠数据</string>
+    <string name="base_general_continue_swipe_to_unfold_clip">继续滑动取消折叠</string>
     <string name="base_general_data_load_failed_retry">数据加载出错，点击重试！</string>
     <string name="base_general_mine">我的</string>
     <string name="base_general_mine_tab">我的页</string>

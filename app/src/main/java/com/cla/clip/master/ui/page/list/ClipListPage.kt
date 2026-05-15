@@ -95,6 +95,8 @@ fun ClipListPage(
                 onPinToggle = { viewModel.updatePinStatus(it, !it.isPinned) },
                 onDelete = { clip -> deleteClip = clip },
                 onCopy = { viewModel.copyToClipboard(it) },
+                onSwipePastAction = { clip -> viewModel.updateFoldStatus(clip, true) },
+                swipePastActionText = stringResource(com.cla.clip.base.general.R.string.base_general_continue_swipe_to_fold_clip),
                 onClick = { onNavigate(DetailRoute(it.id)) },
                 onLongClick = { clip ->
                     // 长按时，设置选中的 Clip，触发 BottomSheet 显示
@@ -103,7 +105,7 @@ fun ClipListPage(
             )
 
             FloatingActionButton(
-                onClick = { onNavigate(SearchRoute) },
+                onClick = { onNavigate(SearchRoute()) },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(24.dp)

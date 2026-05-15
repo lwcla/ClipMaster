@@ -10,6 +10,7 @@ import com.cla.clip.base.general.dao.SourceAppData
 import com.cla.clip.base.general.dao.data.ClipDetail
 import com.cla.clip.base.general.entity.ClipCaptureEntity
 import com.cla.clip.base.general.entity.ClipShowEntity
+import com.cla.clip.base.general.entity.ClipVisibilityScope
 import com.cla.clip.base.general.entity.toUi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -69,16 +70,19 @@ class ClipRepositoryImpl @Inject constructor(
         startTime: Long?,
         endTime: Long?,
         sourceAppPackages: Set<String>,
+        visibilityScope: ClipVisibilityScope,
     ): PagingSource<Int, ClipDetail> {
         val trimmed = userInput.trim()
         val sourcePackagesForQuery = buildSourcePackagesForQuery(sourceAppPackages)
         val sourceAppPackageCount = sourceAppPackages.count { it.isNotBlank() }
+        val isFolded = visibilityScope.toFoldState()
         if (trimmed.isBlank()) {
             return clipDao.searchClipsByFilters(
                 startTime = startTime,
                 endTime = endTime,
                 sourceAppPackageCount = sourceAppPackageCount,
-                sourceAppPackages = sourcePackagesForQuery
+                sourceAppPackages = sourcePackagesForQuery,
+                isFolded = isFolded
             )
         }
 
@@ -89,7 +93,8 @@ class ClipRepositoryImpl @Inject constructor(
                 startTime = startTime,
                 endTime = endTime,
                 sourceAppPackageCount = sourceAppPackageCount,
-                sourceAppPackages = sourcePackagesForQuery
+                sourceAppPackages = sourcePackagesForQuery,
+                isFolded = isFolded
             )
         }
 
@@ -102,7 +107,8 @@ class ClipRepositoryImpl @Inject constructor(
             startTime = startTime,
             endTime = endTime,
             sourceAppPackageCount = sourceAppPackageCount,
-            sourceAppPackages = sourcePackagesForQuery
+            sourceAppPackages = sourcePackagesForQuery,
+            isFolded = isFolded
         )
     }
 
@@ -144,6 +150,18 @@ class ClipRepositoryImpl @Inject constructor(
             .split(Regex("\\s+"))
             .firstOrNull { it.isNotBlank() }
             ?: trimmedInput
+    }
+
+    /**
+     * 将业务层可见范围转换为数据库布尔字段。
+     *
+     * 这个转换集中放在 Repository，调用方只表达“普通数据”或“折叠数据”，不需要知道 Room 表字段如何编码。
+     */
+    private fun ClipVisibilityScope.toFoldState(): Boolean {
+        return when (this) {
+            ClipVisibilityScope.VisibleOnly -> false
+            ClipVisibilityScope.FoldedOnly -> true
+        }
     }
 
     override suspend fun addNewClip(captureEntity: ClipCaptureEntity) = withContext(Dispatchers.IO) {
@@ -196,6 +214,8 @@ class ClipRepositoryImpl @Inject constructor(
             val clipToUpdate = newClip.copy(
                 id = existingClip.clip.id,
                 pinnedTime = existingClip.clip.pinnedTime,
+                // 用户重新复制已折叠内容时，应把它作为新的活跃剪贴记录重新带回普通列表。
+                isFolded = false,
                 timestamp = System.currentTimeMillis() // 更新时间戳，表示这是最新的一次复制
             )
             // 执行更新
@@ -222,14 +242,22 @@ class ClipRepositoryImpl @Inject constructor(
         clipDao.updatePinStatus(clipId, pinnedTime)
     }
 
+    override suspend fun updateFoldStatus(clipId: Long, isFolded: Boolean) = withContext(Dispatchers.IO) {
+        clipDao.updateFoldStatus(clipId, isFolded)
+    }
+
     override suspend fun updateTimestamp(clipId: Long) {
         val currentTime = System.currentTimeMillis()
         // 这里直接调用 upsertClip 来更新 timestamp，保持逻辑一致性
         clipDao.updateTimestamp(clipId, currentTime)
     }
 
-    override fun loadAllClips(): PagingSource<Int, ClipDetail> {
-        return clipDao.loadAllClips()
+    override fun loadClips(visibilityScope: ClipVisibilityScope): PagingSource<Int, ClipDetail> {
+        return clipDao.loadClipsByFoldState(visibilityScope.toFoldState())
+    }
+
+    override fun observeFoldedClipCount(): Flow<Int> {
+        return clipDao.observeFoldedClipCount()
     }
 
     override suspend fun clearAll() = withContext(Dispatchers.IO) {

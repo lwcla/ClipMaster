@@ -34,6 +34,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,9 +50,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
 import com.cla.clip.base.general.dao.SourceAppData
 import com.cla.clip.base.general.entity.ClipShowEntity
+import com.cla.clip.base.general.entity.ClipVisibilityScope
 import com.cla.clip.master.ui.dialog.DeleteDialog
 import com.cla.clip.master.ui.navigation.DetailRoute
 import com.cla.clip.master.ui.navigation.Route
+import com.cla.clip.master.ui.navigation.SearchScope
 import com.cla.clip.master.ui.page.list.ClipResultList
 import com.cla.clip.master.ui.widget.TitleBar
 
@@ -65,9 +68,15 @@ import com.cla.clip.master.ui.widget.TitleBar
 @Composable
 fun SearchPage(
     viewModel: SearchViewModel = hiltViewModel(),
+    scope: SearchScope = SearchScope.VisibleOnly,
     onBack: () -> Unit,
     onNavigate: (Route) -> Unit,
 ) {
+    val visibilityScope = scope.toVisibilityScope()
+    LaunchedEffect(visibilityScope) {
+        viewModel.updateVisibilityScope(visibilityScope)
+    }
+
     val filterState by viewModel.filterState.collectAsStateWithLifecycle()
     val sourceApps by viewModel.sourceApps.collectAsStateWithLifecycle()
     val selectedSourceAppNames by viewModel.selectedSourceAppNames.collectAsStateWithLifecycle()
@@ -79,7 +88,7 @@ fun SearchPage(
     Scaffold(
         topBar = {
             TitleBar(
-                title = stringResource(com.cla.clip.base.general.R.string.base_general_search),
+                title = stringResource(scope.titleRes),
                 onBack = onBack
             )
         }
@@ -110,12 +119,19 @@ fun SearchPage(
                 ClipResultList(
                     listState = listState,
                     pagedClips = pagedClips,
-                    emptyText = stringResource(com.cla.clip.base.general.R.string.base_general_search_result_empty),
+                    emptyText = stringResource(scope.emptyTextRes),
                     highlightQuery = filterState.query,
                     contentPadding = PaddingValues(start = 10.dp, top = 10.dp, end = 10.dp, bottom = 24.dp),
                     onPinToggle = { viewModel.updatePinStatus(it, !it.isPinned) },
                     onDelete = { deleteClip = it },
                     onCopy = viewModel::copyToClipboard,
+                    onSwipePastAction = { clip ->
+                        viewModel.updateFoldStatus(
+                            clip = clip,
+                            isFolded = scope == SearchScope.VisibleOnly
+                        )
+                    },
+                    swipePastActionText = stringResource(scope.swipePastTextRes),
                     onClick = { onNavigate(DetailRoute(it.id)) },
                     onLongClick = {}
                 )
@@ -141,6 +157,35 @@ fun SearchPage(
         )
     }
 }
+
+/** 将搜索路由范围转换为数据层查询范围，页面层只负责连接导航参数和 ViewModel 查询。 */
+private fun SearchScope.toVisibilityScope(): ClipVisibilityScope {
+    return when (this) {
+        SearchScope.VisibleOnly -> ClipVisibilityScope.VisibleOnly
+        SearchScope.FoldedOnly -> ClipVisibilityScope.FoldedOnly
+    }
+}
+
+/** 搜索标题随范围变化，折叠搜索复用同一页面但需要给用户明确上下文。 */
+private val SearchScope.titleRes: Int
+    get() = when (this) {
+        SearchScope.VisibleOnly -> com.cla.clip.base.general.R.string.base_general_search
+        SearchScope.FoldedOnly -> com.cla.clip.base.general.R.string.base_general_search_folded_clips
+    }
+
+/** 搜索空态随范围区分，避免折叠搜索无结果被误解为没有折叠数据。 */
+private val SearchScope.emptyTextRes: Int
+    get() = when (this) {
+        SearchScope.VisibleOnly -> com.cla.clip.base.general.R.string.base_general_search_result_empty
+        SearchScope.FoldedOnly -> com.cla.clip.base.general.R.string.base_general_folded_search_result_empty
+    }
+
+/** 继续左滑提示随范围变化，普通搜索折叠数据，折叠搜索取消折叠数据。 */
+private val SearchScope.swipePastTextRes: Int
+    get() = when (this) {
+        SearchScope.VisibleOnly -> com.cla.clip.base.general.R.string.base_general_continue_swipe_to_fold_clip
+        SearchScope.FoldedOnly -> com.cla.clip.base.general.R.string.base_general_continue_swipe_to_unfold_clip
+    }
 
 /** 搜索输入框。 */
 @Composable

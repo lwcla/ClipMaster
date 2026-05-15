@@ -19,7 +19,24 @@ data object ClipListRoute : Route()
 
 /** 剪贴板搜索 */
 @Serializable
-data object SearchRoute : Route()
+data class SearchRoute(
+    /** 搜索范围；普通搜索只查未折叠数据，折叠搜索只查折叠数据。 */
+    val scope: SearchScope = SearchScope.VisibleOnly
+) : Route()
+
+/**
+ * 搜索页路由层范围枚举。
+ *
+ * 路由只保存轻量范围值，页面进入后再转换为数据层 `ClipVisibilityScope`，避免把页面实现细节塞进导航调用点。
+ */
+@Serializable
+enum class SearchScope {
+    /** 普通搜索，默认隐藏折叠数据。 */
+    VisibleOnly,
+
+    /** 折叠搜索，只搜索折叠数据。 */
+    FoldedOnly
+}
 
 /** 剪贴板详情 */
 @Serializable
@@ -58,6 +75,10 @@ data class VideoDownloadRoute(
 /** 下载记录页 */
 @Serializable
 data object DownloadHistoryRoute : Route()
+
+/** 折叠剪贴数据页 */
+@Serializable
+data object FoldedClipsRoute : Route()
 
 /** 我的页面 */
 @Serializable

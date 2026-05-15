@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.HorizontalDivider
@@ -46,11 +47,13 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.utils.toPermissionSetting
 import com.cla.clip.master.entity.SettingSwitchItemUi
 import com.cla.clip.master.ui.navigation.DownloadHistoryRoute
+import com.cla.clip.master.ui.navigation.FoldedClipsRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.theme.cardCornerShape
 import com.cla.clip.master.ui.widget.TopLevelTitleBar
@@ -67,6 +70,8 @@ fun MinePage(
     mineVm: MineVm = hiltViewModel(),
     onNavigate: (route: Route) -> Unit
 ) {
+    val foldedClipCount by mineVm.foldedClipCount.collectAsStateWithLifecycle()
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -77,6 +82,7 @@ fun MinePage(
             contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp),
         ) {
             item { DownloadHistoryEntry(onNavigate = onNavigate) }
+            item { FoldedClipsEntry(foldedClipCount = foldedClipCount, onNavigate = onNavigate) }
             item { Permission(mineVm = mineVm) }
         }
     }
@@ -91,6 +97,56 @@ fun MinePage(
 private fun DownloadHistoryEntry(
     onNavigate: (route: Route) -> Unit,
 ) {
+    MineEntryCard(
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Download,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+        },
+        title = stringResource(R.string.base_general_download_history),
+        description = stringResource(R.string.base_general_download_history_entry_desc),
+        onClick = { onNavigate(DownloadHistoryRoute) }
+    )
+}
+
+/**
+ * 折叠数据入口。
+ *
+ * 数量来自 ViewModel 的轻量 COUNT Flow，入口只展示统计并负责导航，不为了计数加载折叠列表。
+ */
+@Composable
+private fun FoldedClipsEntry(
+    foldedClipCount: Int,
+    onNavigate: (route: Route) -> Unit,
+) {
+    MineEntryCard(
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Inventory2,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+        },
+        title = stringResource(R.string.base_general_folded_clips),
+        description = stringResource(R.string.base_general_folded_clips_entry_desc, foldedClipCount),
+        onClick = { onNavigate(FoldedClipsRoute) }
+    )
+}
+
+/**
+ * 我的页通用入口卡片。
+ *
+ * 下载记录和折叠数据都属于页面跳转入口，抽成统一布局可以保持圆角、边框、图标和文案层级一致。
+ */
+@Composable
+private fun MineEntryCard(
+    icon: @Composable () -> Unit,
+    title: String,
+    description: String,
+    onClick: () -> Unit,
+) {
     val shape = cardCornerShape
     ElevatedCard(
         shape = shape,
@@ -103,23 +159,19 @@ private fun DownloadHistoryEntry(
             modifier = Modifier
                 .fillMaxWidth()
                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
-                .clickable { onNavigate(DownloadHistoryRoute) }
+                .clickable(onClick = onClick)
                 .padding(horizontal = 12.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                imageVector = Icons.Default.Download,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary
-            )
+            icon()
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    text = stringResource(R.string.base_general_download_history),
+                    text = title,
                     style = MaterialTheme.typography.titleMedium,
                 )
                 Text(
-                    text = stringResource(R.string.base_general_download_history_entry_desc),
+                    text = description,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

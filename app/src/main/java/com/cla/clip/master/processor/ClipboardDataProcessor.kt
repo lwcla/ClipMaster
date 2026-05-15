@@ -42,6 +42,9 @@ interface ClipboardDataProcessor {
 
     /** 更新置顶状态；true 会写入当前时间，false 会清零置顶时间。 */
     fun updatePinStatus(clip: ClipShowEntity, isPinned: Boolean)
+
+    /** 更新折叠状态；折叠只影响普通/折叠范围可见性，不改变剪贴内容本身。 */
+    fun updateFoldStatus(clip: ClipShowEntity, isFolded: Boolean)
 }
 
 /**
@@ -98,6 +101,12 @@ class DefaultClipboardDataProcessor @Inject constructor(
     override fun updatePinStatus(clip: ClipShowEntity, isPinned: Boolean) {
         scope.launch(Dispatchers.IO) {
             clipRepository.get().updatePinStatus(clip.id, isPinned)
+        }
+    }
+
+    override fun updateFoldStatus(clip: ClipShowEntity, isFolded: Boolean) {
+        scope.launch(Dispatchers.IO) {
+            clipRepository.get().updateFoldStatus(clip.id, isFolded)
         }
     }
 }

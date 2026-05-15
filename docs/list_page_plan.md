@@ -11,6 +11,7 @@
 ## 目标
 
 - 首页列表 Tab 展示剪贴记录的主浏览入口。
+- 普通列表只展示未折叠剪贴记录，折叠数据从“我的 > 折叠数据”入口管理。
 - 使用生命周期感知分页收集，页面可见时工作，离开页面时停止不必要收集。
 - 普通列表页和搜索页共用同一套结果 item，避免 UI 与交互分叉。
 - 保留稳定的列表滚动体验：切回列表保持位置，重复点击列表 Tab 回到顶部，取消置顶后不跟随被移动 item 跳转。
@@ -40,13 +41,14 @@
 - item 最右侧常驻复制按钮，点击只触发复制，不进入详情。
 - 内容区轻点进入详情，长按回调保留，但当前列表页未启用长按底部弹窗。
 - item 向左拖动露出右侧置顶/取消置顶和删除按钮，向右拖动收回；不限制多个 item 同时展开。
+- item 在第一段左滑菜单基础上继续左滑时显示“继续滑动折叠数据”，超过阈值松手后折叠该记录并从普通列表移除。
 - 复制、置顶/取消置顶、删除按钮宽度统一为 48dp，图标尺寸统一为 24dp，并在各自点击区域内水平和竖向居中。
 - 内容区与复制按钮、置顶按钮与删除按钮之间使用 0.5dp 固定高度分割线；分割线高度为按钮图标高度加 10dp，竖向居中，颜色与卡片边框一致。
 - 置顶状态角标是卡片级视觉装饰，不响应点击；它位于卡片内部第一级，内容层和复制按钮层绘制在其上方。
 
 ## 数据流
 
-- `ClipListModel.pagedClips` 通过 `Pager` 加载 `ClipRepository.loadAllClips()`。
+- `ClipListModel.pagedClips` 通过 `Pager` 加载 `ClipRepository.loadClips(ClipVisibilityScope.VisibleOnly)`。
 - Paging 配置：
   - `pageSize = 20`
   - `prefetchDistance = 5`
@@ -85,10 +87,12 @@
 - 复制：点击右侧常驻复制按钮调用 `onCopy(clip)`，列表页委托 ViewModel 写入系统剪贴板。
 - 删除：左滑后点击删除按钮，列表页先记录 `deleteClip` 并显示 `DeleteDialog`，确认后调用 `viewModel.deleteClip(clip)`。
 - 置顶/取消置顶：左滑后点击置顶按钮，调用 `viewModel.updatePinStatus(clip, !clip.isPinned)`。
+- 折叠：左滑露出菜单后继续左滑，提示“继续滑动折叠数据”；超过第二段阈值并松手后调用 `viewModel.updateFoldStatus(clip, true)`。
 - 侧滑：
   - 只允许向左展开、向右收回。
-  - 最大偏移等于右侧操作区宽度，避免拖出额外空白。
+  - 普通菜单阶段最大偏移等于右侧操作区宽度；存在继续滑动动作时最多额外拖动约 96dp，避免拖出过远。
   - 松手时按操作区一半宽度吸附，短距离误滑自动收回。
+  - 第二段继续左滑只在松手且超过阈值时触发，未超过时仍按普通菜单规则吸附。
   - 侧滑状态按 `clip.id` 使用 `rememberSaveable` 保存，避免 LazyColumn 复用导致状态串到其他记录。
 - 取消置顶滚动：
   - 取消置顶会触发排序变化，`LazyColumn` 默认会按稳定 key 跟随被移动 item。
@@ -118,6 +122,8 @@
 - `app/src/main/java/com/cla/clip/master/ui/page/list/ClipListPage.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/list/ClipListModel.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/list/ClipResultList.kt`
+- `app/src/main/java/com/cla/clip/master/ui/page/list/FoldedClipListPage.kt`
+- `app/src/main/java/com/cla/clip/master/ui/page/list/FoldedClipListModel.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/main/MainPage.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/search/SearchPage.kt`
 - `docs/list_page_plan.md`
@@ -133,6 +139,7 @@
 - item 展示验证：无链接、仅链接、仅标题、仅预览图、长剪贴字符串、置顶 item、不同来源色 item 都能正确展示。
 - 点击验证：内容点击进入详情，复制只复制，删除弹窗确认后删除，置顶/取消置顶调用正确。
 - 侧滑验证：多个 item 可同时展开，左滑露出操作，右滑收回，最大偏移不超过操作区宽度。
+- 折叠验证：继续左滑出现折叠提示，超过阈值松手后该记录从普通列表消失，并可在折叠数据页看到。
 - 高度验证：高 item 后面置顶矮 item、取消置顶矮 item，都应按自身内容包裹高度显示。
 - 取消置顶滚动验证：取消置顶当前可见 item 后，列表视口停留在操作时的位置，不跟随该 item 回到原排序位置。
 
@@ -143,6 +150,7 @@
 - 右下角搜索入口当前保留 FloatingActionButton；是否移入标题栏右侧仍是开放问题。
 - 长按底部弹窗逻辑保留但当前未启用；后续如果恢复长按操作，需要重新评估和侧滑、详情点击的冲突。
 - 共享 `ClipResultList` 同时服务列表页和搜索页，列表页调整可能影响搜索结果展示；改动前必须同步检查 `docs/search_page_plan.md`。
+- 共享 `ClipResultList` 也服务折叠列表页，侧滑第二段动作由页面传入，普通列表折叠，折叠列表取消折叠。
 
 ## 开放问题
 
@@ -161,3 +169,4 @@
 ## 变更记录
 
 - 2026-05-15：新增列表页设计文档；原因是列表页已有较多分页、生命周期、侧滑 item、滚动修正和搜索复用约束，需要独立文档指导后续开发。
+- 2026-05-15：补充折叠数据交互和普通列表隐藏折叠数据的实现记录；原因是剪贴记录新增折叠状态，普通列表查询改为仅加载未折叠数据，共享侧滑 item 增加第二段继续左滑折叠动作。
