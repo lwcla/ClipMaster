@@ -214,8 +214,8 @@ class ClipRepositoryImpl @Inject constructor(
             val clipToUpdate = newClip.copy(
                 id = existingClip.clip.id,
                 pinnedTime = existingClip.clip.pinnedTime,
-                // 用户重新复制已折叠内容时，应把它作为新的活跃剪贴记录重新带回普通列表。
-                isFolded = false,
+                // 重复内容更新时保留折叠状态，避免用户刚折叠的数据因为再次复制同内容而自动回到普通列表。
+                isFolded = existingClip.clip.isFolded,
                 timestamp = System.currentTimeMillis() // 更新时间戳，表示这是最新的一次复制
             )
             // 执行更新

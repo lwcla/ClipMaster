@@ -38,7 +38,7 @@ import com.cla.clip.master.ui.widget.TitleBar
  * 折叠数据列表页。
  *
  * 页面只展示已折叠剪贴记录，并复用普通列表的共享 item；这里额外提供搜索入口进入同一个搜索页的折叠范围，
- * 以及继续左滑取消折叠的交互，让折叠数据可以完整管理但不污染普通列表和普通搜索。
+ * 以及继续右滑取消折叠的交互，让折叠数据可以完整管理但不污染普通列表和普通搜索。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

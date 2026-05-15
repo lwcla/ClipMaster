@@ -180,7 +180,7 @@ private val SearchScope.emptyTextRes: Int
         SearchScope.FoldedOnly -> com.cla.clip.base.general.R.string.base_general_folded_search_result_empty
     }
 
-/** 继续左滑提示随范围变化，普通搜索折叠数据，折叠搜索取消折叠数据。 */
+/** 继续右滑提示随范围变化，普通搜索折叠数据，折叠搜索取消折叠数据。 */
 private val SearchScope.swipePastTextRes: Int
     get() = when (this) {
         SearchScope.VisibleOnly -> com.cla.clip.base.general.R.string.base_general_continue_swipe_to_fold_clip

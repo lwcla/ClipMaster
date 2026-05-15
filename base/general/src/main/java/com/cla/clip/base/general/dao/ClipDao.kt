@@ -361,14 +361,13 @@ interface ClipDao {
     @Query("SELECT * FROM clips ORDER BY timestamp DESC LIMIT 1")
     suspend fun getLatestClip(): ClipDetail?
 
-    /** 获取最新的一条未折叠剪贴板数据，用于剪贴采集去重；折叠数据不应阻止用户重新复制同内容后回到普通列表。 */
+    /** 获取最新的一条剪贴板数据，用于剪贴采集去重；即使最新记录已折叠，重复复制同内容也不应再次保存。 */
     @Query(
         """
     SELECT 
         content,
         source_app_package AS sourceAppPackage
     FROM clips
-    WHERE is_folded = 0
     ORDER BY timestamp DESC
     LIMIT 1
     """

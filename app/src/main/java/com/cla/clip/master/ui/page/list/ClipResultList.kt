@@ -1,11 +1,16 @@
 package com.cla.clip.master.ui.page.list
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.horizontalDrag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +43,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -50,8 +56,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerInputScope
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -76,6 +85,7 @@ import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.master.R
 import com.cla.clip.master.ui.theme.cardCornerShape
 import com.cla.clip.master.ui.widget.rememberFormattedTime
+import kotlinx.coroutines.launch
 import kotlin.math.max
 
 /**
@@ -259,12 +269,19 @@ fun ClipCard(
     val dividerWidth = 0.5.dp
     val dividerHeight = actionIconSize + 10.dp
     val actionAreaWidth = actionWidth * 2 + dividerWidth
-    val swipePastWidth = 96.dp
     val maxOffsetPx = with(density) { actionAreaWidth.toPx() }
-    val maxSwipePastOffsetPx = with(density) { (actionAreaWidth + swipePastWidth).toPx() }
-    val swipePastTriggerPx = with(density) { (actionAreaWidth + swipePastWidth * 0.65f).toPx() }
+    val fallbackSwipePastOffsetPx = maxOffsetPx * 2f
+    val swipePastExitAnimationMs = 220
+    val swipeSettleAnimationMs = 280
+    val scope = rememberCoroutineScope()
     // 侧滑偏移按 clip.id 保存，避免 LazyColumn 复用 item 时把上一条记录的展开状态带给其他记录。
     var offsetPx by rememberSaveable(clip.id) { mutableStateOf(0f) }
+    // 松手吸附和继续滑动离场都通过动画改变偏移；动画期间禁止继续拖动，避免状态和手势互相抢占。
+    var isSwipeOffsetAnimating by rememberSaveable(clip.id) { mutableStateOf(false) }
+    var itemWidthPx by remember(clip.id) { mutableStateOf(0f) }
+    val swipePastDragMaxPx = itemWidthPx.takeIf { it > 0f } ?: fallbackSwipePastOffsetPx
+    // 继续右滑触发阈值按 item 宽度 85% 计算，让最后阶段仍跟随手指，同时降低触发折叠/取消折叠的拖动压力。
+    val swipePastTriggerPx = max(maxOffsetPx, swipePastDragMaxPx * 0.85f)
     val offsetDp = with(density) { offsetPx.toDp() }
     val pinDescription = stringResource(
         if (clip.isPinned) {
@@ -277,19 +294,52 @@ fun ClipCard(
     val copyDescription = stringResource(com.cla.clip.base.general.R.string.base_general_copy)
     // 外层 Card、侧滑内容和边框共用同一个圆角，保证阴影、水波纹和裁剪视觉一致。
     val cardShape = cardCornerShape
+    /**
+     * 播放侧滑偏移动画。
+     *
+     * 未达到折叠阈值时用较长的吸附动画回到菜单或收起状态，避免从大幅拖动位置瞬间跳回；
+     * 真正触发折叠/取消折叠时则滑到 item 外侧，动画结束后再让页面层更新数据库。
+     */
+    fun animateOffsetTo(
+        targetOffsetPx: Float,
+        durationMillis: Int,
+        keepAnimatingAfterEnd: Boolean = false,
+        onFinished: (() -> Unit)? = null,
+    ) {
+        if (isSwipeOffsetAnimating) return
+        isSwipeOffsetAnimating = true
+        scope.launch {
+            val animator = Animatable(offsetPx)
+            animator.animateTo(
+                targetValue = targetOffsetPx,
+                animationSpec = tween(durationMillis = durationMillis)
+            ) {
+                offsetPx = value
+            }
+            offsetPx = targetOffsetPx
+            if (!keepAnimatingAfterEnd) {
+                isSwipeOffsetAnimating = false
+            }
+            onFinished?.invoke()
+        }
+    }
 
     Box(
         modifier = modifier
             .fillMaxWidth()
+            .onSizeChanged { size ->
+                // 记录 item 实际宽度，第二段动作按 85% 宽度触发，并在触发后把卡片滑到屏幕外再刷新数据库。
+                itemWidthPx = size.width.toFloat()
+            }
             .clip(cardShape)
             .clipToBounds()
     ) {
-        // 右侧操作区固定贴在 item 右边，内容卡片左滑后露出置顶和删除按钮。
+        // 左侧操作区固定贴在 item 左边，内容卡片右滑后露出置顶和删除按钮；左滑方向留给首页 Pager 切到“我的”。
         Box(
             modifier = Modifier
                 .matchParentSize()
-                .align(Alignment.CenterEnd),
-            contentAlignment = Alignment.CenterEnd
+                .align(Alignment.CenterStart),
+            contentAlignment = Alignment.CenterStart
         ) {
             Row(
                 modifier = Modifier
@@ -346,9 +396,9 @@ fun ClipCard(
             Box(
                 modifier = Modifier
                     .matchParentSize()
-                    .align(Alignment.CenterEnd)
-                    .padding(end = actionAreaWidth),
-                contentAlignment = Alignment.CenterEnd
+                    .align(Alignment.CenterStart)
+                    .padding(start = actionAreaWidth),
+                contentAlignment = Alignment.CenterStart
             ) {
                 val progress = ((offsetPx - maxOffsetPx) / (swipePastTriggerPx - maxOffsetPx))
                     .coerceIn(0f, 1f)
@@ -369,40 +419,55 @@ fun ClipCard(
             shape = cardShape,
             modifier = Modifier
                 .fillMaxWidth()
-                .offset(x = -offsetDp)
-                .pointerInput(clip.id, maxOffsetPx, maxSwipePastOffsetPx, swipePastTriggerPx, swipePastActionText) {
-                    detectHorizontalDragGestures(
+                .offset(x = offsetDp)
+                .pointerInput(clip.id, maxOffsetPx, swipePastDragMaxPx, swipePastTriggerPx, swipePastActionText) {
+                    detectRightSwipeMenuGestures(
+                        isMenuOpened = { offsetPx > 0f },
+                        isAnimating = { isSwipeOffsetAnimating },
+                        onDrag = { dragAmount ->
+                            if (!isSwipeOffsetAnimating) {
+                                val nextOffset = offsetPx + dragAmount
+                                // 只允许向右展开、向左收回；存在继续滑动动作时允许进入第二段提示区，但仍限制最大距离避免 item 被拖离过远。
+                                val dragMaxOffset = if (swipePastActionText == null) maxOffsetPx else swipePastDragMaxPx
+                                offsetPx = nextOffset.coerceIn(0f, dragMaxOffset)
+                            }
+                        },
                         onDragEnd = {
-                            // 第二段继续左滑只在松手且超过阈值时触发，避免用户只是查看菜单时误折叠或误取消折叠。
+                            // 第二段继续右滑只在松手且超过阈值时触发，避免用户只是查看菜单时误折叠或误取消折叠。
                             val shouldRunSwipePastAction = swipePastActionText != null && offsetPx >= swipePastTriggerPx
-                            if (shouldRunSwipePastAction) {
-                                offsetPx = 0f
-                                onSwipePastAction(clip)
+                            if (shouldRunSwipePastAction && !isSwipeOffsetAnimating) {
+                                val targetOffsetPx = swipePastDragMaxPx
+                                // 先让卡片完整滑出当前 item，动画结束后再更新折叠状态，避免 Paging 立刻刷新造成半途消失。
+                                animateOffsetTo(
+                                    targetOffsetPx = targetOffsetPx,
+                                    durationMillis = swipePastExitAnimationMs,
+                                    keepAnimatingAfterEnd = true,
+                                    onFinished = { onSwipePastAction(clip) }
+                                )
                             } else {
-                                // 松手时按操作区一半作为吸附阈值，短距离误滑会自动回收，明显左滑会保持展开。
-                                offsetPx = if (offsetPx > maxOffsetPx / 2f) {
+                                // 松手时按操作区一半作为吸附阈值，短距离误滑会自动回收，明显右滑会保持展开。
+                                val targetOffsetPx = if (offsetPx > maxOffsetPx / 2f) {
                                     maxOffsetPx
                                 } else {
                                     0f
                                 }
+                                animateOffsetTo(
+                                    targetOffsetPx = targetOffsetPx,
+                                    durationMillis = swipeSettleAnimationMs
+                                )
                             }
                         },
                         onDragCancel = {
                             // 手势被系统或父级中断时同样做吸附，避免停在半展开的不可预期位置。
-                            offsetPx = if (offsetPx > maxOffsetPx / 2f) {
+                            val targetOffsetPx = if (!isSwipeOffsetAnimating && offsetPx > maxOffsetPx / 2f) {
                                 maxOffsetPx
                             } else {
                                 0f
                             }
-                        },
-                        onHorizontalDrag = { change, dragAmount ->
-                            val nextOffset = offsetPx - dragAmount
-                            // 只允许向左展开、向右收回；存在继续滑动动作时允许进入第二段提示区，但仍限制最大距离避免 item 被拖离过远。
-                            val dragMaxOffset = if (swipePastActionText == null) maxOffsetPx else maxSwipePastOffsetPx
-                            offsetPx = nextOffset.coerceIn(0f, dragMaxOffset)
-                            if (offsetPx > 0f) {
-                                change.consume()
-                            }
+                            animateOffsetTo(
+                                targetOffsetPx = targetOffsetPx,
+                                durationMillis = swipeSettleAnimationMs
+                            )
                         }
                     )
                 },
@@ -508,6 +573,55 @@ fun ClipCard(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * 剪贴 item 的右滑菜单手势。
+ *
+ * 关闭状态下只有向右拖过触摸阈值才消费事件并打开菜单；向左拖动会留给外层首页 Pager，
+ * 让列表页继续支持左滑切到“我的”。菜单已展开或动画中时，左右拖动都由 item 接管，
+ * 其中左滑优先收回菜单，避免带着展开菜单直接切换页面。
+ *
+ * @param isMenuOpened 当前 item 菜单是否已经露出，决定左滑是否由 item 优先消费。
+ * @param isAnimating 偏移动画是否正在执行，动画中继续消费横向手势，避免父级 Pager 抢占。
+ * @param onDrag 接收本次横向拖动增量，正数表示右滑展开，负数表示左滑收回。
+ * @param onDragEnd 用户正常松手后的吸附或折叠判断入口。
+ * @param onDragCancel 手势被父级或系统取消时的兜底吸附入口。
+ */
+private suspend fun PointerInputScope.detectRightSwipeMenuGestures(
+    isMenuOpened: () -> Boolean,
+    isAnimating: () -> Boolean,
+    onDrag: (Float) -> Unit,
+    onDragEnd: () -> Unit,
+    onDragCancel: () -> Unit,
+) {
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false)
+        var initialOverSlop = 0f
+        var hasAcceptedGesture = false
+        val drag = awaitHorizontalTouchSlopOrCancellation(down.id) { change, overSlop ->
+            // 关闭状态下只接受右滑；菜单已展开或动画中时，左滑也要由 item 消费来完成收回或防止切页。
+            val shouldHandleDrag = isMenuOpened() || isAnimating() || overSlop > 0f
+            if (shouldHandleDrag) {
+                hasAcceptedGesture = true
+                initialOverSlop = overSlop
+                change.consume()
+            }
+        }
+
+        if (drag != null && hasAcceptedGesture) {
+            onDrag(initialOverSlop)
+            val finishedNormally = horizontalDrag(drag.id) { change ->
+                onDrag(change.positionChange().x)
+                change.consume()
+            }
+            if (finishedNormally) {
+                onDragEnd()
+            } else {
+                onDragCancel()
             }
         }
     }
@@ -827,7 +941,7 @@ private fun ClipCardPreview() {
         onSwipePastAction = {},
         onClick = {},
         onLongClick = {},
-        swipePastActionText = "继续滑动折叠数据",
+        swipePastActionText = "继续右滑折叠数据",
         onKeepCurrentScrollPosition = {}
     )
 }
