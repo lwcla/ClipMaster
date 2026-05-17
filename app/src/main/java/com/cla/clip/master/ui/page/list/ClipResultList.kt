@@ -3,14 +3,12 @@ package com.cla.clip.master.ui.page.list
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
-import androidx.compose.foundation.gestures.horizontalDrag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -54,9 +52,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.positionChange
@@ -66,6 +67,9 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -84,14 +88,17 @@ import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
 import coil3.compose.AsyncImage
-import com.cla.clip.base.general.config.ClipItemLeftClickAction
+import com.cla.clip.base.general.config.ClipItemQuickAction
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.master.R
 import com.cla.clip.master.ui.theme.cardCornerShape
 import com.cla.clip.master.ui.widget.rememberDeletedFormattedTime
 import com.cla.clip.master.ui.widget.rememberFormattedTime
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.sign
 
 /**
  * 取消置顶会触发分页结果重新排序，LazyColumn 默认会按稳定 key 跟随被移动的 item。
@@ -146,8 +153,8 @@ fun ClipResultList(
     swipePastActionText: String? = null,
     timeMode: ClipCardTimeMode = ClipCardTimeMode.ClipTime,
     selectedIds: Set<Long> = emptySet(),
-    leftClickAction: ClipItemLeftClickAction = ClipItemLeftClickAction.None,
-    enableLeftClickAction: Boolean = false,
+    quickAction: ClipItemQuickAction = ClipItemQuickAction.None,
+    enableQuickAction: Boolean = false,
 ) {
     // 取消置顶的排序变化由数据库/Paging 异步返回，先保存待恢复视口，再在快照确认后执行恢复。
     var pendingPinScrollRestore by remember { mutableStateOf<PendingPinScrollRestore?>(null) }
@@ -214,8 +221,8 @@ fun ClipResultList(
                                 onLongClick = onLongClick,
                                 selected = clip.id in selectedIds,
                                 timeMode = timeMode,
-                                leftClickAction = leftClickAction,
-                                enableLeftClickAction = enableLeftClickAction,
+                                quickAction = quickAction,
+                                enableQuickAction = enableQuickAction,
                                 openedMenuClipId = openedMenuClipId,
                                 onMenuActive = { clipId ->
                                     if (openedMenuClipId != clipId) {
@@ -282,9 +289,9 @@ fun ClipResultList(
  *
  * 卡片本身只处理展示和用户点击回调，不直接访问 ViewModel 或 Repository。
  *
- * 普通列表和普通搜索可以按设置开启左右分区：左半区执行页面传入的动作，
- * 右半区进入详情；折叠列表、折叠搜索和回收站保持整卡点击语义。
- * 左半区背景只作为底层视觉提示，内容始终按完整卡片宽度铺满。
+ * 普通列表和普通搜索可以按设置开启斜向快捷动作区：左下三角执行页面传入的动作，
+ * 其余区域进入详情；折叠列表、折叠搜索和回收站保持整卡点击语义。
+ * 快捷动作区背景只作为底层视觉提示，内容始终按完整卡片宽度铺满。
  *
  * 因此普通列表页和搜索页可以在各自页面层决定置顶、删除、复制和详情跳转行为。
  */
@@ -304,16 +311,18 @@ fun ClipCard(
     swipePastActionText: String? = null,
     selected: Boolean = false,
     timeMode: ClipCardTimeMode = ClipCardTimeMode.ClipTime,
-    leftClickAction: ClipItemLeftClickAction = ClipItemLeftClickAction.None,
-    enableLeftClickAction: Boolean = false,
+    quickAction: ClipItemQuickAction = ClipItemQuickAction.None,
+    enableQuickAction: Boolean = false,
     openedMenuClipId: Long? = null,
     onMenuActive: (Long) -> Unit = {},
     onMenuInactive: (Long) -> Unit = {},
 ) {
     val appColor = clip.appColor ?: MaterialTheme.colorScheme.outlineVariant
     val borderColor = appColor.copy(alpha = 0.3f)
-    // 左半区面积较大，背景只保留很轻的同源提示色，避免压住铺满整卡的剪贴内容。
-    val leftActionBackgroundColor = appColor.copy(alpha = 0.02f)
+    // 斜向快捷区底色只保留很轻的同源提示，避免压住铺满整卡的剪贴内容。
+    val quickActionBackgroundColor = appColor.copy(alpha = 0.02f)
+    val quickActionPressedColor = appColor.copy(alpha = 0.10f)
+    val detailPressedColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.035f)
     val density = LocalDensity.current
     val actionWidth = 48.dp
     // 分割线只承担视觉分区，不作为主要点击边界；高度按图标尺寸增加 10dp，并在按钮区域内竖向居中。
@@ -359,46 +368,40 @@ fun ClipCard(
     val deleteDescription = stringResource(com.cla.clip.base.general.R.string.base_general_delete)
     val copyDescription = stringResource(com.cla.clip.base.general.R.string.base_general_copy)
     val detailDescription = stringResource(com.cla.clip.base.general.R.string.base_general_clip_detail)
-    val foldDescription = stringResource(com.cla.clip.base.general.R.string.base_general_fold_clip)
-    val leftClickDescription = when (leftClickAction) {
-        ClipItemLeftClickAction.Copy -> copyDescription
-        ClipItemLeftClickAction.Pin -> pinDescription
-        ClipItemLeftClickAction.Delete -> deleteDescription
-        ClipItemLeftClickAction.Fold -> foldDescription
-        ClipItemLeftClickAction.None -> detailDescription
-    }
-    val canRunLeftClickAction = enableLeftClickAction &&
-        leftClickAction != ClipItemLeftClickAction.None &&
-        when (leftClickAction) {
-            ClipItemLeftClickAction.Copy -> onCopy != null
-            ClipItemLeftClickAction.Pin -> onPinToggle != null
-            ClipItemLeftClickAction.Delete -> onDelete != null
-            ClipItemLeftClickAction.Fold -> onSwipePastAction != null
-            ClipItemLeftClickAction.None -> false
+    val canRunQuickAction = enableQuickAction &&
+        quickAction != ClipItemQuickAction.None &&
+        when (quickAction) {
+            ClipItemQuickAction.Copy -> onCopy != null
+            ClipItemQuickAction.Pin -> onPinToggle != null
+            ClipItemQuickAction.Delete -> onDelete != null
+            ClipItemQuickAction.Fold -> onSwipePastAction != null
+            ClipItemQuickAction.None -> false
         }
     val currentOnMenuActive by rememberUpdatedState(onMenuActive)
     val currentOnMenuInactive by rememberUpdatedState(onMenuInactive)
+    // 按压态只用于绘制轻量反馈；任何拖动、长按、取消或 item 复用都会清空，避免三角反馈卡亮。
+    var pressedZone by remember(clip.id) { mutableStateOf<ClipCardPressedZone?>(null) }
     // 外层 Card、侧滑内容和边框共用同一个圆角，保证阴影、水波纹和裁剪视觉一致。
     val cardShape = cardCornerShape
 
-    /** 执行普通列表/普通搜索左半区动作，具体业务仍由页面层回调决定。 */
-    fun runLeftClickAction() {
-        when (leftClickAction) {
-            ClipItemLeftClickAction.Copy -> onCopy?.invoke(clip)
-            ClipItemLeftClickAction.Pin -> {
+    /** 执行普通列表/普通搜索快捷动作区动作，具体业务仍由页面层回调决定。 */
+    fun runQuickAction() {
+        when (quickAction) {
+            ClipItemQuickAction.Copy -> onCopy?.invoke(clip)
+            ClipItemQuickAction.Pin -> {
                 if (clip.isPinned) {
                     onKeepCurrentScrollPosition()
                 }
                 onPinToggle?.invoke(clip)
             }
 
-            ClipItemLeftClickAction.Delete -> {
+            ClipItemQuickAction.Delete -> {
                 // 删除动作只触发页面层现有删除选择弹窗，这是防止误触后静默删除的安全边界。
                 onDelete?.invoke(clip)
             }
 
-            ClipItemLeftClickAction.Fold -> onSwipePastAction?.invoke(clip)
-            ClipItemLeftClickAction.None -> onClick(clip)
+            ClipItemQuickAction.Fold -> onSwipePastAction?.invoke(clip)
+            ClipItemQuickAction.None -> onClick(clip)
         }
     }
     /**
@@ -599,10 +602,31 @@ fun ClipCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .offset(x = offsetDp)
-                .pointerInput(clip.id, maxOffsetPx, swipePastDragMaxPx, swipePastTriggerPx, swipePastActionText) {
-                    detectRightSwipeMenuGestures(
+                .semantics {
+                    // 自定义几何热区不自带可访问性语义；默认无障碍点击先保持进入详情，快捷动作留给后续自定义语义动作补充。
+                    onClick(label = detailDescription) {
+                        onClick(clip)
+                        true
+                    }
+                    onLongClick {
+                        onLongClick(clip)
+                        true
+                    }
+                }
+                .pointerInput(clip.id, maxOffsetPx, swipePastDragMaxPx, swipePastTriggerPx, swipePastActionText, canRunQuickAction) {
+                    detectClipCardGestures(
                         isMenuOpened = { offsetPx > 0f },
                         isAnimating = { isSwipeOffsetAnimating },
+                        isQuickActionEnabled = { canRunQuickAction },
+                        onPressZoneChanged = { pressedZone = it },
+                        onTap = { _, isQuickActionTap ->
+                            if (isQuickActionTap) {
+                                runQuickAction()
+                            } else {
+                                onClick(clip)
+                            }
+                        },
+                        onLongPress = { onLongClick(clip) },
                         onDrag = { dragAmount ->
                             if (!isSwipeOffsetAnimating) {
                                 val nextOffset = offsetPx + dragAmount
@@ -663,29 +687,44 @@ fun ClipCard(
                     .clip(cardShape)
                     .border(1.dp, borderColor, cardShape)
             ) {
-                if (canRunLeftClickAction) {
-                    Row(
-                        modifier = Modifier.matchParentSize()
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                // 左半区底色只提示“这里有分区动作”，不参与内容测量，也不遮挡随后绘制的文本。
-                                .weight(1f)
-                                .fillMaxHeight()
-                                .background(leftActionBackgroundColor)
-                        )
+                if (canRunQuickAction || pressedZone != null) {
+                    Canvas(modifier = Modifier.matchParentSize()) {
+                        if (canRunQuickAction) {
+                            // 底色和命中判断共用同一组三角规则，避免视觉区域与实际点击区域错位。
+                            drawPath(
+                                path = quickActionZonePath(size.width, size.height),
+                                color = quickActionBackgroundColor
+                            )
+                        }
 
-                        Spacer(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                        )
+                        when (pressedZone) {
+                            ClipCardPressedZone.QuickAction -> {
+                                drawPath(
+                                    path = quickActionZonePath(size.width, size.height),
+                                    color = quickActionPressedColor
+                                )
+                            }
+
+                            ClipCardPressedZone.Detail -> {
+                                val detailPath = if (canRunQuickAction) {
+                                    detailZonePath(size.width, size.height)
+                                } else {
+                                    fullCardPath(size.width, size.height)
+                                }
+                                drawPath(
+                                    path = detailPath,
+                                    color = detailPressedColor
+                                )
+                            }
+
+                            null -> Unit
+                        }
                     }
                 }
 
                 Box(
                     modifier = Modifier
-                        // 内容层始终使用整张卡片宽度，避免左半区动作改变文本排版和关键词高亮结果。
+                        // 内容层始终使用整张卡片宽度，避免快捷动作区改变文本排版和关键词高亮结果。
                         .fillMaxWidth()
                         .padding(start = 12.dp, top = 12.dp, bottom = 12.dp, end = 12.dp)
                 ) {
@@ -695,47 +734,6 @@ fun ClipCard(
                         Spacer(Modifier.height(8.dp))
                         SourceAppNameWithTime(clip, highlightQuery, timeMode)
                     }
-                }
-
-                if (canRunLeftClickAction) {
-                    Row(
-                        modifier = Modifier.matchParentSize()
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                                // 左半区透明热区承接设置动作；长按仍透出为整卡长按，避免左右区域行为割裂。
-                                .combinedClickable(
-                                    onClickLabel = leftClickDescription,
-                                    onClick = { runLeftClickAction() },
-                                    onLongClick = { onLongClick(clip) }
-                                )
-                        )
-
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                                // 右半区固定进入详情，与设置项无关，保证普通列表的主路径稳定。
-                                .combinedClickable(
-                                    onClickLabel = detailDescription,
-                                    onClick = { onClick(clip) },
-                                    onLongClick = { onLongClick(clip) }
-                                )
-                        )
-                    }
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            // 未启用分区时使用整卡点击语义；“无”设置、折叠列表和回收站都会走这里。
-                            .combinedClickable(
-                                onClickLabel = detailDescription,
-                                onClick = { onClick(clip) },
-                                onLongClick = { onLongClick(clip) }
-                            )
-                    )
                 }
 
                 if (selected) {
@@ -761,11 +759,11 @@ fun ClipCard(
                         painterResource(R.drawable.host_icon_pinned),
                         contentDescription = null,
                         modifier = Modifier
-                            // 置顶角标是卡片内的最高装饰层；放在内容、复制热区和选中态之后绘制，避免被后续兄弟节点盖住。
+                            // 置顶角标只做状态暗示，透明度保持很低，避免覆盖右上角剪贴文案时影响阅读。
                             .zIndex(2f)
                             .width(42.dp)
                             .align(Alignment.TopEnd)
-                            .alpha(0.6f),
+                            .alpha(0.4f),
                         tint = appColor
                     )
                 }
@@ -774,50 +772,206 @@ fun ClipCard(
     }
 }
 
+/** 剪贴卡片按压反馈区域，用于区分斜向快捷动作区和详情区的轻量触摸反馈。 */
+private enum class ClipCardPressedZone {
+    /** 用户按下位置落在左下斜向快捷动作区。 */
+    QuickAction,
+
+    /** 用户按下位置落在详情区；未启用快捷动作区时代表整卡详情按压。 */
+    Detail
+}
+
+/** 剪贴卡片手势在触摸阈值或抬手后得到的分发结果。 */
+private sealed interface ClipCardGestureDecision {
+    /** 未超过触摸阈值并正常抬手，后续按抬手坐标分发点击。 */
+    data class Tap(val position: Offset, val isQuickActionTap: Boolean) : ClipCardGestureDecision
+
+    /** 到达长按时间且未超过触摸阈值，后续只触发长按并取消点击。 */
+    data object LongPress : ClipCardGestureDecision
+
+    /** 横向拖动符合 item 侧滑条件，后续进入右滑菜单或菜单收回流程。 */
+    data class Drag(val pointerId: PointerId, val initialOverSlopX: Float) : ClipCardGestureDecision
+
+    /** 手势被滚动、Pager、系统取消或其他消费打断，当前 item 不再分发点击。 */
+    data object Cancel : ClipCardGestureDecision
+}
+
 /**
- * 剪贴 item 的右滑菜单手势。
+ * 判断触点是否落在左下斜向快捷动作区。
  *
- * 关闭状态下只有向右拖过触摸阈值才消费事件并打开菜单；向左拖动会留给外层首页 Pager，
- * 让列表页继续支持左滑切到“我的”。菜单已展开或动画中时，左右拖动都由 item 接管，
- * 其中左滑优先收回菜单，避免带着展开菜单直接切换页面。
+ * 快捷区固定为 `(0,0) -> (0,height) -> (width/2,height)`，边界使用严格大于，
+ * 让斜线附近默认进入详情，降低删除和折叠等高影响动作的误触风险。
+ */
+private fun isInQuickActionZone(
+    x: Float,
+    y: Float,
+    width: Float,
+    height: Float,
+): Boolean {
+    if (width <= 0f || height <= 0f) return false
+    val halfWidth = width / 2f
+    return x < halfWidth && y > (height / halfWidth) * x
+}
+
+/** 创建快捷动作区三角路径；背景、按压反馈和命中判断都使用这组尺寸规则。 */
+private fun quickActionZonePath(width: Float, height: Float): Path {
+    return Path().apply {
+        moveTo(0f, 0f)
+        lineTo(0f, height)
+        lineTo(width / 2f, height)
+        close()
+    }
+}
+
+/** 创建详情区路径；启用快捷动作区时排除左下三角，避免点击详情时左下角误亮。 */
+private fun detailZonePath(width: Float, height: Float): Path {
+    return Path().apply {
+        moveTo(0f, 0f)
+        lineTo(width, 0f)
+        lineTo(width, height)
+        lineTo(width / 2f, height)
+        close()
+    }
+}
+
+/** 创建整卡路径；未启用快捷动作区时详情按压反馈覆盖完整卡片。 */
+private fun fullCardPath(width: Float, height: Float): Path {
+    return Path().apply {
+        addRect(androidx.compose.ui.geometry.Rect(0f, 0f, width, height))
+    }
+}
+
+/**
+ * 剪贴 item 的统一点击和右滑手势。
+ *
+ * 这里把 tap、长按、纵向滚动取消、首页 Pager 左滑和 item 右滑菜单放在同一个入口协调：
+ * 未超过触摸阈值才分发点击或长按；横向右滑或菜单已展开时才消费拖动；其他移动交还父级滚动。
  *
  * @param isMenuOpened 当前 item 菜单是否已经露出，决定左滑是否由 item 优先消费。
  * @param isAnimating 偏移动画是否正在执行，动画中继续消费横向手势，避免父级 Pager 抢占。
+ * @param isQuickActionEnabled 是否启用斜向快捷动作区，未启用时整卡点击进入详情。
+ * @param onPressZoneChanged 按压反馈区域变化回调；所有取消路径都必须传 null 清理反馈。
+ * @param onTap 未被拖动/长按取消时的点击回调，第二个参数表示是否命中快捷动作区。
+ * @param onLongPress 长按回调，任意位置长按都交给页面层处理。
  * @param onDrag 接收本次横向拖动增量，正数表示右滑展开，负数表示左滑收回。
  * @param onDragEnd 用户正常松手后的吸附或折叠判断入口。
  * @param onDragCancel 手势被父级或系统取消时的兜底吸附入口。
  */
-private suspend fun PointerInputScope.detectRightSwipeMenuGestures(
+private suspend fun PointerInputScope.detectClipCardGestures(
     isMenuOpened: () -> Boolean,
     isAnimating: () -> Boolean,
+    isQuickActionEnabled: () -> Boolean,
+    onPressZoneChanged: (ClipCardPressedZone?) -> Unit,
+    onTap: (Offset, Boolean) -> Unit,
+    onLongPress: () -> Unit,
     onDrag: (Float) -> Unit,
     onDragEnd: () -> Unit,
     onDragCancel: () -> Unit,
 ) {
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false)
-        var initialOverSlop = 0f
-        var hasAcceptedGesture = false
-        val drag = awaitHorizontalTouchSlopOrCancellation(down.id) { change, overSlop ->
-            // 关闭状态下只接受右滑；菜单已展开或动画中时，左滑也要由 item 消费来完成收回或防止切页。
-            val shouldHandleDrag = isMenuOpened() || isAnimating() || overSlop > 0f
-            if (shouldHandleDrag) {
-                hasAcceptedGesture = true
-                initialOverSlop = overSlop
-                change.consume()
-            }
-        }
-
-        if (drag != null && hasAcceptedGesture) {
-            onDrag(initialOverSlop)
-            val finishedNormally = horizontalDrag(drag.id) { change ->
-                onDrag(change.positionChange().x)
-                change.consume()
-            }
-            if (finishedNormally) {
-                onDragEnd()
+        val downInQuickActionZone = isQuickActionEnabled() &&
+            isInQuickActionZone(
+                x = down.position.x,
+                y = down.position.y,
+                width = size.width.toFloat(),
+                height = size.height.toFloat()
+            )
+        onPressZoneChanged(
+            if (downInQuickActionZone) {
+                ClipCardPressedZone.QuickAction
             } else {
-                onDragCancel()
+                ClipCardPressedZone.Detail
+            }
+        )
+
+        val touchSlop = viewConfiguration.touchSlop
+        val longPressTimeoutMillis = viewConfiguration.longPressTimeoutMillis
+        val decision = withTimeoutOrNull(longPressTimeoutMillis) {
+            while (true) {
+                val event = awaitPointerEvent()
+                val change = event.changes.firstOrNull { it.id == down.id }
+                    ?: return@withTimeoutOrNull ClipCardGestureDecision.Cancel
+                if (change.isConsumed) {
+                    return@withTimeoutOrNull ClipCardGestureDecision.Cancel
+                }
+                if (!change.pressed) {
+                    val isQuickActionTap = isQuickActionEnabled() &&
+                        isInQuickActionZone(
+                            x = change.position.x,
+                            y = change.position.y,
+                            width = size.width.toFloat(),
+                            height = size.height.toFloat()
+                        )
+                    return@withTimeoutOrNull ClipCardGestureDecision.Tap(
+                        position = change.position,
+                        isQuickActionTap = isQuickActionTap
+                    )
+                }
+
+                val totalDelta = change.position - down.position
+                if (totalDelta.getDistance() > touchSlop) {
+                    val horizontalPastSlop = abs(totalDelta.x) > touchSlop &&
+                        abs(totalDelta.x) >= abs(totalDelta.y)
+                    val shouldHandleSwipe = horizontalPastSlop &&
+                        (isMenuOpened() || isAnimating() || totalDelta.x > 0f)
+                    if (shouldHandleSwipe) {
+                        val overSlopX = totalDelta.x - touchSlop * sign(totalDelta.x)
+                        change.consume()
+                        return@withTimeoutOrNull ClipCardGestureDecision.Drag(
+                            pointerId = down.id,
+                            initialOverSlopX = overSlopX
+                        )
+                    }
+
+                    // 纵向滚动、关闭状态下的左滑或非 item 侧滑移动都取消点击，让父级列表/Pager 继续处理。
+                    return@withTimeoutOrNull ClipCardGestureDecision.Cancel
+                }
+            }
+        } ?: ClipCardGestureDecision.LongPress
+
+        when (decision) {
+            is ClipCardGestureDecision.Tap -> {
+                onPressZoneChanged(null)
+                onTap(decision.position, decision.isQuickActionTap)
+            }
+
+            ClipCardGestureDecision.LongPress -> {
+                onPressZoneChanged(null)
+                onLongPress()
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                    if (!change.pressed || change.isConsumed) break
+                }
+            }
+
+            is ClipCardGestureDecision.Drag -> {
+                onPressZoneChanged(null)
+                onDrag(decision.initialOverSlopX)
+                var finishedNormally = true
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val change = event.changes.firstOrNull { it.id == decision.pointerId }
+                    if (change == null || change.isConsumed) {
+                        finishedNormally = false
+                        break
+                    }
+                    if (!change.pressed) {
+                        break
+                    }
+                    onDrag(change.positionChange().x)
+                    change.consume()
+                }
+                if (finishedNormally) {
+                    onDragEnd()
+                } else {
+                    onDragCancel()
+                }
+            }
+
+            ClipCardGestureDecision.Cancel -> {
+                onPressZoneChanged(null)
             }
         }
     }

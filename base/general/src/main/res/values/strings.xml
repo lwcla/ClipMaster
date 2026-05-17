@@ -196,11 +196,11 @@
     <string name="base_general_permission_description">权限说明</string>
     <string name="base_general_notice">通知</string>
     <string name="base_general_suspended_window">悬浮窗</string>
-    <string name="base_general_clip_item_action_setting">剪贴列表操作</string>
-    <string name="base_general_clip_item_action_setting_desc">普通列表和普通搜索结果可将 item 分为左右两个区域：右侧进入详情，左侧执行所选动作。</string>
+    <string name="base_general_clip_item_quick_action_setting">剪贴快捷操作</string>
+    <string name="base_general_clip_item_quick_action_setting_desc">普通列表和普通搜索结果的快捷动作区执行所选动作，其余区域进入详情。</string>
     <string name="base_general_current_option">当前：%1$s</string>
     <string name="base_general_fold_clip">折叠</string>
-    <string name="base_general_no_left_click_action">无（整卡进入详情）</string>
+    <string name="base_general_no_quick_action">无（整卡进入详情）</string>
     <string name="base_general_shizuku" translatable="false">shizuku</string>
 
 </resources>

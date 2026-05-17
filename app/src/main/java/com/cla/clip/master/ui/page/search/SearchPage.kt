@@ -49,7 +49,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
 import com.cla.clip.base.general.config.AppSetting
-import com.cla.clip.base.general.config.ClipItemLeftClickAction
+import com.cla.clip.base.general.config.ClipItemQuickAction
 import com.cla.clip.base.general.dao.SourceAppData
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.entity.ClipVisibilityScope
@@ -83,8 +83,8 @@ fun SearchPage(
     val sourceApps by viewModel.sourceApps.collectAsStateWithLifecycle()
     val selectedSourceAppNames by viewModel.selectedSourceAppNames.collectAsStateWithLifecycle()
     val pagedClips = viewModel.pagedClips.collectAsLazyPagingItems()
-    // 只有普通搜索范围响应左半区设置；折叠搜索保留整卡点击，避免和“取消折叠”管理语义混在一起。
-    val leftClickAction by AppSetting.clipItemLeftClickActionFlow.collectAsStateWithLifecycle()
+    // 只有普通搜索范围响应快捷动作设置；折叠搜索保留整卡点击，避免和“取消折叠”管理语义混在一起。
+    val quickAction by AppSetting.clipItemQuickActionFlow.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     var deleteClip by remember { mutableStateOf<ClipShowEntity?>(null) }
     var showSourcePicker by remember { mutableStateOf(false) }
@@ -136,8 +136,8 @@ fun SearchPage(
                         )
                     },
                     swipePastActionText = stringResource(scope.swipePastTextRes),
-                    leftClickAction = leftClickAction,
-                    enableLeftClickAction = scope == SearchScope.VisibleOnly && leftClickAction != ClipItemLeftClickAction.None,
+                    quickAction = quickAction,
+                    enableQuickAction = scope == SearchScope.VisibleOnly && quickAction != ClipItemQuickAction.None,
                     onClick = { onNavigate(DetailRoute(it.id)) },
                     onLongClick = {}
                 )

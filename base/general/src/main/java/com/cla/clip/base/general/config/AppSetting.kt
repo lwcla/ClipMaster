@@ -8,32 +8,32 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.util.UUID
 
 /**
- * 普通剪贴列表 item 左半区点击动作。
+ * 普通剪贴列表 item 快捷动作区点击动作。
  *
  * 该枚举属于跨页面设置契约：我的页负责选择和保存，普通列表/普通搜索负责读取并映射到具体回调。
  * 后续新增动作时必须同步扩展字符串资源、设置弹窗、共享 item 动作映射和方案文档，避免设置项与实际行为脱节。
  */
-enum class ClipItemLeftClickAction(
+enum class ClipItemQuickAction(
     /** 持久化到 MMKV 的稳定值，不能随枚举名重命名而改变。 */
     val storageValue: String,
 ) {
-    /** 左半区点击复制剪贴内容，是默认行为。 */
+    /** 快捷动作区点击复制剪贴内容，是默认行为。 */
     Copy("copy"),
 
-    /** 左半区点击切换置顶/取消置顶，语义与右滑菜单保持一致。 */
+    /** 快捷动作区点击切换置顶/取消置顶，语义与右滑菜单保持一致。 */
     Pin("pin"),
 
-    /** 左半区点击打开删除选择弹窗，不允许静默直接删除。 */
+    /** 快捷动作区点击打开删除选择弹窗，不允许静默直接删除。 */
     Delete("delete"),
 
-    /** 左半区点击折叠数据，只在普通列表和普通搜索中生效。 */
+    /** 快捷动作区点击折叠数据，只在普通列表和普通搜索中生效。 */
     Fold("fold"),
 
-    /** 关闭左右分区，整张 item 点击进入详情。 */
+    /** 关闭快捷动作区，整张 item 点击进入详情。 */
     None("none");
 
     companion object {
-        /** 默认左半区动作；兼顾快捷复制和当前用户习惯。 */
+        /** 默认快捷动作；兼顾快捷复制和当前用户习惯。 */
         val Default = Copy
 
         /**
@@ -41,7 +41,7 @@ enum class ClipItemLeftClickAction(
          *
          * 未知值会回退到默认复制，确保旧版本或异常写入不会让列表失去可用点击动作。
          */
-        fun fromStorageValue(value: String?): ClipItemLeftClickAction {
+        fun fromStorageValue(value: String?): ClipItemQuickAction {
             return entries.firstOrNull { it.storageValue == value } ?: Default
         }
     }
@@ -118,29 +118,29 @@ object AppSetting {
             mmkv.putBoolean(KEY_PERMISSION_EXPANDED, value)
         }
 
-    /** 剪贴 item 左半区动作配置 key；值使用 `ClipItemLeftClickAction.storageValue`，避免枚举名变动破坏兼容。 */
-    private const val KEY_CLIP_ITEM_LEFT_CLICK_ACTION = "clip_item_left_click_action"
+    /** 剪贴 item 快捷动作配置 key；值使用 `ClipItemQuickAction.storageValue`，当前功能较新，重命名后不迁移旧 key。 */
+    private const val KEY_CLIP_ITEM_QUICK_ACTION = "clip_item_quick_action"
 
-    /** 左半区动作状态流；页面订阅后可以在我的页修改设置时即时刷新普通列表和普通搜索点击行为。 */
-    private val _clipItemLeftClickActionFlow by lazy {
-        MutableStateFlow(clipItemLeftClickAction)
+    /** 快捷动作状态流；页面订阅后可以在我的页修改设置时即时刷新普通列表和普通搜索点击行为。 */
+    private val _clipItemQuickActionFlow by lazy {
+        MutableStateFlow(clipItemQuickAction)
     }
 
-    /** 普通剪贴列表 item 左半区点击动作流。 */
-    val clipItemLeftClickActionFlow: StateFlow<ClipItemLeftClickAction>
-        get() = _clipItemLeftClickActionFlow.asStateFlow()
+    /** 普通剪贴列表 item 快捷动作点击动作流。 */
+    val clipItemQuickActionFlow: StateFlow<ClipItemQuickAction>
+        get() = _clipItemQuickActionFlow.asStateFlow()
 
-    /** 普通剪贴列表 item 左半区点击动作；保存后同步更新状态流。 */
-    var clipItemLeftClickAction: ClipItemLeftClickAction
-        get() = ClipItemLeftClickAction.fromStorageValue(
+    /** 普通剪贴列表 item 快捷动作；保存后同步更新状态流。 */
+    var clipItemQuickAction: ClipItemQuickAction
+        get() = ClipItemQuickAction.fromStorageValue(
             mmkv.getString(
-                KEY_CLIP_ITEM_LEFT_CLICK_ACTION,
-                ClipItemLeftClickAction.Default.storageValue
+                KEY_CLIP_ITEM_QUICK_ACTION,
+                ClipItemQuickAction.Default.storageValue
             )
         )
         set(value) {
-            mmkv.putString(KEY_CLIP_ITEM_LEFT_CLICK_ACTION, value.storageValue)
-            _clipItemLeftClickActionFlow.value = value
+            mmkv.putString(KEY_CLIP_ITEM_QUICK_ACTION, value.storageValue)
+            _clipItemQuickActionFlow.value = value
         }
 
     /** 回收站默认保留天数，单位天；默认 30 天，和产品默认自动清理策略保持一致。 */

@@ -57,7 +57,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.cla.clip.base.general.config.ClipItemLeftClickAction
+import com.cla.clip.base.general.config.ClipItemQuickAction
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.utils.toPermissionSetting
 import com.cla.clip.master.entity.SettingSwitchItemUi
@@ -82,7 +82,7 @@ fun MinePage(
 ) {
     val foldedClipCount by mineVm.foldedClipCount.collectAsStateWithLifecycle()
     val recycleBinCount by mineVm.recycleBinCount.collectAsStateWithLifecycle()
-    val clipItemLeftClickAction by mineVm.clipItemLeftClickAction.collectAsStateWithLifecycle()
+    val clipItemQuickAction by mineVm.clipItemQuickAction.collectAsStateWithLifecycle()
     // 设置弹窗属于页面瞬时状态，配置值本身由 AppSetting/MMKV 持久化。
     var showClipItemActionDialog by remember { mutableStateOf(false) }
 
@@ -100,7 +100,7 @@ fun MinePage(
             item { RecycleBinEntry(recycleBinCount = recycleBinCount, onNavigate = onNavigate) }
             item {
                 ClipItemActionSettingEntry(
-                    action = clipItemLeftClickAction,
+                    action = clipItemQuickAction,
                     onClick = { showClipItemActionDialog = true }
                 )
             }
@@ -110,9 +110,9 @@ fun MinePage(
 
     if (showClipItemActionDialog) {
         ClipItemActionSettingDialog(
-            currentAction = clipItemLeftClickAction,
+            currentAction = clipItemQuickAction,
             onSelect = { action ->
-                mineVm.updateClipItemLeftClickAction(action)
+                mineVm.updateClipItemQuickAction(action)
                 showClipItemActionDialog = false
             },
             onDismiss = { showClipItemActionDialog = false }
@@ -145,13 +145,13 @@ private fun RecycleBinEntry(
 }
 
 /**
- * 普通剪贴 item 左半区动作设置入口。
+ * 普通剪贴 item 快捷动作设置入口。
  *
  * 该设置只影响普通列表和普通搜索结果；折叠列表、折叠搜索和回收站继续由各自页面保持整卡点击语义。
  */
 @Composable
 private fun ClipItemActionSettingEntry(
-    action: ClipItemLeftClickAction,
+    action: ClipItemQuickAction,
     onClick: () -> Unit,
 ) {
     MineEntryCard(
@@ -162,38 +162,38 @@ private fun ClipItemActionSettingEntry(
                 tint = MaterialTheme.colorScheme.primary
             )
         },
-        title = stringResource(R.string.base_general_clip_item_action_setting),
+        title = stringResource(R.string.base_general_clip_item_quick_action_setting),
         description = stringResource(R.string.base_general_current_option, action.labelText()),
         onClick = onClick
     )
 }
 
 /**
- * 普通剪贴 item 左半区动作选择弹窗。
+ * 普通剪贴 item 快捷动作选择弹窗。
  *
- * 选项采用五选一并在点击后立即保存；“无”代表彻底关闭左右分区，而不是只关闭左半区回调。
+ * 选项采用五选一并在点击后立即保存；“无”代表彻底关闭快捷动作区，而不是只关闭回调。
  */
 @Composable
 private fun ClipItemActionSettingDialog(
-    currentAction: ClipItemLeftClickAction,
-    onSelect: (ClipItemLeftClickAction) -> Unit,
+    currentAction: ClipItemQuickAction,
+    onSelect: (ClipItemQuickAction) -> Unit,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(text = stringResource(R.string.base_general_clip_item_action_setting))
+            Text(text = stringResource(R.string.base_general_clip_item_quick_action_setting))
         },
         text = {
             Column {
                 Text(
-                    text = stringResource(R.string.base_general_clip_item_action_setting_desc),
+                    text = stringResource(R.string.base_general_clip_item_quick_action_setting_desc),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
 
-                clipItemLeftClickActionOptions.forEach { action ->
+                clipItemQuickActionOptions.forEach { action ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -223,27 +223,27 @@ private fun ClipItemActionSettingDialog(
 }
 
 /**
- * 左半区动作在设置界面的展示顺序。
+ * 快捷动作在设置界面的展示顺序。
  *
  * 新增 item 操作时需要同步扩展这里、枚举、字符串资源、共享 item 映射和方案文档。
  */
-private val clipItemLeftClickActionOptions = listOf(
-    ClipItemLeftClickAction.Copy,
-    ClipItemLeftClickAction.Pin,
-    ClipItemLeftClickAction.Delete,
-    ClipItemLeftClickAction.Fold,
-    ClipItemLeftClickAction.None,
+private val clipItemQuickActionOptions = listOf(
+    ClipItemQuickAction.Copy,
+    ClipItemQuickAction.Pin,
+    ClipItemQuickAction.Delete,
+    ClipItemQuickAction.Fold,
+    ClipItemQuickAction.None,
 )
 
-/** 将左半区动作映射为用户可见文案，所有文案都来自字符串资源。 */
+/** 将快捷动作映射为用户可见文案，所有文案都来自字符串资源。 */
 @Composable
-private fun ClipItemLeftClickAction.labelText(): String {
+private fun ClipItemQuickAction.labelText(): String {
     return when (this) {
-        ClipItemLeftClickAction.Copy -> stringResource(R.string.base_general_copy)
-        ClipItemLeftClickAction.Pin -> stringResource(R.string.base_general_pinned)
-        ClipItemLeftClickAction.Delete -> stringResource(R.string.base_general_delete)
-        ClipItemLeftClickAction.Fold -> stringResource(R.string.base_general_fold_clip)
-        ClipItemLeftClickAction.None -> stringResource(R.string.base_general_no_left_click_action)
+        ClipItemQuickAction.Copy -> stringResource(R.string.base_general_copy)
+        ClipItemQuickAction.Pin -> stringResource(R.string.base_general_pinned)
+        ClipItemQuickAction.Delete -> stringResource(R.string.base_general_delete)
+        ClipItemQuickAction.Fold -> stringResource(R.string.base_general_fold_clip)
+        ClipItemQuickAction.None -> stringResource(R.string.base_general_no_quick_action)
     }
 }
 
