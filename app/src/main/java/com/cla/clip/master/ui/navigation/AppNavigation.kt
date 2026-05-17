@@ -1,6 +1,15 @@
 package com.cla.clip.master.ui.navigation
 
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -16,6 +25,12 @@ import com.cla.clip.master.ui.page.recycle.RecycleBinPage
 import com.cla.clip.master.ui.page.search.SearchPage
 import com.cla.clip.master.ui.page.video.VideoDownloadPage
 import com.cla.clip.master.ui.page.video.VideoExtractPage
+
+/** Compose Navigation 页面切换进入动画时长，单位毫秒；比上一版略拉长，让左进右出的页面层级感更完整。 */
+private const val NAV_PAGE_ENTER_DURATION_MS = 260
+
+/** Compose Navigation 页面切换退出动画时长，单位毫秒；与进入动画接近，保证左进右出效果完整。 */
+private const val NAV_PAGE_EXIT_DURATION_MS = 260
 
 /**
  * 应用主导航图。
@@ -38,7 +53,13 @@ fun AppNavigation(navController: NavHostController) {
 
     NavHost(
         navController = navController,
-        startDestination = MainRoute
+        startDestination = MainRoute,
+        // 使用 Compose Navigation 官方容器滑动转场：前进时右侧页面进入、当前页向左退出；返回时反向。
+        // 这里只负责页面切换动画，不额外处理点击穿透或禁用退出页动画。
+        enterTransition = { forwardEnterTransition() },
+        exitTransition = { forwardExitTransition() },
+        popEnterTransition = { backEnterTransition() },
+        popExitTransition = { backExitTransition() },
     ) {
         // 主页
         composable<MainRoute> {
@@ -142,4 +163,72 @@ fun AppNavigation(navController: NavHostController) {
             )
         }
     }
+}
+
+/**
+ * 前进导航进入动画。
+ *
+ * `SlideDirection.Left` 表示内容整体向左运动，因此新页面会从右侧滑入，符合进入下一层页面的层级感。
+ */
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.forwardEnterTransition(): EnterTransition {
+    return slideIntoContainer(
+        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+        animationSpec = tween(
+            durationMillis = NAV_PAGE_ENTER_DURATION_MS,
+            easing = FastOutSlowInEasing
+        )
+    ) + fadeIn(
+        animationSpec = tween(durationMillis = NAV_PAGE_ENTER_DURATION_MS)
+    )
+}
+
+/**
+ * 前进导航退出动画。
+ *
+ * 当前页面随层级推进向左退出，和右侧新页面进入组成完整的左进右出页面切换。
+ */
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.forwardExitTransition(): ExitTransition {
+    return slideOutOfContainer(
+        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+        animationSpec = tween(
+            durationMillis = NAV_PAGE_EXIT_DURATION_MS,
+            easing = FastOutLinearInEasing
+        )
+    ) + fadeOut(
+        animationSpec = tween(durationMillis = NAV_PAGE_EXIT_DURATION_MS)
+    )
+}
+
+/**
+ * 返回导航进入动画。
+ *
+ * 返回上一层时，上一页从左侧进入，与前进方向形成明确反向关系。
+ */
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.backEnterTransition(): EnterTransition {
+    return slideIntoContainer(
+        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+        animationSpec = tween(
+            durationMillis = NAV_PAGE_ENTER_DURATION_MS,
+            easing = FastOutSlowInEasing
+        )
+    ) + fadeIn(
+        animationSpec = tween(durationMillis = NAV_PAGE_ENTER_DURATION_MS)
+    )
+}
+
+/**
+ * 返回导航退出动画。
+ *
+ * 当前二级页向右退出，和上一层从左侧进入组成完整的返回方向转场。
+ */
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.backExitTransition(): ExitTransition {
+    return slideOutOfContainer(
+        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+        animationSpec = tween(
+            durationMillis = NAV_PAGE_EXIT_DURATION_MS,
+            easing = FastOutLinearInEasing
+        )
+    ) + fadeOut(
+        animationSpec = tween(durationMillis = NAV_PAGE_EXIT_DURATION_MS)
+    )
 }

@@ -379,6 +379,17 @@ fun ClipCard(
             ClipItemQuickAction.Fold -> onSwipePastAction != null
             ClipItemQuickAction.None -> false
         }
+    // pointerInput 内部的手势协程不一定会随普通重组重启；业务回调和当前 item 快照使用最新引用，
+    // 只解决手势协程捕获旧闭包的问题，不改变页面级转场和点击命中策略。
+    val currentClip by rememberUpdatedState(clip)
+    val currentQuickAction by rememberUpdatedState(quickAction)
+    val currentOnPinToggle by rememberUpdatedState(onPinToggle)
+    val currentOnDelete by rememberUpdatedState(onDelete)
+    val currentOnCopy by rememberUpdatedState(onCopy)
+    val currentOnSwipePastAction by rememberUpdatedState(onSwipePastAction)
+    val currentOnClick by rememberUpdatedState(onClick)
+    val currentOnLongClick by rememberUpdatedState(onLongClick)
+    val currentOnKeepCurrentScrollPosition by rememberUpdatedState(onKeepCurrentScrollPosition)
     val currentOnMenuActive by rememberUpdatedState(onMenuActive)
     val currentOnMenuInactive by rememberUpdatedState(onMenuInactive)
     // 按压态只用于绘制轻量反馈；任何拖动、长按、取消或 item 复用都会清空，避免三角反馈卡亮。
@@ -388,22 +399,23 @@ fun ClipCard(
 
     /** 执行普通列表/普通搜索快捷动作区动作，具体业务仍由页面层回调决定。 */
     fun runQuickAction() {
-        when (quickAction) {
-            ClipItemQuickAction.Copy -> onCopy?.invoke(clip)
+        val latestClip = currentClip
+        when (currentQuickAction) {
+            ClipItemQuickAction.Copy -> currentOnCopy?.invoke(latestClip)
             ClipItemQuickAction.Pin -> {
-                if (clip.isPinned) {
-                    onKeepCurrentScrollPosition()
+                if (latestClip.isPinned) {
+                    currentOnKeepCurrentScrollPosition()
                 }
-                onPinToggle?.invoke(clip)
+                currentOnPinToggle?.invoke(latestClip)
             }
 
             ClipItemQuickAction.Delete -> {
                 // 删除动作只触发页面层现有删除选择弹窗，这是防止误触后静默删除的安全边界。
-                onDelete?.invoke(clip)
+                currentOnDelete?.invoke(latestClip)
             }
 
-            ClipItemQuickAction.Fold -> onSwipePastAction?.invoke(clip)
-            ClipItemQuickAction.None -> onClick(clip)
+            ClipItemQuickAction.Fold -> currentOnSwipePastAction?.invoke(latestClip)
+            ClipItemQuickAction.None -> currentOnClick(latestClip)
         }
     }
     /**
@@ -503,7 +515,7 @@ fun ClipCard(
                             onClick = {
                                 offsetPx = 0f
                                 currentOnMenuInactive(clip.id)
-                                onCopy?.invoke(clip)
+                                currentOnCopy?.invoke(currentClip)
                             }
                         )
                         hasPreviousAction = true
@@ -533,12 +545,13 @@ fun ClipCard(
                                 R.drawable.host_icon_to_pinned
                             },
                             onClick = {
-                                if (clip.isPinned) {
-                                    onKeepCurrentScrollPosition()
+                                val latestClip = currentClip
+                                if (latestClip.isPinned) {
+                                    currentOnKeepCurrentScrollPosition()
                                 }
                                 offsetPx = 0f
                                 currentOnMenuInactive(clip.id)
-                                onPinToggle?.invoke(clip)
+                                currentOnPinToggle?.invoke(latestClip)
                             }
                         )
                         hasPreviousAction = true
@@ -566,7 +579,7 @@ fun ClipCard(
                             onClick = {
                                 offsetPx = 0f
                                 currentOnMenuInactive(clip.id)
-                                onDelete?.invoke(clip)
+                                currentOnDelete?.invoke(currentClip)
                             }
                         )
                     }
@@ -617,11 +630,11 @@ fun ClipCard(
                 .semantics {
                     // 自定义几何热区不自带可访问性语义；默认无障碍点击先保持进入详情，快捷动作留给后续自定义语义动作补充。
                     onClick(label = detailDescription) {
-                        onClick(clip)
+                        currentOnClick(currentClip)
                         true
                     }
                     onLongClick {
-                        onLongClick(clip)
+                        currentOnLongClick(currentClip)
                         true
                     }
                 }
@@ -635,10 +648,10 @@ fun ClipCard(
                             if (isQuickActionTap) {
                                 runQuickAction()
                             } else {
-                                onClick(clip)
+                                currentOnClick(currentClip)
                             }
                         },
-                        onLongPress = { onLongClick(clip) },
+                        onLongPress = { currentOnLongClick(currentClip) },
                         onDrag = { dragAmount ->
                             if (!isSwipeOffsetAnimating) {
                                 val nextOffset = offsetPx + dragAmount
@@ -663,7 +676,7 @@ fun ClipCard(
                                     keepAnimatingAfterEnd = true,
                                     onFinished = {
                                         currentOnMenuInactive(clip.id)
-                                        onSwipePastAction?.invoke(clip)
+                                        currentOnSwipePastAction?.invoke(currentClip)
                                     }
                                 )
                             } else {
