@@ -93,6 +93,7 @@ import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.master.R
 import com.cla.clip.master.ui.theme.cardCornerShape
 import com.cla.clip.master.ui.widget.rememberDeletedFormattedTime
+import com.cla.clip.master.ui.widget.rememberFoldedFormattedTime
 import com.cla.clip.master.ui.widget.rememberFormattedTime
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -120,11 +121,14 @@ private data class PendingPinScrollRestore(
 /**
  * 剪贴卡片时间展示模式。
  *
- * 普通列表按原剪贴时间展示；回收站按删除时间排序，因此需要切换为删除时间，避免排序依据和可见时间不一致。
+ * 普通列表按原剪贴时间展示；折叠范围按折叠时间展示；回收站按删除时间展示，避免排序依据和可见时间不一致。
  */
 enum class ClipCardTimeMode {
     /** 展示剪贴记录原始时间。 */
     ClipTime,
+
+    /** 展示本次折叠发生时间，用于折叠列表和折叠搜索。 */
+    FoldedTime,
 
     /** 展示进入回收站的删除时间。 */
     DeletedTime
@@ -319,7 +323,7 @@ fun ClipCard(
 ) {
     val appColor = clip.appColor ?: MaterialTheme.colorScheme.outlineVariant
     val borderColor = appColor.copy(alpha = 0.3f)
-    // 斜向快捷区底色只保留很轻的同源提示，避免压住铺满整卡的剪贴内容。
+    // 斜向快捷区底色只保留很轻的同源提示，避免压住铺满整 卡的剪贴内容。
     val quickActionBackgroundColor = appColor.copy(alpha = 0.02f)
     val quickActionPressedColor = appColor.copy(alpha = 0.10f)
     val detailPressedColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.035f)
@@ -777,7 +781,7 @@ private enum class ClipCardPressedZone {
     /** 用户按下位置落在左下斜向快捷动作区。 */
     QuickAction,
 
-    /** 用户按下位置落在详情区；未启用快捷动作区时代表整卡详情按压。 */
+    /** 用户按下位置落在 详情区；未启用快捷动作区时代表整卡详情按压。 */
     Detail
 }
 
@@ -977,7 +981,7 @@ private suspend fun PointerInputScope.detectClipCardGestures(
     }
 }
 
-/** 剪贴数据来源 App 和时间，普通列表展示写入时间，回收站展示删除时间。 */
+/** 剪贴数据来源 App 和时间，普通范围展示写入时间，折叠范围展示折叠时间，回收站展示删除时间。 */
 @Composable
 private fun SourceAppNameWithTime(
     clip: ClipShowEntity,
@@ -987,6 +991,9 @@ private fun SourceAppNameWithTime(
     val currentDensity = LocalDensity.current
     val timeText = when (timeMode) {
         ClipCardTimeMode.ClipTime -> clip.rememberFormattedTime()
+        ClipCardTimeMode.FoldedTime -> clip.rememberFoldedFormattedTime(
+            prefix = stringResource(com.cla.clip.base.general.R.string.base_general_folded_at_prefix)
+        )
         ClipCardTimeMode.DeletedTime -> clip.rememberDeletedFormattedTime(
             prefix = stringResource(com.cla.clip.base.general.R.string.base_general_deleted_at_prefix)
         )
@@ -1281,6 +1288,7 @@ private fun ClipCardPreview() {
         id = 1L,
         content = "这是一个示例剪贴板内容，用于预览ClipCard组件的显示效果。用于预览ClipCard组件的显示效果。",
         timestamp = System.currentTimeMillis(),
+        foldedAt = System.currentTimeMillis(),
         deletedAt = System.currentTimeMillis(),
         formattedTime = "刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚",
         appName = "飞书飞书飞书飞书",

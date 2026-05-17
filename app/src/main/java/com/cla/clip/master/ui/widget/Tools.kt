@@ -49,3 +49,23 @@ fun ClipShowEntity.rememberDeletedFormattedTime(prefix: String): String {
 
     return formattedTime
 }
+
+/**
+ * 在 Compose 中记住折叠时间的相对展示文案。
+ *
+ * 折叠列表和折叠搜索按 `foldedAt` 排序、筛选和展示；这里单独提供格式化入口，避免误用剪贴时间导致用户看到的时间
+ * 与列表顺序不一致。`foldedAt` 为 0 的异常记录会仍按相对时间格式化，数据层迁移和折叠动作负责保证正常折叠记录非 0。
+ */
+@Composable
+fun ClipShowEntity.rememberFoldedFormattedTime(prefix: String): String {
+    var formattedTime by remember { mutableStateOf("$prefix${foldedAt.toRelativeTimeSpanString()}") }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+
+    LaunchedEffect(foldedAt, prefix, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            formattedTime = "$prefix${foldedAt.toRelativeTimeSpanString()}"
+        }
+    }
+
+    return formattedTime
+}

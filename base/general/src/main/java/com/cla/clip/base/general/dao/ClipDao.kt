@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.Flow
  * @param timestamp “最后修改”时间戳。
  * @param pinnedTime 置顶的时间戳。
  * @param isFolded 是否折叠隐藏。
+ * @param foldedAt 本次折叠发生时间。
  * @param link 剪贴数据中的链接
  * @param sourceAppPackage 来源应用的包名。
  */
@@ -41,8 +42,10 @@ import kotlinx.coroutines.flow.Flow
         Index(value = ["content"]),
         Index(value = ["pinned_time"]),
         Index(value = ["is_folded"]),
+        Index(value = ["folded_at"]),
         Index(value = ["deleted_at"]),
         Index(value = ["deleted_at", "is_folded"]),
+        Index(value = ["deleted_at", "is_folded", "folded_at"]),
         Index(value = ["link"]),
     ]
 )
@@ -66,6 +69,10 @@ data class ClipData(
     @ColumnInfo(name = "is_folded")
     /** 是否折叠隐藏；true 表示从普通列表和普通搜索移出，只在折叠数据页和折叠搜索中展示。 */
     val isFolded: Boolean = false,
+
+    @ColumnInfo(name = "folded_at")
+    /** 本次折叠发生时间，单位毫秒；0 表示当前未折叠，折叠列表和折叠搜索以它作为主时间轴。 */
+    val foldedAt: Long = 0,
 
     @ColumnInfo(name = "deleted_at")
     /** 进入回收站的时间戳，单位毫秒；0 表示正常数据，大于 0 表示仅在回收站中展示并等待还原或彻底删除。 */
@@ -195,17 +202,18 @@ interface ClipDao {
      * UNION 会去掉 FTS 与 LIKE 同时命中的重复记录，代价是关键词搜索比纯 FTS 多一次主表扫描。
      * 两个 UNION 分支都必须带折叠过滤，否则任一命中分支都会把另一范围的数据混入结果。
      *
-     * 排序先保持列表页的置顶优先规则，再在同一置顶分组内按搜索命中质量和时间排序，避免搜索页与列表页的置顶语义割裂。
+     * 排序先保持置顶优先规则；普通搜索在命中质量后按置顶时间/剪贴时间排序，折叠搜索在命中质量后按折叠时间排序。
      *
      * @param query 清洗后的 FTS 查询语句，外层 Repository 负责规避空查询和特殊字符导致的 MATCH 语法错误。
      * @param exactQuery 精确匹配用原始关键词。
      * @param queryWord 包含匹配和前缀匹配用的核心词。
      * @param likeKeyword 普通子串匹配用关键词，保留用户输入的连续文本，用来补齐中文模糊搜索。
-     * @param startTime 起始时间戳，单位毫秒；为 null 时不限制开始时间。
-     * @param endTime 结束时间戳，单位毫秒；为 null 时不限制结束时间，非 null 时使用左闭右开区间。
+     * @param startTime 起始时间戳，单位毫秒；普通搜索过滤剪贴时间，折叠搜索过滤折叠时间。
+     * @param endTime 结束时间戳，单位毫秒；普通搜索过滤剪贴时间，折叠搜索过滤折叠时间，非 null 时使用左闭右开区间。
      * @param sourceAppPackageCount 已选来源 App 数量；为 0 时不过滤来源。
      * @param sourceAppPackages 已选来源 App 包名列表；非空时命中任一包名即可返回。
      * @param isFolded 搜索范围过滤；普通搜索传 false，折叠搜索传 true，避免折叠数据从普通搜索泄漏。
+     * @param timeFilterUsesFoldedAt 时间筛选是否使用折叠时间；折叠搜索传 true，确保时间 Chip 与折叠列表主时间轴一致。
      */
     @Transaction
     @Query(
@@ -216,16 +224,32 @@ interface ClipDao {
       WHERE clips_fts MATCH :query
         AND c.is_folded = :isFolded
         AND c.deleted_at = 0
-        AND (:startTime IS NULL OR c.timestamp >= :startTime)
-        AND (:endTime IS NULL OR c.timestamp < :endTime)
+        AND (
+          :startTime IS NULL
+          OR (:timeFilterUsesFoldedAt = 1 AND c.folded_at >= :startTime)
+          OR (:timeFilterUsesFoldedAt = 0 AND c.timestamp >= :startTime)
+        )
+        AND (
+          :endTime IS NULL
+          OR (:timeFilterUsesFoldedAt = 1 AND c.folded_at < :endTime)
+          OR (:timeFilterUsesFoldedAt = 0 AND c.timestamp < :endTime)
+        )
         AND (:sourceAppPackageCount = 0 OR c.source_app_package IN (:sourceAppPackages))
       UNION
       SELECT c.* FROM clips c
       WHERE c.search_text LIKE '%' || :likeKeyword || '%'
         AND c.is_folded = :isFolded
         AND c.deleted_at = 0
-        AND (:startTime IS NULL OR c.timestamp >= :startTime)
-        AND (:endTime IS NULL OR c.timestamp < :endTime)
+        AND (
+          :startTime IS NULL
+          OR (:timeFilterUsesFoldedAt = 1 AND c.folded_at >= :startTime)
+          OR (:timeFilterUsesFoldedAt = 0 AND c.timestamp >= :startTime)
+        )
+        AND (
+          :endTime IS NULL
+          OR (:timeFilterUsesFoldedAt = 1 AND c.folded_at < :endTime)
+          OR (:timeFilterUsesFoldedAt = 0 AND c.timestamp < :endTime)
+        )
         AND (:sourceAppPackageCount = 0 OR c.source_app_package IN (:sourceAppPackages))
     ) AS c
     ORDER BY
@@ -236,7 +260,8 @@ interface ClipDao {
         WHEN LENGTH(:queryWord) > 2 AND INSTR(c.search_text, SUBSTR(:queryWord, 1, LENGTH(:queryWord)-1)) > 0 THEN 2
         ELSE 1
       END DESC,
-      c.pinned_time DESC,
+      CASE WHEN :isFolded = 0 THEN c.pinned_time ELSE 0 END DESC,
+      CASE WHEN :isFolded = 1 THEN c.folded_at ELSE c.timestamp END DESC,
       c.timestamp DESC
     """
     )
@@ -250,6 +275,7 @@ interface ClipDao {
         sourceAppPackageCount: Int,
         sourceAppPackages: List<String>,
         isFolded: Boolean,
+        timeFilterUsesFoldedAt: Boolean,
     ): PagingSource<Int, ClipDetail>
 
     /**
@@ -259,6 +285,7 @@ interface ClipDao {
      * 只保留时间和来源 App 多选条件，并完全沿用列表页排序。
      *
      * @param isFolded 搜索范围过滤；普通搜索传 false，折叠搜索传 true。
+     * @param timeFilterUsesFoldedAt 时间筛选是否使用折叠时间；折叠搜索传 true。
      */
     @Transaction
     @Query(
@@ -266,12 +293,21 @@ interface ClipDao {
         SELECT * FROM clips
         WHERE is_folded = :isFolded
           AND deleted_at = 0
-          AND (:startTime IS NULL OR timestamp >= :startTime)
-          AND (:endTime IS NULL OR timestamp < :endTime)
+          AND (
+            :startTime IS NULL
+            OR (:timeFilterUsesFoldedAt = 1 AND folded_at >= :startTime)
+            OR (:timeFilterUsesFoldedAt = 0 AND timestamp >= :startTime)
+          )
+          AND (
+            :endTime IS NULL
+            OR (:timeFilterUsesFoldedAt = 1 AND folded_at < :endTime)
+            OR (:timeFilterUsesFoldedAt = 0 AND timestamp < :endTime)
+          )
           AND (:sourceAppPackageCount = 0 OR source_app_package IN (:sourceAppPackages))
         ORDER BY
           CASE WHEN pinned_time > 0 THEN 1 ELSE 0 END DESC,
-          pinned_time DESC,
+          CASE WHEN :isFolded = 0 THEN pinned_time ELSE 0 END DESC,
+          CASE WHEN :isFolded = 1 THEN folded_at ELSE timestamp END DESC,
           timestamp DESC
     """
     )
@@ -281,6 +317,7 @@ interface ClipDao {
         sourceAppPackageCount: Int,
         sourceAppPackages: List<String>,
         isFolded: Boolean,
+        timeFilterUsesFoldedAt: Boolean,
     ): PagingSource<Int, ClipDetail>
 
     /**
@@ -290,6 +327,7 @@ interface ClipDao {
      * 牺牲一点性能换取搜索框对 URL、符号片段等输入的稳定响应，同时保留来源 App 多选过滤。
      *
      * @param isFolded 搜索范围过滤；普通搜索传 false，折叠搜索传 true。
+     * @param timeFilterUsesFoldedAt 时间筛选是否使用折叠时间；折叠搜索传 true。
      */
     @Transaction
     @Query(
@@ -298,12 +336,21 @@ interface ClipDao {
         WHERE is_folded = :isFolded
           AND deleted_at = 0
           AND search_text LIKE '%' || :keyword || '%'
-          AND (:startTime IS NULL OR timestamp >= :startTime)
-          AND (:endTime IS NULL OR timestamp < :endTime)
+          AND (
+            :startTime IS NULL
+            OR (:timeFilterUsesFoldedAt = 1 AND folded_at >= :startTime)
+            OR (:timeFilterUsesFoldedAt = 0 AND timestamp >= :startTime)
+          )
+          AND (
+            :endTime IS NULL
+            OR (:timeFilterUsesFoldedAt = 1 AND folded_at < :endTime)
+            OR (:timeFilterUsesFoldedAt = 0 AND timestamp < :endTime)
+          )
           AND (:sourceAppPackageCount = 0 OR source_app_package IN (:sourceAppPackages))
         ORDER BY
           CASE WHEN pinned_time > 0 THEN 1 ELSE 0 END DESC,
-          pinned_time DESC,
+          CASE WHEN :isFolded = 0 THEN pinned_time ELSE 0 END DESC,
+          CASE WHEN :isFolded = 1 THEN folded_at ELSE timestamp END DESC,
           timestamp DESC
     """
     )
@@ -314,6 +361,7 @@ interface ClipDao {
         sourceAppPackageCount: Int,
         sourceAppPackages: List<String>,
         isFolded: Boolean,
+        timeFilterUsesFoldedAt: Boolean,
     ): PagingSource<Int, ClipDetail>
 
     /**
@@ -332,7 +380,7 @@ interface ClipDao {
     @Query("UPDATE clips SET deleted_at = :deletedAt WHERE id IN (:ids) AND deleted_at = 0")
     suspend fun moveClipsToRecycleBin(ids: List<Long>, deletedAt: Long): Int
 
-    /** 从回收站恢复指定剪贴记录；只清除删除时间，不改变折叠、置顶、内容和原始时间。 */
+    /** 从回收站恢复指定剪贴记录；只清除删除时间，不改变折叠、折叠时间、置顶、内容和原始时间。 */
     @Query("UPDATE clips SET deleted_at = 0 WHERE id IN (:ids) AND deleted_at > 0")
     suspend fun restoreClipsFromRecycleBin(ids: List<Long>): Int
 
@@ -363,9 +411,9 @@ interface ClipDao {
     @Query("UPDATE clips SET pinned_time = :pinnedTime WHERE id = :id")
     suspend fun updatePinStatus(id: Long, pinnedTime: Long)
 
-    /** 更新折叠状态；折叠只改变普通/折叠范围可见性，不影响置顶、时间和内容。 */
-    @Query("UPDATE clips SET is_folded = :isFolded WHERE id = :id")
-    suspend fun updateFoldStatus(id: Long, isFolded: Boolean)
+    /** 更新折叠状态；折叠写入本次折叠时间，取消折叠清零，不影响置顶、剪贴时间和内容。 */
+    @Query("UPDATE clips SET is_folded = :isFolded, folded_at = :foldedAt WHERE id = :id")
+    suspend fun updateFoldStatus(id: Long, isFolded: Boolean, foldedAt: Long)
 
     /** 更新时间戳 */
     @Query("UPDATE clips SET timestamp = :timestamp WHERE id = :id")
@@ -374,9 +422,9 @@ interface ClipDao {
     /**
      * 加载所有的剪贴板数据，供分页使用。这个方法会被 PagingSource 调用。
      * 排序规则：
-     * 1. 按照 是否置顶 (pinned_time > 0) 降序排列，保证置顶在前。
-     * 2. 如果置顶了，按照 pinned_time 倒序排列（新置顶的在前）。
-     * 3. 如果没置顶，按照 timestamp 倒序排列（新复制的在前）。
+     * 1. 普通列表按照是否置顶、置顶时间、剪贴时间排序。
+     * 2. 折叠列表同样置顶优先，但置顶组和非置顶组内部按照 folded_at 倒序排列，避免重复复制刷新 timestamp 后改变折叠列表顺序。
+     * 3. timestamp 作为折叠时间相同或历史回填边界下的稳定兜底排序。
      *
      * @param isFolded 查询范围；false 为普通列表，true 为折叠列表。
      */
@@ -388,7 +436,8 @@ interface ClipDao {
           AND deleted_at = 0
         ORDER BY 
           CASE WHEN pinned_time > 0 THEN 1 ELSE 0 END DESC, 
-          pinned_time DESC, 
+          CASE WHEN :isFolded = 0 THEN pinned_time ELSE 0 END DESC, 
+          CASE WHEN :isFolded = 1 THEN folded_at ELSE timestamp END DESC,
           timestamp DESC
     """
     )

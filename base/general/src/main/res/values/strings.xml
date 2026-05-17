@@ -175,6 +175,7 @@
     <string name="base_general_recycle_bin_entry_desc">回收站内有 %1$d 条剪贴数据</string>
     <string name="base_general_recycle_bin_empty">回收站是空的</string>
     <string name="base_general_deleted_at_prefix">删除于 </string>
+    <string name="base_general_folded_at_prefix">折叠于 </string>
     <string name="base_general_continue_swipe_to_delete_permanently">继续右滑彻底删除</string>
     <string name="base_general_clear_recycle_bin">清空回收站</string>
     <string name="base_general_recycle_bin_settings">回收站设置</string>

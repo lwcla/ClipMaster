@@ -99,7 +99,7 @@ class RecycleBinVm @Inject constructor(
         _selectedIds.update { ids -> ids.intersect(existingIds) }
     }
 
-    /** 还原单条回收站记录；只清空 deletedAt，不改变原折叠、置顶和时间。 */
+    /** 还原单条回收站记录；只清空 deletedAt，不改变原折叠、折叠时间、置顶和剪贴时间。 */
     fun restoreClip(clip: ClipShowEntity) {
         viewModelScope.launch(Dispatchers.IO) {
             val count = clipRepository.get().restoreClipsFromRecycleBin(setOf(clip.id))

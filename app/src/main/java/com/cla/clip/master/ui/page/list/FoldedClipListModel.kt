@@ -36,7 +36,7 @@ class FoldedClipListModel @Inject constructor(
     /**
      * 折叠剪贴记录分页数据。
      *
-     * 查询范围固定为 `FoldedOnly`，排序规则仍由 DAO 统一维护为置顶优先、时间倒序。
+     * 查询范围固定为 `FoldedOnly`，排序规则由 DAO 维护为置顶优先、组内折叠时间倒序，不受剪贴更新时间影响。
      */
     val pagedClips = Pager(
         config = PagingConfig(

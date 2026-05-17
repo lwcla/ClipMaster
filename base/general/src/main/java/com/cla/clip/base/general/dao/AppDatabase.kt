@@ -21,7 +21,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ImageExtractBatchData::class,
         ImageExtractItemData::class
     ],
-    version = 7, // 版本7：剪贴记录增加回收站删除时间，普通范围默认隐藏回收站数据。
+    version = 8, // 版本8：剪贴记录增加折叠时间，折叠范围按折叠动作时间排序和筛选。
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
@@ -84,6 +84,21 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE `clips` ADD COLUMN `deleted_at` INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_clips_deleted_at` ON `clips` (`deleted_at`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_clips_deleted_at_is_folded` ON `clips` (`deleted_at`, `is_folded`)")
+            }
+        }
+
+        /**
+         * 版本 7 -> 8 手动迁移。
+         *
+         * 折叠列表需要按“折叠发生时间”排序，不能继续被剪贴内容更新时间影响；旧数据没有真实折叠时间，
+         * 因此对已折叠记录用原剪贴时间回填 `folded_at`，未折叠记录保持 0，避免迁移后普通范围行为变化。
+         */
+        val MIGRATION_7_8: Migration = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `clips` ADD COLUMN `folded_at` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("UPDATE `clips` SET `folded_at` = `timestamp` WHERE `is_folded` = 1 AND `folded_at` = 0")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_clips_folded_at` ON `clips` (`folded_at`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_clips_deleted_at_is_folded_folded_at` ON `clips` (`deleted_at`, `is_folded`, `folded_at`)")
             }
         }
     }

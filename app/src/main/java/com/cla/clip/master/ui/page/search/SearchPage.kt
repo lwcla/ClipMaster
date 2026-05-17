@@ -57,6 +57,7 @@ import com.cla.clip.master.ui.dialog.ClipDeleteChoiceDialog
 import com.cla.clip.master.ui.navigation.DetailRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.navigation.SearchScope
+import com.cla.clip.master.ui.page.list.ClipCardTimeMode
 import com.cla.clip.master.ui.page.list.ClipResultList
 import com.cla.clip.master.ui.widget.TitleBar
 
@@ -75,6 +76,7 @@ fun SearchPage(
     onNavigate: (Route) -> Unit,
 ) {
     val visibilityScope = scope.toVisibilityScope()
+    val isVisibleSearch = scope == SearchScope.VisibleOnly
     LaunchedEffect(visibilityScope) {
         viewModel.updateVisibilityScope(visibilityScope)
     }
@@ -126,7 +128,8 @@ fun SearchPage(
                     emptyText = stringResource(scope.emptyTextRes),
                     highlightQuery = filterState.query,
                     contentPadding = PaddingValues(start = 10.dp, top = 10.dp, end = 10.dp, bottom = 24.dp),
-                    onPinToggle = { viewModel.updatePinStatus(it, !it.isPinned) },
+                    // 折叠搜索保留置顶操作能力；数据层会先排置顶数据，再在分组内按 foldedAt 倒序。
+                    onPinToggle = { clip -> viewModel.updatePinStatus(clip, !clip.isPinned) },
                     onDelete = { deleteClip = it },
                     onCopy = viewModel::copyToClipboard,
                     onSwipePastAction = { clip ->
@@ -136,8 +139,9 @@ fun SearchPage(
                         )
                     },
                     swipePastActionText = stringResource(scope.swipePastTextRes),
+                    timeMode = if (isVisibleSearch) ClipCardTimeMode.ClipTime else ClipCardTimeMode.FoldedTime,
                     quickAction = quickAction,
-                    enableQuickAction = scope == SearchScope.VisibleOnly && quickAction != ClipItemQuickAction.None,
+                    enableQuickAction = isVisibleSearch && quickAction != ClipItemQuickAction.None,
                     onClick = { onNavigate(DetailRoute(it.id)) },
                     onLongClick = {}
                 )

@@ -88,13 +88,16 @@ class ClipRepositoryImpl @Inject constructor(
         val sourcePackagesForQuery = buildSourcePackagesForQuery(sourceAppPackages)
         val sourceAppPackageCount = sourceAppPackages.count { it.isNotBlank() }
         val isFolded = visibilityScope.toFoldState()
+        // 折叠搜索的“今天/近 7 天”等时间筛选按折叠动作发生时间过滤，和折叠列表排序、卡片时间展示保持一致。
+        val timeFilterUsesFoldedAt = visibilityScope == ClipVisibilityScope.FoldedOnly
         if (trimmed.isBlank()) {
             return clipDao.searchClipsByFilters(
                 startTime = startTime,
                 endTime = endTime,
                 sourceAppPackageCount = sourceAppPackageCount,
                 sourceAppPackages = sourcePackagesForQuery,
-                isFolded = isFolded
+                isFolded = isFolded,
+                timeFilterUsesFoldedAt = timeFilterUsesFoldedAt
             )
         }
 
@@ -106,7 +109,8 @@ class ClipRepositoryImpl @Inject constructor(
                 endTime = endTime,
                 sourceAppPackageCount = sourceAppPackageCount,
                 sourceAppPackages = sourcePackagesForQuery,
-                isFolded = isFolded
+                isFolded = isFolded,
+                timeFilterUsesFoldedAt = timeFilterUsesFoldedAt
             )
         }
 
@@ -120,7 +124,8 @@ class ClipRepositoryImpl @Inject constructor(
             endTime = endTime,
             sourceAppPackageCount = sourceAppPackageCount,
             sourceAppPackages = sourcePackagesForQuery,
-            isFolded = isFolded
+            isFolded = isFolded,
+            timeFilterUsesFoldedAt = timeFilterUsesFoldedAt
         )
     }
 
@@ -228,6 +233,8 @@ class ClipRepositoryImpl @Inject constructor(
                 pinnedTime = existingClip.clip.pinnedTime,
                 // 重复内容更新时保留折叠状态，避免用户刚折叠的数据因为再次复制同内容而自动回到普通列表。
                 isFolded = existingClip.clip.isFolded,
+                // 重复复制只刷新剪贴时间，不刷新折叠时间，避免折叠列表顺序被剪贴板更新扰动。
+                foldedAt = existingClip.clip.foldedAt,
                 timestamp = System.currentTimeMillis() // 更新时间戳，表示这是最新的一次复制
             )
             // 执行更新
@@ -294,7 +301,8 @@ class ClipRepositoryImpl @Inject constructor(
     }
 
     override suspend fun updateFoldStatus(clipId: Long, isFolded: Boolean) = withContext(Dispatchers.IO) {
-        clipDao.updateFoldStatus(clipId, isFolded)
+        val foldedAt = if (isFolded) System.currentTimeMillis() else 0L
+        clipDao.updateFoldStatus(clipId, isFolded, foldedAt)
     }
 
     override suspend fun updateTimestamp(clipId: Long) {

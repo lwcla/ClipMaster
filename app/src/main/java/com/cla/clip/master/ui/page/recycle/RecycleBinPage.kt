@@ -225,7 +225,7 @@ private fun RecycleBinSelectionBar(
     }
 }
 
-/** 单条回收站记录还原确认弹窗，确认后只恢复删除状态，不改变原折叠和置顶信息。 */
+/** 单条回收站记录还原确认弹窗，确认后只恢复删除状态，不改变原折叠、折叠时间和置顶信息。 */
 @Composable
 private fun RestoreConfirmDialog(
     clip: ClipShowEntity?,

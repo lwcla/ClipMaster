@@ -46,7 +46,7 @@ interface ClipboardDataProcessor {
     /** 更新置顶状态；true 会写入当前时间，false 会清零置顶时间。 */
     fun updatePinStatus(clip: ClipShowEntity, isPinned: Boolean)
 
-    /** 更新折叠状态；折叠只影响普通/折叠范围可见性，不改变剪贴内容本身。 */
+    /** 更新折叠状态；折叠会记录折叠时间，取消折叠会清空折叠时间，不改变剪贴内容本身。 */
     fun updateFoldStatus(clip: ClipShowEntity, isFolded: Boolean)
 }
 

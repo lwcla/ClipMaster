@@ -35,7 +35,13 @@ object DatabaseModule {
             // 4->5 只调整视频 URL 索引唯一性，保留所有既有下载记录和媒体路径。
             // 5->6 为剪贴记录补充折叠状态，旧记录默认保持未折叠。
             // 6->7 为剪贴记录补充回收站删除时间，旧记录默认保持正常可见。
-            .addMigrations(AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7)
+            // 7->8 为折叠记录补充折叠时间，旧折叠记录用原剪贴时间回填以保持稳定顺序。
+            .addMigrations(
+                AppDatabase.MIGRATION_4_5,
+                AppDatabase.MIGRATION_5_6,
+                AppDatabase.MIGRATION_6_7,
+                AppDatabase.MIGRATION_7_8
+            )
             .build()
     }
 

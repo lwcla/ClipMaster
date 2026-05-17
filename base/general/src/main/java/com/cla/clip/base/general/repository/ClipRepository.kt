@@ -24,8 +24,8 @@ interface ClipRepository {
     /**
      * 按关键词、时间范围和来源 App 分页搜索剪贴记录。
      *
-     * Repository 负责把用户输入和来源 App 多选集合转换成 DAO 可执行的查询参数，
-     * 避免 UI 层理解 FTS 语法、Room `IN` 查询或空集合边界。
+     * Repository 负责把用户输入、来源 App 多选集合和搜索范围转换成 DAO 可执行的查询参数；
+     * 普通搜索时间筛选使用剪贴时间，折叠搜索时间筛选使用折叠时间，避免 UI 层理解底层字段差异。
      */
     fun searchClips(
         userInput: String,
@@ -52,7 +52,7 @@ interface ClipRepository {
     /** 永久删除指定剪贴记录；调用方可传入正常数据或回收站数据 id，已不存在的 id 会被忽略。 */
     suspend fun deleteClipsPermanently(ids: Set<Long>): Int
 
-    /** 从回收站恢复指定剪贴记录；只清除删除时间，不改变折叠、置顶和原始时间。 */
+    /** 从回收站恢复指定剪贴记录；只清除删除时间，不改变折叠、折叠时间、置顶和原始时间。 */
     suspend fun restoreClipsFromRecycleBin(ids: Set<Long>): Int
 
     /** 分页加载回收站剪贴记录，排序为删除时间倒序。 */
@@ -61,7 +61,7 @@ interface ClipRepository {
     /** 更新置顶状态 */
     suspend fun updatePinStatus(clipId: Long, isPinned: Boolean)
 
-    /** 更新折叠状态；折叠数据会从普通列表/普通搜索隐藏，只在折叠范围展示。 */
+    /** 更新折叠状态；折叠时记录折叠时间，取消折叠时清空折叠时间。 */
     suspend fun updateFoldStatus(clipId: Long, isFolded: Boolean)
 
     /** 更新时间戳 */
@@ -69,7 +69,7 @@ interface ClipRepository {
 
     /**
      * 加载所有的剪贴板数据，供分页使用。这个方法会被 PagingSource 调用，返回一个 PagingSource 对象。
-     * 排序规则：置顶在前，其余按时间倒序。
+     * 排序规则：普通范围置顶在前，其余按剪贴时间倒序；折叠范围也置顶在前，组内按折叠时间倒序。
      */
     fun loadClips(visibilityScope: ClipVisibilityScope): PagingSource<Int, ClipDetail>
 

@@ -70,11 +70,13 @@ fun FoldedClipListPage(
                 pagedClips = pagedClips,
                 emptyText = stringResource(com.cla.clip.base.general.R.string.base_general_folded_clip_list_empty),
                 contentPadding = PaddingValues(start = 10.dp, top = 10.dp, end = 10.dp, bottom = 96.dp),
+                // 折叠范围保留置顶操作能力，DAO 会先排置顶数据，再在分组内按 foldedAt 倒序。
                 onPinToggle = { viewModel.updatePinStatus(it, !it.isPinned) },
                 onDelete = { clip -> deleteClip = clip },
                 onCopy = viewModel::copyToClipboard,
                 onSwipePastAction = { clip -> viewModel.updateFoldStatus(clip, false) },
                 swipePastActionText = stringResource(com.cla.clip.base.general.R.string.base_general_continue_swipe_to_unfold_clip),
+                timeMode = ClipCardTimeMode.FoldedTime,
                 onClick = { onNavigate(DetailRoute(it.id)) },
                 onLongClick = {},
             )
