@@ -6,6 +6,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.cla.clip.base.general.config.AppSetting
+import com.cla.clip.base.general.config.ClipItemLeftClickAction
 import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.base.general.utils.hasNotificationPermission
 import com.cla.clip.base.general.utils.hasNotificationRuntimePermission
@@ -100,6 +102,13 @@ class MineVm @Inject constructor(
             0
         )
 
+    /**
+     * 普通剪贴 item 左半区动作设置。
+     *
+     * 直接暴露 AppSetting 的 StateFlow，让“我的”页修改后普通列表和普通搜索能立即跟随刷新。
+     */
+    val clipItemLeftClickAction = AppSetting.clipItemLeftClickActionFlow
+
     init {
         // 初始化时读取一次系统权限状态，确保页面首次展示的开关状态准确。
         refreshPermissionStatus()
@@ -108,6 +117,15 @@ class MineVm @Inject constructor(
     /** 展开或收起权限说明卡片。 */
     fun togglePermissionExpanded() {
         permissionExpanded = !permissionExpanded
+    }
+
+    /**
+     * 保存普通剪贴 item 左半区动作。
+     *
+     * 这里不做页面范围判断；普通列表/普通搜索负责消费，折叠列表和回收站固定忽略该设置。
+     */
+    fun updateClipItemLeftClickAction(action: ClipItemLeftClickAction) {
+        AppSetting.clipItemLeftClickAction = action
     }
 
     /**

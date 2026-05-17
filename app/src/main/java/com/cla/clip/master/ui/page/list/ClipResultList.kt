@@ -84,6 +84,7 @@ import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
 import coil3.compose.AsyncImage
+import com.cla.clip.base.general.config.ClipItemLeftClickAction
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.master.R
 import com.cla.clip.master.ui.theme.cardCornerShape
@@ -145,6 +146,8 @@ fun ClipResultList(
     swipePastActionText: String? = null,
     timeMode: ClipCardTimeMode = ClipCardTimeMode.ClipTime,
     selectedIds: Set<Long> = emptySet(),
+    leftClickAction: ClipItemLeftClickAction = ClipItemLeftClickAction.None,
+    enableLeftClickAction: Boolean = false,
 ) {
     // 取消置顶的排序变化由数据库/Paging 异步返回，先保存待恢复视口，再在快照确认后执行恢复。
     var pendingPinScrollRestore by remember { mutableStateOf<PendingPinScrollRestore?>(null) }
@@ -211,6 +214,8 @@ fun ClipResultList(
                                 onLongClick = onLongClick,
                                 selected = clip.id in selectedIds,
                                 timeMode = timeMode,
+                                leftClickAction = leftClickAction,
+                                enableLeftClickAction = enableLeftClickAction,
                                 openedMenuClipId = openedMenuClipId,
                                 onMenuActive = { clipId ->
                                     if (openedMenuClipId != clipId) {
@@ -275,7 +280,12 @@ fun ClipResultList(
 /**
  * 显示单个剪贴板内容的卡片。
  *
- * 卡片本身只处理展示和用户点击回调，不直接访问 ViewModel 或 Repository，
+ * 卡片本身只处理展示和用户点击回调，不直接访问 ViewModel 或 Repository。
+ *
+ * 普通列表和普通搜索可以按设置开启左右分区：左半区执行页面传入的动作，
+ * 右半区进入详情；折叠列表、折叠搜索和回收站保持整卡点击语义。
+ * 左半区背景只作为底层视觉提示，内容始终按完整卡片宽度铺满。
+ *
  * 因此普通列表页和搜索页可以在各自页面层决定置顶、删除、复制和详情跳转行为。
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -294,27 +304,31 @@ fun ClipCard(
     swipePastActionText: String? = null,
     selected: Boolean = false,
     timeMode: ClipCardTimeMode = ClipCardTimeMode.ClipTime,
+    leftClickAction: ClipItemLeftClickAction = ClipItemLeftClickAction.None,
+    enableLeftClickAction: Boolean = false,
     openedMenuClipId: Long? = null,
     onMenuActive: (Long) -> Unit = {},
     onMenuInactive: (Long) -> Unit = {},
 ) {
     val appColor = clip.appColor ?: MaterialTheme.colorScheme.outlineVariant
     val borderColor = appColor.copy(alpha = 0.3f)
+    // 左半区面积较大，背景只保留很轻的同源提示色，避免压住铺满整卡的剪贴内容。
+    val leftActionBackgroundColor = appColor.copy(alpha = 0.02f)
     val density = LocalDensity.current
     val actionWidth = 48.dp
-    val copyActionWidth = 48.dp
     // 分割线只承担视觉分区，不作为主要点击边界；高度按图标尺寸增加 10dp，并在按钮区域内竖向居中。
     val actionIconSize = 24.dp
     val dividerWidth = 0.5.dp
     val dividerHeight = actionIconSize + 10.dp
+    val showCopyAction = onCopy != null
     val showPinAction = onPinToggle != null
     val showDeleteAction = onDelete != null
-    val showActionMenu = showPinAction || showDeleteAction
-    val showCopyAction = onCopy != null
-    val actionAreaWidth = when {
-        showPinAction && showDeleteAction -> actionWidth * 2 + dividerWidth
-        showPinAction || showDeleteAction -> actionWidth
-        else -> 0.dp
+    val actionCount = listOf(showCopyAction, showPinAction, showDeleteAction).count { it }
+    val showActionMenu = actionCount > 0
+    val actionAreaWidth = if (actionCount > 0) {
+        actionWidth * actionCount + dividerWidth * (actionCount - 1)
+    } else {
+        0.dp
     }
     val maxOffsetPx = with(density) { actionAreaWidth.toPx() }
     val fallbackSwipePastOffsetPx = if (maxOffsetPx > 0f) {
@@ -344,10 +358,49 @@ fun ClipCard(
     )
     val deleteDescription = stringResource(com.cla.clip.base.general.R.string.base_general_delete)
     val copyDescription = stringResource(com.cla.clip.base.general.R.string.base_general_copy)
+    val detailDescription = stringResource(com.cla.clip.base.general.R.string.base_general_clip_detail)
+    val foldDescription = stringResource(com.cla.clip.base.general.R.string.base_general_fold_clip)
+    val leftClickDescription = when (leftClickAction) {
+        ClipItemLeftClickAction.Copy -> copyDescription
+        ClipItemLeftClickAction.Pin -> pinDescription
+        ClipItemLeftClickAction.Delete -> deleteDescription
+        ClipItemLeftClickAction.Fold -> foldDescription
+        ClipItemLeftClickAction.None -> detailDescription
+    }
+    val canRunLeftClickAction = enableLeftClickAction &&
+        leftClickAction != ClipItemLeftClickAction.None &&
+        when (leftClickAction) {
+            ClipItemLeftClickAction.Copy -> onCopy != null
+            ClipItemLeftClickAction.Pin -> onPinToggle != null
+            ClipItemLeftClickAction.Delete -> onDelete != null
+            ClipItemLeftClickAction.Fold -> onSwipePastAction != null
+            ClipItemLeftClickAction.None -> false
+        }
     val currentOnMenuActive by rememberUpdatedState(onMenuActive)
     val currentOnMenuInactive by rememberUpdatedState(onMenuInactive)
     // 外层 Card、侧滑内容和边框共用同一个圆角，保证阴影、水波纹和裁剪视觉一致。
     val cardShape = cardCornerShape
+
+    /** 执行普通列表/普通搜索左半区动作，具体业务仍由页面层回调决定。 */
+    fun runLeftClickAction() {
+        when (leftClickAction) {
+            ClipItemLeftClickAction.Copy -> onCopy?.invoke(clip)
+            ClipItemLeftClickAction.Pin -> {
+                if (clip.isPinned) {
+                    onKeepCurrentScrollPosition()
+                }
+                onPinToggle?.invoke(clip)
+            }
+
+            ClipItemLeftClickAction.Delete -> {
+                // 删除动作只触发页面层现有删除选择弹窗，这是防止误触后静默删除的安全边界。
+                onDelete?.invoke(clip)
+            }
+
+            ClipItemLeftClickAction.Fold -> onSwipePastAction?.invoke(clip)
+            ClipItemLeftClickAction.None -> onClick(clip)
+        }
+    }
     /**
      * 播放侧滑偏移动画。
      *
@@ -418,7 +471,7 @@ fun ClipCard(
             .clipToBounds()
     ) {
         if (showActionMenu) {
-            // 左侧操作区固定贴在 item 左边，内容卡片右滑后露出置顶和删除按钮；左滑方向留给首页 Pager 切到“我的”。
+            // 左侧操作区固定贴在 item 左边，内容卡片右滑后露出复制、置顶和删除按钮；左滑方向留给首页 Pager 切到“我的”。
             Box(
                 modifier = Modifier
                     .matchParentSize()
@@ -431,7 +484,37 @@ fun ClipCard(
                         .fillMaxHeight(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    var hasPreviousAction = false
+
+                    if (showCopyAction) {
+                        SwipeActionButton(
+                            modifier = Modifier
+                                .width(actionWidth)
+                                .fillMaxHeight(),
+                            iconTint = MaterialTheme.colorScheme.primary,
+                            iconContentDescription = copyDescription,
+                            iconSize = actionIconSize,
+                            painterRes = R.drawable.host_icon_copy,
+                            onClick = {
+                                offsetPx = 0f
+                                currentOnMenuInactive(clip.id)
+                                onCopy?.invoke(clip)
+                            }
+                        )
+                        hasPreviousAction = true
+                    }
+
                     if (showPinAction) {
+                        if (hasPreviousAction) {
+                            Box(
+                                modifier = Modifier
+                                    .width(dividerWidth)
+                                    .height(dividerHeight)
+                                    .align(Alignment.CenterVertically)
+                                    .background(borderColor)
+                            )
+                        }
+
                         SwipeActionButton(
                             modifier = Modifier
                                 .width(actionWidth)
@@ -453,19 +536,20 @@ fun ClipCard(
                                 onPinToggle?.invoke(clip)
                             }
                         )
-                    }
-
-                    if (showPinAction && showDeleteAction) {
-                        Box(
-                            modifier = Modifier
-                                .width(dividerWidth)
-                                .height(dividerHeight)
-                                .align(Alignment.CenterVertically)
-                                .background(borderColor)
-                        )
+                        hasPreviousAction = true
                     }
 
                     if (showDeleteAction) {
+                        if (hasPreviousAction) {
+                            Box(
+                                modifier = Modifier
+                                    .width(dividerWidth)
+                                    .height(dividerHeight)
+                                    .align(Alignment.CenterVertically)
+                                    .background(borderColor)
+                            )
+                        }
+
                         SwipeActionButton(
                             modifier = Modifier
                                 .width(actionWidth)
@@ -570,7 +654,7 @@ fun ClipCard(
                             )
                         }
                     )
-                },
+            },
             elevation = CardDefaults.cardElevation(2.dp)
         ) {
             Box(
@@ -579,98 +663,79 @@ fun ClipCard(
                     .clip(cardShape)
                     .border(1.dp, borderColor, cardShape)
             ) {
-                Layout(
-                    modifier = Modifier.fillMaxWidth(),
-                    content = {
-                        if (showCopyAction) {
-                            Box(
-                                modifier = Modifier
-                                    .width(copyActionWidth)
-                                    .clickable(onClick = { onCopy?.invoke(clip) }),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    painterResource(R.drawable.host_icon_copy),
-                                    contentDescription = copyDescription,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(actionIconSize)
-                                )
-                            }
+                if (canRunLeftClickAction) {
+                    Row(
+                        modifier = Modifier.matchParentSize()
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                // 左半区底色只提示“这里有分区动作”，不参与内容测量，也不遮挡随后绘制的文本。
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .background(leftActionBackgroundColor)
+                        )
 
-                            Box(
-                                modifier = Modifier
-                                    .width(dividerWidth)
-                                    .height(dividerHeight)
-                                    .background(borderColor)
-                            )
-                        }
+                        Spacer(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                        )
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        // 内容层始终使用整张卡片宽度，避免左半区动作改变文本排版和关键词高亮结果。
+                        .fillMaxWidth()
+                        .padding(start = 12.dp, top = 12.dp, bottom = 12.dp, end = 12.dp)
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        ClipContent(clip, highlightQuery)
+
+                        Spacer(Modifier.height(8.dp))
+                        SourceAppNameWithTime(clip, highlightQuery, timeMode)
+                    }
+                }
+
+                if (canRunLeftClickAction) {
+                    Row(
+                        modifier = Modifier.matchParentSize()
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                // 左半区透明热区承接设置动作；长按仍透出为整卡长按，避免左右区域行为割裂。
+                                .combinedClickable(
+                                    onClickLabel = leftClickDescription,
+                                    onClick = { runLeftClickAction() },
+                                    onLongClick = { onLongClick(clip) }
+                                )
+                        )
 
                         Box(
                             modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                // 右半区固定进入详情，与设置项无关，保证普通列表的主路径稳定。
                                 .combinedClickable(
+                                    onClickLabel = detailDescription,
                                     onClick = { onClick(clip) },
                                     onLongClick = { onLongClick(clip) }
                                 )
-                                .padding(start = 12.dp, top = 12.dp, bottom = 12.dp, end = 12.dp)
-                        ) {
-                            Column(modifier = Modifier.fillMaxWidth()) {
-                                ClipContent(clip, highlightQuery)
-
-                                Spacer(Modifier.height(8.dp))
-                                SourceAppNameWithTime(clip, highlightQuery, timeMode)
-                            }
-                        }
-                    }
-                ) { measurables, constraints ->
-                    val dividerWidthPx = if (showCopyAction) dividerWidth.roundToPx() else 0
-                    val dividerHeightPx = dividerHeight.roundToPx()
-                    val copyWidthPx = if (showCopyAction) copyActionWidth.roundToPx() else 0
-                    val minActionHeightPx = if (showCopyAction) copyActionWidth.roundToPx() else 0
-                    val contentWidthPx = (constraints.maxWidth - dividerWidthPx - copyWidthPx).coerceAtLeast(0)
-                    val contentIndex = if (showCopyAction) 2 else 0
-
-                    // 复制按钮放在卡片左侧，和左侧侧滑菜单保持同方向；内容区先按扣除复制区后的宽度测量真实高度。
-                    val contentPlaceable = measurables[contentIndex].measure(
-                        constraints.copy(
-                            minWidth = contentWidthPx,
-                            maxWidth = contentWidthPx,
-                            minHeight = 0
                         )
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            // 未启用分区时使用整卡点击语义；“无”设置、折叠列表和回收站都会走这里。
+                            .combinedClickable(
+                                onClickLabel = detailDescription,
+                                onClick = { onClick(clip) },
+                                onLongClick = { onLongClick(clip) }
+                            )
                     )
-                    val rowHeightPx = maxOf(contentPlaceable.height, minActionHeightPx, constraints.minHeight)
-                    val copyPlaceable = if (showCopyAction) {
-                        measurables[0].measure(
-                            Constraints.fixed(
-                                width = copyWidthPx,
-                                height = rowHeightPx
-                            )
-                        )
-                    } else {
-                        null
-                    }
-                    val dividerPlaceable = if (showCopyAction) {
-                        measurables[1].measure(
-                            Constraints.fixed(
-                                width = dividerWidthPx,
-                                height = dividerHeightPx.coerceAtMost(rowHeightPx)
-                            )
-                        )
-                    } else {
-                        null
-                    }
-
-                    layout(width = constraints.maxWidth, height = rowHeightPx) {
-                        if (showCopyAction) {
-                            copyPlaceable?.placeRelative(x = 0, y = 0)
-                            dividerPlaceable?.placeRelative(
-                                x = copyWidthPx,
-                                y = (rowHeightPx - dividerPlaceable.height) / 2
-                            )
-                            contentPlaceable.placeRelative(x = copyWidthPx + dividerWidthPx, y = 0)
-                        } else {
-                            contentPlaceable.placeRelative(x = 0, y = 0)
-                        }
-                    }
                 }
 
                 if (selected) {
@@ -696,7 +761,7 @@ fun ClipCard(
                         painterResource(R.drawable.host_icon_pinned),
                         contentDescription = null,
                         modifier = Modifier
-                            // 置顶角标是卡片内的最高装饰层；放在内容、复制按钮和选中态之后绘制，避免被后续兄弟节点盖住。
+                            // 置顶角标是卡片内的最高装饰层；放在内容、复制热区和选中态之后绘制，避免被后续兄弟节点盖住。
                             .zIndex(2f)
                             .width(42.dp)
                             .align(Alignment.TopEnd)

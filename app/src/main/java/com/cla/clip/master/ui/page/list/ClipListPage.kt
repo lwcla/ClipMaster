@@ -31,8 +31,11 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.flowWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
+import com.cla.clip.base.general.config.AppSetting
+import com.cla.clip.base.general.config.ClipItemLeftClickAction
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.master.ui.dialog.ClipDeleteChoiceDialog
@@ -63,6 +66,8 @@ fun ClipListPage(
     val pagedClips = remember(viewModel.pagedClips, lifecycle) {
         viewModel.pagedClips.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
     }.collectAsLazyPagingItems()
+    // 普通列表实时读取“我的”页配置；选择“无”时完全关闭左右分区和左半区底色。
+    val leftClickAction by AppSetting.clipItemLeftClickActionFlow.collectAsStateWithLifecycle()
 
     // --- BottomSheet 状态管理 ---
     // 保存当前长按选中的 Clip，如果为 null 则不显示 Sheet
@@ -97,6 +102,8 @@ fun ClipListPage(
                 onCopy = { viewModel.copyToClipboard(it) },
                 onSwipePastAction = { clip -> viewModel.updateFoldStatus(clip, true) },
                 swipePastActionText = stringResource(com.cla.clip.base.general.R.string.base_general_continue_swipe_to_fold_clip),
+                leftClickAction = leftClickAction,
+                enableLeftClickAction = leftClickAction != ClipItemLeftClickAction.None,
                 onClick = { onNavigate(DetailRoute(it.id)) },
                 onLongClick = { clip ->
                     // 长按时，设置选中的 Clip，触发 BottomSheet 显示

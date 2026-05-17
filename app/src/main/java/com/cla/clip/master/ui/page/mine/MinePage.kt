@@ -28,17 +28,24 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
@@ -50,6 +57,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.cla.clip.base.general.config.ClipItemLeftClickAction
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.utils.toPermissionSetting
 import com.cla.clip.master.entity.SettingSwitchItemUi
@@ -74,6 +82,9 @@ fun MinePage(
 ) {
     val foldedClipCount by mineVm.foldedClipCount.collectAsStateWithLifecycle()
     val recycleBinCount by mineVm.recycleBinCount.collectAsStateWithLifecycle()
+    val clipItemLeftClickAction by mineVm.clipItemLeftClickAction.collectAsStateWithLifecycle()
+    // 设置弹窗属于页面瞬时状态，配置值本身由 AppSetting/MMKV 持久化。
+    var showClipItemActionDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -87,8 +98,25 @@ fun MinePage(
             item { DownloadHistoryEntry(onNavigate = onNavigate) }
             item { FoldedClipsEntry(foldedClipCount = foldedClipCount, onNavigate = onNavigate) }
             item { RecycleBinEntry(recycleBinCount = recycleBinCount, onNavigate = onNavigate) }
+            item {
+                ClipItemActionSettingEntry(
+                    action = clipItemLeftClickAction,
+                    onClick = { showClipItemActionDialog = true }
+                )
+            }
             item { Permission(mineVm = mineVm) }
         }
+    }
+
+    if (showClipItemActionDialog) {
+        ClipItemActionSettingDialog(
+            currentAction = clipItemLeftClickAction,
+            onSelect = { action ->
+                mineVm.updateClipItemLeftClickAction(action)
+                showClipItemActionDialog = false
+            },
+            onDismiss = { showClipItemActionDialog = false }
+        )
     }
 }
 
@@ -114,6 +142,109 @@ private fun RecycleBinEntry(
         description = stringResource(com.cla.clip.base.general.R.string.base_general_recycle_bin_entry_desc, recycleBinCount),
         onClick = { onNavigate(RecycleBinRoute) }
     )
+}
+
+/**
+ * 普通剪贴 item 左半区动作设置入口。
+ *
+ * 该设置只影响普通列表和普通搜索结果；折叠列表、折叠搜索和回收站继续由各自页面保持整卡点击语义。
+ */
+@Composable
+private fun ClipItemActionSettingEntry(
+    action: ClipItemLeftClickAction,
+    onClick: () -> Unit,
+) {
+    MineEntryCard(
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Tune,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+        },
+        title = stringResource(R.string.base_general_clip_item_action_setting),
+        description = stringResource(R.string.base_general_current_option, action.labelText()),
+        onClick = onClick
+    )
+}
+
+/**
+ * 普通剪贴 item 左半区动作选择弹窗。
+ *
+ * 选项采用五选一并在点击后立即保存；“无”代表彻底关闭左右分区，而不是只关闭左半区回调。
+ */
+@Composable
+private fun ClipItemActionSettingDialog(
+    currentAction: ClipItemLeftClickAction,
+    onSelect: (ClipItemLeftClickAction) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(text = stringResource(R.string.base_general_clip_item_action_setting))
+        },
+        text = {
+            Column {
+                Text(
+                    text = stringResource(R.string.base_general_clip_item_action_setting_desc),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+
+                clipItemLeftClickActionOptions.forEach { action ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(action) }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = action == currentAction,
+                            onClick = { onSelect(action) }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = action.labelText(),
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(R.string.base_general_cancel))
+            }
+        }
+    )
+}
+
+/**
+ * 左半区动作在设置界面的展示顺序。
+ *
+ * 新增 item 操作时需要同步扩展这里、枚举、字符串资源、共享 item 映射和方案文档。
+ */
+private val clipItemLeftClickActionOptions = listOf(
+    ClipItemLeftClickAction.Copy,
+    ClipItemLeftClickAction.Pin,
+    ClipItemLeftClickAction.Delete,
+    ClipItemLeftClickAction.Fold,
+    ClipItemLeftClickAction.None,
+)
+
+/** 将左半区动作映射为用户可见文案，所有文案都来自字符串资源。 */
+@Composable
+private fun ClipItemLeftClickAction.labelText(): String {
+    return when (this) {
+        ClipItemLeftClickAction.Copy -> stringResource(R.string.base_general_copy)
+        ClipItemLeftClickAction.Pin -> stringResource(R.string.base_general_pinned)
+        ClipItemLeftClickAction.Delete -> stringResource(R.string.base_general_delete)
+        ClipItemLeftClickAction.Fold -> stringResource(R.string.base_general_fold_clip)
+        ClipItemLeftClickAction.None -> stringResource(R.string.base_general_no_left_click_action)
+    }
 }
 
 /**
