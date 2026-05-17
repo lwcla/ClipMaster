@@ -42,8 +42,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -60,6 +68,14 @@ import com.cla.clip.master.ui.navigation.SearchScope
 import com.cla.clip.master.ui.page.list.ClipCardTimeMode
 import com.cla.clip.master.ui.page.list.ClipResultList
 import com.cla.clip.master.ui.widget.TitleBar
+import kotlin.math.roundToInt
+
+/**
+ * 搜索页顶部控件响应结果列表滚动方向的最小位移。
+ *
+ * 这里使用像素级阈值过滤嵌套滚动中的 0 值和极小抖动；真正的用户上滑/下滑会进入连续折叠或展开流程。
+ */
+private const val SEARCH_CONTROLS_SCROLL_THRESHOLD_PX = 1f
 
 /**
  * 剪贴搜索页。
@@ -77,8 +93,20 @@ fun SearchPage(
 ) {
     val visibilityScope = scope.toVisibilityScope()
     val isVisibleSearch = scope == SearchScope.VisibleOnly
+    // 搜索框和筛选区属于搜索页自己的顶部控制层；这里记录已折叠距离，列表只在折叠区到达边界后继续滚动。
+    var searchControlsCollapsePx by remember { mutableStateOf(0f) }
+    // 折叠区完整展开时的真实高度，用于把滚动距离转换为 AppBarLayout 式的连续收起/展开进度。
+    var searchControlsHeightPx by remember { mutableStateOf(0) }
     LaunchedEffect(visibilityScope) {
         viewModel.updateVisibilityScope(visibilityScope)
+        // 搜索范围切换时先恢复筛选入口，避免用户进入折叠搜索后看不到当前查询条件。
+        searchControlsCollapsePx = 0f
+    }
+    LaunchedEffect(searchControlsHeightPx) {
+        if (searchControlsHeightPx > 0) {
+            // 来源 App 标签或筛选内容高度变化时，把旧折叠距离限制到新的高度范围内，避免出现负高度或无法完全展开。
+            searchControlsCollapsePx = searchControlsCollapsePx.coerceIn(0f, searchControlsHeightPx.toFloat())
+        }
     }
 
     val filterState by viewModel.filterState.collectAsStateWithLifecycle()
@@ -90,6 +118,40 @@ fun SearchPage(
     val listState = rememberLazyListState()
     var deleteClip by remember { mutableStateOf<ClipShowEntity?>(null) }
     var showSourcePicker by remember { mutableStateOf(false) }
+    val searchControlsScrollConnection = remember {
+        object : NestedScrollConnection {
+            /**
+             * 在结果列表消费滚动前优先处理搜索控件折叠区。
+             *
+             * 上滑先把搜索框和筛选区连续收起；下滑先把它们连续展开。只有折叠区到达边界后，剩余滚动才交给列表，
+             * 这样行为更接近 View 系统里的 AppBarLayout，而不是一次性隐藏顶部控件。
+             */
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                val maxCollapsePx = searchControlsHeightPx.toFloat()
+                if (maxCollapsePx <= 0f) {
+                    return Offset.Zero
+                }
+
+                return when {
+                    available.y < -SEARCH_CONTROLS_SCROLL_THRESHOLD_PX && searchControlsCollapsePx < maxCollapsePx -> {
+                        val previousCollapsePx = searchControlsCollapsePx
+                        searchControlsCollapsePx = (searchControlsCollapsePx - available.y).coerceAtMost(maxCollapsePx)
+                        val consumedCollapsePx = searchControlsCollapsePx - previousCollapsePx
+                        Offset(x = 0f, y = -consumedCollapsePx)
+                    }
+
+                    available.y > SEARCH_CONTROLS_SCROLL_THRESHOLD_PX && searchControlsCollapsePx > 0f -> {
+                        val previousCollapsePx = searchControlsCollapsePx
+                        searchControlsCollapsePx = (searchControlsCollapsePx - available.y).coerceAtLeast(0f)
+                        val consumedExpandPx = previousCollapsePx - searchControlsCollapsePx
+                        Offset(x = 0f, y = consumedExpandPx)
+                    }
+
+                    else -> Offset.Zero
+                }
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -104,21 +166,36 @@ fun SearchPage(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            SearchBar(
-                query = filterState.query,
-                onQueryChange = viewModel::updateQuery
-            )
+            CollapsibleSearchControls(
+                collapseOffsetPx = searchControlsCollapsePx,
+                expandedHeightPx = searchControlsHeightPx,
+                onExpandedHeightChange = { measuredHeightPx ->
+                    if (measuredHeightPx > 0 && searchControlsHeightPx != measuredHeightPx) {
+                        searchControlsHeightPx = measuredHeightPx
+                    }
+                }
+            ) {
+                Column {
+                    SearchBar(
+                        query = filterState.query,
+                        onQueryChange = viewModel::updateQuery
+                    )
 
-            SearchFilters(
-                filterState = filterState,
-                selectedSourceAppNames = selectedSourceAppNames,
-                onTimeFilterChange = viewModel::updateTimeFilter,
-                onSourceClick = { showSourcePicker = true }
-            )
+                    SearchFilters(
+                        filterState = filterState,
+                        selectedSourceAppNames = selectedSourceAppNames,
+                        onTimeFilterChange = viewModel::updateTimeFilter,
+                        onSourceClick = {
+                            showSourcePicker = true
+                        }
+                    )
+                }
+            }
 
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .nestedScroll(searchControlsScrollConnection)
                     // 结果区占用搜索框和筛选器下方的剩余高度，避免列表在 Column 中抢占顶部控件空间。
                     .weight(1f)
             ) {
@@ -197,6 +274,64 @@ private val SearchScope.swipePastTextRes: Int
         SearchScope.VisibleOnly -> com.cla.clip.base.general.R.string.base_general_continue_swipe_to_fold_clip
         SearchScope.FoldedOnly -> com.cla.clip.base.general.R.string.base_general_continue_swipe_to_unfold_clip
     }
+
+/**
+ * 搜索框和筛选区的 AppBarLayout 式折叠容器。
+ *
+ * 容器先在保持父级宽度约束的前提下放宽高度，测量完整内容；再用自身可见高度和裁剪表现折叠进度。
+ * 这样搜索框和筛选区即使已经折叠到 0，也仍能保留完整高度基准，避免列表滚动反向污染顶部控件测量。
+ */
+@Composable
+private fun CollapsibleSearchControls(
+    collapseOffsetPx: Float,
+    expandedHeightPx: Int,
+    onExpandedHeightChange: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Layout(
+        modifier = modifier
+            .fillMaxWidth()
+            .clipToBounds(),
+        content = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // 子节点按完整高度测量后再回写给父层折叠状态；这是顶部控件高度变化时的唯一事实来源。
+                    .onSizeChanged { size ->
+                        if (size.height > 0 && size.height != expandedHeightPx) {
+                            onExpandedHeightChange(size.height)
+                        }
+                    }
+            ) {
+                content()
+            }
+        }
+    ) { measurables, constraints ->
+        val measurable = measurables.firstOrNull()
+        val placeable = measurable?.measure(
+            constraints.copy(
+                minHeight = 0,
+                // 只放宽高度，宽度仍沿用父级约束，避免搜索框在无界宽度下失去 fillMaxWidth 行为。
+                maxHeight = Constraints.Infinity
+            )
+        )
+        val contentHeightPx = placeable?.height ?: 0
+        val collapseBaseHeightPx = if (expandedHeightPx > 0) expandedHeightPx else contentHeightPx
+        val normalizedCollapsePx = if (collapseBaseHeightPx > 0) {
+            collapseOffsetPx.coerceIn(0f, collapseBaseHeightPx.toFloat())
+        } else {
+            0f
+        }
+        val visibleHeightPx = (collapseBaseHeightPx - normalizedCollapsePx.roundToInt()).coerceAtLeast(0)
+        val layoutWidth = (placeable?.width ?: constraints.minWidth).coerceIn(constraints.minWidth, constraints.maxWidth)
+        val layoutHeight = visibleHeightPx.coerceIn(constraints.minHeight, constraints.maxHeight)
+
+        layout(layoutWidth, layoutHeight) {
+            placeable?.placeRelative(x = 0, y = -normalizedCollapsePx.roundToInt())
+        }
+    }
+}
 
 /** 搜索输入框。 */
 @Composable
