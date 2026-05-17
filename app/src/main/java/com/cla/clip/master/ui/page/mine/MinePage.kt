@@ -11,7 +11,6 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -30,8 +29,6 @@ import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -65,7 +62,9 @@ import com.cla.clip.master.ui.navigation.DownloadHistoryRoute
 import com.cla.clip.master.ui.navigation.FoldedClipsRoute
 import com.cla.clip.master.ui.navigation.RecycleBinRoute
 import com.cla.clip.master.ui.navigation.Route
-import com.cla.clip.master.ui.theme.cardCornerShape
+import com.cla.clip.master.ui.widget.ClipMasterCard
+import com.cla.clip.master.ui.widget.ClipMasterCardDefaults
+import com.cla.clip.master.ui.widget.ClipMasterGestureCard
 import com.cla.clip.master.ui.widget.TopLevelTitleBar
 import com.cla.clip.shizuku.ShizukuUtils
 import rikka.shizuku.Shizuku
@@ -306,20 +305,15 @@ private fun MineEntryCard(
     description: String,
     onClick: () -> Unit,
 ) {
-    val shape = cardCornerShape
-    ElevatedCard(
-        shape = shape,
-        elevation = CardDefaults.cardElevation(defaultElevation = 10.dp),
+    ClipMasterCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
+        onClick = onClick,
     ) {
         Row(
             modifier = Modifier
-                .fillMaxWidth()
-                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
-                .clickable(onClick = onClick)
-                .padding(horizontal = 12.dp, vertical = 14.dp),
+                .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             icon()
@@ -463,18 +457,15 @@ private fun ExpandableSettingCard(
     items: List<SettingSwitchItemUi>,
     onItemCheckedChange: (id: SettingSwitchItemUi.Id, checked: Boolean) -> Unit,
 ) {
-    val shape = cardCornerShape
-    ElevatedCard(
-        shape = shape,
-        elevation = CardDefaults.cardElevation(defaultElevation = 10.dp),
+    ClipMasterGestureCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
+        contentPadding = ClipMasterCardDefaults.ZeroContentPadding,
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape),
+                .fillMaxWidth(),
         ) {
             // 标题行整体可点击，比只点击箭头更符合移动端设置项习惯。
             Row(

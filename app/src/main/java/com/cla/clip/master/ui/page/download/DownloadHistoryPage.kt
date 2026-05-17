@@ -9,11 +9,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.ActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -53,8 +51,6 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -110,6 +106,7 @@ import com.cla.clip.base.general.utils.toRelativeTimeSpanString
 import com.cla.clip.base.general.utils.toast
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.navigation.VideoDownloadRoute
+import com.cla.clip.master.ui.widget.ClipMasterCard
 import com.cla.clip.master.ui.widget.TitleBar
 import com.cla.clip.master.ui.widget.TitleBarText
 import kotlinx.coroutines.flow.Flow
@@ -117,9 +114,6 @@ import kotlinx.coroutines.launch
 
 /** 图片记录横向缩略图尺寸，固定尺寸可避免加载成功/失败时列表高度抖动。 */
 private val ImageThumbSize = 72.dp
-
-/** 下载记录页卡片圆角，沿用紧凑设置页风格，不做过度装饰。 */
-private val HistoryCardShape = RoundedCornerShape(8.dp)
 
 /**
  * 下载记录页面入口。
@@ -596,7 +590,6 @@ private fun RefreshImageHistoryWhenVisible(pagedImages: LazyPagingItems<Download
  *
  * 普通态点击成功且文件存在的视频会打开系统播放器；已删除、失败或下载中时点击不播放，避免用户进入无效 Intent。
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun VideoHistoryCard(
     item: DownloadHistoryVideoItem,
@@ -607,22 +600,22 @@ private fun VideoHistoryCard(
     onOpen: () -> Unit,
     onRetry: () -> Unit,
 ) {
-    Card(
+    ClipMasterCard(
         modifier = Modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                onClick = {
-                    if (selectionMode) onToggleSelected() else if (item.status == DownloadTaskData.STATUS_SUCCESS && item.localExists) onOpen()
-                },
-                onLongClick = onEnterSelection
-            ),
-        shape = HistoryCardShape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
-    ) {
+            .fillMaxWidth(),
+        onClick = {
+            if (selectionMode) {
+                onToggleSelected()
+            } else if (item.status == DownloadTaskData.STATUS_SUCCESS && item.localExists) {
+                onOpen()
+            }
+        },
+        onLongClick = onEnterSelection,
+        contentPadding = PaddingValues(10.dp),
+    ) { _ ->
         Row(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(10.dp),
+                .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
             SelectableMediaBox(
@@ -681,7 +674,6 @@ private fun VideoHistoryCard(
  *
  * 缩略图只展示成功且仍可读取的图片 URI；点击缩略图弹出单张预览，不在 App 内做左右切换或完整相册。
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ImageHistoryCard(
     item: DownloadHistoryImageBatch,
@@ -692,17 +684,14 @@ private fun ImageHistoryCard(
     onRetry: () -> Unit,
     onPreviewImage: (String) -> Unit,
 ) {
-    Card(
+    ClipMasterCard(
         modifier = Modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                onClick = { if (selectionMode) onToggleSelected() },
-                onLongClick = onEnterSelection
-            ),
-        shape = HistoryCardShape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
-    ) {
-        Column(Modifier.padding(10.dp)) {
+            .fillMaxWidth(),
+        onClick = { if (selectionMode) onToggleSelected() },
+        onLongClick = onEnterSelection,
+        contentPadding = PaddingValues(10.dp),
+    ) { _ ->
+        Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = if (selected) Icons.Default.CheckCircle else Icons.Default.Image,

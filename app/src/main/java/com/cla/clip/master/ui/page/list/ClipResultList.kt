@@ -5,7 +5,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -30,9 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ReportGmailerrorred
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -91,7 +88,8 @@ import coil3.compose.AsyncImage
 import com.cla.clip.base.general.config.ClipItemQuickAction
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.master.R
-import com.cla.clip.master.ui.theme.cardCornerShape
+import com.cla.clip.master.ui.widget.ClipMasterCardDefaults
+import com.cla.clip.master.ui.widget.ClipMasterGestureCard
 import com.cla.clip.master.ui.widget.rememberDeletedFormattedTime
 import com.cla.clip.master.ui.widget.rememberFoldedFormattedTime
 import com.cla.clip.master.ui.widget.rememberFormattedTime
@@ -386,7 +384,7 @@ fun ClipCard(
     // 按压态只用于绘制轻量反馈；任何拖动、长按、取消或 item 复用都会清空，避免三角反馈卡亮。
     var pressedZone by remember(clip.id) { mutableStateOf<ClipCardPressedZone?>(null) }
     // 外层 Card、侧滑内容和边框共用同一个圆角，保证阴影、水波纹和裁剪视觉一致。
-    val cardShape = cardCornerShape
+    val cardShape = ClipMasterCardDefaults.shape
 
     /** 执行普通列表/普通搜索快捷动作区动作，具体业务仍由页面层回调决定。 */
     fun runQuickAction() {
@@ -474,15 +472,15 @@ fun ClipCard(
                 // 记录 item 实际宽度，第二段动作按 85% 宽度触发，并在触发后把卡片滑到屏幕外再刷新数据库。
                 itemWidthPx = size.width.toFloat()
             }
-            .clip(cardShape)
-            .clipToBounds()
     ) {
         if (showActionMenu) {
-            // 左侧操作区固定贴在 item 左边，内容卡片右滑后露出复制、置顶和删除按钮；左滑方向留给首页 Pager 切到“我的”。
+            // 外层 item 需要保留未裁剪空间给公共卡片阴影；侧滑菜单自身仍按卡片圆角裁剪，避免右滑露出方角背景。
             Box(
                 modifier = Modifier
                     .matchParentSize()
-                    .align(Alignment.CenterStart),
+                    .align(Alignment.CenterStart)
+                    .clip(cardShape)
+                    .clipToBounds(),
                 contentAlignment = Alignment.CenterStart
             ) {
                 Row(
@@ -581,28 +579,38 @@ fun ClipCard(
                 modifier = Modifier
                     .matchParentSize()
                     .align(Alignment.CenterStart)
-                    .padding(start = actionAreaWidth),
+                    .clip(cardShape)
+                    .clipToBounds(),
                 contentAlignment = Alignment.CenterStart
             ) {
-                val progress = ((offsetPx - maxOffsetPx) / (swipePastTriggerPx - maxOffsetPx))
-                    .takeIf { it.isFinite() }
-                    ?.coerceIn(0f, 1f)
-                    ?: if (offsetPx >= swipePastTriggerPx) 1f else 0f
-                Text(
-                    text = swipePastActionText,
+                Box(
                     modifier = Modifier
-                        .padding(horizontal = 12.dp)
-                        .alpha(progress),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                        .matchParentSize()
+                        .padding(start = actionAreaWidth),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    val progress = ((offsetPx - maxOffsetPx) / (swipePastTriggerPx - maxOffsetPx))
+                        .takeIf { it.isFinite() }
+                        ?.coerceIn(0f, 1f)
+                        ?: if (offsetPx >= swipePastTriggerPx) 1f else 0f
+                    Text(
+                        text = swipePastActionText,
+                        modifier = Modifier
+                            .padding(horizontal = 12.dp)
+                            .alpha(progress),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
 
-        ElevatedCard(
+        ClipMasterGestureCard(
             shape = cardShape,
+            borderColor = borderColor,
+            contentPadding = ClipMasterCardDefaults.ZeroContentPadding,
             modifier = Modifier
                 .fillMaxWidth()
                 .offset(x = offsetDp)
@@ -683,13 +691,10 @@ fun ClipCard(
                         }
                     )
             },
-            elevation = CardDefaults.cardElevation(2.dp)
-        ) {
+        ) { _ ->
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(cardShape)
-                    .border(1.dp, borderColor, cardShape)
             ) {
                 if (canRunQuickAction || pressedZone != null) {
                     Canvas(modifier = Modifier.matchParentSize()) {
