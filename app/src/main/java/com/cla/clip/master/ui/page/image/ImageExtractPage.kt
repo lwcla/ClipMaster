@@ -721,18 +721,26 @@ fun ImageExtractPage(
         }
     }
 
-    Scaffold(modifier = Modifier.fillMaxSize()) { paddingValues ->
-        Column(
+    // TitleBar 内部已经处理状态栏高度；放入 Scaffold.topBar 后，内容区只避让标题栏总高度，避免再叠加一份默认顶部安全区。
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        topBar = {
+            TitleBar(stringResource(R.string.base_general_image_extract_title), onBack)
+        }
+    ) { paddingValues ->
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues),
         ) {
-            TitleBar(stringResource(R.string.base_general_image_extract_title), onBack)
-
             val state = imageExtractVm.probeState
             if (state is ImageProbeState.Probing) {
                 ProbeWebView(
                     targetUrl = pageUrl,
+                    // 探测 WebView 需要保持完整视口来触发真实懒加载和滚动扫描，但它只是后台探测层，不能在 Column 中占位把加载态挤到屏幕底部。
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .alpha(0f),
                     onWebViewReady = {
                         webViewRef = it
                         // UserAgent 只能在 WebView 所在线程读取，后续后台拦截回调只使用这个缓存值。
