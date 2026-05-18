@@ -9,12 +9,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -42,6 +40,7 @@ import com.cla.clip.master.ui.dialog.ClipDeleteChoiceDialog
 import com.cla.clip.master.ui.navigation.ImageExtractRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.navigation.VideoExtractRoute
+import com.cla.clip.master.ui.widget.ClipMasterCard
 import com.cla.clip.master.ui.widget.TitleBar
 import kotlinx.coroutines.flow.collectLatest
 
@@ -77,8 +76,7 @@ fun DetailPage(
 
         when (uiState) {
             is DetailUiState.Loading -> {
-                Card(
-                    shape = RoundedCornerShape(8.dp),
+                ClipMasterCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(12.dp, top = 0.dp, end = 12.dp, bottom = 12.dp)
@@ -94,8 +92,7 @@ fun DetailPage(
             }
 
             is DetailUiState.Error -> {
-                Card(
-                    shape = RoundedCornerShape(8.dp),
+                ClipMasterCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(12.dp, top = 0.dp, end = 12.dp, bottom = 12.dp)
@@ -127,10 +124,10 @@ fun DetailPage(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
-                        .padding(12.dp, top = 0.dp, end = 12.dp, bottom = 12.dp)
+                    .padding(12.dp, top = 0.dp, end = 12.dp, bottom = 12.dp)
                 ) {
                     // 正文可能非常长，Card 内部滚动可以保留顶部标题和底部操作按钮的稳定位置。
-                    Card(
+                    ClipMasterCard(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(

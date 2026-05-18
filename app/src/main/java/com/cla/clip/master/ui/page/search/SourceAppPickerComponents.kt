@@ -1,35 +1,17 @@
 package com.cla.clip.master.ui.page.search
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.cla.clip.base.general.dao.SourceAppData
 import com.cla.clip.base.general.utils.displayName
+import com.cla.clip.master.ui.widget.SelectableListBottomSheet
+import com.cla.clip.master.ui.widget.SelectableListItemState
 
 /**
  * 来源 App 弹窗展开后的最大高度比例。
@@ -44,7 +26,6 @@ private const val SOURCE_APP_SHEET_MAX_HEIGHT_RATIO = 0.86f
  * 标题右侧提供“全选”批量控制，列表只展示具体来源 App；弹窗内部草稿允许临时 0 选中，
  * 但 0 选中不能提交到外部筛选状态，避免破坏空集合表示“全部来源”的数据契约。
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SourceAppPickerSheet(
     sourceApps: List<SourceAppData>,
@@ -52,7 +33,6 @@ internal fun SourceAppPickerSheet(
     onDismiss: () -> Unit,
     onConfirm: (Set<String>) -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val configuration = LocalConfiguration.current
     val sheetMaxHeight = configuration.screenHeightDp.dp * SOURCE_APP_SHEET_MAX_HEIGHT_RATIO
     val allPackageNames = remember(sourceApps) {
@@ -70,139 +50,59 @@ internal fun SourceAppPickerSheet(
     val isAllSelected = draftSelection.isAllSelected(allPackageNames)
     val selectedCount = draftSelection.selectedCount(allPackageNames)
     val canConfirm = sourceApps.isEmpty() || selectedCount > 0
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = sheetMaxHeight)
-                .padding(bottom = 24.dp)
-        ) {
-            SourceAppPickerTitle(
-                checked = isAllSelected,
-                enabled = sourceApps.isNotEmpty(),
-                onCheckedChange = {
-                    draftSelection = if (isAllSelected) {
-                        SourceAppDraftSelection.Explicit(emptySet())
-                    } else {
-                        SourceAppDraftSelection.All
-                    }
-                }
+    SelectableListBottomSheet(
+        title = stringResource(com.cla.clip.base.general.R.string.base_general_source_app),
+        items = sourceApps.map { sourceApp ->
+            SelectableListItemState(
+                id = sourceApp.packageName,
+                title = sourceApp.displayName(),
+                subtitle = sourceApp.packageName,
+                selected = draftSelection.contains(
+                    packageName = sourceApp.packageName,
+                    allPackageNames = allPackageNames
+                )
             )
-
-            LazyColumn(
-                modifier = Modifier
-                    // 来源 App 数量较多时，列表只占用弹窗剩余空间，把底部确认按钮稳定留在可点击区域。
-                    .weight(1f, fill = false)
-            ) {
-                items(
-                    items = sourceApps,
-                    key = { it.packageName }
-                ) { sourceApp ->
-                    val rowSelected = draftSelection.contains(
-                        packageName = sourceApp.packageName,
-                        allPackageNames = allPackageNames
-                    )
-                    SourceAppRow(
-                        title = sourceApp.displayName(),
-                        subtitle = sourceApp.packageName,
-                        selected = rowSelected,
-                        onClick = {
-                            draftSelection = if (rowSelected) {
-                                draftSelection.remove(
-                                    packageName = sourceApp.packageName,
-                                    allPackageNames = allPackageNames
-                                )
-                            } else {
-                                draftSelection.add(
-                                    packageName = sourceApp.packageName,
-                                    allPackageNames = allPackageNames
-                                )
-                            }
-                        }
-                    )
-                }
+        },
+        onDismiss = onDismiss,
+        onToggleItem = { packageName ->
+            val rowSelected = draftSelection.contains(
+                packageName = packageName,
+                allPackageNames = allPackageNames
+            )
+            draftSelection = if (rowSelected) {
+                draftSelection.remove(
+                    packageName = packageName,
+                    allPackageNames = allPackageNames
+                )
+            } else {
+                draftSelection.add(
+                    packageName = packageName,
+                    allPackageNames = allPackageNames
+                )
             }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (!canConfirm) {
-                    Text(
-                        text = stringResource(
-                            com.cla.clip.base.general.R.string.base_general_selected_source_app_count,
-                            0
-                        ),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.weight(1f)
-                    )
-                } else {
-                    Spacer(modifier = Modifier.weight(1f))
-                }
-                TextButton(onClick = onDismiss) {
-                    Text(stringResource(com.cla.clip.base.general.R.string.base_general_cancel))
-                }
-                Button(
-                    modifier = Modifier.padding(start = 8.dp),
-                    enabled = canConfirm,
-                    onClick = { onConfirm(draftSelection.toAppliedPackageNames(allPackageNames)) }
-                ) {
-                    Text(stringResource(com.cla.clip.base.general.R.string.base_general_sure))
-                }
+        },
+        onConfirm = { onConfirm(draftSelection.toAppliedPackageNames(allPackageNames)) },
+        confirmEnabled = canConfirm,
+        confirmText = stringResource(com.cla.clip.base.general.R.string.base_general_sure),
+        cancelText = stringResource(com.cla.clip.base.general.R.string.base_general_cancel),
+        maxHeight = sheetMaxHeight,
+        showSelectAll = true,
+        selectAllChecked = isAllSelected,
+        selectAllEnabled = sourceApps.isNotEmpty(),
+        selectAllText = stringResource(com.cla.clip.base.general.R.string.base_general_select_all),
+        onToggleSelectAll = {
+            draftSelection = if (isAllSelected) {
+                SourceAppDraftSelection.Explicit(emptySet())
+            } else {
+                SourceAppDraftSelection.All
             }
-        }
-    }
-}
-
-/**
- * 来源 App 弹窗标题和全选控制。
- *
- * “全选”属于批量操作，不再作为列表里的普通来源项；使用普通 Checkbox 而不是三态组件，
- * 让部分选中和 0 选中都表现为未全选，避免用户误解点击后的方向。
- */
-@Composable
-private fun SourceAppPickerTitle(
-    checked: Boolean,
-    enabled: Boolean,
-    onCheckedChange: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 20.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = stringResource(com.cla.clip.base.general.R.string.base_general_source_app),
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.weight(1f)
-        )
-        Row(
-            modifier = Modifier.clickable(enabled = enabled, onClick = onCheckedChange),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Checkbox(
-                checked = checked,
-                enabled = enabled,
-                onCheckedChange = { onCheckedChange() }
-            )
-            Text(
-                text = stringResource(com.cla.clip.base.general.R.string.base_general_select_all),
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (enabled) {
-                    MaterialTheme.colorScheme.onSurface
-                } else {
-                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                }
-            )
-        }
-    }
+        },
+        errorText = if (!canConfirm) {
+            stringResource(com.cla.clip.base.general.R.string.base_general_selected_source_app_count, 0)
+        } else {
+            null
+        },
+    )
 }
 
 /**
@@ -342,45 +242,5 @@ private fun normalizeExplicitSelection(
         SourceAppDraftSelection.All
     } else {
         SourceAppDraftSelection.Explicit(selectedPackageNames)
-    }
-}
-
-/** 来源 App 弹窗中的单行选项。 */
-@Composable
-private fun SourceAppRow(
-    title: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    subtitle: String? = null,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (!subtitle.isNullOrBlank()) {
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-
-        Checkbox(
-            checked = selected,
-            onCheckedChange = { onClick() }
-        )
     }
 }

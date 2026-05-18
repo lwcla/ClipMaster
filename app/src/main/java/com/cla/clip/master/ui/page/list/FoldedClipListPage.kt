@@ -33,6 +33,8 @@ import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.navigation.SearchRoute
 import com.cla.clip.master.ui.navigation.SearchScope
 import com.cla.clip.master.ui.widget.TitleBar
+import com.cla.clip.master.ui.widget.clip.ClipCardTimeMode
+import com.cla.clip.master.ui.widget.clip.ClipResultList
 
 /**
  * 折叠数据列表页。

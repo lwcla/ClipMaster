@@ -1,19 +1,9 @@
 package com.cla.clip.master.ui.page.video
 
 import android.widget.Toast
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Done
-import androidx.compose.material.icons.filled.Error
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -22,50 +12,36 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.widget.RequestStoragePermission
 import com.cla.clip.master.entity.VideoCandidate
 import com.cla.clip.master.ui.theme.ClipMaterTheme
+import com.cla.clip.master.ui.widget.InlineErrorState
+import com.cla.clip.master.ui.widget.InlineLoadingState
+import com.cla.clip.master.ui.widget.InlineSuccessState
 
 /** 视频地址提取失败状态，点击整行会触发新一轮 session 重试。 */
 @Composable
 internal fun Filed(retry: () -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.clickable(onClick = { retry() })
-    ) {
-        Icon(
-            painter = rememberVectorPainter(Icons.Default.Error),
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.error,
-            modifier = Modifier
-                .padding(12.dp)
-                .size(24.dp)
-        )
-        Text(
-            stringResource(R.string.base_general_failed_to_extract_the_video_address),
-            color = MaterialTheme.colorScheme.error,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(start = 0.dp, top = 12.dp, end = 12.dp, bottom = 12.dp)
-        )
-    }
+    InlineErrorState(
+        text = stringResource(R.string.base_general_failed_to_extract_the_video_address),
+        onClick = retry,
+    )
 }
 
 @Preview(showBackground = true)
 @Composable
 private fun FailedPreview() {
     val context = LocalContext.current
+    val retryText = stringResource(R.string.base_general_click_retry)
     ClipMaterTheme {
         Filed(
             retry = {
-                Toast.makeText(context, "点击重试", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, retryText, Toast.LENGTH_SHORT).show()
             }
         )
     }
@@ -74,20 +50,7 @@ private fun FailedPreview() {
 /** 视频地址探测中的前景提示。 */
 @Composable
 internal fun Loading() {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        CircularProgressIndicator(
-            modifier = Modifier.size(25.dp),
-            color = MaterialTheme.colorScheme.primary
-        )
-
-        Text(
-            text = stringResource(R.string.base_general_extract_the_video_address),
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(12.dp)
-        )
-    }
+    InlineLoadingState(text = stringResource(R.string.base_general_extract_the_video_address))
 }
 
 @Preview(showBackground = true)
@@ -126,24 +89,7 @@ internal fun Success(
             }
         }
 
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                painter = rememberVectorPainter(Icons.Default.Done),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .padding(12.dp)
-                    .size(24.dp)
-            )
-            Text(
-                stringResource(R.string.base_general_extract_the_video_address_success),
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(start = 0.dp, top = 12.dp, end = 12.dp, bottom = 12.dp)
-            )
-        }
+        InlineSuccessState(text = stringResource(R.string.base_general_extract_the_video_address_success))
 
         Button(
             onClick = { pendingCandidate = System.currentTimeMillis() to candidate }

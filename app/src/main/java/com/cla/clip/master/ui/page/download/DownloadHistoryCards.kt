@@ -3,7 +3,6 @@ package com.cla.clip.master.ui.page.download
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,7 +13,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,7 +20,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Movie
@@ -43,17 +40,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil3.compose.AsyncImage
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.dao.DownloadTaskData
 import com.cla.clip.base.general.dao.ImageExtractBatchData
 import com.cla.clip.base.general.utils.toRelativeTimeSpanString
 import com.cla.clip.master.ui.widget.ClipMasterCard
+import com.cla.clip.master.ui.widget.ImageThumbnailTile
+import com.cla.clip.master.ui.widget.MediaUnavailablePlaceholder
 
 /** 图片记录横向缩略图尺寸，固定尺寸可避免加载成功/失败时列表高度抖动。 */
 private val ImageThumbSize = 72.dp
@@ -208,7 +205,7 @@ internal fun ImageHistoryCard(
 
             Spacer(Modifier.height(8.dp))
             if (item.imageUris.isEmpty()) {
-                DeletedPlaceholder(text = stringResource(R.string.base_general_download_history_local_file_deleted))
+                MediaUnavailablePlaceholder(text = stringResource(R.string.base_general_download_history_local_file_deleted))
             } else {
                 HistoryImagePreviewGrid(
                     imageUris = item.imageUris,
@@ -278,23 +275,18 @@ private fun HistoryImagePreviewGrid(
     }
 }
 
-/** 单张历史图片缩略图，点击只预览当前图片，不进入左右切换相册。 */
+/** 单张历史图片缩略图，复用共享图片缩略图组件，点击只预览当前图片，不进入左右切换相册。 */
 @Composable
 private fun HistoryImageThumb(
     uri: String,
     selectionMode: Boolean,
     onPreviewImage: (String) -> Unit,
 ) {
-    AsyncImage(
+    ImageThumbnailTile(
         model = uri,
-        contentDescription = null,
-        modifier = Modifier
-            .size(ImageThumbSize)
-            .clip(RoundedCornerShape(6.dp))
-            .clickable(enabled = !selectionMode) { onPreviewImage(uri) },
-        contentScale = ContentScale.Crop,
-        error = rememberVectorPainter(Icons.Default.BrokenImage),
-        placeholder = rememberVectorPainter(Icons.Default.Image)
+        size = ImageThumbSize,
+        enabled = !selectionMode,
+        onClick = { onPreviewImage(uri) },
     )
 }
 
@@ -322,7 +314,7 @@ private fun SelectableMediaBox(
                 contentScale = ContentScale.Crop
             )
 
-            deleted -> DeletedPlaceholder(text = stringResource(R.string.base_general_download_history_deleted_short))
+            deleted -> MediaUnavailablePlaceholder(text = stringResource(R.string.base_general_download_history_deleted_short))
 
             else -> Icon(
                 imageVector = icon,
@@ -353,28 +345,6 @@ private fun SelectableMediaBox(
 @Composable
 private fun HistoryChip(text: String) {
     AssistChip(onClick = {}, label = { Text(text, maxLines = 1, overflow = TextOverflow.Ellipsis) })
-}
-
-/** 本地文件不可读占位，既用于视频首帧区域，也用于图片批次缩略图区。 */
-@Composable
-internal fun DeletedPlaceholder(text: String) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 52.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f))
-            .padding(8.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onErrorContainer,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
 }
 
 /** 将视频任务状态映射为用户可见文案；失败态优先展示具体错误。 */

@@ -1,46 +1,27 @@
 package com.cla.clip.master.ui.page.search
 
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import com.cla.clip.master.ui.widget.FilterChipOption
+import com.cla.clip.master.ui.widget.HorizontalFilterChips
+import com.cla.clip.master.ui.widget.SearchInputField
 import kotlin.math.roundToInt
-
-/**
- * 搜索输入框的固定单行高度。
- *
- * `OutlinedTextField` 默认会根据输入内容和字体测量高度；搜索页顶部空间有限，这里固定为 Material 单行输入框常用高度，
- * 避免粘贴多行内容或异常测量时把下方结果列表挤小。
- */
-private val SEARCH_BAR_FIELD_HEIGHT = 56.dp
 
 /**
  * 搜索框和筛选区的 AppBarLayout 式折叠容器。
@@ -112,41 +93,13 @@ internal fun SearchBar(
     onFocusChange: (Boolean) -> Unit,
     onSubmit: () -> Unit,
 ) {
-    OutlinedTextField(
-        value = query,
-        onValueChange = onQueryChange,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp)
-            .heightIn(min = SEARCH_BAR_FIELD_HEIGHT, max = SEARCH_BAR_FIELD_HEIGHT)
-            .onFocusChanged { onFocusChange(it.isFocused) },
-        singleLine = true,
-        maxLines = 1,
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        keyboardActions = KeyboardActions(
-            onSearch = {
-                onSubmit()
-            }
-        ),
-        leadingIcon = {
-            Icon(
-                imageVector = Icons.Default.Search,
-                contentDescription = null
-            )
-        },
-        trailingIcon = {
-            if (query.isNotBlank()) {
-                IconButton(onClick = { onQueryChange("") }) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = stringResource(com.cla.clip.base.general.R.string.base_general_clear_search_keyword)
-                    )
-                }
-            }
-        },
-        placeholder = {
-            Text(stringResource(com.cla.clip.base.general.R.string.base_general_search_clip_hint))
-        }
+    SearchInputField(
+        query = query,
+        onQueryChange = onQueryChange,
+        onFocusChange = onFocusChange,
+        onSubmit = onSubmit,
+        placeholder = stringResource(com.cla.clip.base.general.R.string.base_general_search_clip_hint),
+        clearContentDescription = stringResource(com.cla.clip.base.general.R.string.base_general_clear_search_keyword),
     )
 }
 
@@ -177,18 +130,16 @@ internal fun SearchFilters(
             .fillMaxWidth()
             .padding(horizontal = 12.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                // 固定时间选项在窄屏上可能横向放不下，允许轻量横滑比压缩文字更可读。
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            TimeFilterChip(SearchTimeFilter.ALL, filterState.timeFilter, onTimeFilterChange)
-            TimeFilterChip(SearchTimeFilter.TODAY, filterState.timeFilter, onTimeFilterChange)
-            TimeFilterChip(SearchTimeFilter.LAST_7_DAYS, filterState.timeFilter, onTimeFilterChange)
-            TimeFilterChip(SearchTimeFilter.LAST_30_DAYS, filterState.timeFilter, onTimeFilterChange)
-        }
+        HorizontalFilterChips(
+            options = SearchTimeFilter.entries.map { filter ->
+                FilterChipOption(
+                    value = filter,
+                    label = filter.labelText()
+                )
+            },
+            selectedValue = filterState.timeFilter,
+            onSelected = onTimeFilterChange,
+        )
 
         AssistChip(
             onClick = onSourceClick,
@@ -207,25 +158,6 @@ internal fun SearchFilters(
             }
         )
     }
-}
-
-/** 单个时间筛选 Chip。 */
-@Composable
-private fun TimeFilterChip(
-    filter: SearchTimeFilter,
-    selectedFilter: SearchTimeFilter,
-    onClick: (SearchTimeFilter) -> Unit,
-) {
-    FilterChip(
-        selected = filter == selectedFilter,
-        onClick = { onClick(filter) },
-        label = {
-            Text(
-                text = filter.labelText(),
-                maxLines = 1
-            )
-        }
-    )
 }
 
 /** 时间筛选对应的本地化展示文案。 */

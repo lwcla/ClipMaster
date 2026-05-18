@@ -41,7 +41,7 @@
 ## 涉及文件
 
 - `base/general/src/main/java/com/cla/clip/base/general/utils/SourceAppDisplayUtils.kt`
-- `app/src/main/java/com/cla/clip/master/ui/page/list/ClipResultList.kt`
+- `app/src/main/java/com/cla/clip/master/ui/widget/clip/ClipResultList.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/search/SearchPage.kt`
 - `docs/clip_result_list_plan.md`
 - `docs/search_page_plan.md`

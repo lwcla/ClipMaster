@@ -1,11 +1,10 @@
-package com.cla.clip.master.ui.page.list
+package com.cla.clip.master.ui.widget.clip
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,12 +19,10 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -53,7 +50,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -68,6 +64,8 @@ import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.master.R
 import com.cla.clip.master.ui.widget.ClipMasterCardDefaults
 import com.cla.clip.master.ui.widget.ClipMasterGestureCard
+import com.cla.clip.master.ui.widget.PagingLoadingContent
+import com.cla.clip.master.ui.widget.pagingAppendStateItem
 import kotlinx.coroutines.launch
 import kotlin.math.max
 
@@ -160,15 +158,11 @@ fun ClipResultList(
 
         pagedClips.loadState.refresh is LoadState.Loading && pagedClips.itemCount == 0 -> {
             // Paging 重新收集时可能短暂出现空快照；此时不组合绑定 listState 的空 LazyColumn，避免把保留的滚动位置钳回顶部。
-            Box(
-                modifier = modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator(modifier = Modifier.size(26.dp))
-            }
+            PagingLoadingContent(modifier = modifier)
         }
 
         else -> {
+            val retryText = stringResource(com.cla.clip.base.general.R.string.base_general_data_load_failed_retry)
             LazyColumn(
                 state = listState,
                 modifier = modifier.fillMaxSize(),
@@ -221,38 +215,14 @@ fun ClipResultList(
                     }
                 }
 
-                when (pagedClips.loadState.append) {
-                    is LoadState.Loading -> {
-                        item {
-                            CircularProgressIndicator(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .wrapContentWidth(Alignment.CenterHorizontally)
-                                    .size(26.dp)
-                            )
-                        }
+                pagingAppendStateItem(
+                    loadState = pagedClips.loadState.append,
+                    retryText = retryText,
+                    onRetry = {
+                        // append 加载失败时直接使用 Paging 的 retry，避免页面自己维护重试状态。
+                        pagedClips.retry()
                     }
-
-                    is LoadState.Error -> {
-                        item {
-                            Text(
-                                text = stringResource(com.cla.clip.base.general.R.string.base_general_data_load_failed_retry),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable(onClick = {
-                                        // append 加载失败时直接使用 Paging 的 retry，避免页面自己维护重试状态。
-                                        pagedClips.retry()
-                                    })
-                                    .padding(16.dp),
-                                style = MaterialTheme.typography.bodyLarge,
-                                textAlign = TextAlign.Center,
-                                fontSize = 14.sp
-                            )
-                        }
-                    }
-
-                    else -> {}
-                }
+                )
             }
         }
     }

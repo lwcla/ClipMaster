@@ -37,9 +37,9 @@ import com.cla.clip.master.ui.dialog.ClipDeleteChoiceDialog
 import com.cla.clip.master.ui.navigation.DetailRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.navigation.SearchScope
-import com.cla.clip.master.ui.page.list.ClipCardTimeMode
-import com.cla.clip.master.ui.page.list.ClipResultList
 import com.cla.clip.master.ui.widget.TitleBar
+import com.cla.clip.master.ui.widget.clip.ClipCardTimeMode
+import com.cla.clip.master.ui.widget.clip.ClipResultList
 
 /**
  * 搜索页顶部控件响应结果列表滚动方向的最小位移。

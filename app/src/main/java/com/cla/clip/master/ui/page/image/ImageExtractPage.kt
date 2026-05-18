@@ -7,7 +7,6 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -17,18 +16,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Done
-import androidx.compose.material.icons.filled.Error
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.MaterialTheme
@@ -49,7 +42,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -63,8 +55,14 @@ import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.toast
 import com.cla.clip.master.utils.ImageFolderOpenHelper
 import com.cla.clip.master.utils.ImageFolderOpenHelper.ImageFolderOpenResult
+import com.cla.clip.master.ui.widget.CenteredStateContent
+import com.cla.clip.master.ui.widget.InlineErrorState
+import com.cla.clip.master.ui.widget.InlineLoadingState
+import com.cla.clip.master.ui.widget.InlineSuccessState
 import com.cla.clip.master.ui.widget.ProbeWebView
+import com.cla.clip.master.ui.widget.SharedImagePreviewDefaults
 import com.cla.clip.master.ui.widget.TitleBar
+import com.cla.clip.master.ui.widget.rememberAnimatedImageLoader
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -920,11 +918,11 @@ private fun ImageExtractContent(
     } else {
         when (state) {
             ImageProbeState.Idle -> Unit
-            is ImageProbeState.Probing -> CenterContent {
+            is ImageProbeState.Probing -> CenteredStateContent {
                 ProbingLoadingContent(showLongRunningHint = showLongRunningHint)
             }
             ImageProbeState.ReadyToDownload -> Unit
-            ImageProbeState.Failed -> CenterContent { FailedText(onRetry) }
+            ImageProbeState.Failed -> CenteredStateContent { FailedText(onRetry) }
             is ImageProbeState.Extracted -> BatchStatusContent(state, viewModel, onRetry, onOpen)
         }
     }
@@ -940,7 +938,7 @@ private fun ProbingLoadingContent(
     showLongRunningHint: Boolean,
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        LoadingText(
+        InlineLoadingState(
             stringResource(
                 if (showLongRunningHint) {
                     R.string.base_general_image_extract_long_running
@@ -1027,6 +1025,7 @@ private fun LiveCandidateSelectionContent(
                     candidate = candidate,
                     selected = selected,
                     imageLoader = imageLoader,
+                    failureTitle = stringResource(R.string.base_general_image_load_failed),
                     onPreview = {
                         viewModel.loadCandidatePreviewMeta(candidate)
                         previewCandidate = candidate
@@ -1056,7 +1055,7 @@ private fun LiveCandidateSelectionContent(
         ModalBottomSheet(
             onDismissRequest = { previewCandidate = null },
             sheetState = sheetState,
-            shape = IMAGE_PREVIEW_SHEET_SHAPE
+            shape = SharedImagePreviewDefaults.SheetShape
         ) {
             CandidatePreviewSheetContent(
                 candidate = candidate,
@@ -1166,22 +1165,6 @@ private fun LiveCandidateToolbar(
 }
 
 /**
- * 居中放置加载、失败、成功等轻量状态内容。
- *
- * 这是页面内复用的布局容器，不持有业务状态，只负责让状态提示在剩余内容区视觉居中。
- */
-@Composable
-private fun CenterContent(content: @Composable () -> Unit) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-        modifier = Modifier.fillMaxSize()
-    ) {
-        content()
-    }
-}
-
-/**
  * 重新提取确认弹窗。
  *
  * 当前候选和选择状态只存在页面内存中，重新提取会全部清空；已有候选未下载时必须让用户明确确认这个代价。
@@ -1224,16 +1207,16 @@ private fun BatchStatusContent(
     val batch by viewModel.observeBatch(state.batchId).collectAsState(initial = null)
     val curBatch = batch
     if (curBatch == null || curBatch.status == ImageExtractBatchData.STATUS_EXTRACTED) {
-        CenterContent {
-            LoadingText(stringResource(R.string.base_general_preparing_download))
+        CenteredStateContent {
+            InlineLoadingState(stringResource(R.string.base_general_preparing_download))
         }
         return
     }
 
-    CenterContent {
+    CenteredStateContent {
         when (curBatch.status) {
             ImageExtractBatchData.STATUS_DOWNLOADING -> {
-                LoadingText(
+                InlineLoadingState(
                     stringResource(
                         R.string.base_general_image_download_progress,
                         curBatch.successCount + curBatch.failedCount + curBatch.filteredCount,
@@ -1308,7 +1291,7 @@ private fun ImageSelectionContent(
         )
 
         if (items.isEmpty()) {
-            CenterContent { LoadingText(stringResource(R.string.base_general_image_extract_loading)) }
+            CenteredStateContent { InlineLoadingState(stringResource(R.string.base_general_image_extract_loading)) }
         } else {
             LazyVerticalGrid(
                 columns = GridCells.Fixed(IMAGE_CANDIDATE_GRID_COLUMNS),
@@ -1345,7 +1328,7 @@ private fun ImageSelectionContent(
         ModalBottomSheet(
             onDismissRequest = { previewItem = null },
             sheetState = sheetState,
-            shape = IMAGE_PREVIEW_SHEET_SHAPE
+            shape = SharedImagePreviewDefaults.SheetShape
         ) {
             ImagePreviewSheetContent(
                 item = item,
@@ -1420,39 +1403,13 @@ private fun buildImageDownloadResultText(batch: ImageExtractBatchData, includeOp
 }
 
 /**
- * 带进度圈的加载提示。
- *
- * 用于图片提取中和批量下载中两个场景，文案由调用方传入，避免在通用组件里耦合具体业务状态。
- */
-@Composable
-private fun LoadingText(text: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        CircularProgressIndicator(modifier = Modifier.size(25.dp))
-        Text(text = text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(12.dp))
-    }
-}
-
-/**
  * 可点击的成功提示。
  *
  * 用于下载完成、部分完成或过滤完成后的结果展示；只有存在可查看下载内容时才传入 onOpen 让外层打开相册/文件查看入口。
  */
 @Composable
 private fun SuccessText(text: String, onOpen: (() -> Unit)? = null) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = if (onOpen != null) Modifier.clickable(onClick = onOpen) else Modifier
-    ) {
-        Icon(
-            painter = rememberVectorPainter(Icons.Default.Done),
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier
-                .padding(12.dp)
-                .size(24.dp)
-        )
-        Text(text = text, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
-    }
+    InlineSuccessState(text = text, onClick = onOpen)
 }
 
 /**
@@ -1462,20 +1419,7 @@ private fun SuccessText(text: String, onOpen: (() -> Unit)? = null) {
  */
 @Composable
 private fun FailedText(onRetry: () -> Unit, text: String = stringResource(R.string.base_general_image_extract_failed_retry)) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.clickable(onClick = onRetry)
-    ) {
-        Icon(
-            painter = rememberVectorPainter(Icons.Default.Error),
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.error,
-            modifier = Modifier
-                .padding(12.dp)
-                .size(24.dp)
-        )
-        Text(text = text, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-    }
+    InlineErrorState(text = text, onClick = onRetry)
 }
 
 /**

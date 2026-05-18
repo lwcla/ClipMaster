@@ -19,7 +19,8 @@
 - 迁移我的页面入口卡片和可展开设置卡片。
 - 迁移下载记录页视频记录卡片和图片批次卡片。
 - 迁移 `ClipResultList` 内 `ClipCard`，从而覆盖剪贴列表、回收站、折叠页面、普通搜索结果和折叠搜索结果。
-- 下载记录页缩略图、视频首帧框、删除占位块、详情页内显示内容的卡片、Chip、按钮、弹窗和图片缩略图暂不迁移。
+- 迁移详情页加载、错误和正文内容卡片。
+- 下载记录页缩略图、视频首帧框、删除占位块、Chip、按钮、弹窗和图片缩略图暂不迁移。
 
 ## 用户体验
 
@@ -36,7 +37,7 @@
 - `app/src/main/java/com/cla/clip/master/ui/widget/ClipMasterCard.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/mine/MinePage.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/download/DownloadHistoryPage.kt`
-- `app/src/main/java/com/cla/clip/master/ui/page/list/ClipResultList.kt`
+- `app/src/main/java/com/cla/clip/master/ui/widget/clip/ClipResultList.kt`
 - `docs/shared_card_component_plan.md`
 - `docs/mine_page_plan.md`
 - `docs/download_history_plan.md`
@@ -61,6 +62,7 @@
 - 手动验证下载记录页视频和图片记录卡片的点击、长按反馈均被圆角裁剪。
 - 手动验证我的页面入口卡片和可展开设置卡片视觉不变。
 - 手动验证剪贴列表、回收站、折叠页和搜索结果的卡片外壳统一，公共阴影可见，来源色边框、快捷动作区颜色、按压色、侧滑和长按行为不变。
+- 手动验证详情页加载、错误和正文内容卡片视觉统一，正文滚动和底部按钮行为不变。
 - 搜索主要内容卡片实现，确认新增内容卡片优先复用公共组件，不再重复手写卡片外壳。
 
 ## 已知取舍
@@ -68,7 +70,7 @@
 - 不只抽属性，因为方角触摸问题来自点击/长按挂载位置，单纯共享 shape、elevation 无法阻止后续再次写出方角反馈。
 - 不抽万能业务卡片，公共组件不理解剪贴、下载、回收站、选中态或快捷动作语义，只提供外壳契约。
 - `ClipResultList` 不能在整个 item 外层做圆角裁剪，否则会裁掉 `ClipMasterGestureCard` 的阴影；需要只裁剪侧滑菜单、继续滑动提示和卡片内部触摸反馈。
-- 详情页内容卡片暂时保持现状，避免本次改动扩散到未要求的阅读体验。
+- 详情页只迁移普通内容卡片外壳，正文滚动、链接提示和底部操作按钮仍由详情页维护，避免公共卡片组件理解详情页业务。
 
 ## 开放问题
 
@@ -78,4 +80,5 @@
 
 - 2026-05-17：补充剪贴结果列表侧滑层裁剪约束；原因是整个 item 外层裁剪会遮掉公共卡片阴影，最终采用“外层不裁剪、菜单和提示层单独裁剪”的实现。
 - 2026-05-17：完成 `ClipMasterCard` / `ClipMasterGestureCard` 公共外壳落地，并接入我的页面、下载记录页和 `ClipResultList`；原因是代码已统一主要内容卡片外壳并通过编译验证，剪贴 item 业务状态色保持由 `ClipResultList` 维护。
+- 2026-05-18：详情页加载、错误和正文内容卡片接入 `ClipMasterCard`；原因是详情页普通内容卡片也属于主要内容外壳，适合复用公共卡片组件，页面业务按钮和正文滚动保持不变。
 - 2026-05-17：新增公共内容卡片组件方案并标记为实现中；原因是需要统一应用内主要内容卡片效果，同时修复下载记录页卡片触摸反馈方角问题。

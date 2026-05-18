@@ -50,8 +50,8 @@
 - 标题栏按钮、清空数量和“是否包含进行中任务”使用数据库 `COUNT` 与 id 查询，不依赖已分页加载的可见列表，避免分页只加载部分数据时全选、清空或删除提示统计不完整。
 - 视频列表按下载记录更新时间倒序展示，使用数据库保存的媒体 URI/路径读取首帧、大小、时长和存在性；Android 10+ 严格以保存的 `content://` URI 为准。
 - 图片列表按批次更新时间倒序展示，缩略图读取每个成功图片项的可读引用：Android 10+ 使用 `output_uri`，Android 9 及以下用批次目录和 `finalName` 组合出的最终公开文件路径；8 张以内单行横向展示全部当前可读图片，超过 8 张后改为双行横向网格，`output_uri` 为空、文件不存在或 Android 11+ MediaStore 标记为已回收时会在批次标签中提示不可读取数量；图片卡片会独立多行展示批次输出文件夹名，避免长文件夹名被单行标签省略，方便相同标题的多次下载互相区分。
-- 图片大图预览改为底部弹出层，图片按弹窗宽度完整排版，预览内容不再固定为 360dp 高度；当图片高度超出屏幕时，用户可以在图片区域纵向滑动查看完整图片。
-- 下载记录页面入口保留生命周期收集、Pager 同步、删除授权和导航等流程编排；标题/Tab/Pager 外壳、分页列表、历史卡片、缩略图、删除弹窗、选择底栏和图片预览底部弹层拆分到同 package 的独立组件文件中，避免单个页面文件继续承担所有 UI 细节。
+- 图片大图预览接入共享 `SharedImagePreviewBottomSheet` 底部弹出层，图片按弹窗宽度完整排版，预览内容不再固定为 360dp 高度；当图片高度超出屏幕时，用户可以在图片区域纵向滑动查看完整图片。
+- 下载记录页面入口保留生命周期收集、Pager 同步、删除授权和导航等流程编排；标题/Tab/Pager 外壳、分页列表、历史卡片、删除弹窗和选择底栏拆分到同 package 的独立组件文件中；图片预览、普通缩略图和媒体不可读占位复用共享媒体 UI 组件，完整共享规则见 `docs/shared_media_ui_plan.md`。
 - 视频重新下载创建新的 `download_tasks` 记录，新记录指向新下载文件；旧公共文件和旧记录都保留。
 - 图片重新下载克隆旧批次候选为新批次并启动下载；旧批次状态、旧图片项和旧公共文件夹都保留。
 - 删除本地文件只删除记录精确关联的媒体项：视频删除对应任务的 `savePath` 或 pending 输出；图片在 Android 10+ 删除成功图片项的 `output_uri`，Android 9 及以下用批次目录和 `finalName` 定位最终公开文件，且只有确认目录内全是本批次文件时才安全删除整个批次目录。
@@ -111,6 +111,7 @@
 - `app/src/main/java/com/cla/clip/master/ui/page/download/DownloadHistoryContent.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/download/DownloadHistoryCards.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/download/DownloadHistoryDialogs.kt`
+- `app/src/main/java/com/cla/clip/master/ui/widget/SharedImagePreview.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/download/DownloadHistoryVm.kt`
 - `base/general/src/main/java/com/cla/clip/base/general/dao/DownloadDao.kt`
 - `base/general/src/main/java/com/cla/clip/base/general/dao/AppDatabase.kt`
@@ -179,7 +180,8 @@
 ## 本次同步
 
 - 视频记录卡片和图片批次卡片已接入 `ClipMasterCard` 公共内容卡片外壳，点击和长按反馈被限制在圆角范围内。
-- 缩略图、视频首帧框、删除占位块和图片预览等局部 UI 保持现状，不纳入公共内容卡片迁移范围；完整公共外壳规则详见 `docs/shared_card_component_plan.md`。
+- 视频首帧框仍属于下载记录卡片局部 UI；图片缩略图、删除占位块和图片预览已接入共享媒体 UI，完整共享规则详见 `docs/shared_media_ui_plan.md`，公共卡片外壳规则详见 `docs/shared_card_component_plan.md`。
+- 分页加载、空态、首次失败和 append 状态复用 `PagingLoadingContent`、`PagingEmptyContent`、`PagingErrorContent` 与 `pagingAppendStateItem`；多选底部删除条复用 `SelectionActionBar`。本页面继续保留视频/图片记录卡片、删除方式弹窗、运行中任务提示和本地文件授权流程，完整共享表单规则见 `docs/shared_form_components_plan.md`。
 
 ## 变更记录
 
@@ -206,3 +208,5 @@
 - 2026-05-15：将通用标题栏调整为覆盖式居中布局，并同步修正下载记录页普通态和多选态标题；原因是左侧一个返回按钮、右侧两个操作按钮时，标题不应被左右按钮数量拉偏。
 - 2026-05-15：抽取 `TitleBarText` 并让下载记录普通态和多选态标题复用统一文案样式；原因是标题字体需要统一改小并加粗，避免不同状态下标题层级不一致。
 - 2026-05-18：按当前代码组织规则拆分下载记录页 UI，新增 Chrome、Content、Cards、Dialogs 四个同 package 组件文件；原因是页面入口应聚焦生命周期、导航和业务事件编排，卡片、分页状态、弹窗和预览等可复用/可维护 UI 细节需要放到更可预测的位置。
+- 2026-05-18：将图片预览底部弹层、图片缩略图和媒体不可读占位改为复用共享媒体 UI 组件；原因是这些能力已经同时服务图片提取页和下载记录页，继续放在下载记录页面目录会造成跨页面复用边界不清。
+- 2026-05-18：下载记录分页状态和底部选择操作条接入共享表单组件；原因是这些 UI 形态已可被其他分页/多选页面复用，下载记录页只保留下载任务、本地文件和删除授权语义。

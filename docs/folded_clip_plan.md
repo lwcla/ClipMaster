@@ -64,7 +64,7 @@
 - `base/general/src/main/java/com/cla/clip/base/general/entity/ClipShowEntity.kt`
 - `app/src/main/java/com/cla/clip/master/ui/widget/Tools.kt`
 - `app/src/main/java/com/cla/clip/master/processor/ClipboardDataProcessor.kt`
-- `app/src/main/java/com/cla/clip/master/ui/page/list/ClipResultList.kt`
+- `app/src/main/java/com/cla/clip/master/ui/widget/clip/ClipResultList.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/search/SearchPage.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/search/SearchViewModel.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/mine/MinePage.kt`
@@ -136,6 +136,7 @@
 - 2026-05-17：修正折叠范围置顶排序语义；原因是用户进一步确认折叠页面不仅要保留置顶操作，还要先显示置顶数据，随后再按折叠时间倒序排序。
 - 2026-05-17：完成折叠范围置顶优先排序修正并将状态更新为已完成；原因是 DAO 已改为置顶优先、组内折叠时间倒序，折叠列表和折叠搜索均保留置顶入口，并通过 `./gradlew :app:compileDebugKotlin` 验证。
 - 2026-05-17：补充回收站切回折叠列表后的回调隔离验证；原因是折叠列表和回收站复用 `ClipResultList`，需要明确最终以共享组件最新回调和回收站前台生命周期保护为准，避免旧还原弹窗串到折叠页。
+- 2026-05-18：折叠页改为从 `ui/widget/clip` 引用共享剪贴结果组件；原因是 `ClipResultList` 已跨页面复用，折叠方案只记录折叠范围差异和取消折叠动作。
 - 2026-05-17：补充应用导航层将默认淡入淡出改为轻量横向进入动画对折叠入口的影响；原因是回收站旧页面退出期间如果原地覆盖新页面，会吞掉折叠入口点击，完整双页滑动又可能让重列表切换卡顿。
 - 2026-05-17：将折叠页切换说明同步为元素联动动画；原因是导航层过渡仍可能保留旧目的地触摸命中，折叠页需通过自身根容器动画保留流转感，并避免旧回收站页面挡住入口点击。
 - 2026-05-17：将折叠页切换说明同步为 Compose Navigation 官方左进右出页面级转场；原因是元素联动观感不佳，需要试验官方容器转场是否能兼顾页面流转效果和回收站返回后的入口稳定性。

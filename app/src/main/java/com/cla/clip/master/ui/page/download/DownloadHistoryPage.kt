@@ -40,6 +40,7 @@ import com.cla.clip.base.general.R
 import com.cla.clip.base.general.utils.toast
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.navigation.VideoDownloadRoute
+import com.cla.clip.master.ui.widget.SharedImagePreviewBottomSheet
 import kotlinx.coroutines.launch
 
 /**
@@ -225,8 +226,8 @@ fun DownloadHistoryPage(
     }
 
     previewImageUri?.let { uri ->
-        ImagePreviewBottomSheet(
-            uri = uri,
+        SharedImagePreviewBottomSheet(
+            model = uri,
             onDismiss = { previewImageUri = null }
         )
     }

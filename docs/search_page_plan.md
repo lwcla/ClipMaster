@@ -200,7 +200,7 @@
 - `app/src/main/java/com/cla/clip/master/ui/navigation/AppNavigation.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/list/ClipListPage.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/list/ClipListModel.kt`
-- `app/src/main/java/com/cla/clip/master/ui/page/list/ClipResultList.kt`
+- `app/src/main/java/com/cla/clip/master/ui/widget/clip/ClipResultList.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/search/SearchPage.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/search/SearchViewModel.kt`
 - `base/general/src/main/java/com/cla/clip/base/general/dao/ClipDao.kt`
@@ -311,6 +311,7 @@
 - 2026-05-17：完成搜索页滚动收起搜索框和筛选区交互并将状态更新为已完成；原因是 `SearchPage` 已基于结果区嵌套滚动方向控制顶部控件显隐，并通过 `./gradlew :app:compileDebugKotlin` 验证。
 - 2026-05-17：将搜索页滚动收起搜索框和筛选区的交互标记为实现中；原因是用户希望上滑结果列表时给内容让位，下滑时优先恢复筛选入口。
 - 2026-05-17：记录搜索结果内容卡片经由 `ClipResultList` 接入公共内容卡片外壳；原因是普通搜索和折叠搜索复用共享剪贴 item，需要与列表页、回收站和折叠页保持一致的主要内容卡片外壳。
+- 2026-05-18：搜索页改为从 `ui/widget/clip` 引用 `ClipResultList` 与 `ClipCardTimeMode`，搜索输入、时间筛选和来源 App 复选弹层接入共享表单/选择组件；原因是 Compose 组件按默认公共化规则收敛，搜索页只保留范围、顶部折叠和来源草稿状态。
 - 2026-05-12：创建搜索页方案文档，记录搜索入口、筛选、结果复用和关键词高亮方案。
 - 2026-05-12：按方案文档维护规则补充当前状态、开放问题和收尾检查，原因是需要让后续方案与代码变更有明确同步入口。
 - 2026-05-12：将当前状态更新为实现中，原因是开始按已确认搜索方案进入编码阶段。

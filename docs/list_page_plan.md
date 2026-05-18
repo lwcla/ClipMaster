@@ -94,7 +94,7 @@
 
 - `app/src/main/java/com/cla/clip/master/ui/page/list/ClipListPage.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/list/ClipListModel.kt`
-- `app/src/main/java/com/cla/clip/master/ui/page/list/ClipResultList.kt`
+- `app/src/main/java/com/cla/clip/master/ui/widget/clip/ClipResultList.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/main/MainPage.kt`
 - `docs/list_page_plan.md`
 - `docs/clip_result_list_plan.md`
@@ -136,6 +136,7 @@
 ## 变更记录
 
 - 2026-05-17：记录普通列表内容卡片经由 `ClipResultList` 接入公共内容卡片外壳；原因是列表页复用共享剪贴 item，主要内容卡片外壳需与我的页面卡片效果保持一致。
+- 2026-05-18：将 `ClipResultList` 引用更新为 `ui/widget/clip` 共享组件路径；原因是剪贴结果列表已跨列表、搜索、折叠和回收站复用，列表页文档只记录接入差异。
 - 2026-05-15：新增列表页设计文档；原因是列表页已有较多分页、生命周期、侧滑 item、滚动修正和搜索复用约束，需要独立文档指导后续开发。
 - 2026-05-15：补充折叠数据交互和普通列表隐藏折叠数据的实现记录；原因是剪贴记录新增折叠状态，普通列表查询改为仅加载未折叠数据，共享侧滑 item 增加第二段继续滑动折叠动作。
 - 2026-05-15：补充第二段滑动折叠的离场动画约束；原因是折叠状态立即更新会让 Paging 在卡片滑动中途移除数据，最终改为动画结束后再更新数据库。

@@ -1,26 +1,13 @@
 package com.cla.clip.master.ui.page.download
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -33,6 +20,10 @@ import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import com.cla.clip.base.general.R
+import com.cla.clip.master.ui.widget.PagingEmptyContent
+import com.cla.clip.master.ui.widget.PagingErrorContent
+import com.cla.clip.master.ui.widget.PagingLoadingContent
+import com.cla.clip.master.ui.widget.pagingAppendStateItem
 import kotlinx.coroutines.flow.Flow
 
 /** 根据指定 Tab 展示对应历史列表或空状态；由 Pager 传入分类，避免渲染时只依赖当前选中态。 */
@@ -95,14 +86,18 @@ internal fun VideoHistoryList(
     onOpenVideo: (DownloadHistoryVideoItem) -> Unit,
     onRetryVideo: (Long) -> Unit,
 ) {
+    val retryText = stringResource(R.string.base_general_data_load_failed_retry)
     when {
-        pagedVideos.loadState.refresh is LoadState.Loading -> LoadingHistory()
+        pagedVideos.loadState.refresh is LoadState.Loading -> PagingLoadingContent()
         pagedVideos.loadState.refresh is LoadState.NotLoading && pagedVideos.itemCount == 0 -> {
-            EmptyHistory(text = stringResource(R.string.base_general_download_history_video_empty))
+            PagingEmptyContent(text = stringResource(R.string.base_general_download_history_video_empty))
         }
 
         pagedVideos.loadState.refresh is LoadState.Error && pagedVideos.itemCount == 0 -> {
-            PagingErrorHistory(onRetry = pagedVideos::retry)
+            PagingErrorContent(
+                text = retryText,
+                onRetry = pagedVideos::retry
+            )
         }
 
         else -> {
@@ -128,7 +123,11 @@ internal fun VideoHistoryList(
                         )
                     }
                 }
-                pagingAppendState(pagedVideos.loadState.append, onRetry = pagedVideos::retry)
+                pagingAppendStateItem(
+                    loadState = pagedVideos.loadState.append,
+                    retryText = retryText,
+                    onRetry = pagedVideos::retry
+                )
             }
         }
     }
@@ -146,15 +145,19 @@ internal fun ImageHistoryList(
     onPreviewImage: (String) -> Unit,
 ) {
     RefreshImageHistoryWhenVisible(pagedImages)
+    val retryText = stringResource(R.string.base_general_data_load_failed_retry)
 
     when {
-        pagedImages.loadState.refresh is LoadState.Loading && pagedImages.itemCount == 0 -> LoadingHistory()
+        pagedImages.loadState.refresh is LoadState.Loading && pagedImages.itemCount == 0 -> PagingLoadingContent()
         pagedImages.loadState.refresh is LoadState.NotLoading && pagedImages.itemCount == 0 -> {
-            EmptyHistory(text = stringResource(R.string.base_general_download_history_image_empty))
+            PagingEmptyContent(text = stringResource(R.string.base_general_download_history_image_empty))
         }
 
         pagedImages.loadState.refresh is LoadState.Error && pagedImages.itemCount == 0 -> {
-            PagingErrorHistory(onRetry = pagedImages::retry)
+            PagingErrorContent(
+                text = retryText,
+                onRetry = pagedImages::retry
+            )
         }
 
         else -> {
@@ -180,7 +183,11 @@ internal fun ImageHistoryList(
                         )
                     }
                 }
-                pagingAppendState(pagedImages.loadState.append, onRetry = pagedImages::retry)
+                pagingAppendStateItem(
+                    loadState = pagedImages.loadState.append,
+                    retryText = retryText,
+                    onRetry = pagedImages::retry
+                )
             }
         }
     }
@@ -205,90 +212,5 @@ private fun RefreshImageHistoryWhenVisible(pagedImages: LazyPagingItems<Download
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-}
-
-/** 空历史状态，保持页面轻量直接提示当前分类没有记录。 */
-@Composable
-internal fun EmptyHistory(text: String) {
-    androidx.compose.foundation.layout.Column(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Icon(
-            Icons.Default.History,
-            contentDescription = null,
-            modifier = Modifier.size(42.dp),
-            tint = MaterialTheme.colorScheme.outline
-        )
-        androidx.compose.foundation.layout.Spacer(Modifier.size(10.dp))
-        Text(text = text, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-/** 首次分页加载状态；只在当前 Tab 的 Paging refresh 期间展示，避免用户误以为空记录。 */
-@Composable
-internal fun LoadingHistory() {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        CircularProgressIndicator()
-    }
-}
-
-/** 首次分页加载失败状态；点击文案直接调用 Paging retry，继续复用当前分页源。 */
-@Composable
-internal fun PagingErrorHistory(onRetry: () -> Unit) {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = stringResource(R.string.base_general_data_load_failed_retry),
-            modifier = Modifier
-                .clickable(onClick = onRetry)
-                .padding(16.dp),
-            color = MaterialTheme.colorScheme.error,
-            style = MaterialTheme.typography.bodyMedium
-        )
-    }
-}
-
-/** 追加分页状态；滚动到底部加载下一页时给出轻量反馈，失败时允许用户点击重试。 */
-internal fun LazyListScope.pagingAppendState(
-    loadState: LoadState,
-    onRetry: () -> Unit,
-) {
-    when (loadState) {
-        is LoadState.Loading -> {
-            item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                }
-            }
-        }
-
-        is LoadState.Error -> {
-            item {
-                Text(
-                    text = stringResource(R.string.base_general_data_load_failed_retry),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = onRetry)
-                        .padding(14.dp),
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-        }
-
-        else -> Unit
     }
 }

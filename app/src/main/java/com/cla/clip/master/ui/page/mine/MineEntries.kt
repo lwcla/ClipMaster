@@ -1,11 +1,5 @@
 package com.cla.clip.master.ui.page.mine
 
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Download
@@ -13,19 +7,15 @@ import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.config.ClipItemQuickAction
 import com.cla.clip.master.ui.navigation.DownloadHistoryRoute
 import com.cla.clip.master.ui.navigation.FoldedClipsRoute
 import com.cla.clip.master.ui.navigation.RecycleBinRoute
 import com.cla.clip.master.ui.navigation.Route
-import com.cla.clip.master.ui.widget.ClipMasterCard
+import com.cla.clip.master.ui.widget.ListEntryCard
 
 /**
  * 回收站入口。
@@ -37,7 +27,7 @@ internal fun RecycleBinEntry(
     recycleBinCount: Int,
     onNavigate: (route: Route) -> Unit,
 ) {
-    MineEntryCard(
+    ListEntryCard(
         icon = {
             Icon(
                 imageVector = Icons.Default.DeleteOutline,
@@ -61,7 +51,7 @@ internal fun ClipItemActionSettingEntry(
     action: ClipItemQuickAction,
     onClick: () -> Unit,
 ) {
-    MineEntryCard(
+    ListEntryCard(
         icon = {
             Icon(
                 imageVector = Icons.Default.Tune,
@@ -84,7 +74,7 @@ internal fun ClipItemActionSettingEntry(
 internal fun DownloadHistoryEntry(
     onNavigate: (route: Route) -> Unit,
 ) {
-    MineEntryCard(
+    ListEntryCard(
         icon = {
             Icon(
                 imageVector = Icons.Default.Download,
@@ -108,7 +98,7 @@ internal fun FoldedClipsEntry(
     foldedClipCount: Int,
     onNavigate: (route: Route) -> Unit,
 ) {
-    MineEntryCard(
+    ListEntryCard(
         icon = {
             Icon(
                 imageVector = Icons.Default.Inventory2,
@@ -120,46 +110,6 @@ internal fun FoldedClipsEntry(
         description = stringResource(R.string.base_general_folded_clips_entry_desc, foldedClipCount),
         onClick = { onNavigate(FoldedClipsRoute) }
     )
-}
-
-/**
- * 我的页通用入口卡片。
- *
- * 下载记录、折叠数据、回收站和设置入口都属于页面内管理入口，抽成统一布局可以保持圆角、边框、图标和文案层级一致。
- */
-@Composable
-private fun MineEntryCard(
-    icon: @Composable () -> Unit,
-    title: String,
-    description: String,
-    onClick: () -> Unit,
-) {
-    ClipMasterCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        onClick = onClick,
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            icon()
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
 }
 
 /** 将快捷动作映射为用户可见文案，所有文案都来自字符串资源。 */

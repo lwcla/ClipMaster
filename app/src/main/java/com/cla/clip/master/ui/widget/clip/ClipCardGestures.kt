@@ -1,4 +1,4 @@
-package com.cla.clip.master.ui.page.list
+package com.cla.clip.master.ui.widget.clip
 
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown

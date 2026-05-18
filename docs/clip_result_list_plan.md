@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-`ClipResultList` 是普通列表页、搜索结果页、折叠列表页和回收站列表页共同复用的剪贴结果列表组件，负责分页结果展示、空态/加载态、剪贴卡片结构、可选斜向快捷动作区、复制入口、可选右滑菜单、第二段滑动动作、关键词高亮、取消置顶后的视口修正和基础 item 测量。本次调整新增折叠时间展示模式，折叠列表和折叠搜索展示“折叠于 X”，并继续保留置顶/取消置顶入口；具体置顶优先与折叠时间倒序由页面数据源负责。来源 App 名称展示已接入共享 `String?.toSourceAppDisplayName()`，空名称兜底规则以 `docs/source_app_display_plan.md` 为准。当前代码组织已将内容展示、高亮、空态和手势几何/指针判断从主文件拆出，`ClipResultList.kt` 继续保留列表与卡片主流程。
+`ClipResultList` 是普通列表页、搜索结果页、折叠列表页和回收站列表页共同复用的剪贴结果列表组件，负责分页结果展示、空态/加载态、剪贴卡片结构、可选斜向快捷动作区、复制入口、可选右滑菜单、第二段滑动动作、关键词高亮、取消置顶后的视口修正和基础 item 测量。本次调整新增折叠时间展示模式，折叠列表和折叠搜索展示“折叠于 X”，并继续保留置顶/取消置顶入口；具体置顶优先与折叠时间倒序由页面数据源负责。来源 App 名称展示已接入共享 `String?.toSourceAppDisplayName()`，空名称兜底规则以 `docs/source_app_display_plan.md` 为准。当前代码组织已将 `ClipResultList`、`ClipCardContent` 和 `ClipCardGestures` 收敛到 `app/src/main/java/com/cla/clip/master/ui/widget/clip/`，列表页、搜索页、折叠页和回收站只负责传入页面级数据、文案和业务回调。
 
 本文是 `ClipResultList` 共享组件的主方案文档。后续涉及 `ClipResultList.kt`、共享卡片样式、侧滑方向、按钮布局、动画阈值、滚动修正、关键词高亮或跨页面列表结果复用的修改，都必须优先更新本文；页面文档只记录页面如何传入数据、动作语义和差异化文案。
 
@@ -138,9 +138,9 @@
 
 ## 涉及文件
 
-- `app/src/main/java/com/cla/clip/master/ui/page/list/ClipResultList.kt`
-- `app/src/main/java/com/cla/clip/master/ui/page/list/ClipCardContent.kt`
-- `app/src/main/java/com/cla/clip/master/ui/page/list/ClipCardGestures.kt`
+- `app/src/main/java/com/cla/clip/master/ui/widget/clip/ClipResultList.kt`
+- `app/src/main/java/com/cla/clip/master/ui/widget/clip/ClipCardContent.kt`
+- `app/src/main/java/com/cla/clip/master/ui/widget/clip/ClipCardGestures.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/list/ClipListPage.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/list/FoldedClipListPage.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/search/SearchPage.kt`
@@ -213,3 +213,4 @@
 - 2026-05-17：恢复共享卡片手势协程读取最新页面回调的处理，并明确其边界；原因是 `pointerInput` 协程捕获旧闭包属于共享组件自身正确性问题，应与页面级点击穿透治理分开处理。
 - 2026-05-18：剪贴 item 来源 App 名称接入 `String?.toSourceAppDisplayName()`；原因是来源 App 名称会在多个页面展示，空名称显示“未知”的规则需要与搜索来源选择共用同一套方法。
 - 2026-05-18：按当前代码组织规则拆分共享列表组件，新增 `ClipCardContent.kt` 和 `ClipCardGestures.kt`；原因是 `ClipResultList.kt` 同时承担列表状态、卡片主流程、内容展示、高亮和底层手势判断，拆出纯展示与纯手势能力后更符合共享组件主文档的职责边界。
+- 2026-05-18：将 `ClipResultList`、`ClipCardContent` 和 `ClipCardGestures` 从 `ui/page/list` 迁移到 `ui/widget/clip`；原因是该组件已经被列表页、搜索页、折叠页和回收站复用，不应继续放在列表页私有目录下。

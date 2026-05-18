@@ -1,7 +1,6 @@
 package com.cla.clip.master.ui.page.recycle
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,7 +24,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -49,9 +47,10 @@ import androidx.lifecycle.flowWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
 import com.cla.clip.base.general.config.AppSetting
 import com.cla.clip.base.general.entity.ClipShowEntity
-import com.cla.clip.master.ui.page.list.ClipCardTimeMode
-import com.cla.clip.master.ui.page.list.ClipResultList
+import com.cla.clip.master.ui.widget.SingleChoiceRow
 import com.cla.clip.master.ui.widget.TitleBar
+import com.cla.clip.master.ui.widget.clip.ClipCardTimeMode
+import com.cla.clip.master.ui.widget.clip.ClipResultList
 
 /**
  * 回收站页面。
@@ -319,24 +318,24 @@ private fun RecycleBinSettingSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(12.dp))
-            RetentionOptionRow(
-                label = stringResource(com.cla.clip.base.general.R.string.base_general_keep_7_days),
+            SingleChoiceRow(
+                title = stringResource(com.cla.clip.base.general.R.string.base_general_keep_7_days),
                 selected = selectedDays == 7,
                 onClick = {
                     selectedDays = 7
                     customText = "7"
                 }
             )
-            RetentionOptionRow(
-                label = stringResource(com.cla.clip.base.general.R.string.base_general_keep_30_days),
+            SingleChoiceRow(
+                title = stringResource(com.cla.clip.base.general.R.string.base_general_keep_30_days),
                 selected = selectedDays == 30,
                 onClick = {
                     selectedDays = 30
                     customText = "30"
                 }
             )
-            RetentionOptionRow(
-                label = stringResource(com.cla.clip.base.general.R.string.base_general_custom_days),
+            SingleChoiceRow(
+                title = stringResource(com.cla.clip.base.general.R.string.base_general_custom_days),
                 selected = selectedDays != 7 && selectedDays != 30,
                 onClick = { selectedDays = customDays ?: currentDays }
             )
@@ -373,24 +372,5 @@ private fun RecycleBinSettingSheet(
                 }
             }
         }
-    }
-}
-
-/** 回收站保留天数单选行。 */
-@Composable
-private fun RetentionOptionRow(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        RadioButton(selected = selected, onClick = onClick)
-        Text(text = label, modifier = Modifier.padding(start = 8.dp))
     }
 }

@@ -44,6 +44,7 @@ import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.navigation.SearchRoute
 import com.cla.clip.master.ui.widget.ShizukuServiceUnavailableTip
 import com.cla.clip.master.ui.widget.TopLevelTitleBar
+import com.cla.clip.master.ui.widget.clip.ClipResultList
 
 /**
  * 剪贴数据列表页
