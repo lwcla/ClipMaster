@@ -952,38 +952,33 @@ private fun ImageExtractContent(
     onConfirmDownload: (Set<String>) -> Unit,
     onOpen: (String?) -> Unit,
 ) {
-    when (state) {
-        ImageProbeState.Idle -> Unit
-        is ImageProbeState.Probing -> {
-            if (viewModel.probingCandidates.isEmpty()) {
-                CenterContent {
-                    ProbingLoadingContent(showLongRunningHint = showLongRunningHint)
-                }
-            } else {
-                LiveCandidateSelectionContent(
-                    candidates = viewModel.probingCandidates,
-                    viewModel = viewModel,
-                    isExtracting = true,
-                    isSubmittingDownload = isSubmittingDownload,
-                    onRetry = onRetry,
-                    onConfirmDownload = onConfirmDownload,
-                )
+    // 探测中已有候选和自动完成待确认共用同一个调用位置，避免状态分支切换时重建实时网格，
+    // 导致用户取消的选择、预览弹窗状态和 LazyVerticalGrid 滚动位置在完成瞬间丢失。
+    val shouldShowLiveSelection = when (state) {
+        is ImageProbeState.Probing -> viewModel.probingCandidates.isNotEmpty()
+        ImageProbeState.ReadyToDownload -> true
+        else -> false
+    }
+
+    if (shouldShowLiveSelection) {
+        LiveCandidateSelectionContent(
+            candidates = viewModel.probingCandidates,
+            viewModel = viewModel,
+            isExtracting = state is ImageProbeState.Probing,
+            isSubmittingDownload = isSubmittingDownload,
+            onRetry = onRetry,
+            onConfirmDownload = onConfirmDownload,
+        )
+    } else {
+        when (state) {
+            ImageProbeState.Idle -> Unit
+            is ImageProbeState.Probing -> CenterContent {
+                ProbingLoadingContent(showLongRunningHint = showLongRunningHint)
             }
+            ImageProbeState.ReadyToDownload -> Unit
+            ImageProbeState.Failed -> CenterContent { FailedText(onRetry) }
+            is ImageProbeState.Extracted -> BatchStatusContent(state, viewModel, onRetry, onOpen)
         }
-
-        ImageProbeState.ReadyToDownload -> {
-            LiveCandidateSelectionContent(
-                candidates = viewModel.probingCandidates,
-                viewModel = viewModel,
-                isExtracting = false,
-                isSubmittingDownload = isSubmittingDownload,
-                onRetry = onRetry,
-                onConfirmDownload = onConfirmDownload,
-            )
-        }
-
-        ImageProbeState.Failed -> CenterContent { FailedText(onRetry) }
-        is ImageProbeState.Extracted -> BatchStatusContent(state, viewModel, onRetry, onOpen)
     }
 }
 
@@ -1030,10 +1025,13 @@ private fun LiveCandidateSelectionContent(
     val unselectedKeys = remember { mutableStateSetOf<String>() }
     var previewCandidate by remember { mutableStateOf<ImageCandidateData?>(null) }
     val imageLoader = rememberAnimatedImageLoader(context)
+    // `candidates` 由 ViewModel 的 SnapshotStateList 传入，列表对象本身会复用；用稳定 key 快照触发副作用，
+    // 才能在实时追加新图片时立即补上默认选中，而不是等状态分支重建后才一次性全选。
+    val candidateKeys = candidates.map { viewModel.candidateKey(it) }
 
-    LaunchedEffect(candidates) {
+    LaunchedEffect(candidateKeys) {
         // 新候选默认选中；已被用户取消过的 key 不会因为候选刷新或 URL 优先级升级而恢复选中。
-        val currentKeys = candidates.map { viewModel.candidateKey(it) }.toSet()
+        val currentKeys = candidateKeys.toSet()
         selectedKeys.retainAll(currentKeys)
         unselectedKeys.retainAll(currentKeys)
         currentKeys.forEach { key ->
