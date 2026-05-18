@@ -210,8 +210,8 @@ interface ClipDao {
      * @param likeKeyword 普通子串匹配用关键词，保留用户输入的连续文本，用来补齐中文模糊搜索。
      * @param startTime 起始时间戳，单位毫秒；普通搜索过滤剪贴时间，折叠搜索过滤折叠时间。
      * @param endTime 结束时间戳，单位毫秒；普通搜索过滤剪贴时间，折叠搜索过滤折叠时间，非 null 时使用左闭右开区间。
-     * @param sourceAppPackageCount 已选来源 App 数量；为 0 时不过滤来源。
-     * @param sourceAppPackages 已选来源 App 包名列表；非空时命中任一包名即可返回。
+     * @param sourceAppPackageCount 已选来源 App 数量；为 0 时不过滤来源，空字符串包名代表“未知来源”时也计入数量。
+     * @param sourceAppPackages 已选来源 App 包名列表；非空时命中任一包名即可返回，允许包含空字符串来匹配未知来源。
      * @param isFolded 搜索范围过滤；普通搜索传 false，折叠搜索传 true，避免折叠数据从普通搜索泄漏。
      * @param timeFilterUsesFoldedAt 时间筛选是否使用折叠时间；折叠搜索传 true，确保时间 Chip 与折叠列表主时间轴一致。
      */
@@ -285,6 +285,8 @@ interface ClipDao {
      * 只保留时间和来源 App 多选条件，并完全沿用列表页排序。
      *
      * @param isFolded 搜索范围过滤；普通搜索传 false，折叠搜索传 true。
+     * @param sourceAppPackageCount 已选来源 App 数量；为 0 时不过滤来源，空字符串包名代表“未知来源”时也计入数量。
+     * @param sourceAppPackages 已选来源 App 包名列表；非空时命中任一包名即可返回，允许包含空字符串来匹配未知来源。
      * @param timeFilterUsesFoldedAt 时间筛选是否使用折叠时间；折叠搜索传 true。
      */
     @Transaction
@@ -327,6 +329,8 @@ interface ClipDao {
      * 牺牲一点性能换取搜索框对 URL、符号片段等输入的稳定响应，同时保留来源 App 多选过滤。
      *
      * @param isFolded 搜索范围过滤；普通搜索传 false，折叠搜索传 true。
+     * @param sourceAppPackageCount 已选来源 App 数量；为 0 时不过滤来源，空字符串包名代表“未知来源”时也计入数量。
+     * @param sourceAppPackages 已选来源 App 包名列表；非空时命中任一包名即可返回，允许包含空字符串来匹配未知来源。
      * @param timeFilterUsesFoldedAt 时间筛选是否使用折叠时间；折叠搜索传 true。
      */
     @Transaction

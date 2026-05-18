@@ -168,35 +168,10 @@ class SearchViewModel @Inject constructor(
         emptyList()
     )
 
-    /**
-     * 当前已选来源 App 的展示名列表。
-     *
-     * UI 使用它显示筛选 Chip 文案；当来源列表尚未加载或对应 App 被清理时，回退到包名，避免筛选状态丢失。
-     * 输出顺序优先跟随来源 App 列表，便于弹窗与 Chip 的认知顺序一致；列表里不存在的包名追加在末尾。
-     */
-    val selectedSourceAppNames: StateFlow<List<String>> = combine(_filterState, sourceApps) { state, apps ->
-        val selectedPackages = state.sourceAppPackages
-        if (selectedPackages.isEmpty()) {
-            return@combine emptyList()
-        }
-
-        val appNames = apps
-            .filter { it.packageName in selectedPackages }
-            .map { sourceApp -> sourceApp.appName.takeIf { it.isNotBlank() } ?: sourceApp.packageName }
-        val knownPackages = apps.mapTo(mutableSetOf()) { it.packageName }
-        val missingPackageNames = selectedPackages
-            .filterNot { it in knownPackages }
-            .sorted()
-        appNames + missingPackageNames
-    }.stateIn(
-        CoroutineScope(viewModelScope.coroutineContext + Dispatchers.IO),
-        SharingStarted.WhileSubscribed(5_000),
-        emptyList()
-    )
-
     /** 更新搜索关键词，输入变化后会自动触发新的分页查询。 */
     fun updateQuery(query: String) {
-        _filterState.update { it.copy(query = query) }
+        val singleLineQuery = query.toSingleLineSearchQuery()
+        _filterState.update { it.copy(query = singleLineQuery) }
     }
 
     /**
@@ -216,13 +191,15 @@ class SearchViewModel @Inject constructor(
     /**
      * 批量更新来源 App 多选条件。
      *
-     * 弹窗内部会先维护草稿选择，用户点击确认后才调用这里提交；提交时统一去空、去重和排序，
+     * 弹窗内部会先维护草稿选择，用户点击确认后才调用这里提交；提交时统一去重和排序，
      * 让相同选择集合不会因为点击顺序不同而造成无意义的筛选状态变化。
+     *
+     * 注意空字符串包名是合法筛选值，用来匹配历史数据里无法识别来源包名的“未知”来源；
+     * 只有真正的空集合才表示“全部来源”，因此这里不能再把空字符串过滤掉。
      */
     fun updateSourceApps(packageNames: Set<String>) {
         val normalizedPackageNames = packageNames
             .map { it.trim() }
-            .filter { it.isNotBlank() }
             .toSortedSet()
         _filterState.update { it.copy(sourceAppPackages = normalizedPackageNames) }
     }
@@ -247,9 +224,10 @@ class SearchViewModel @Inject constructor(
      */
     fun selectHistory(query: String) {
         val scope = visibilityScope.value ?: return
-        _filterState.update { it.copy(query = query) }
+        val singleLineQuery = query.toSingleLineSearchQuery()
+        _filterState.update { it.copy(query = singleLineQuery) }
         viewModelScope.launch {
-            searchHistoryRepository.get().saveHistory(scope, query)
+            searchHistoryRepository.get().saveHistory(scope, singleLineQuery)
         }
     }
 
@@ -275,6 +253,16 @@ class SearchViewModel @Inject constructor(
             searchHistoryRepository.get().clearHistories(scope)
         }
     }
+}
+
+/**
+ * 将搜索框输入规整成单行关键词。
+ *
+ * 用户可能从外部粘贴多行文本；这里仅把换行折叠为空格，保留普通空格和其它符号，避免改变既有关键词搜索语义。
+ */
+private fun String.toSingleLineSearchQuery(): String {
+    return lineSequence()
+        .joinToString(separator = " ")
 }
 
 /** 数据库搜索用的左闭右开时间范围。 */

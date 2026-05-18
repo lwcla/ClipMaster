@@ -86,7 +86,11 @@ class ClipRepositoryImpl @Inject constructor(
     ): PagingSource<Int, ClipDetail> {
         val trimmed = userInput.trim()
         val sourcePackagesForQuery = buildSourcePackagesForQuery(sourceAppPackages)
-        val sourceAppPackageCount = sourceAppPackages.count { it.isNotBlank() }
+        // 空字符串包名本身代表“未知来源”筛选项，不能按空白过滤；只有数量为 0 才表示跳过来源过滤。
+        val sourceAppPackageCount = sourceAppPackages
+            .map { it.trim() }
+            .distinct()
+            .size
         val isFolded = visibilityScope.toFoldState()
         // 折叠搜索的“今天/近 7 天”等时间筛选按折叠动作发生时间过滤，和折叠列表排序、卡片时间展示保持一致。
         val timeFilterUsesFoldedAt = visibilityScope == ClipVisibilityScope.FoldedOnly
@@ -134,10 +138,11 @@ class ClipRepositoryImpl @Inject constructor(
      *
      * 搜索页用空集合表达“全部来源”，但 Room 的集合参数最好始终提供至少一个占位值；
      * 因此空集合会转换成一个不会生效的哨兵值，并由 `sourceAppPackageCount = 0` 让 SQL 跳过来源过滤。
+     * 空字符串包名是“未知来源”的真实查询键，必须保留到 `IN` 参数中，避免选择“未知”后被误判为全部来源。
      */
     private fun buildSourcePackagesForQuery(sourceAppPackages: Set<String>): List<String> {
         val packages = sourceAppPackages
-            .filter { it.isNotBlank() }
+            .map { it.trim() }
             .distinct()
             .sorted()
         return packages.ifEmpty { listOf("__all_source_apps__") }

@@ -2,8 +2,8 @@ package com.cla.clip.master.ui.page.list
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -55,8 +55,8 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.pointer.PointerId
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerInputScope
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
@@ -74,7 +74,6 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -87,6 +86,7 @@ import androidx.paging.compose.itemKey
 import coil3.compose.AsyncImage
 import com.cla.clip.base.general.config.ClipItemQuickAction
 import com.cla.clip.base.general.entity.ClipShowEntity
+import com.cla.clip.base.general.utils.toSourceAppDisplayName
 import com.cla.clip.master.R
 import com.cla.clip.master.ui.widget.ClipMasterCardDefaults
 import com.cla.clip.master.ui.widget.ClipMasterGestureCard
@@ -94,7 +94,6 @@ import com.cla.clip.master.ui.widget.rememberDeletedFormattedTime
 import com.cla.clip.master.ui.widget.rememberFoldedFormattedTime
 import com.cla.clip.master.ui.widget.rememberFormattedTime
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.sign
@@ -1018,6 +1017,7 @@ private fun SourceAppNameWithTime(
     }
     // 来源 App 与时间区域空间很窄，锁定 fontScale 可以避免系统大字体下挤压到不可读。
     CompositionLocalProvider(LocalDensity provides Density(density = currentDensity.density, fontScale = 1f)) {
+        val sourceAppName = clip.appName.toSourceAppDisplayName()
         Layout(
             content = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1037,7 +1037,7 @@ private fun SourceAppNameWithTime(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     HighlightableText(
-                        text = clip.appName ?: stringResource(com.cla.clip.base.general.R.string.base_general_unknow),
+                        text = sourceAppName,
                         highlightQuery = highlightQuery,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
