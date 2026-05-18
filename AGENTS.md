@@ -29,6 +29,37 @@
 - 面对可能增长的数据集合，优先使用分页、分批、懒加载或按需查询；标题栏数量、全选、清空、运行中状态等全局信息应使用轻量 `COUNT`、id 查询或专用聚合接口，不应依赖已经加载的可见列表，也不应为了统计而一次性加载全部实体。
 - 涉及页面生命周期、分页加载、按需加载、缓存策略或重型任务启停的实现，必须在对应方案文档和代码注释中说明触发时机、取消边界、性能取舍以及为什么放在页面层或 ViewModel 层，避免后续维护时把生命周期约束误改成控件状态驱动。
 
+## Code Organization and Reuse Convention
+
+- 后续新增或修改代码前，必须先检查项目里是否已经存在相同或相近能力，优先使用 `rg`、`rg --files`、IDE 搜索或类型引用查找已有方法、扩展函数、工具类、Repository、Helper、Parser、Formatter、Validator 和平台封装，避免重复实现。
+- 如果发现已有能力能满足需求，应优先复用；如果只差少量参数或边界，应优先在原有抽象上扩展，并同步评估所有调用方影响。只有当现有能力职责不符、依赖方向不允许、语义会被污染或复用会带来明显风险时，才新增实现，并在代码注释或方案文档中说明不复用的原因。
+- 禁止把网络请求、文件读写、格式识别、内容校验、MediaStore 发布、日志诊断、UI 状态编排、业务流程调度等多类职责长期堆在同一个大类或大文件中。Worker、ViewModel、Composable、Repository 等入口类应主要负责流程编排和状态连接，具体能力应按职责下沉到明确命名的协作者、工具类或扩展方法。
+- 当一个文件持续增长、私有方法跨越多个职责域、方法命名开始依赖注释才能理解分组，或某类逻辑已经可能被其他页面/Worker/模块复用时，应优先规划拆分。拆分时按业务语义命名，例如 `ImageFormatSniffer`、`ImageDownloadValidator`、`ImageRequestHeaderBuilder`、`MediaStoreImagePublisher`，避免创建含糊的 `CommonUtils`、`HelperUtils` 或万能工具类。
+- 纯函数、字节解析、字符串规范化、轻量格式判断等无状态能力，优先做成扩展函数或小型 `object`；需要持有 `Context`、Repository、OkHttp、系统服务、协程调度器或可替换依赖的能力，优先做成职责单一的类并通过构造函数注入依赖，避免隐藏全局状态。
+- 工具能力的放置位置必须遵守模块边界：仅当前功能使用的能力放在对应 feature/package 下；跨页面或跨 Worker 复用的能力应放到合适的共享模块或已有通用包中；禁止为了复用让底层模块反向依赖上层业务模块。
+- 工具类和扩展方法必须放在后续维护者按“领域 + 职责”最容易想到的位置，不能为了省事随手塞进当前大文件、顶层 `utils` 或已经过载的工具类。新建位置时应优先使用清晰的领域包和职责文件名，例如图片格式识别放到 `image/format` 相关包，图片下载校验放到 `image/download` 相关包，字节头解析扩展放到接近格式解析职责的位置。
+- 查找已有能力时应遵循由近到远的顺序：先查当前 feature/package 内同职责文件，再查当前模块已有的 helper、parser、validator、formatter、publisher、repository 或 platform wrapper，然后查共享模块对应领域目录，最后才做全仓搜索。只有当局部约定不清晰、命名不可预测或跨模块关系不确定时，才使用全仓 `rg` 兜底。
+- 工具类、扩展文件和包名必须可预测，尽量让调用方不打开文件也能判断职责；优先使用 `ImageFormatSniffer`、`ImageAnimationMetadataReader`、`ImageDownloadValidator`、`ImageRequestHeaderBuilder`、`MediaStoreImagePublisher`、`ByteArrayImageHeaderExtensions.kt` 这类具名职责，避免 `FileUtils`、`CommonUtils`、`ImageUtils` 继续膨胀成万能入口。
+- 扩展方法应按 receiver 类型和业务领域共同归类：同一 receiver 的通用能力可以集中，但带明显业务语义的扩展必须靠近对应领域；例如 `ByteArray` 的图片头解析不应散落在 Worker 中，也不应混进与图片无关的通用字节工具，避免后续查找只能依赖全仓扫描。
+- Compose 组件同样必须遵守职责拆分和复用规则。新增 `@Composable` 前必须先查当前页面、当前 feature、`ui/widget`、共享组件文档和已有设计系统组件，确认是否已有同类 Dialog、BottomSheet、Card、Toolbar、Grid、Preview、EmptyState、LoadingState、ActionRow 或选择控件可以复用或扩展。
+- 页面级 Composable 应主要负责状态收集、事件连接和页面结构编排；可复用的弹窗、预览、工具栏、列表项、网格项、状态块和操作区应抽成独立 Composable，并按 feature-local 或 shared-ui 职责放到可预测文件中，避免长期堆在单个页面文件里。
+- 当两个 Compose 组件视觉结构、交互流程或数据契约高度相似时，应优先收敛为一个带参数、slot 或状态提升接口的共享组件，而不是复制一份再微调。像图片预览 Dialog、图片预览 BottomSheet、媒体预览卡片这类组件，如果只是入口、按钮或元信息略有不同，应设计统一组件承载差异。
+- Compose 组件放置位置必须便于查找：仅当前页面使用的私有小组件可以留在页面文件附近；当前 feature 多页面复用的组件应放到 feature 的 `component`、`widget` 或同等职责包；跨 feature 复用的组件应放到 `ui/widget`、共享 UI 模块或既有设计系统位置，并在页面方案文档中只记录接入差异。
+- 抽取 Compose 组件时必须保持状态边界清晰：业务状态尽量由调用方传入并通过事件回调向外抛出，组件内部只保留 UI 局部状态；涉及 `remember`、`LaunchedEffect`、`DisposableEffect`、滚动状态、弹窗显示状态或资源加载状态时，必须说明状态保存边界和生命周期影响。
+- 共享 Compose 组件禁止直接依赖具体页面的 `ViewModel`、`NavController`、Repository 或业务单例；组件应接收稳定的 UI state/data 和事件 callback，由调用方负责状态收集、导航和业务动作，确保组件可以在其他页面、Preview 或测试场景中独立复用。
+- Compose 组件参数应表达清晰的 UI 契约。复杂状态优先定义具名 UI state data class、sealed state 或明确的参数组，不要用大量零散 Boolean、可空参数和隐式组合驱动分支，避免调用方无法判断哪些参数可以同时出现。
+- 共享组件差异优先用 slot、内容 lambda、配置对象或状态提升表达，例如 `titleContent`、`actions`、`footer`、`emptyContent`；只有当视觉结构、交互语义或生命周期边界确实不同，才拆成不同组件，避免复制出多个只差按钮或标题的 Dialog/Sheet。
+- 共享 Compose 组件的颜色、字号、圆角、间距、图标和交互反馈应优先来自 `MaterialTheme`、项目已有设计系统、资源或统一 token；除非组件有明确领域语义，不要在组件内部私自写一套不可复用的样式常量。
+- 加载中、失败重试、空态、权限提示、图片预览、选择网格、批量操作栏等高频 UI 状态应优先沉淀为统一组件；页面只负责决定当前展示哪个状态和传入对应操作，避免每个页面重复绘制类似状态块。
+- Compose 组件命名必须同时体现用途和形态，例如 `ImagePreviewDialog`、`ImagePreviewSheet`、`SelectableImageGrid`、`ImageCandidateTile`；避免 `MyDialog`、`CommonDialog`、`ItemView`、`ContentView` 这类无法从名称判断职责的命名。
+- 单个 Compose 组件文件可以包含主组件及其紧密私有小片段，但不能继续膨胀成多个无关组件的大杂烩；如果文件里出现多个可独立复用的 Dialog、Sheet、Card、Tile 或状态组件，应继续按职责拆分到独立文件。
+- 共享组件内部只应管理展开、滚动、动画、焦点、临时输入等纯 UI 局部状态；网络请求、数据库观察、权限申请、导航、下载启动、跨页面副作用和业务协程默认放在调用方、ViewModel 或专门 state holder 中。
+- 复杂共享组件建议提供 `@Preview` 或可独立构造的 sample state，尤其是 Dialog、Sheet、Grid、Card、预览器和状态组件，方便后续独立检查布局、主题和长文本适配，而不必启动完整业务页面。
+- 当 Compose 组件被多个页面复用时，应优先建立或更新对应共享组件主方案文档，完整记录组件状态流转、参数契约、slot 语义、交互边界和测试验证；页面文档只记录本页面接入差异，避免多处重复维护同一组件设计。
+- 拆分既有大文件时应保持行为等价，优先小步迁移：先移动同一职责的一组方法并保留原有测试/验证路径，再逐步收敛调用方。除非用户明确要求重构行为，否则不要在职责拆分中夹带功能改动、排序规则变化、过滤条件变化或异常处理变化。
+- 新增工具类、扩展方法或共享能力后，必须按本文件的注释规则补充简体中文注释，说明职责、适用范围、边界条件和不适用场景；如果该能力影响既有方案或多个页面，也必须同步更新对应方案文档。
+- 代码评审或收尾时如果发现某个文件已经承担过多职责，应主动指出可拆分方向；如果本次任务无法立即拆分，应把拆分建议记录到对应方案文档的“后续待办”或“开放问题”，避免问题继续隐性累积。
+
 ## Code Commenting Convention
 
 - 后续新增或修改代码时，必须同步补充简体中文注释，注释重点说明“做什么”“为什么这样做”“有什么边界/代价”，而不是复述语法。

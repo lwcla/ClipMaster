@@ -89,6 +89,7 @@
 - Worker、预览元信息请求和缩略图加载统一携带浏览器图片请求常见的 `Accept` 头，降低 CDN 因客户端协商差异返回静态转码图的概率；下载日志会记录该 Accept，方便对比提取页预览和 Worker 下载是否处在同类请求条件下。
 - Worker 识别到动图后会尽力计算动画时长并写入 MediaStore `DURATION`，帮助部分系统相册把保存结果识别为动态媒体；Android 10+ 通过 `IS_PENDING=0` 发布后不再对 `content://` URI 调用媒体扫描，避免无效扫描失败日志。
 - 不再对知乎示例这类 Animated WebP 做 GIF 转码试验；Worker 继续按真实文件格式原样发布，避免实验性转码产生空白图或破坏原始内容。
+- `DownloadImagesWorker` 只保留批次读取、并发下载编排、进度回写、按顺序发布和通知发送；图片请求头构建、真实格式识别、GIF/WebP/APNG/AVIF 动画元数据解析、下载内容质量校验和文件名清理拆到 `image/download`、`image/format` 领域包，避免 Worker 再堆积格式解析和校验细节。
 - B 站 opus 页面额外从 `window.__INITIAL_STATE__` 读取正文 `pic.pics` 原始 URL；候选合并时把 `hdslb.com/bfs/...gif@...webp` 与 `hdslb.com/bfs/...gif` 视为同一张图片，并优先保留无样式后缀的 GIF 原图。
 - 知乎图片 CDN 会出现 URL 后缀是 `.jpg`、响应内容是 WebP、预览仍可动的情况；候选合并需按 `zhimg.com` 的 `v2-*` 图片标识归并同一资源变体，优先保存 GIF/原图候选，并记录最终下载文件是否真的包含动画标记。
 - 完整 DOM 扫描会额外递归读取 `__INITIAL_STATE__`、`__NEXT_DATA__`、`__NUXT__`、`__APOLLO_STATE__` 等常见页面状态对象，并扫描内联脚本中的图片 URL 字面量。
@@ -104,6 +105,9 @@
 - 用户确认下载时，Repository 删除未选中的图片项，并把批次 `total_count` 更新为选中数量。
 - `DownloadImagesWorker` 读取剩余图片项，并保持现有临时下载、内容校验、按顺序发布和状态回写逻辑。
 - 单张图片写入临时文件后，Worker 先识别临时文件真实格式并校验内容质量，再按真实扩展名发布为 `001.gif`、`002.webp` 等文件，MediaStore 记录同步写入真实 MIME。
+- 单张图片下载请求通过 `ImageRequestHeaderBuilder` 统一构建，保证 Accept、Referer、User-Agent、Cookie 的拼装规则可复用且便于查找；Cookie 只在日志中输出是否存在和长度。
+- 临时文件真实格式由 `ImageFormatSniffer.detectDownloadedImageFormat` 识别；该职责包内部维护 MIME 规范化、URL 后缀兜底、图片文件头判断和动图时长解析。
+- 下载后内容质量由 `ImageDownloadValidator.validateDownloadedImage` 校验；透明占位图、过小图片、纯黑/纯白错误图通过 `FilteredImageException` 与真实失败区分。
 - 如果临时文件是 Animated WebP，Worker 只记录动画标记和时长并原样发布 `.webp`；不做 GIF 转码，避免相册兼容试验改变图片内容。
 - `ImageExtractPage` 的 DOM 扫描结果进入 `ImageExtractVm` 后，ViewModel 会用规范化后的 B 站 BFS 原图 URL 去重；同一张图同时出现原图和转码预览时，最终批次只保留原图。
 - 通用样式图去重不依赖具体链接：例如 `a.gif@672w_1c.webp` 和 `a.gif` 会合并为同一候选，最终批次优先保存 `a.gif`。
@@ -132,6 +136,14 @@
 - `app/src/main/java/com/cla/clip/master/ui/page/image/ImageExtractPage.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/image/ImageExtractVm.kt`
 - `app/src/main/java/com/cla/clip/master/ui/widget/ProbeWebView.kt`
+- `app/src/main/java/com/cla/clip/master/image/download/ImageDownloadFileNames.kt`
+- `app/src/main/java/com/cla/clip/master/image/download/ImageDownloadLogExtensions.kt`
+- `app/src/main/java/com/cla/clip/master/image/download/ImageDownloadValidator.kt`
+- `app/src/main/java/com/cla/clip/master/image/download/ImageRequestHeaderBuilder.kt`
+- `app/src/main/java/com/cla/clip/master/image/format/ByteArrayImageHeaderExtensions.kt`
+- `app/src/main/java/com/cla/clip/master/image/format/ImageAnimationMetadataReader.kt`
+- `app/src/main/java/com/cla/clip/master/image/format/ImageFileFormat.kt`
+- `app/src/main/java/com/cla/clip/master/image/format/ImageFormatSniffer.kt`
 - `base/general/src/main/java/com/cla/clip/base/general/repository/ImageExtractRepository.kt`
 - `base/general/src/main/java/com/cla/clip/base/general/dao/ImageExtractDao.kt`
 - `base/general/src/main/java/com/cla/clip/base/general/utils/FileUtils.kt`
@@ -290,3 +302,5 @@
 - 2026-05-18：完成 `ALPH + VP8` 单帧 WebP 封装修正并通过 `./gradlew :app:compileDebugKotlin` 验证；原因是转码器现在会在帧 payload 含透明块时补写 `VP8X` 扩展头和 alpha 标记，避免知乎 Animated WebP 从第二帧开始解码失败。
 - 2026-05-18：放弃知乎示例 Animated WebP 转 GIF 试验并撤回转码发布路径；原因是用户确认浏览器下载该图也表现为静态/转码结果为空白图，继续尝试会增加空白图风险，最终以原始字节保存和日志诊断为准。
 - 2026-05-18：修正下载批次状态分支中的可疑缩进；原因是 `curBatch` 早返回判断应与变量声明同级，避免 IDE 误判为上一行表达式延续，也提升后续维护可读性。
+- 2026-05-18：开始整理 `DownloadImagesWorker` 职责，将请求头构建、真实格式识别、动图元数据解析、下载内容校验、Cookie 日志和文件名清理拆到 `image/download`、`image/format` 领域包；原因是 Worker 已承载过多工具方法，后续应按“领域 + 职责”放置可复用能力，减少重复实现和全仓搜索成本。
+- 2026-05-18：完成 `DownloadImagesWorker` 职责拆分并通过 `./gradlew :app:compileDebugKotlin` 验证；原因是 Worker 现在只负责批次流程、下载编排、发布和通知，图片请求、格式识别、动画元数据和内容校验已迁移到可预测领域包，保持行为等价并提升后续复用性。
