@@ -133,6 +133,9 @@ private const val IMAGE_PREVIEW_MAX_ASPECT_RATIO = 4f
 /** 缩略图请求尺寸，单位为像素；只加载小图以降低列表滚动时的内存和网络成本。 */
 private const val IMAGE_PREVIEW_THUMBNAIL_SIZE_PX = 420
 
+/** 图片候选网格固定列数；提取页按用户筛选效率固定一行四张，避免自适应列宽在不同状态下跳动。 */
+private const val IMAGE_CANDIDATE_GRID_COLUMNS = 4
+
 /** 图片请求 Accept，尽量贴近浏览器图片加载，避免预览和 Worker 因内容协商差异拿到不同动静态版本。 */
 private const val IMAGE_REQUEST_ACCEPT = "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
 
@@ -680,7 +683,10 @@ fun ImageExtractPage(
     /** 当前会话是否已经首次触底，用于保证 60 秒提示只覆盖“仍未首次触底”的长页面场景。 */
     var hasReachedFirstBottom by remember { mutableStateOf(false) }
 
-    /** 是否正在停止探测并提交下载；提交期间禁用重复点击和重新提取，避免重复创建批次。 */
+    /** 是否正在停止探测；停止期间禁用重复点击和重新提取，避免 WebView 销毁和候选快照发布重复执行。 */
+    var isStoppingExtract by remember { mutableStateOf(false) }
+
+    /** 是否正在提交下载；提交期间禁用重复点击和重新提取，避免重复创建批次。 */
     var isSubmittingDownload by remember { mutableStateOf(false) }
 
     /** 是否展示重新提取确认弹窗；已有候选未下载时需要先提醒会清空当前选择。 */
@@ -726,6 +732,7 @@ fun ImageExtractPage(
         collectJob = null
         showLongRunningHint = false
         hasReachedFirstBottom = false
+        isStoppingExtract = false
         isSubmittingDownload = false
         showRetryConfirm = false
         imageExtractVm.resetProbeSession(imageExtractVm.sessionId)
@@ -839,9 +846,10 @@ fun ImageExtractPage(
                 state = state,
                 viewModel = imageExtractVm,
                 showLongRunningHint = showLongRunningHint,
+                isStoppingExtract = isStoppingExtract,
                 isSubmittingDownload = isSubmittingDownload,
                 onRetry = {
-                    if (isSubmittingDownload) return@ImageExtractContent
+                    if (isStoppingExtract || isSubmittingDownload) return@ImageExtractContent
                     if (
                         imageExtractVm.probingCandidates.isNotEmpty() &&
                         (imageExtractVm.probeState is ImageProbeState.Probing ||
@@ -853,57 +861,46 @@ fun ImageExtractPage(
                         imageExtractVm.sessionId += 1
                     }
                 },
-                onConfirmDownload = { selectedKeys ->
-                    if (isSubmittingDownload || selectedKeys.isEmpty()) return@ImageExtractContent
+                onStopExtract = {
+                    if (isStoppingExtract || isSubmittingDownload) return@ImageExtractContent
                     val sessionId = (imageExtractVm.probeState as? ImageProbeState.Probing)?.sessionId
-                    isSubmittingDownload = true
-                    if (sessionId != null) {
-                        collectJob?.cancel()
-                        collectJob = null
-                        val candidates = imageExtractVm.snapshotProbingCandidates()
-                        val view = webViewRef
-                        if (view != null) {
-                            coroutineScope.launch {
-                                // 用户手动结束时也使用当前 DOM/阶段性候选补齐预览，保证返回列表后尽量能看到封面。
-                                imageExtractVm.saveWebViewLinkPreview(
-                                    webView = view,
-                                    pageUrl = pageUrl,
-                                    fallbackImageUrl = candidates.firstOrNull()?.url
-                                )
-                                imageExtractVm.publishProbingCandidatesImmediately(sessionId, candidates)
-                                imageExtractVm.markProbeReadyIfActive(sessionId)
-                                destroyProbeWebView(closeCandidateUpdates = false)
-                                val success = imageExtractVm.createBatchAndStartDownload(pageUrl, pageName, selectedKeys)
-                                if (!success) {
-                                    isSubmittingDownload = false
-                                    context.toast(R.string.base_general_failed_to_create_the_download_task)
-                                } else {
-                                    isSubmittingDownload = false
-                                }
-                            }
-                        } else {
+                        ?: return@ImageExtractContent
+                    isStoppingExtract = true
+                    collectJob?.cancel()
+                    collectJob = null
+                    val candidates = imageExtractVm.snapshotProbingCandidates()
+                    val view = webViewRef
+                    if (view != null) {
+                        coroutineScope.launch {
+                            // 用户手动停止只冻结当前候选并补齐链接预览，不创建下载批次；下载必须等待下一次明确点击。
+                            imageExtractVm.saveWebViewLinkPreview(
+                                webView = view,
+                                pageUrl = pageUrl,
+                                fallbackImageUrl = candidates.firstOrNull()?.url
+                            )
                             imageExtractVm.publishProbingCandidatesImmediately(sessionId, candidates)
                             imageExtractVm.markProbeReadyIfActive(sessionId)
                             destroyProbeWebView(closeCandidateUpdates = false)
-                            coroutineScope.launch {
-                                val success = imageExtractVm.createBatchAndStartDownload(pageUrl, pageName, selectedKeys)
-                                if (!success) {
-                                    isSubmittingDownload = false
-                                    context.toast(R.string.base_general_failed_to_create_the_download_task)
-                                } else {
-                                    isSubmittingDownload = false
-                                }
-                            }
+                            isStoppingExtract = false
                         }
                     } else {
-                        coroutineScope.launch {
-                            val success = imageExtractVm.createBatchAndStartDownload(pageUrl, pageName, selectedKeys)
-                            if (!success) {
-                                isSubmittingDownload = false
-                                context.toast(R.string.base_general_failed_to_create_the_download_task)
-                            } else {
-                                isSubmittingDownload = false
-                            }
+                        imageExtractVm.publishProbingCandidatesImmediately(sessionId, candidates)
+                        imageExtractVm.markProbeReadyIfActive(sessionId)
+                        destroyProbeWebView(closeCandidateUpdates = false)
+                        isStoppingExtract = false
+                    }
+                },
+                onConfirmDownload = { selectedKeys ->
+                    if (isSubmittingDownload || selectedKeys.isEmpty()) return@ImageExtractContent
+                    if (imageExtractVm.probeState is ImageProbeState.Probing) return@ImageExtractContent
+                    isSubmittingDownload = true
+                    coroutineScope.launch {
+                        val success = imageExtractVm.createBatchAndStartDownload(pageUrl, pageName, selectedKeys)
+                        if (!success) {
+                            isSubmittingDownload = false
+                            context.toast(R.string.base_general_failed_to_create_the_download_task)
+                        } else {
+                            isSubmittingDownload = false
                         }
                     }
                 },
@@ -947,8 +944,10 @@ private fun ImageExtractContent(
     state: ImageProbeState,
     viewModel: ImageExtractVm,
     showLongRunningHint: Boolean,
+    isStoppingExtract: Boolean,
     isSubmittingDownload: Boolean,
     onRetry: () -> Unit,
+    onStopExtract: () -> Unit,
     onConfirmDownload: (Set<String>) -> Unit,
     onOpen: (String?) -> Unit,
 ) {
@@ -965,8 +964,10 @@ private fun ImageExtractContent(
             candidates = viewModel.probingCandidates,
             viewModel = viewModel,
             isExtracting = state is ImageProbeState.Probing,
+            isStoppingExtract = isStoppingExtract,
             isSubmittingDownload = isSubmittingDownload,
             onRetry = onRetry,
+            onStopExtract = onStopExtract,
             onConfirmDownload = onConfirmDownload,
         )
     } else {
@@ -1016,8 +1017,10 @@ private fun LiveCandidateSelectionContent(
     candidates: List<ImageCandidateData>,
     viewModel: ImageExtractVm,
     isExtracting: Boolean,
+    isStoppingExtract: Boolean,
     isSubmittingDownload: Boolean,
     onRetry: () -> Unit,
+    onStopExtract: () -> Unit,
     onConfirmDownload: (Set<String>) -> Unit,
 ) {
     val context = LocalContext.current
@@ -1044,6 +1047,7 @@ private fun LiveCandidateSelectionContent(
     Column(modifier = Modifier.fillMaxSize()) {
         LiveCandidateToolbar(
             isExtracting = isExtracting,
+            isStoppingExtract = isStoppingExtract,
             isSubmittingDownload = isSubmittingDownload,
             selectedCount = selectedKeys.size,
             totalCount = candidates.size,
@@ -1058,11 +1062,12 @@ private fun LiveCandidateSelectionContent(
                 unselectedKeys.clear()
                 unselectedKeys.addAll(candidates.map { viewModel.candidateKey(it) })
             },
+            onStopExtract = onStopExtract,
             onConfirmDownload = { onConfirmDownload(selectedKeys.toSet()) }
         )
 
         LazyVerticalGrid(
-            columns = GridCells.Adaptive(112.dp),
+            columns = GridCells.Fixed(IMAGE_CANDIDATE_GRID_COLUMNS),
             contentPadding = PaddingValues(12.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -1129,17 +1134,19 @@ private fun LiveCandidateSelectionContent(
 /**
  * 实时选择页顶部工具栏。
  *
- * 展示提取是否仍在运行、候选总数、已选数量和核心操作；提交中会禁用所有会改变会话或选择的动作。
+ * 展示提取是否仍在运行、候选总数、已选数量和核心操作；停止提取或提交下载时会禁用会话与选择动作。
  */
 @Composable
 private fun LiveCandidateToolbar(
     isExtracting: Boolean,
+    isStoppingExtract: Boolean,
     isSubmittingDownload: Boolean,
     selectedCount: Int,
     totalCount: Int,
     onRetry: () -> Unit,
     onSelectAll: () -> Unit,
     onUnselectAll: () -> Unit,
+    onStopExtract: () -> Unit,
     onConfirmDownload: () -> Unit,
 ) {
     Column(
@@ -1165,21 +1172,28 @@ private fun LiveCandidateToolbar(
             }
             Spacer(modifier = Modifier.width(12.dp))
             Button(
-                onClick = onConfirmDownload,
-                enabled = !isSubmittingDownload && selectedCount > 0
+                onClick = {
+                    if (isExtracting) {
+                        onStopExtract()
+                    } else {
+                        onConfirmDownload()
+                    }
+                },
+                enabled = !isStoppingExtract && !isSubmittingDownload && (isExtracting || selectedCount > 0)
             ) {
                 Text(
                     stringResource(
                         when {
+                            isStoppingExtract -> R.string.base_general_image_extract_stopping
                             isSubmittingDownload -> R.string.base_general_image_extract_submitting
-                            isExtracting -> R.string.base_general_finish_extract_and_download
+                            isExtracting -> R.string.base_general_finish_image_extract
                             else -> R.string.base_general_confirm_download_selected_images
                         }
                     )
                 )
             }
         }
-        if (selectedCount == 0 && totalCount > 0) {
+        if (!isExtracting && selectedCount == 0 && totalCount > 0) {
             Text(
                 text = stringResource(R.string.base_general_image_select_at_least_one),
                 style = MaterialTheme.typography.bodySmall,
@@ -1191,13 +1205,13 @@ private fun LiveCandidateToolbar(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(top = 8.dp)
         ) {
-            TextButton(onClick = onRetry, enabled = !isSubmittingDownload) {
+            TextButton(onClick = onRetry, enabled = !isStoppingExtract && !isSubmittingDownload) {
                 Text(stringResource(R.string.base_general_re_extract_images))
             }
-            TextButton(onClick = onSelectAll, enabled = !isSubmittingDownload && selectedCount < totalCount) {
+            TextButton(onClick = onSelectAll, enabled = !isStoppingExtract && !isSubmittingDownload && selectedCount < totalCount) {
                 Text(stringResource(R.string.base_general_select_all))
             }
-            TextButton(onClick = onUnselectAll, enabled = !isSubmittingDownload && selectedCount > 0) {
+            TextButton(onClick = onUnselectAll, enabled = !isStoppingExtract && !isSubmittingDownload && selectedCount > 0) {
                 Text(stringResource(R.string.base_general_unselect_all))
             }
         }
@@ -1433,7 +1447,7 @@ private fun ImageSelectionContent(
             CenterContent { LoadingText(stringResource(R.string.base_general_image_extract_loading)) }
         } else {
             LazyVerticalGrid(
-                columns = GridCells.Adaptive(112.dp),
+                columns = GridCells.Fixed(IMAGE_CANDIDATE_GRID_COLUMNS),
                 contentPadding = PaddingValues(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
