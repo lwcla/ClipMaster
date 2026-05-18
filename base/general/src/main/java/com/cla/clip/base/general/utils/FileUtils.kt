@@ -59,7 +59,10 @@ sealed class SaveToFile(open val fileName: String) {
         val folderName: String,
 
         /** 图片 MIME 类型，写入 MediaStore 时用于系统识别媒体格式。 */
-        val mimeType: String
+        val mimeType: String,
+
+        /** 动图总时长，单位毫秒；为空表示静态图或暂时无法识别，写入 MediaStore 可帮助部分相册识别动图。 */
+        val durationMs: Long? = null,
     ) : SaveToFile(fileName)
 }
 
@@ -104,6 +107,10 @@ fun SaveToFile.createPath(context: Context): MediaStoreTarget {
                 }
                 // 图片批量下载需要按网页标题单独建目录，方便用户在相册或文件管理器里查看一组图片。
                 put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+                if (this@createPath is SaveToFile.Image && durationMs != null && durationMs > 0L) {
+                    // 部分系统相册会参考 DURATION 判断图片是否为动态媒体；这里只在 Worker 已确认动图并算出时长时写入。
+                    put(MediaStore.MediaColumns.DURATION, durationMs)
+                }
                 // 标记为正在下载，下载完成后再改为 0
                 put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
@@ -227,9 +234,11 @@ fun SaveToFile.success(context: Context, target: MediaStoreTarget) {
         }
         logD(TAG) { "下载完成，现在去标记媒体文件可见" }
         context.contentResolver.update(uri, values, null, null)
+        // Android 10+ 的 MediaStore 插入目标只有 content URI，没有真实文件路径；对 content:// 调 MediaScanner 会失败且无实际收益。
+        return
     }
     // Android 10 以下需要调用 MediaScannerConnection 来扫描新文件，否则它不会出现在相册等媒体库中
-    // 但我们这里不管android版本，统一调用 MediaScannerConnection 来扫描新文件，这样也能兼容一些特殊情况（比如某些设备的媒体库更新不及时等）
+    // 旧系统直接写公共文件路径，必须扫描真实文件路径才能让相册及时看到。
     if (path.isBlank()) {
         return
     }

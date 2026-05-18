@@ -100,7 +100,14 @@
     <string name="base_general_image_extract_found_count">已获取 %1$d 张图片</string>
     <string name="base_general_view_extracted_images">查看已获取图片</string>
     <string name="base_general_image_extract_still_running">正在继续提取图片</string>
+    <string name="base_general_image_extract_done_waiting">提取已完成</string>
     <string name="base_general_finish_image_extract">结束提取</string>
+    <string name="base_general_finish_extract_and_download">结束提取并下载</string>
+    <string name="base_general_re_extract_images">重新提取</string>
+    <string name="base_general_re_extract_images_message">重新提取会清空当前已获取图片和选择状态，是否继续？</string>
+    <string name="base_general_image_live_count">已选 %1$d/%2$d 张</string>
+    <string name="base_general_image_select_at_least_one">请选择至少一张图片</string>
+    <string name="base_general_image_extract_submitting">正在提交</string>
     <string name="base_general_image_extract_failed_retry">图片提取失败，点击重试</string>
     <string name="base_general_image_extract_count">已提取到 %1$d 张图片</string>
     <string name="base_general_download_all_images">下载全部图片</string>

@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -132,6 +133,9 @@ private const val IMAGE_PREVIEW_MAX_ASPECT_RATIO = 4f
 /** 缩略图请求尺寸，单位为像素；只加载小图以降低列表滚动时的内存和网络成本。 */
 private const val IMAGE_PREVIEW_THUMBNAIL_SIZE_PX = 420
 
+/** 图片请求 Accept，尽量贴近浏览器图片加载，避免预览和 Worker 因内容协商差异拿到不同动静态版本。 */
+private const val IMAGE_REQUEST_ACCEPT = "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+
 /** 图片预览底部弹窗形状，固定顶部圆角以保持和 Material 底部弹窗视觉一致。 */
 private val IMAGE_PREVIEW_SHEET_SHAPE = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
 
@@ -219,8 +223,14 @@ private const val COLLECT_IMAGES_JS = """
   function lazyUrl(img) {
     return img.getAttribute("data-url") ||
       img.getAttribute("data-src") ||
+      img.getAttribute("data-actualsrc") ||
       img.getAttribute("data-original") ||
+      img.getAttribute("data-original-src") ||
       img.getAttribute("data-original-url") ||
+      img.getAttribute("data-full-src") ||
+      img.getAttribute("data-fullsrc") ||
+      img.getAttribute("data-default-watermark-src") ||
+      img.getAttribute("data-watermark-src") ||
       img.getAttribute("data-lazy-src") ||
       img.getAttribute("data-lazyload") ||
       img.getAttribute("data-lazy") ||
@@ -243,8 +253,14 @@ private const val COLLECT_IMAGES_JS = """
     [
       "data-url",
       "data-src",
+      "data-actualsrc",
       "data-original",
+      "data-original-src",
       "data-original-url",
+      "data-full-src",
+      "data-fullsrc",
+      "data-default-watermark-src",
+      "data-watermark-src",
       "data-lazy-src",
       "data-lazyload",
       "data-lazy",
@@ -477,8 +493,14 @@ private const val COLLECT_LIGHT_IMAGES_JS = """
   var lazyAttrs = [
     "data-url",
     "data-src",
+    "data-actualsrc",
     "data-original",
+    "data-original-src",
     "data-original-url",
+    "data-full-src",
+    "data-fullsrc",
+    "data-default-watermark-src",
+    "data-watermark-src",
     "data-lazy-src",
     "data-lazyload",
     "data-lazy",
@@ -511,7 +533,7 @@ private const val COLLECT_LIGHT_IMAGES_JS = """
     push(video.getAttribute("poster"), video.offsetWidth, video.offsetHeight, "video:poster", document.baseURI);
   });
 
-  document.querySelectorAll("[data-url], [data-src], [data-original], [data-lazy-src], [data-bg], [data-background], [data-image], [data-img], [data-thumb], [data-thumbnail]").forEach(function(el) {
+  document.querySelectorAll("[data-url], [data-src], [data-actualsrc], [data-original], [data-original-src], [data-original-url], [data-full-src], [data-fullsrc], [data-default-watermark-src], [data-watermark-src], [data-lazy-src], [data-bg], [data-background], [data-image], [data-img], [data-thumb], [data-thumbnail]").forEach(function(el) {
     push(firstAttr(el, lazyAttrs), el.offsetWidth, el.offsetHeight, "attr:lazy", document.baseURI);
   });
 
@@ -607,7 +629,8 @@ private const val IMAGE_DOM_STATUS_JS = """
     return (el.getAttribute(name) || "").trim();
   }
   function hasLikelyLazyMarker(el) {
-    return attr(el, "data-src") || attr(el, "data-original") || attr(el, "data-original-url") ||
+    return attr(el, "data-src") || attr(el, "data-actualsrc") || attr(el, "data-original") || attr(el, "data-original-src") || attr(el, "data-original-url") ||
+      attr(el, "data-full-src") || attr(el, "data-fullsrc") || attr(el, "data-default-watermark-src") || attr(el, "data-watermark-src") ||
       attr(el, "data-lazy-src") || attr(el, "data-lazyload") || attr(el, "data-lazy") ||
       attr(el, "data-srcset") || attr(el, "data-lazy-srcset") || attr(el, "data-original-srcset") ||
       attr(el, "data-bg") || attr(el, "data-background") || attr(el, "data-image") ||
@@ -619,7 +642,7 @@ private const val IMAGE_DOM_STATUS_JS = """
       imageExtRe.test(attr(el, "poster")) || imageExtRe.test(hasLikelyLazyMarker(el));
   }
   var unresolved = 0;
-  document.querySelectorAll("img, source, video[poster], [data-src], [data-original], [data-lazy-src], [data-srcset], [data-bg], [data-background], [data-image], [data-img], [data-thumb], [data-thumbnail]").forEach(function(el) {
+  document.querySelectorAll("img, source, video[poster], [data-src], [data-actualsrc], [data-original], [data-original-src], [data-original-url], [data-full-src], [data-fullsrc], [data-default-watermark-src], [data-watermark-src], [data-lazy-src], [data-srcset], [data-bg], [data-background], [data-image], [data-img], [data-thumb], [data-thumbnail]").forEach(function(el) {
     if (hasLikelyLazyMarker(el) && !hasUsableUrl(el)) unresolved += 1;
   });
   return JSON.stringify({ unresolvedLazy: unresolved });
@@ -654,28 +677,43 @@ fun ImageExtractPage(
     /** 是否展示长耗时提示；只有超过 60 秒、尚未首次触底且已有候选时才置为 true。 */
     var showLongRunningHint by remember { mutableStateOf(false) }
 
-    /** 是否进入阶段性候选查看页；普通返回只切回加载页，不影响后台探测任务。 */
-    var showProgressView by remember { mutableStateOf(false) }
-
     /** 当前会话是否已经首次触底，用于保证 60 秒提示只覆盖“仍未首次触底”的长页面场景。 */
     var hasReachedFirstBottom by remember { mutableStateOf(false) }
 
+    /** 是否正在停止探测并提交下载；提交期间禁用重复点击和重新提取，避免重复创建批次。 */
+    var isSubmittingDownload by remember { mutableStateOf(false) }
+
+    /** 是否展示重新提取确认弹窗；已有候选未下载时需要先提醒会清空当前选择。 */
+    var showRetryConfirm by remember { mutableStateOf(false) }
+
     /**
-     * 清理当前探测用 WebView 和滚动收集任务。
+     * 停止当前探测用 WebView。
      *
-     * 页面退出、重试或提取完成都会调用这里，确保 WebView 不再继续加载网页，也避免协程在销毁后的 WebView 上执行 JS。
+     * 页面退出、重试或提取完成都会调用这里，确保 WebView 不再继续加载网页；是否取消滚动协程由调用方决定，
+     * 避免收集协程内部收尾时把自己取消掉。
      */
-    fun clearWebView() {
-        collectJob?.cancel()
-        collectJob = null
+    fun destroyProbeWebView(closeCandidateUpdates: Boolean = true) {
         (imageExtractVm.probeState as? ImageProbeState.Probing)?.let { state ->
-            imageExtractVm.closeCandidateUpdates(state.sessionId)
+            if (closeCandidateUpdates) {
+                imageExtractVm.closeCandidateUpdates(state.sessionId)
+            }
         }
         webViewRef?.webChromeClient = null
         webViewRef?.stopLoading()
         webViewRef?.clearHistory()
         webViewRef?.destroy()
         webViewRef = null
+    }
+
+    /**
+     * 清理当前探测用 WebView 和滚动收集任务。
+     *
+     * 用户返回、重新提取或失败重试时使用；主动取消协程后也关闭候选写入通道，避免迟到回调污染新会话。
+     */
+    fun clearWebView() {
+        collectJob?.cancel()
+        collectJob = null
+        destroyProbeWebView(closeCandidateUpdates = true)
     }
 
     DisposableEffect(Unit) {
@@ -687,8 +725,9 @@ fun ImageExtractPage(
         collectJob?.cancel()
         collectJob = null
         showLongRunningHint = false
-        showProgressView = false
         hasReachedFirstBottom = false
+        isSubmittingDownload = false
+        showRetryConfirm = false
         imageExtractVm.resetProbeSession(imageExtractVm.sessionId)
         imageExtractVm.probeState = ImageProbeState.Probing(imageExtractVm.sessionId)
         webViewRef?.stopLoading()
@@ -741,6 +780,7 @@ fun ImageExtractPage(
                     modifier = Modifier
                         .fillMaxSize()
                         .alpha(0f),
+                    consumeUserTouch = true,
                     onWebViewReady = {
                         webViewRef = it
                         // UserAgent 只能在 WebView 所在线程读取，后续后台拦截回调只使用这个缓存值。
@@ -772,9 +812,12 @@ fun ImageExtractPage(
                                 // 自动完成必须至少看到当前 DOM 中的有效图片；否则网络层孤立占位图不应直接进入选择页。
                                 imageExtractVm.failProbeIfActive(sessionId)
                             } else {
-                                imageExtractVm.saveExtractedImagesIfActive(sessionId, pageUrl, pageName, candidates)
+                                val snapshot = imageExtractVm.snapshotProbingCandidates()
+                                imageExtractVm.publishProbingCandidatesImmediately(sessionId, snapshot)
+                                imageExtractVm.markProbeReadyIfActive(sessionId)
                             }
-                            clearWebView()
+                            collectJob = null
+                            destroyProbeWebView(closeCandidateUpdates = false)
                         }
                     },
                     shouldInterceptRequest = { _, request ->
@@ -795,13 +838,25 @@ fun ImageExtractPage(
             ImageExtractContent(
                 state = state,
                 viewModel = imageExtractVm,
-                showProgressView = showProgressView,
                 showLongRunningHint = showLongRunningHint,
-                onRetry = { imageExtractVm.sessionId += 1 },
-                onShowProgress = { showProgressView = true },
-                onBackFromProgress = { showProgressView = false },
-                onFinishProbe = {
+                isSubmittingDownload = isSubmittingDownload,
+                onRetry = {
+                    if (isSubmittingDownload) return@ImageExtractContent
+                    if (
+                        imageExtractVm.probingCandidates.isNotEmpty() &&
+                        (imageExtractVm.probeState is ImageProbeState.Probing ||
+                            imageExtractVm.probeState is ImageProbeState.ReadyToDownload)
+                    ) {
+                        showRetryConfirm = true
+                    } else {
+                        clearWebView()
+                        imageExtractVm.sessionId += 1
+                    }
+                },
+                onConfirmDownload = { selectedKeys ->
+                    if (isSubmittingDownload || selectedKeys.isEmpty()) return@ImageExtractContent
                     val sessionId = (imageExtractVm.probeState as? ImageProbeState.Probing)?.sessionId
+                    isSubmittingDownload = true
                     if (sessionId != null) {
                         collectJob?.cancel()
                         collectJob = null
@@ -815,12 +870,40 @@ fun ImageExtractPage(
                                     pageUrl = pageUrl,
                                     fallbackImageUrl = candidates.firstOrNull()?.url
                                 )
-                                clearWebView()
-                                imageExtractVm.saveExtractedImagesIfActive(sessionId, pageUrl, pageName, candidates)
+                                imageExtractVm.publishProbingCandidatesImmediately(sessionId, candidates)
+                                imageExtractVm.markProbeReadyIfActive(sessionId)
+                                destroyProbeWebView(closeCandidateUpdates = false)
+                                val success = imageExtractVm.createBatchAndStartDownload(pageUrl, pageName, selectedKeys)
+                                if (!success) {
+                                    isSubmittingDownload = false
+                                    context.toast(R.string.base_general_failed_to_create_the_download_task)
+                                } else {
+                                    isSubmittingDownload = false
+                                }
                             }
                         } else {
-                            clearWebView()
-                            imageExtractVm.saveExtractedImagesIfActive(sessionId, pageUrl, pageName, candidates)
+                            imageExtractVm.publishProbingCandidatesImmediately(sessionId, candidates)
+                            imageExtractVm.markProbeReadyIfActive(sessionId)
+                            destroyProbeWebView(closeCandidateUpdates = false)
+                            coroutineScope.launch {
+                                val success = imageExtractVm.createBatchAndStartDownload(pageUrl, pageName, selectedKeys)
+                                if (!success) {
+                                    isSubmittingDownload = false
+                                    context.toast(R.string.base_general_failed_to_create_the_download_task)
+                                } else {
+                                    isSubmittingDownload = false
+                                }
+                            }
+                        }
+                    } else {
+                        coroutineScope.launch {
+                            val success = imageExtractVm.createBatchAndStartDownload(pageUrl, pageName, selectedKeys)
+                            if (!success) {
+                                isSubmittingDownload = false
+                                context.toast(R.string.base_general_failed_to_create_the_download_task)
+                            } else {
+                                isSubmittingDownload = false
+                            }
                         }
                     }
                 },
@@ -839,6 +922,17 @@ fun ImageExtractPage(
                     }
                 },
             )
+
+            if (showRetryConfirm) {
+                RetryExtractConfirmDialog(
+                    onDismiss = { showRetryConfirm = false },
+                    onConfirm = {
+                        showRetryConfirm = false
+                        clearWebView()
+                        imageExtractVm.sessionId += 1
+                    }
+                )
+            }
         }
     }
 }
@@ -852,32 +946,40 @@ fun ImageExtractPage(
 private fun ImageExtractContent(
     state: ImageProbeState,
     viewModel: ImageExtractVm,
-    showProgressView: Boolean,
     showLongRunningHint: Boolean,
+    isSubmittingDownload: Boolean,
     onRetry: () -> Unit,
-    onShowProgress: () -> Unit,
-    onBackFromProgress: () -> Unit,
-    onFinishProbe: () -> Unit,
+    onConfirmDownload: (Set<String>) -> Unit,
     onOpen: (String?) -> Unit,
 ) {
     when (state) {
         ImageProbeState.Idle -> Unit
         is ImageProbeState.Probing -> {
-            if (showProgressView) {
-                ProbeProgressContent(
-                    candidates = viewModel.probingCandidates,
-                    onBack = onBackFromProgress,
-                    onFinishProbe = onFinishProbe,
-                )
-            } else {
+            if (viewModel.probingCandidates.isEmpty()) {
                 CenterContent {
-                    ProbingLoadingContent(
-                        showLongRunningHint = showLongRunningHint,
-                        candidateCount = viewModel.probingCandidates.size,
-                        onShowProgress = onShowProgress,
-                    )
+                    ProbingLoadingContent(showLongRunningHint = showLongRunningHint)
                 }
+            } else {
+                LiveCandidateSelectionContent(
+                    candidates = viewModel.probingCandidates,
+                    viewModel = viewModel,
+                    isExtracting = true,
+                    isSubmittingDownload = isSubmittingDownload,
+                    onRetry = onRetry,
+                    onConfirmDownload = onConfirmDownload,
+                )
             }
+        }
+
+        ImageProbeState.ReadyToDownload -> {
+            LiveCandidateSelectionContent(
+                candidates = viewModel.probingCandidates,
+                viewModel = viewModel,
+                isExtracting = false,
+                isSubmittingDownload = isSubmittingDownload,
+                onRetry = onRetry,
+                onConfirmDownload = onConfirmDownload,
+            )
         }
 
         ImageProbeState.Failed -> CenterContent { FailedText(onRetry) }
@@ -893,8 +995,6 @@ private fun ImageExtractContent(
 @Composable
 private fun ProbingLoadingContent(
     showLongRunningHint: Boolean,
-    candidateCount: Int,
-    onShowProgress: () -> Unit,
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         LoadingText(
@@ -906,62 +1006,62 @@ private fun ProbingLoadingContent(
                 }
             )
         )
-        if (showLongRunningHint && candidateCount > 0) {
-            Text(
-                text = stringResource(R.string.base_general_image_extract_found_count, candidateCount),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-            TextButton(onClick = onShowProgress, modifier = Modifier.padding(top = 8.dp)) {
-                Text(stringResource(R.string.base_general_view_extracted_images))
-            }
-        }
     }
 }
 
 /**
- * 阶段性图片提取进度视图。
+ * 实时图片候选选择视图。
  *
- * 该视图只读取内存候选，不写数据库、不提供下载选择；普通返回继续后台探测，只有点击“结束提取”才会用当前候选创建正式批次。
+ * 该视图只读取内存候选，不提前写数据库；新增候选默认选中，用户取消过的候选会记录到取消集合，
+ * 因此 DOM 重扫或 URL 升级不会覆盖用户的选择。
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ProbeProgressContent(
+private fun LiveCandidateSelectionContent(
     candidates: List<ImageCandidateData>,
-    onBack: () -> Unit,
-    onFinishProbe: () -> Unit,
+    viewModel: ImageExtractVm,
+    isExtracting: Boolean,
+    isSubmittingDownload: Boolean,
+    onRetry: () -> Unit,
+    onConfirmDownload: (Set<String>) -> Unit,
 ) {
-    BackHandler(onBack = onBack)
-    Column(modifier = Modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.base_general_image_extract_still_running),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            Text(
-                text = stringResource(R.string.base_general_image_extract_found_count, candidates.size),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(top = 8.dp)
-            ) {
-                TextButton(onClick = onBack) {
-                    Text(stringResource(R.string.base_general_cancel))
-                }
-                Spacer(modifier = Modifier.weight(1f))
-                Button(onClick = onFinishProbe, enabled = candidates.isNotEmpty()) {
-                    Text(stringResource(R.string.base_general_finish_image_extract))
-                }
+    val context = LocalContext.current
+    val selectedKeys = remember { mutableStateSetOf<String>() }
+    val unselectedKeys = remember { mutableStateSetOf<String>() }
+    var previewCandidate by remember { mutableStateOf<ImageCandidateData?>(null) }
+    val imageLoader = rememberAnimatedImageLoader(context)
+
+    LaunchedEffect(candidates) {
+        // 新候选默认选中；已被用户取消过的 key 不会因为候选刷新或 URL 优先级升级而恢复选中。
+        val currentKeys = candidates.map { viewModel.candidateKey(it) }.toSet()
+        selectedKeys.retainAll(currentKeys)
+        unselectedKeys.retainAll(currentKeys)
+        currentKeys.forEach { key ->
+            if (key !in unselectedKeys) {
+                selectedKeys.add(key)
             }
         }
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        LiveCandidateToolbar(
+            isExtracting = isExtracting,
+            isSubmittingDownload = isSubmittingDownload,
+            selectedCount = selectedKeys.size,
+            totalCount = candidates.size,
+            onRetry = onRetry,
+            onSelectAll = {
+                unselectedKeys.clear()
+                selectedKeys.clear()
+                selectedKeys.addAll(candidates.map { viewModel.candidateKey(it) })
+            },
+            onUnselectAll = {
+                selectedKeys.clear()
+                unselectedKeys.clear()
+                unselectedKeys.addAll(candidates.map { viewModel.candidateKey(it) })
+            },
+            onConfirmDownload = { onConfirmDownload(selectedKeys.toSet()) }
+        )
 
         LazyVerticalGrid(
             columns = GridCells.Adaptive(112.dp),
@@ -970,30 +1070,223 @@ private fun ProbeProgressContent(
             verticalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier.fillMaxSize()
         ) {
-            items(items = candidates, key = { it.url }) { candidate ->
-                ProbeCandidateTile(candidate)
+            items(items = candidates, key = { viewModel.candidateKey(it) }) { candidate ->
+                val key = viewModel.candidateKey(candidate)
+                val selected = key in selectedKeys
+                LiveCandidateTile(
+                    candidate = candidate,
+                    selected = selected,
+                    imageLoader = imageLoader,
+                    onPreview = {
+                        viewModel.loadCandidatePreviewMeta(candidate)
+                        previewCandidate = candidate
+                    },
+                    onToggleSelected = {
+                        if (selected) {
+                            selectedKeys.remove(key)
+                            unselectedKeys.add(key)
+                        } else {
+                            unselectedKeys.remove(key)
+                            selectedKeys.add(key)
+                        }
+                    },
+                    onDecodedSize = { width, height -> viewModel.updateCandidateDecodedSize(key, width, height) }
+                )
+            }
+        }
+    }
+
+    val candidate = previewCandidate
+    if (candidate != null) {
+        val candidateKey = viewModel.candidateKey(candidate)
+        val meta = viewModel.candidatePreviewMetaCache[candidateKey]
+            ?: ImagePreviewMeta(width = candidate.width, height = candidate.height)
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        val selected = candidateKey in selectedKeys
+        ModalBottomSheet(
+            onDismissRequest = { previewCandidate = null },
+            sheetState = sheetState,
+            shape = IMAGE_PREVIEW_SHEET_SHAPE
+        ) {
+            CandidatePreviewSheetContent(
+                candidate = candidate,
+                meta = meta,
+                selected = selected,
+                imageLoader = imageLoader,
+                onToggleSelected = {
+                    if (selected) {
+                        selectedKeys.remove(candidateKey)
+                        unselectedKeys.add(candidateKey)
+                    } else {
+                        unselectedKeys.remove(candidateKey)
+                        selectedKeys.add(candidateKey)
+                    }
+                },
+                onDecodedSize = { width, height -> viewModel.updateCandidateDecodedSize(candidateKey, width, height) }
+            )
+        }
+    }
+}
+
+/**
+ * 实时选择页顶部工具栏。
+ *
+ * 展示提取是否仍在运行、候选总数、已选数量和核心操作；提交中会禁用所有会改变会话或选择的动作。
+ */
+@Composable
+private fun LiveCandidateToolbar(
+    isExtracting: Boolean,
+    isSubmittingDownload: Boolean,
+    selectedCount: Int,
+    totalCount: Int,
+    onRetry: () -> Unit,
+    onSelectAll: () -> Unit,
+    onUnselectAll: () -> Unit,
+    onConfirmDownload: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(
+                        if (isExtracting) R.string.base_general_image_extract_still_running else R.string.base_general_image_extract_done_waiting
+                    ),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = stringResource(R.string.base_general_image_live_count, selectedCount, totalCount),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Button(
+                onClick = onConfirmDownload,
+                enabled = !isSubmittingDownload && selectedCount > 0
+            ) {
+                Text(
+                    stringResource(
+                        when {
+                            isSubmittingDownload -> R.string.base_general_image_extract_submitting
+                            isExtracting -> R.string.base_general_finish_extract_and_download
+                            else -> R.string.base_general_confirm_download_selected_images
+                        }
+                    )
+                )
+            }
+        }
+        if (selectedCount == 0 && totalCount > 0) {
+            Text(
+                text = stringResource(R.string.base_general_image_select_at_least_one),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(top = 8.dp)
+        ) {
+            TextButton(onClick = onRetry, enabled = !isSubmittingDownload) {
+                Text(stringResource(R.string.base_general_re_extract_images))
+            }
+            TextButton(onClick = onSelectAll, enabled = !isSubmittingDownload && selectedCount < totalCount) {
+                Text(stringResource(R.string.base_general_select_all))
+            }
+            TextButton(onClick = onUnselectAll, enabled = !isSubmittingDownload && selectedCount > 0) {
+                Text(stringResource(R.string.base_general_unselect_all))
             }
         }
     }
 }
 
 /**
- * 阶段性候选缩略图。
+ * 实时候选缩略图。
  *
- * 进度页只用于查看提取进度，因此这里没有选择状态；请求仍携带探测时记录的 Referer、User-Agent 和 Cookie，尽量贴近最终预览表现。
+ * 缩略图失败不会移除候选，因为最终 Worker 带请求头下载仍可能成功；失败时显示占位和 URL 尾部供用户识别。
  */
 @Composable
-private fun ProbeCandidateTile(candidate: ImageCandidateData) {
-    AsyncImage(
-        model = buildImageRequest(candidate),
-        contentDescription = null,
-        contentScale = ContentScale.Crop,
+private fun LiveCandidateTile(
+    candidate: ImageCandidateData,
+    selected: Boolean,
+    imageLoader: ImageLoader,
+    onPreview: () -> Unit,
+    onToggleSelected: () -> Unit,
+    onDecodedSize: (Int?, Int?) -> Unit,
+) {
+    var loadFailed by remember(candidate.url) { mutableStateOf(false) }
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(1f)
             .clip(IMAGE_THUMBNAIL_SHAPE)
             .background(MaterialTheme.colorScheme.surfaceVariant)
-    )
+            .border(
+                width = if (selected) 2.dp else 1.dp,
+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                shape = IMAGE_THUMBNAIL_SHAPE
+            )
+            .clickable(onClick = onPreview)
+    ) {
+        AsyncImage(
+            model = buildImageRequest(candidate),
+            imageLoader = imageLoader,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            onSuccess = { state ->
+                loadFailed = false
+                onDecodedSize(state.result.image.width, state.result.image.height)
+            },
+            onError = { loadFailed = true },
+            modifier = Modifier
+                .fillMaxSize()
+                .alpha(if (selected) 1f else 0.42f)
+        )
+
+        if (loadFailed) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(8.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.base_general_image_load_failed),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = candidate.url.substringAfterLast('/').takeIf { it.isNotBlank() } ?: candidate.url,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+        }
+
+        Icon(
+            imageVector = if (selected) Icons.Default.CheckCircleOutline else Icons.Default.RadioButtonUnchecked,
+            contentDescription = null,
+            tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(6.dp)
+                .size(26.dp)
+                .clip(RoundedCornerShape(50))
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.86f))
+                .clickable(role = Role.Checkbox, onClick = onToggleSelected)
+                .padding(2.dp)
+        )
+    }
 }
 
 /**
@@ -1013,6 +1306,33 @@ private fun CenterContent(content: @Composable () -> Unit) {
 }
 
 /**
+ * 重新提取确认弹窗。
+ *
+ * 当前候选和选择状态只存在页面内存中，重新提取会全部清空；已有候选未下载时必须让用户明确确认这个代价。
+ */
+@Composable
+private fun RetryExtractConfirmDialog(
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.base_general_re_extract_images)) },
+        text = { Text(stringResource(R.string.base_general_re_extract_images_message)) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(stringResource(R.string.base_general_sure))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.base_general_cancel))
+            }
+        }
+    )
+}
+
+/**
  * 展示图片提取批次的后续状态。
  *
  * 批次仍处于已提取状态时进入图片选择网格；一旦 Worker 开始下载，则根据 Room 中的批次状态展示下载进度、
@@ -1028,13 +1348,9 @@ private fun BatchStatusContent(
     val batch by viewModel.observeBatch(state.batchId).collectAsState(initial = null)
     val curBatch = batch
     if (curBatch == null || curBatch.status == ImageExtractBatchData.STATUS_EXTRACTED) {
-        ImageSelectionContent(
-            batchId = state.batchId,
-            viewModel = viewModel,
-            onConfirmDownload = { selectedIds ->
-                viewModel.startDownload(state.batchId, selectedIds)
-            }
-        )
+        CenterContent {
+            LoadingText(stringResource(R.string.base_general_preparing_download))
+        }
         return
     }
 
@@ -1373,6 +1689,113 @@ private fun ImagePreviewSheetContent(
 }
 
 /**
+ * 实时候选图片预览底部弹窗内容。
+ *
+ * 候选未落库时没有 item id，因此元信息和选择状态都通过稳定候选 key 在页面内存中维护；展示和已落库图片预览保持一致。
+ */
+@Composable
+private fun CandidatePreviewSheetContent(
+    candidate: ImageCandidateData,
+    meta: ImagePreviewMeta,
+    selected: Boolean,
+    imageLoader: ImageLoader,
+    onToggleSelected: () -> Unit,
+    onDecodedSize: (Int?, Int?) -> Unit,
+) {
+    val scrollState = rememberScrollState()
+    val unknownText = stringResource(R.string.base_general_unknow)
+    val resolutionText = formatResolution(meta.width ?: candidate.width, meta.height ?: candidate.height, unknownText)
+    val fileTypeText = formatMimeType(meta.mimeType, candidate.url, unknownText)
+    val fileSizeText = formatFileSize(meta.contentLength, unknownText)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .fillMaxHeight(IMAGE_PREVIEW_SHEET_MAX_HEIGHT_FRACTION)
+            .padding(start = 16.dp, end = 16.dp, bottom = 20.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.base_general_image_preview),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(bottom = 10.dp)
+        )
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(scrollState),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)),
+                contentAlignment = Alignment.TopCenter
+            ) {
+                AsyncImage(
+                    model = buildImageRequest(candidate, preview = true),
+                    imageLoader = imageLoader,
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    onSuccess = { state -> onDecodedSize(state.result.image.width, state.result.image.height) },
+                    onError = {},
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 180.dp)
+                        .then(previewAspectModifier(meta.width ?: candidate.width, meta.height ?: candidate.height))
+                )
+            }
+        }
+
+        Column(modifier = Modifier.padding(top = 12.dp)) {
+            Text(
+                text = stringResource(R.string.base_general_image_resolution, resolutionText),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = stringResource(R.string.base_general_image_file_type, fileTypeText),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            Text(
+                text = stringResource(R.string.base_general_image_file_size, fileSizeText),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp)
+            ) {
+                Text(
+                    text = candidate.url,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                OutlinedButton(onClick = onToggleSelected) {
+                    Text(
+                        stringResource(
+                            if (selected) R.string.base_general_remove_this_image else R.string.base_general_keep_this_image
+                        )
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
  * 记住支持动图的 Coil ImageLoader。
  *
  * 使用 `remember(context)` 避免每次重组都创建解码器；Android 9 及以上走 ImageDecoder，低版本走 GifDecoder，
@@ -1427,12 +1850,17 @@ private fun buildImageRequest(item: ImageExtractItemData, preview: Boolean): Ima
  * 进度视图没有数据库图片项，因此直接使用候选中的反盗链上下文；缩略图尺寸固定为小图，避免长耗时页面额外消耗过多流量。
  */
 @Composable
-private fun buildImageRequest(candidate: ImageCandidateData): ImageRequest {
+private fun buildImageRequest(candidate: ImageCandidateData, preview: Boolean = false): ImageRequest {
     val context = LocalContext.current
-    return remember(candidate.url, candidate.referer, candidate.userAgent, candidate.cookie) {
+    val size = if (preview) {
+        SizeResolver.ORIGINAL
+    } else {
+        SizeResolver(Size(IMAGE_PREVIEW_THUMBNAIL_SIZE_PX, IMAGE_PREVIEW_THUMBNAIL_SIZE_PX))
+    }
+    return remember(candidate.url, candidate.referer, candidate.userAgent, candidate.cookie, preview) {
         ImageRequest.Builder(context)
             .data(candidate.url)
-            .size(SizeResolver(Size(IMAGE_PREVIEW_THUMBNAIL_SIZE_PX, IMAGE_PREVIEW_THUMBNAIL_SIZE_PX)))
+            .size(size)
             .allowHardware(false)
             .httpHeaders(buildNetworkHeaders(candidate))
             .build()
@@ -1449,6 +1877,8 @@ private fun buildNetworkHeaders(item: ImageExtractItemData): NetworkHeaders {
         val referer = item.referer
         val userAgent = item.userAgent
         val cookie = item.cookie
+        // 与 Worker 下载请求保持一致，减少 CDN 因 Accept 不同返回静态预览或不同转码格式的概率。
+        set("Accept", IMAGE_REQUEST_ACCEPT)
         if (!referer.isNullOrBlank()) set("Referer", referer)
         if (!userAgent.isNullOrBlank()) set("User-Agent", userAgent)
         if (!cookie.isNullOrBlank()) set("Cookie", cookie)
@@ -1465,6 +1895,8 @@ private fun buildNetworkHeaders(candidate: ImageCandidateData): NetworkHeaders {
         val referer = candidate.referer
         val userAgent = candidate.userAgent
         val cookie = candidate.cookie
+        // 实时网格预览和最终下载使用同一 Accept，方便对比“预览可动”和“保存后静态”的真实原因。
+        set("Accept", IMAGE_REQUEST_ACCEPT)
         if (!referer.isNullOrBlank()) set("Referer", referer)
         if (!userAgent.isNullOrBlank()) set("User-Agent", userAgent)
         if (!cookie.isNullOrBlank()) set("Cookie", cookie)
@@ -1579,7 +2011,9 @@ private fun SuccessText(text: String, onOpen: (() -> Unit)? = null) {
             painter = rememberVectorPainter(Icons.Default.Done),
             contentDescription = null,
             tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(12.dp).size(24.dp)
+            modifier = Modifier
+                .padding(12.dp)
+                .size(24.dp)
         )
         Text(text = text, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
     }
@@ -1600,7 +2034,9 @@ private fun FailedText(onRetry: () -> Unit, text: String = stringResource(R.stri
             painter = rememberVectorPainter(Icons.Default.Error),
             contentDescription = null,
             tint = MaterialTheme.colorScheme.error,
-            modifier = Modifier.padding(12.dp).size(24.dp)
+            modifier = Modifier
+                .padding(12.dp)
+                .size(24.dp)
         )
         Text(text = text, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
     }

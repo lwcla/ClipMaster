@@ -22,6 +22,8 @@ import com.cla.clip.master.work.DownloadImagesWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -57,6 +59,14 @@ sealed interface ImageProbeState {
         /** 本次落库的候选图片数量，取值不小于 0，仅用于提取完成提示，不代表用户最终选择下载的数量。 */
         val count: Int
     ) : ImageProbeState
+
+    /**
+     * 探测已经停止但尚未进入下载。
+     *
+     * 自动触底完成后只关闭后台 WebView，并让用户在实时网格中做最后确认；此状态不对应数据库批次，
+     * 因此不会把未确认候选写入下载记录或启动 Worker。
+     */
+    data object ReadyToDownload : ImageProbeState
 
     /** 提取失败或超时，页面展示重试入口。 */
     data object Failed : ImageProbeState
@@ -111,8 +121,20 @@ class ImageExtractVm @Inject constructor(
         /** B 站图片 CDN 的公共路径特征，用于把原图和 `@...webp` 这类样式图合并为同一候选。 */
         private const val BILI_BFS_PATH_MARKER = "/bfs/"
 
+        /** 知乎图片 CDN 的主域名后缀，用于识别 picx/pic1/pic4 等不同子域上的同一张 v2 图片。 */
+        private const val ZHIHU_IMAGE_HOST_SUFFIX = "zhimg.com"
+
         /** 图片文件路径扩展名匹配，用于识别 `原图@样式后缀` 这种通用转码 URL。 */
         private val IMAGE_FILE_PATH_REGEX = Regex(""".*\.(?:jpe?g|png|webp|gif|avif|bmp|svg)$""", RegexOption.IGNORE_CASE)
+
+        /** 知乎 v2 图片路径匹配，忽略 `_b`、尺寸前缀和文件扩展名后把同一资源变体合并到同一候选 key。 */
+        private val ZHIHU_V2_IMAGE_PATH_REGEX = Regex("""/(?:\d+/)?(v2-[A-Za-z0-9]+)(?:_[A-Za-z0-9]+)?\.(?:jpe?g|png|webp|gif)(?:$|[?#])""", RegexOption.IGNORE_CASE)
+
+        /** 图片请求 Accept，和页面预览、Worker 下载保持一致，避免 CDN 按客户端能力返回不同动静态版本。 */
+        private const val IMAGE_REQUEST_ACCEPT = "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+
+        /** 实时候选发布到 Compose 的防抖时间，避免 WebView 高频网络回调造成网格重组抖动。 */
+        private const val CANDIDATE_PUBLISH_DEBOUNCE_MS = 250L
     }
 
     /** 当前图片提取页面状态，驱动 UI 在探测中、已提取、失败重试之间切换。 */
@@ -148,12 +170,20 @@ class ImageExtractVm @Inject constructor(
     /** 当前页面内的图片元信息缓存，避免底部预览反复探测同一张图片。 */
     val previewMetaCache = mutableStateMapOf<Long, ImagePreviewMeta>()
 
+    /** 当前页面内的候选预览元信息缓存，实时网格未落库前用稳定候选 key 记录预览信息。 */
+    val candidatePreviewMetaCache = mutableStateMapOf<String, ImagePreviewMeta>()
+
+    /** 实时候选发布防抖任务；新候选快速到达时只保留最后一份快照刷新 UI。 */
+    private var candidatePublishJob: Job? = null
+
     /**
      * 新一轮 WebView 探测开始前清空旧候选。
      *
      * 重试时必须丢弃上一轮网络请求和阶段性候选，避免动态页面的迟到请求混入新批次。
      */
     fun resetProbeSession(newSessionId: Int) {
+        candidatePublishJob?.cancel()
+        candidatePublishJob = null
         synchronized(probingCandidatesLock) {
             activeCandidateSessionId = newSessionId
             networkCandidates.clear()
@@ -211,21 +241,38 @@ class ImageExtractVm @Inject constructor(
             candidates.forEachIndexed { index, candidate ->
                 mergeProbingCandidateLocked(candidate.copy(displayOrder = index))
             }
-            probingCandidateMap.values.sortedBy { it.displayOrder }.toList()
+            // 实时网格使用插入顺序，避免每轮 DOM 扫描把用户正在筛选的图片重新排序。
+            probingCandidateMap.values.toList()
         }
     }
 
     /** 将线程安全候选快照同步给 Compose 状态，只能在主线程调用。 */
     fun publishProbingCandidates(expectedSessionId: Int, candidates: List<ImageCandidateData>) {
         if (!isCandidateSessionActive(expectedSessionId)) return
+        val snapshot = candidates.toList()
+        candidatePublishJob?.cancel()
+        candidatePublishJob = viewModelScope.launch(Dispatchers.Main) {
+            delay(CANDIDATE_PUBLISH_DEBOUNCE_MS)
+            if (!isCandidateSessionActive(expectedSessionId)) return@launch
+            probingCandidates.clear()
+            // 实时网格优先保持用户已经看到的候选位置稳定；最终下载排序仍在创建批次时按 displayOrder 处理。
+            probingCandidates.addAll(snapshot)
+        }
+    }
+
+    /** 在自动完成或手动结束前立即发布最终候选快照，避免防抖任务被关闭会话丢弃。 */
+    fun publishProbingCandidatesImmediately(expectedSessionId: Int, candidates: List<ImageCandidateData>) {
+        if (!isCandidateSessionActive(expectedSessionId)) return
+        candidatePublishJob?.cancel()
+        candidatePublishJob = null
         probingCandidates.clear()
-        probingCandidates.addAll(candidates.sortedBy { it.displayOrder })
+        probingCandidates.addAll(candidates)
     }
 
     /** 返回当前阶段性候选快照，供手动结束或失败兜底判断使用。 */
     fun snapshotProbingCandidates(): List<ImageCandidateData> {
         return synchronized(probingCandidatesLock) {
-            probingCandidateMap.values.sortedBy { it.displayOrder }.toList()
+            probingCandidateMap.values.toList()
         }
     }
 
@@ -250,6 +297,14 @@ class ImageExtractVm @Inject constructor(
         if (probeState == ImageProbeState.Probing(expectedSessionId)) {
             closeProbeSession(expectedSessionId)
             probeState = ImageProbeState.Failed
+        }
+    }
+
+    /** 自动完成时只停止探测并进入确认状态，不创建批次、不启动下载，避免绕过用户选择。 */
+    fun markProbeReadyIfActive(expectedSessionId: Int) {
+        if (probeState == ImageProbeState.Probing(expectedSessionId)) {
+            closeProbeSession(expectedSessionId)
+            probeState = ImageProbeState.ReadyToDownload
         }
     }
 
@@ -300,6 +355,52 @@ class ImageExtractVm @Inject constructor(
     }
 
     /**
+     * 从当前内存候选创建批次并启动图片下载。
+     *
+     * 实时选择阶段不提前写 Room；只有用户确认下载时才按稳定候选 key 取当前最优 URL 写库并入队 Worker。
+     * 失败时返回 false，页面会保留候选和选择状态，允许用户再次尝试。
+     */
+    suspend fun createBatchAndStartDownload(
+        pageUrl: String,
+        pageName: String,
+        selectedCandidateKeys: Set<String>,
+    ): Boolean {
+        if (selectedCandidateKeys.isEmpty()) return false
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val selectedCandidates = snapshotProbingCandidates()
+                    .filter { it.stableKey() in selectedCandidateKeys }
+                    .sortedBy { it.displayOrder }
+                    .mapIndexed { index, candidate -> candidate.copy(displayOrder = index) }
+                if (selectedCandidates.isEmpty()) {
+                    return@withContext false
+                }
+                logD(TAG) {
+                    "createBatchAndStartDownload: 准备创建图片批次 pageUrl=$pageUrl pageName=$pageName " +
+                        "selectedKeyCount=${selectedCandidateKeys.size} selectedCandidateCount=${selectedCandidates.size}"
+                }
+                selectedCandidates.forEach { candidate ->
+                    logD(TAG) {
+                        "createBatchAndStartDownload: 选中候选 key=${candidate.stableKey()} order=${candidate.displayOrder} " +
+                            "url=${candidate.url} referer=${candidate.referer} userAgent=${candidate.userAgent} " +
+                            "cookie=${candidate.cookie.cookieLogSummary()} domSize=${candidate.width}x${candidate.height}"
+                    }
+                }
+                val batchId = imageExtractRepo.createBatch(pageUrl, pageName, selectedCandidates)
+                logD(TAG) { "createBatchAndStartDownload: 批次创建成功 batchId=$batchId count=${selectedCandidates.size}" }
+                DownloadImagesWorker.enqueue(appContext, batchId)
+                logD(TAG) { "createBatchAndStartDownload: Worker 已入队 batchId=$batchId" }
+                withContext(Dispatchers.Main) {
+                    probeState = ImageProbeState.Extracted(batchId, selectedCandidates.size)
+                }
+                true
+            }.onFailure {
+                logE(TAG, it) { "createBatchAndStartDownload: 创建实时选择图片批次失败" }
+            }.getOrElse { false }
+        }
+    }
+
+    /**
      * 用户确认选择后才启动 Worker。
      *
      * 这里会先删除未选中的候选并更新批次总数，确保下载进度、结果统计和用户真正选择的图片数量一致。
@@ -334,6 +435,14 @@ class ImageExtractVm @Inject constructor(
         previewMetaCache[itemId] = old.copy(width = width, height = height)
     }
 
+    /** 实时网格缩略图或预览解码成功后回填尺寸，仅在当前页面内存中使用。 */
+    fun updateCandidateDecodedSize(candidateKey: String, width: Int?, height: Int?) {
+        if (candidateKey.isBlank() || width == null || height == null || width <= 0 || height <= 0) return
+        val old = candidatePreviewMetaCache[candidateKey] ?: ImagePreviewMeta()
+        if (old.width == width && old.height == height) return
+        candidatePreviewMetaCache[candidateKey] = old.copy(width = width, height = height)
+    }
+
     /**
      * 尽力探测图片响应头。
      *
@@ -363,6 +472,39 @@ class ImageExtractVm @Inject constructor(
                     )
                 }
             previewMetaCache[item.id] = mergeMeta(previewMetaCache[item.id], meta).copy(isLoading = false)
+        }
+    }
+
+    /**
+     * 探测实时候选的预览元信息。
+     *
+     * 候选尚未落库，因此用稳定 key 作为缓存身份；请求头沿用 WebView 捕获的 Referer/User-Agent/Cookie。
+     */
+    fun loadCandidatePreviewMeta(candidate: ImageCandidateData) {
+        val candidateKey = candidate.stableKey()
+        val cached = candidatePreviewMetaCache[candidateKey]
+        if (cached?.isLoading == true || cached?.mimeType != null && cached.contentLength != null) {
+            return
+        }
+
+        candidatePreviewMetaCache[candidateKey] = (cached ?: ImagePreviewMeta()).copy(
+            width = cached?.width ?: candidate.width,
+            height = cached?.height ?: candidate.height,
+            mimeType = cached?.mimeType ?: guessMimeTypeFromUrl(candidate.url),
+            isLoading = true
+        )
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val meta = runCatching { requestPreviewMeta(candidate) }
+                .getOrElse {
+                    logD(TAG) { "loadCandidatePreviewMeta: 探测候选图片元信息失败: ${it.message}" }
+                    ImagePreviewMeta(
+                        width = candidate.width,
+                        height = candidate.height,
+                        mimeType = guessMimeTypeFromUrl(candidate.url),
+                    )
+                }
+            candidatePreviewMetaCache[candidateKey] = mergeMeta(candidatePreviewMetaCache[candidateKey], meta).copy(isLoading = false)
         }
     }
 
@@ -409,6 +551,11 @@ class ImageExtractVm @Inject constructor(
         }
     }
 
+    /** 对外暴露实时选择使用的稳定候选 key，保证 UI 选择状态和内部去重规则保持一致。 */
+    fun candidateKey(candidate: ImageCandidateData): String {
+        return candidate.stableKey()
+    }
+
     /**
      * 写入最终候选 Map，并在同一资源存在原图和转码预览时保留更适合下载的地址。
      *
@@ -430,6 +577,12 @@ class ImageExtractVm @Inject constructor(
     private fun mergePreferredCandidate(old: ImageCandidateData, candidate: ImageCandidateData): ImageCandidateData {
         val preferred = preferredDownloadCandidate(old, candidate)
         val other = if (preferred === old) candidate else old
+        if (preferred.url != old.url) {
+            logD(TAG) {
+                "mergePreferredCandidate: 候选 URL 升级 key=${preferred.dedupKey()} old=${old.url} " +
+                    "new=${preferred.url} oldScore=${old.downloadPriorityScore()} newScore=${preferred.downloadPriorityScore()}"
+            }
+        }
         return preferred.copy(
             referer = preferred.referer ?: other.referer,
             userAgent = preferred.userAgent ?: other.userAgent,
@@ -461,6 +614,8 @@ class ImageExtractVm @Inject constructor(
         if (normalized.endsWith(".png")) score += 20
         if (normalized.endsWith(".jpg") || normalized.endsWith(".jpeg")) score += 10
         if (isStyledImageVariant()) score -= 30
+        // 知乎常把页面展示地址写成 .jpg?source=...，服务端实际返回 WebP；如果同一 v2 图片还有 GIF 或原图变体，应该优先保存更接近原始内容的地址。
+        score += zhihuImageDownloadPriorityBoost()
         return score
     }
 
@@ -474,6 +629,7 @@ class ImageExtractVm @Inject constructor(
         val uri = runCatching { android.net.Uri.parse(url) }.getOrNull()
         val host = uri?.host.orEmpty().lowercase()
         val path = uri?.encodedPath.orEmpty()
+        zhihuImageStableKey(uri, host, path)?.let { return it }
         val normalizedPath = normalizedImageStylePath(path)
         return if (normalizedPath != null) {
             uri!!
@@ -488,6 +644,11 @@ class ImageExtractVm @Inject constructor(
         }
     }
 
+    /** 稳定候选 key；选择状态绑定它，最终下载 URL 可随候选优先级升级而变化。 */
+    private fun ImageCandidateData.stableKey(): String {
+        return dedupKey()
+    }
+
     /**
      * 判断当前 URL 是否是样式转码变体，例如 `xxx.gif@672w_378h_1c.webp`。
      *
@@ -499,6 +660,41 @@ class ImageExtractVm @Inject constructor(
         val path = uri.encodedPath.orEmpty()
         return path.contains("@") && normalizedImageStylePath(path) != null ||
             host.endsWith("hdslb.com") && path.contains(BILI_BFS_PATH_MARKER) && path.contains("@")
+    }
+
+    /**
+     * 知乎图片下载优先级修正。
+     *
+     * 同一 `v2-*` 资源可能同时出现 `.jpg?source=...` 转码地址、`.webp` 地址和 `.gif` 原图地址；已在预览里动起来的
+     * `.jpg?source=...` 可能由服务端实际返回 Animated WebP，因此不能被普通 `.webp` 变体轻易覆盖，只对明确 GIF 做强升级。
+     */
+    private fun ImageCandidateData.zhihuImageDownloadPriorityBoost(): Int {
+        val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return 0
+        val host = uri.host.orEmpty().lowercase()
+        if (!host.endsWith(ZHIHU_IMAGE_HOST_SUFFIX)) return 0
+        val decodedPath = Uri.decode(uri.encodedPath.orEmpty()).lowercase()
+        if (!decodedPath.contains("/v2-")) return 0
+        var score = 0
+        if (decodedPath.endsWith(".gif")) score += 80
+        if (decodedPath.endsWith(".gif") && decodedPath.contains("_b.")) score += 25
+        if (decodedPath.endsWith(".gif") && decodedPath.contains("_r.")) score += 12
+        if (uri.getQueryParameter("source") != null && (decodedPath.endsWith(".jpg") || decodedPath.endsWith(".jpeg"))) {
+            score += 30
+        }
+        return score
+    }
+
+    /**
+     * 根据知乎 v2 图片标识生成稳定候选 key。
+     *
+     * `picx.zhimg.com/v2-abc.jpg?source=...`、`pic1.zhimg.com/v2-abc_b.gif` 等地址通常对应同一张内容的不同格式或尺寸，
+     * 选择状态应该绑定资源标识而不是某个转码 URL，这样后续发现更优原图时不会丢失用户已经做出的选择。
+     */
+    private fun zhihuImageStableKey(uri: Uri?, host: String, encodedPath: String): String? {
+        if (uri == null || !host.endsWith(ZHIHU_IMAGE_HOST_SUFFIX)) return null
+        val decodedPath = Uri.decode(encodedPath)
+        val match = ZHIHU_V2_IMAGE_PATH_REGEX.find(decodedPath) ?: return null
+        return "zhimg:${match.groupValues[1].lowercase()}"
     }
 
     /**
@@ -534,6 +730,22 @@ class ImageExtractVm @Inject constructor(
         )
     }
 
+    /** 请求实时候选图片的预览元信息；逻辑和已落库图片项保持一致，只是输入结构不同。 */
+    private fun requestPreviewMeta(candidate: ImageCandidateData): ImagePreviewMeta {
+        val head = executeMetaRequest(candidate, "HEAD")
+        val response = if (head != null && (head.contentType != null || head.contentLength != null)) {
+            head
+        } else {
+            executeMetaRequest(candidate, "GET")
+        }
+        return ImagePreviewMeta(
+            width = candidate.width,
+            height = candidate.height,
+            mimeType = response?.contentType ?: guessMimeTypeFromUrl(candidate.url),
+            contentLength = response?.contentLength,
+        )
+    }
+
     /**
      * 执行图片响应头探测请求。
      *
@@ -548,6 +760,34 @@ class ImageExtractVm @Inject constructor(
             .url(item.url)
             .method(method, null)
             .apply {
+                // 元信息探测也使用与正式下载一致的 Accept，避免预览展示的类型和 Worker 下载协商结果不一致。
+                header("Accept", IMAGE_REQUEST_ACCEPT)
+                if (method == "GET") header("Range", "bytes=0-0")
+                if (!referer.isNullOrBlank()) header("Referer", referer)
+                if (!userAgent.isNullOrBlank()) header("User-Agent", userAgent)
+                if (!cookie.isNullOrBlank()) header("Cookie", cookie)
+            }
+            .build()
+        return okHttpClient.get().newCall(request).execute().use { response ->
+            if (!response.isSuccessful && response.code != 206) return@use null
+            HeaderMeta(
+                contentType = response.header("Content-Type")?.substringBefore(";")?.trim()?.takeIf { it.isNotBlank() },
+                contentLength = parseContentLength(response.header("Content-Length"), response.header("Content-Range")),
+            )
+        }
+    }
+
+    /** 执行实时候选图片响应头探测请求，保留 WebView 捕获的反盗链上下文。 */
+    private fun executeMetaRequest(candidate: ImageCandidateData, method: String): HeaderMeta? {
+        val referer = candidate.referer
+        val userAgent = candidate.userAgent
+        val cookie = candidate.cookie
+        val request = Request.Builder()
+            .url(candidate.url)
+            .method(method, null)
+            .apply {
+                // 实时候选的 HEAD/Range 探测与 Worker 下载保持同一内容协商条件，便于排查动图是否被服务端降级。
+                header("Accept", IMAGE_REQUEST_ACCEPT)
                 if (method == "GET") header("Range", "bytes=0-0")
                 if (!referer.isNullOrBlank()) header("Referer", referer)
                 if (!userAgent.isNullOrBlank()) header("User-Agent", userAgent)
@@ -609,6 +849,11 @@ class ImageExtractVm @Inject constructor(
             "svg" -> "image/svg+xml"
             else -> null
         }
+    }
+
+    /** 日志中只记录 Cookie 是否存在和长度，不输出真实 Cookie 内容，避免泄露登录态。 */
+    private fun String?.cookieLogSummary(): String {
+        return if (isNullOrBlank()) "empty" else "present(length=$length)"
     }
 
     /**

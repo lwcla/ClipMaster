@@ -1,6 +1,7 @@
 package com.cla.clip.master.ui.widget
 
 import android.annotation.SuppressLint
+import android.view.MotionEvent
 import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
@@ -34,6 +35,7 @@ fun isExternalAppScheme(scheme: String): Boolean {
 fun ProbeWebView(
     targetUrl: String,
     modifier: Modifier = Modifier.fillMaxSize(),
+    consumeUserTouch: Boolean = false,
     onWebViewReady: (WebView) -> Unit,
     onPageFinished: (WebView, String?) -> Unit,
     shouldInterceptRequest: (WebView, WebResourceRequest) -> WebResourceResponse?,
@@ -75,6 +77,20 @@ fun ProbeWebView(
                 CookieManager.getInstance().apply {
                     setAcceptCookie(true)
                     setAcceptThirdPartyCookies(this@webView, true)
+                }
+
+                if (consumeUserTouch) {
+                    setOnTouchListener { _, event ->
+                        // 图片探测 WebView 只允许程序化 JS 滚动和资源加载；用户触摸会改变滚动位置、焦点或触发网页跳转，影响自动探测结果。
+                        event.actionMasked in setOf(
+                            MotionEvent.ACTION_DOWN,
+                            MotionEvent.ACTION_MOVE,
+                            MotionEvent.ACTION_UP,
+                            MotionEvent.ACTION_CANCEL,
+                            MotionEvent.ACTION_POINTER_DOWN,
+                            MotionEvent.ACTION_POINTER_UP
+                        )
+                    }
                 }
 
                 webChromeClient = WebChromeClient()
