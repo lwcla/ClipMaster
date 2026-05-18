@@ -1,5 +1,7 @@
 package com.cla.clip.master.ui.page.search
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -7,19 +9,28 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -30,6 +41,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -43,13 +55,19 @@ import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
@@ -58,6 +76,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
 import com.cla.clip.base.general.config.AppSetting
 import com.cla.clip.base.general.config.ClipItemQuickAction
+import com.cla.clip.base.general.dao.SearchHistoryData
 import com.cla.clip.base.general.dao.SourceAppData
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.entity.ClipVisibilityScope
@@ -68,6 +87,7 @@ import com.cla.clip.master.ui.navigation.SearchScope
 import com.cla.clip.master.ui.page.list.ClipCardTimeMode
 import com.cla.clip.master.ui.page.list.ClipResultList
 import com.cla.clip.master.ui.widget.TitleBar
+import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
@@ -112,12 +132,30 @@ fun SearchPage(
     val filterState by viewModel.filterState.collectAsStateWithLifecycle()
     val sourceApps by viewModel.sourceApps.collectAsStateWithLifecycle()
     val selectedSourceAppNames by viewModel.selectedSourceAppNames.collectAsStateWithLifecycle()
+    val searchHistories by viewModel.searchHistories.collectAsStateWithLifecycle()
     val pagedClips = viewModel.pagedClips.collectAsLazyPagingItems()
+    val focusManager = LocalFocusManager.current
     // 只有普通搜索范围响应快捷动作设置；折叠搜索保留整卡点击，避免和“取消折叠”管理语义混在一起。
     val quickAction by AppSetting.clipItemQuickActionFlow.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     var deleteClip by remember { mutableStateOf<ClipShowEntity?>(null) }
     var showSourcePicker by remember { mutableStateOf(false) }
+    var searchBarFocused by remember { mutableStateOf(false) }
+    var showClearHistoryConfirm by remember { mutableStateOf(false) }
+    val showHistoryPanel = searchBarFocused && searchHistories.isNotEmpty()
+
+    LaunchedEffect(showHistoryPanel) {
+        if (showHistoryPanel) {
+            // 历史覆盖结果区时固定展开搜索框和筛选器，避免顶部控件折叠后用户看不到当前输入上下文。
+            searchControlsCollapsePx = 0f
+        }
+    }
+
+    BackHandler(enabled = showHistoryPanel) {
+        // 历史面板是搜索页内部的临时覆盖层，返回键先关闭它并释放焦点，再由下一次返回退出页面。
+        searchBarFocused = false
+        focusManager.clearFocus()
+    }
     val searchControlsScrollConnection = remember {
         object : NestedScrollConnection {
             /**
@@ -178,7 +216,13 @@ fun SearchPage(
                 Column {
                     SearchBar(
                         query = filterState.query,
-                        onQueryChange = viewModel::updateQuery
+                        onQueryChange = viewModel::updateQuery,
+                        onFocusChange = { searchBarFocused = it },
+                        onSubmit = {
+                            viewModel.submitCurrentQuery()
+                            searchBarFocused = false
+                            focusManager.clearFocus()
+                        }
                     )
 
                     SearchFilters(
@@ -195,33 +239,50 @@ fun SearchPage(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .nestedScroll(searchControlsScrollConnection)
+                    .then(
+                        // 历史面板显示时不让结果区滚动折叠顶部控件，保证历史选择过程里搜索条件入口稳定可见。
+                        if (showHistoryPanel) Modifier else Modifier.nestedScroll(searchControlsScrollConnection)
+                    )
                     // 结果区占用搜索框和筛选器下方的剩余高度，避免列表在 Column 中抢占顶部控件空间。
                     .weight(1f)
             ) {
-                ClipResultList(
-                    listState = listState,
-                    pagedClips = pagedClips,
-                    emptyText = stringResource(scope.emptyTextRes),
-                    highlightQuery = filterState.query,
-                    contentPadding = PaddingValues(start = 10.dp, top = 10.dp, end = 10.dp, bottom = 24.dp),
-                    // 折叠搜索保留置顶操作能力；数据层会先排置顶数据，再在分组内按 foldedAt 倒序。
-                    onPinToggle = { clip -> viewModel.updatePinStatus(clip, !clip.isPinned) },
-                    onDelete = { deleteClip = it },
-                    onCopy = viewModel::copyToClipboard,
-                    onSwipePastAction = { clip ->
-                        viewModel.updateFoldStatus(
-                            clip = clip,
-                            isFolded = scope == SearchScope.VisibleOnly
-                        )
-                    },
-                    swipePastActionText = stringResource(scope.swipePastTextRes),
-                    timeMode = if (isVisibleSearch) ClipCardTimeMode.ClipTime else ClipCardTimeMode.FoldedTime,
-                    quickAction = quickAction,
-                    enableQuickAction = isVisibleSearch && quickAction != ClipItemQuickAction.None,
-                    onClick = { onNavigate(DetailRoute(it.id)) },
-                    onLongClick = {}
-                )
+                if (showHistoryPanel) {
+                    SearchHistoryPanel(
+                        histories = searchHistories,
+                        query = filterState.query,
+                        onHistoryClick = { history ->
+                            viewModel.selectHistory(history.query)
+                            searchBarFocused = false
+                            focusManager.clearFocus()
+                        },
+                        onDeleteHistory = viewModel::deleteHistory,
+                        onClearHistories = { showClearHistoryConfirm = true }
+                    )
+                } else {
+                    ClipResultList(
+                        listState = listState,
+                        pagedClips = pagedClips,
+                        emptyText = stringResource(scope.emptyTextRes),
+                        highlightQuery = filterState.query,
+                        contentPadding = PaddingValues(start = 10.dp, top = 10.dp, end = 10.dp, bottom = 24.dp),
+                        // 折叠搜索保留置顶操作能力；数据层会先排置顶数据，再在分组内按 foldedAt 倒序。
+                        onPinToggle = { clip -> viewModel.updatePinStatus(clip, !clip.isPinned) },
+                        onDelete = { deleteClip = it },
+                        onCopy = viewModel::copyToClipboard,
+                        onSwipePastAction = { clip ->
+                            viewModel.updateFoldStatus(
+                                clip = clip,
+                                isFolded = scope == SearchScope.VisibleOnly
+                            )
+                        },
+                        swipePastActionText = stringResource(scope.swipePastTextRes),
+                        timeMode = if (isVisibleSearch) ClipCardTimeMode.ClipTime else ClipCardTimeMode.FoldedTime,
+                        quickAction = quickAction,
+                        enableQuickAction = isVisibleSearch && quickAction != ClipItemQuickAction.None,
+                        onClick = { onNavigate(DetailRoute(it.id)) },
+                        onLongClick = {}
+                    )
+                }
             }
         }
     }
@@ -241,6 +302,16 @@ fun SearchPage(
             onConfirm = { selectedPackageNames ->
                 viewModel.updateSourceApps(selectedPackageNames)
                 showSourcePicker = false
+            }
+        )
+    }
+
+    if (showClearHistoryConfirm) {
+        ClearSearchHistoryDialog(
+            onDismiss = { showClearHistoryConfirm = false },
+            onConfirm = {
+                viewModel.clearCurrentScopeHistory()
+                showClearHistoryConfirm = false
             }
         )
     }
@@ -338,14 +409,23 @@ private fun CollapsibleSearchControls(
 private fun SearchBar(
     query: String,
     onQueryChange: (String) -> Unit,
+    onFocusChange: (Boolean) -> Unit,
+    onSubmit: () -> Unit,
 ) {
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChange,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .onFocusChanged { onFocusChange(it.isFocused) },
         singleLine = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(
+            onSearch = {
+                onSubmit()
+            }
+        ),
         leadingIcon = {
             Icon(
                 imageVector = Icons.Default.Search,
@@ -454,6 +534,185 @@ private fun SearchTimeFilter.labelText(): String {
         SearchTimeFilter.TODAY -> stringResource(com.cla.clip.base.general.R.string.base_general_today)
         SearchTimeFilter.LAST_7_DAYS -> stringResource(com.cla.clip.base.general.R.string.base_general_last_7_days)
         SearchTimeFilter.LAST_30_DAYS -> stringResource(com.cla.clip.base.general.R.string.base_general_last_30_days)
+    }
+}
+
+/**
+ * 搜索历史覆盖面板。
+ *
+ * 只有搜索框聚焦且当前范围存在匹配历史时才展示；面板临时替换结果区，不改变当前搜索结果 Paging 流，
+ * 用户收起面板后会继续看到原来的结果和筛选状态。
+ */
+@Composable
+private fun SearchHistoryPanel(
+    histories: List<SearchHistoryData>,
+    query: String,
+    onHistoryClick: (SearchHistoryData) -> Unit,
+    onDeleteHistory: (Long) -> Unit,
+    onClearHistories: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface),
+        color = MaterialTheme.colorScheme.surface
+    ) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 24.dp)
+        ) {
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stringResource(com.cla.clip.base.general.R.string.base_general_search_history),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = onClearHistories) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteSweep,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(stringResource(com.cla.clip.base.general.R.string.base_general_clear_search_history))
+                    }
+                }
+            }
+
+            items(
+                items = histories,
+                key = { it.id }
+            ) { history ->
+                SearchHistoryRow(
+                    history = history,
+                    query = query,
+                    onClick = { onHistoryClick(history) },
+                    onDelete = { onDeleteHistory(history.id) }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 单条搜索历史。
+ *
+ * 点击整行会恢复关键词并保存更新时间；删除按钮只删除历史本身，不触发搜索框清空或筛选重置。
+ */
+@Composable
+private fun SearchHistoryRow(
+    history: SearchHistoryData,
+    query: String,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.Default.History,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(22.dp)
+        )
+        Text(
+            text = history.query.highlightHistoryMatch(query),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 12.dp)
+        )
+        IconButton(onClick = onDelete) {
+            Icon(
+                imageVector = Icons.Default.Delete,
+                contentDescription = stringResource(com.cla.clip.base.general.R.string.base_general_delete_search_history),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+/**
+ * 清空当前范围搜索历史确认框。
+ *
+ * 清空动作只作用于当前普通/折叠搜索范围；确认框避免用户误删一组仍有使用价值的历史提示。
+ */
+@Composable
+private fun ClearSearchHistoryDialog(
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(com.cla.clip.base.general.R.string.base_general_clear_search_history_title)) },
+        text = { Text(stringResource(com.cla.clip.base.general.R.string.base_general_clear_search_history_message)) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(stringResource(com.cla.clip.base.general.R.string.base_general_clear_search_history))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(com.cla.clip.base.general.R.string.base_general_cancel))
+            }
+        }
+    )
+}
+
+/**
+ * 为历史项高亮当前输入命中的片段。
+ *
+ * 历史匹配按规范化后的包含关系执行，这里只做可见文本上的大小写不敏感高亮；查询为空时不加样式。
+ */
+@Composable
+private fun String.highlightHistoryMatch(query: String): AnnotatedString {
+    val highlightColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)
+    val highlightTextColor = MaterialTheme.colorScheme.onSurface
+    return remember(this, query, highlightColor, highlightTextColor) {
+        val normalizedQuery = query.trim().lowercase(Locale.ROOT)
+        if (isBlank() || normalizedQuery.isBlank()) {
+            return@remember AnnotatedString(this)
+        }
+
+        val normalizedText = lowercase(Locale.ROOT)
+        val highlightedRanges = mutableListOf<IntRange>()
+        buildAnnotatedString {
+            append(this@highlightHistoryMatch)
+            var startIndex = normalizedText.indexOf(normalizedQuery)
+            while (startIndex >= 0) {
+                val endExclusive = startIndex + normalizedQuery.length
+                val range = startIndex until endExclusive
+                val hasOverlap = highlightedRanges.any { existing ->
+                    range.first <= existing.last && range.last >= existing.first
+                }
+                if (!hasOverlap) {
+                    addStyle(
+                        style = SpanStyle(
+                            color = highlightTextColor,
+                            background = highlightColor
+                        ),
+                        start = startIndex,
+                        end = endExclusive
+                    )
+                    highlightedRanges += range
+                }
+                startIndex = normalizedText.indexOf(normalizedQuery, startIndex + normalizedQuery.length)
+            }
+        }
     }
 }
 

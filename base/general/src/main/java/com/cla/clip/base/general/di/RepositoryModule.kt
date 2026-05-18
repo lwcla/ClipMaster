@@ -3,6 +3,8 @@ package com.cla.clip.base.general.di
 import com.cla.clip.base.general.BuildConfig
 import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.base.general.repository.ClipRepositoryImpl
+import com.cla.clip.base.general.repository.SearchHistoryRepository
+import com.cla.clip.base.general.repository.SearchHistoryRepositoryImpl
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -32,6 +34,15 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindClipRepository(clipDaoImpl: ClipRepositoryImpl): ClipRepository
+
+    /**
+     * 绑定搜索历史仓库。
+     *
+     * 搜索历史独立于剪贴内容仓库，便于后续调整历史保存策略时不影响主搜索分页查询。
+     */
+    @Binds
+    @Singleton
+    abstract fun bindSearchHistoryRepository(repository: SearchHistoryRepositoryImpl): SearchHistoryRepository
 }
 
 @Qualifier

@@ -19,9 +19,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         LinkPreviewData::class,
         DownloadTaskData::class,
         ImageExtractBatchData::class,
-        ImageExtractItemData::class
+        ImageExtractItemData::class,
+        SearchHistoryData::class
     ],
-    version = 8, // 版本8：剪贴记录增加折叠时间，折叠范围按折叠动作时间排序和筛选。
+    version = 9, // 版本9：新增搜索历史表，普通搜索和折叠搜索历史按范围隔离。
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
@@ -45,6 +46,9 @@ abstract class AppDatabase : RoomDatabase() {
 
     /** 提供网页图片批量提取任务访问入口。 */
     abstract fun imageExtractDao(): ImageExtractDao
+
+    /** 提供搜索历史访问入口。 */
+    abstract fun searchHistoryDao(): SearchHistoryDao
 
     companion object {
         /**
@@ -99,6 +103,34 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("UPDATE `clips` SET `folded_at` = `timestamp` WHERE `is_folded` = 1 AND `folded_at` = 0")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_clips_folded_at` ON `clips` (`folded_at`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_clips_deleted_at_is_folded_folded_at` ON `clips` (`deleted_at`, `is_folded`, `folded_at`)")
+            }
+        }
+
+        /**
+         * 版本 8 -> 9 手动迁移。
+         *
+         * 搜索历史是独立提示数据，不影响剪贴记录、来源 App 或链接预览；同一范围内用规范化关键词唯一索引去重，
+         * 并按范围和更新时间建立查询索引，服务搜索页聚焦时的最近历史和输入时的模糊匹配。
+         */
+        val MIGRATION_8_9: Migration = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `search_histories` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `query` TEXT NOT NULL,
+                        `normalized_query` TEXT NOT NULL,
+                        `is_folded` INTEGER NOT NULL,
+                        `updated_at` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_search_histories_is_folded_normalized_query` ON `search_histories` (`is_folded`, `normalized_query`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_search_histories_is_folded_updated_at` ON `search_histories` (`is_folded`, `updated_at`)"
+                )
             }
         }
     }

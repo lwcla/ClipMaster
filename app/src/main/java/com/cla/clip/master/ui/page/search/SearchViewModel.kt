@@ -6,25 +6,30 @@ import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.cachedIn
 import androidx.paging.map
+import com.cla.clip.base.general.dao.SearchHistoryData
 import com.cla.clip.base.general.dao.SourceAppData
 import com.cla.clip.base.general.entity.ClipVisibilityScope
 import com.cla.clip.base.general.entity.toUi
 import com.cla.clip.base.general.repository.ClipRepository
+import com.cla.clip.base.general.repository.SearchHistoryRepository
 import com.cla.clip.master.processor.ClipboardDataProcessor
 import com.cla.clip.master.processor.DefaultClipboardDataProcessor
 import dagger.Lazy
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import java.util.Calendar
 import javax.inject.Inject
 
@@ -74,12 +79,18 @@ data class SearchFilterState(
  *
  * 负责把关键词、时间范围和来源 App 多选条件组合成 Paging 查询，同时复用剪贴数据处理器提供的复制、删除和置顶能力。
  */
-@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class, FlowPreview::class)
 @HiltViewModel
 class SearchViewModel @Inject constructor(
     private val clipRepository: Lazy<ClipRepository>,
+    private val searchHistoryRepository: Lazy<SearchHistoryRepository>,
     private val clipboardDataProcessor: DefaultClipboardDataProcessor,
 ) : ViewModel(), ClipboardDataProcessor by clipboardDataProcessor {
+
+    companion object {
+        /** 搜索历史提示防抖时间，单位毫秒；只影响历史表查询，不延迟剪贴内容搜索结果。 */
+        private const val HISTORY_QUERY_DEBOUNCE_MS = 180L
+    }
 
     private val _filterState = MutableStateFlow(SearchFilterState())
 
@@ -137,6 +148,24 @@ class SearchViewModel @Inject constructor(
         }
     }.cachedIn(
         CoroutineScope(viewModelScope.coroutineContext + Dispatchers.IO)
+    )
+
+    /**
+     * 当前范围的搜索历史。
+     *
+     * 历史提示和内容搜索刻意分成两条流：内容搜索继续即时响应输入，历史查询轻量防抖，避免每次键入都刷新历史面板。
+     */
+    val searchHistories: StateFlow<List<SearchHistoryData>> = combine(
+        _filterState
+            .map { it.query }
+            .debounce(HISTORY_QUERY_DEBOUNCE_MS),
+        visibilityScope.filterNotNull()
+    ) { query, scope -> query to scope }.flatMapLatest { (query, scope) ->
+        searchHistoryRepository.get().observeHistories(scope = scope, keyword = query)
+    }.stateIn(
+        CoroutineScope(viewModelScope.coroutineContext + Dispatchers.IO),
+        SharingStarted.WhileSubscribed(5_000),
+        emptyList()
     )
 
     /**
@@ -198,6 +227,54 @@ class SearchViewModel @Inject constructor(
         _filterState.update { it.copy(sourceAppPackages = normalizedPackageNames) }
     }
 
+    /**
+     * 提交当前搜索词并写入搜索历史。
+     *
+     * 保存只在明确提交时发生，输入过程不会污染历史；当前范围尚未初始化时忽略保存，避免误写到普通范围。
+     */
+    fun submitCurrentQuery() {
+        val scope = visibilityScope.value ?: return
+        val query = _filterState.value.query
+        viewModelScope.launch {
+            searchHistoryRepository.get().saveHistory(scope, query)
+        }
+    }
+
+    /**
+     * 选择历史项。
+     *
+     * 点击历史只恢复关键词并刷新历史时间；时间筛选和来源 App 筛选继续沿用当前状态，符合“历史只代表关键词”的契约。
+     */
+    fun selectHistory(query: String) {
+        val scope = visibilityScope.value ?: return
+        _filterState.update { it.copy(query = query) }
+        viewModelScope.launch {
+            searchHistoryRepository.get().saveHistory(scope, query)
+        }
+    }
+
+    /**
+     * 删除单条搜索历史。
+     *
+     * 删除历史不改搜索框、不重置筛选，也不主动刷新为其他关键词，只让历史提示列表自然更新。
+     */
+    fun deleteHistory(id: Long) {
+        viewModelScope.launch {
+            searchHistoryRepository.get().deleteHistory(id)
+        }
+    }
+
+    /**
+     * 清空当前搜索范围历史。
+     *
+     * 普通搜索和折叠搜索由 Repository 按 `ClipVisibilityScope` 隔离，清空一侧不会影响另一侧历史。
+     */
+    fun clearCurrentScopeHistory() {
+        val scope = visibilityScope.value ?: return
+        viewModelScope.launch {
+            searchHistoryRepository.get().clearHistories(scope)
+        }
+    }
 }
 
 /** 数据库搜索用的左闭右开时间范围。 */

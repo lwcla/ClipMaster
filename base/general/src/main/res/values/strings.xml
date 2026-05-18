@@ -19,6 +19,11 @@
     <string name="base_general_search">搜索</string>
     <string name="base_general_search_clip_hint">搜索剪贴内容、链接标题或来源 App</string>
     <string name="base_general_clear_search_keyword">清空搜索关键词</string>
+    <string name="base_general_search_history">搜索历史</string>
+    <string name="base_general_clear_search_history">清空</string>
+    <string name="base_general_clear_search_history_title">清空搜索历史</string>
+    <string name="base_general_clear_search_history_message">将清空当前搜索范围内的全部搜索历史，当前搜索关键词和筛选条件不会改变。</string>
+    <string name="base_general_delete_search_history">删除这条搜索历史</string>
     <string name="base_general_all_time">全部</string>
     <string name="base_general_today">今天</string>
     <string name="base_general_last_7_days">近 7 天</string>
