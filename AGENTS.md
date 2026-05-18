@@ -57,6 +57,20 @@
 - 某个领域工具数量增长时，应继续按子领域建立索引感强的包或文件，例如 `format`、`download`、`preview`、`selection`、`publisher`；不要让新增能力散落到多个无规律目录，也不要回流到万能工具类。
 - 大文件拆分应按低风险到高风险的顺序推进：优先拆纯函数、解析、格式化、映射和校验规则；其次拆 IO、网络、系统 API、MediaStore、权限等平台封装；再拆可复用 Compose 组件和 UI state；最后才拆主流程编排、状态机和跨模块契约，避免重构一开始就触碰最容易产生行为回归的核心流程。
 - 工具类和组件命名后缀应表达语义：`*Sniffer` 只识别不修改，`*Reader` 读取元数据且不产生业务副作用，`*Validator` 负责校验并有明确失败契约，`*Builder` 构造对象或请求，`*Publisher` 写入外部系统或发布媒体，`*Formatter` 生成展示文本，`*Mapper` 做数据结构转换，`*Parser` 解析外部输入，`*Repository` 管理数据来源，`*Helper` 仅用于很小且难以归入更具体语义的协调逻辑。
+- 实体类、模型类和 data class 默认按领域、层级和使用范围放置，不要因为它们都是“实体”就集中塞进一个全局 `entity` 目录；Room 实体、跨页面契约、Worker 内部结果对象、UI state、序列化模型应分别放在后续维护者最容易按职责找到的位置。
+- 需要反混淆的实体类或模型类必须使用统一注解标记，例如 AndroidX `@Keep` 或项目自定义的 `@KeepForSerialization` / `@KeepForContract`，并在类型注释中说明需要稳定类名、字段名或构造函数的原因；混淆规则应优先按注解统一匹配，避免在 ProGuard/R8 文件里逐个追加类名。
+- 反混淆范围按外部契约和运行时机制决定，而不是按 `data class` 身份决定。只有被 JSON/序列化、Intent/通知协议、WebView JS 协议、第三方 SDK、反射、系统框架或跨模块稳定 ABI 依赖的模型才应 keep；Worker 内部边界对象、页面 UI state、纯流程结果和只在编译期调用的领域模型默认不反混淆。
+- 如果某一组模型本身就是稳定外部协议，可以放到可预测的 `contract`、`serialization`、`protocol` 或同等领域目录；但目录归口不能替代注解标记，新增或移动这类模型时必须同步检查混淆规则、序列化字段名和调用方契约。
+- JSON、序列化、WebView JS、Intent extra、通知协议或第三方接口模型必须优先用字段协议注解显式固定外部字段名，例如 `@SerializedName`、`@SerialName` 或项目等价注解；不能默认依赖 Kotlin 属性名、枚举 `name` 或类名在混淆后仍然可读。
+- 配置反混淆前必须先判断 keep 粒度：是需要保留类名、字段名、方法/构造函数、枚举值，还是只需要保留某个注解成员。禁止默认使用过宽的 `-keep class ** { *; }`，除非已经说明为什么细粒度规则无法满足运行时契约。
+- 禁止为了省事把 `entity`、`model`、`data`、`dto` 等宽泛包整包关闭混淆；包级 keep 只允许用于明确承载稳定外部协议的 `contract`、`serialization`、`protocol` 等目录，并且仍应配合注解和注释说明稳定边界。
+- 如果项目新增自定义 keep 注解，必须按语义拆分并写清用途，例如 `@KeepForSerialization` 表示序列化框架依赖字段/构造，`@KeepForContract` 表示 Intent/通知/JS/SDK/跨模块协议依赖，`@KeepForReflection` 表示运行时反射依赖；不要用含糊的万能注解掩盖不同风险。
+- 新增反混淆标记时，类型或字段注释必须说明“谁依赖它稳定”和“稳定的是类名、字段名、构造函数、方法签名、枚举值还是序列化 type name”；后续移除、重命名或迁移时必须同步复核这些依赖。
+- 枚举和 sealed class 参与外部协议、数据库、JSON、多态序列化、Intent 或 JS 传递时，必须显式定义稳定 code/type 字段或序列化 type name，禁止直接把枚举 `name`、ordinal 或 Kotlin sealed 子类名当作长期协议。
+- 涉及混淆规则、反射模型、序列化模型、通知/Intent 协议、WebView JS 协议或第三方 SDK 回调模型的改动，应优先补充 release/R8 相关验证；如果本地无法运行混淆构建，最终说明和方案文档必须明确未验证项与风险。
+- 库模块对外暴露需要稳定的模型、反射入口或序列化契约时，混淆规则应优先放在该模块的 consumer rules 或等价位置，跟随模块分发；不要只依赖 app 模块集中兜底，避免复用到其他宿主时规则丢失。
+- Room 实体默认不因为“是数据库实体”就反混淆；只有当实体同时被外部协议、反射、序列化、导出 schema 读取或跨模块 ABI 稳定性依赖时才标记 keep。Room 字段改名、列名和迁移应优先依赖 `@ColumnInfo`、迁移脚本和编译期校验，而不是粗暴 keep 整个实体包。
+- Release 混淆构建必须保留可回溯的 mapping 文件，并确保线上崩溃、日志和问题定位能拿到对应版本 mapping；日志中仍不得输出 Token、Cookie、完整用户输入、可恢复登录态或其他敏感字段，即使这些字段因 mapping 可还原也不能泄露。
 - Compose 组件同样必须遵守职责拆分和复用规则。新增 `@Composable` 前必须先查当前页面、当前 feature、`ui/widget`、共享组件文档和已有设计系统组件，确认是否已有同类 Dialog、BottomSheet、Card、Toolbar、Grid、Preview、EmptyState、LoadingState、ActionRow 或选择控件可以复用或扩展。
 - 页面级 Composable 应主要负责状态收集、事件连接和页面结构编排；可复用的弹窗、预览、工具栏、列表项、网格项、状态块和操作区应抽成独立 Composable，并按 feature-local 或 shared-ui 职责放到可预测文件中，避免长期堆在单个页面文件里。
 - 当两个 Compose 组件视觉结构、交互流程或数据契约高度相似时，应优先收敛为一个带参数、slot 或状态提升接口的共享组件，而不是复制一份再微调。像图片预览 Dialog、图片预览 BottomSheet、媒体预览卡片这类组件，如果只是入口、按钮或元信息略有不同，应设计统一组件承载差异。
