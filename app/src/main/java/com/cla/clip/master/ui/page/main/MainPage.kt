@@ -90,7 +90,7 @@ fun MainPage(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(Color.Red)
-                        .height(45.dp),
+                        .height(50.dp),
                     windowInsets = WindowInsets(0, 0, 0, 0),
                 ) {
                     tabs.forEachIndexed { index, tab ->
