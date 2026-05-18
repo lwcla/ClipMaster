@@ -16,6 +16,8 @@
 
 来源 App 选择弹窗将“全选”从列表项提升到标题右侧，并打开时跳过半展开状态。弹窗内部允许临时取消所有来源，但此时“确定”禁用，不提交到搜索筛选；外部筛选语义继续使用空集合表示“全部来源”，集合内的空字符串包名表示“未知来源”。
 
+当前代码组织按页面入口与局部组件拆分：`SearchPage.kt` 保留搜索范围、顶部折叠滚动、结果列表和弹窗状态编排；`SearchControls.kt` 承载搜索框、筛选 Chip 和折叠容器；`SearchHistoryComponents.kt` 承载历史面板、历史行、高亮与清空确认；`SourceAppPickerComponents.kt` 承载来源 App 选择弹窗和草稿选择状态，避免单个页面文件继续混合多类 UI 职责。
+
 ## 目标
 
 - 在剪贴列表页右下角新增搜索浮动按钮，点击后进入独立搜索页面。
@@ -133,6 +135,9 @@
 ### 涉及文件
 
 - `app/src/main/java/com/cla/clip/master/ui/page/search/SearchPage.kt`
+- `app/src/main/java/com/cla/clip/master/ui/page/search/SearchControls.kt`
+- `app/src/main/java/com/cla/clip/master/ui/page/search/SearchHistoryComponents.kt`
+- `app/src/main/java/com/cla/clip/master/ui/page/search/SourceAppPickerComponents.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/search/SearchViewModel.kt`
 - `base/general/src/main/java/com/cla/clip/base/general/dao/AppDatabase.kt`
 - `base/general/src/main/java/com/cla/clip/base/general/dao/DatabaseModule.kt`
@@ -258,6 +263,10 @@
 - 来源 App 空名称兜底验证：已运行 `./gradlew :app:compileDebugKotlin`，结果通过；来源选择弹窗、筛选 Chip 和剪贴列表 item 通过共享工具显示“未知”的逻辑编译通过。
 - 来源 App 全选与默认展开验证：已运行 `./gradlew :app:compileDebugKotlin`，结果通过；全选标题控制、临时 0 选中禁用确认、默认展开和自适应高度逻辑编译通过。
 - 来源 App 未知来源筛选验证：已运行 `./gradlew :app:compileDebugKotlin`，结果通过；选择“未知”会保留空字符串包名并按未知来源过滤，不会被规整为空集合；选择“未知”和其他来源时，未知来源不会在提交或查询层丢失。
+
+## 变更记录
+
+- 2026-05-18：按当前代码组织规则拆分搜索页 UI，新增搜索控件、历史面板和来源 App 弹窗组件文件；原因是搜索页已经同时承担顶部折叠、历史、来源筛选和结果连接等多类职责，拆分后页面入口更聚焦于状态编排和生命周期内的事件连接。
 - 来源 App 多选验证：已运行 `./gradlew :app:compileDebugKotlin`，结果通过；Room 集合参数查询和 Compose 多选 UI 编译通过。
 - 共享结果 item 的结构、侧滑和动画验证见 `docs/clip_result_list_plan.md`；搜索页侧重点是筛选、高亮、范围隔离和共享回调不退化。
 - 高亮验证：剪贴内容、链接标题、来源 App 名称中命中的关键词能高亮；空关键词不高亮。

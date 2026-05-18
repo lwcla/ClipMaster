@@ -10,6 +10,8 @@
 
 本次新增链接预览补全策略：剪贴板保存时仍使用 `LinkMetaParser` 做快速 OkHttp/Jsoup 解析；遇到知乎 403、登录态或反爬限制时不在首轮请求中强行绕过。用户后续进入视频提取页时，隐藏 `WebView` 会以浏览器上下文加载网页，页面加载完成后从 DOM meta、JSON-LD、`video poster` 和图片候选中提取标题、描述、站点名和预览图，并补写到 `link_previews` 表。用户返回列表页后，原本只有域名兜底的链接卡片可以显示 WebView 阶段补齐的预览图。
 
+当前代码组织已将视频提取页状态 UI 和 WebView 探测辅助拆分到同 package 组件文件中；`VideoExtractPage.kt` 保留状态机、WebView 生命周期和页面事件编排，`VideoExtractStatusContent.kt` 承载加载/失败/成功展示，`VideoProbeWebViewLayer.kt` 承载通用探测层、旧版对照探测层和视频请求判断。
+
 ## 目标
 
 - 从网页链接中自动识别可下载的视频资源地址。
@@ -90,6 +92,8 @@
 
 - `app/src/main/java/com/cla/clip/master/ui/page/detail/DetailPage.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/video/VideoExtractPage.kt`
+- `app/src/main/java/com/cla/clip/master/ui/page/video/VideoExtractStatusContent.kt`
+- `app/src/main/java/com/cla/clip/master/ui/page/video/VideoProbeWebViewLayer.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/video/VideoExtractVm.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/video/VIdeoDownloadPage.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/video/VideoDownloadVm.kt`
@@ -146,3 +150,4 @@
 - 2026-05-14：将状态更新为实现中，并补充 WebView 链接预览补全方案；原因是用户明确希望首轮 HTTP 解析失败时先不调整 `LinkMetaParser`，等视频提取 WebView 成功加载网页后再补写预览图等信息，返回列表即可看到补齐后的链接预览。
 - 2026-05-14：完成 WebView 链接预览补全实现并将状态更新为已完成，通过 `./gradlew :app:compileDebugKotlin` 验证；原因是视频提取页已能在页面加载完成或视频候选命中前补写 `link_previews`，且不改变首轮 `LinkMetaParser` 行为。
 - 2026-05-14：同步下载记录页实现后的下载任务契约，记录 `video_url` 从唯一索引调整为普通索引、每次下载创建新任务、成功历史任务进入下载页不自动重新入队；原因是下载记录功能已经落地，需要避免文档继续描述旧的任务复用行为。
+- 2026-05-18：按当前代码组织规则拆分视频提取页，新增状态 UI 组件和 WebView 探测辅助文件；原因是页面入口同时承担状态机、权限触发、WebView 配置、请求判断和 UI 展示，拆分后更符合入口负责流程编排、工具/组件按职责放置的约定。

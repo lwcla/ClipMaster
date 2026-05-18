@@ -72,6 +72,7 @@
 - 图片候选网格固定使用 4 列展示，实时识别阶段和提取完成后的选择阶段保持同一行四张图片，避免状态切换或屏幕宽度变化导致用户筛选节奏被打断。
 - `LiveCandidateSelectionContent` 用候选稳定 key 快照驱动默认选中副作用；因为 ViewModel 传入的是可复用的 `SnapshotStateList` 实例，不能只用列表对象作为 `LaunchedEffect` key，否则实时追加的新图片不会立即默认选中。
 - 探测中已有候选和自动完成后的待下载状态共用同一个 `LiveCandidateSelectionContent` 调用位置，只切换 `isExtracting` 展示状态；这样探测完成瞬间不会重建网格，用户已取消选择、预览状态和列表滚动位置会继续保留。
+- 图片预览弹窗、Coil 图片请求构建、图片加载请求头、预览宽高比和元信息格式化拆分到 `ImagePreviewComponents.kt`，由 `ImageExtractPage` 传入候选、选择状态和回调；页面入口继续负责 WebView 探测、状态分支和下载提交编排。
 - `ImageCandidateTile` 使用 Coil 加载缩略图，复选图标独立处理选择动作，缩略图主体点击打开底部预览。
 - `ModalBottomSheet` 负责单图预览，图片按宽度等比展示，内容区可纵向滚动，因此长图可以完整查看。
 - 预览 ImageLoader 注册 `coil-gif` 解码器：Android 9 及以上使用 `AnimatedImageDecoder`，低版本使用 `GifDecoder`，支持 GIF 和系统可解码的 Animated WebP。
@@ -142,6 +143,7 @@
 ## 涉及文件
 
 - `app/src/main/java/com/cla/clip/master/ui/page/image/ImageExtractPage.kt`
+- `app/src/main/java/com/cla/clip/master/ui/page/image/ImagePreviewComponents.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/image/ImageExtractVm.kt`
 - `app/src/main/java/com/cla/clip/master/ui/widget/ProbeWebView.kt`
 - `app/src/main/java/com/cla/clip/master/image/download/ImageDownloadFileNames.kt`
@@ -270,6 +272,8 @@
 - 2026-05-18：将手动停止识别和下载图片拆成两个步骤；原因是用户在识别过程中点击停止时只希望冻结当前候选继续筛选，不应立即创建批次并启动下载，最终改为“结束提取”只停止 WebView 和滚动，“下载已选图片”才入库并启动 Worker。
 - 2026-05-18：将图片提取候选网格固定为一行四张；原因是用户希望识别到的图片按四列网格展示，实时识别和提取完成选择阶段共用同一列数以保持筛选位置稳定。
 - 2026-05-18：记录预览弹窗高度自适应待办；原因是当前弹窗高度由 86% 屏幕上限和内部权重布局共同决定，不同图片看起来高度一致，后续需要结合小图预览、长图滚动和底部操作区稳定性评估是否调整。
+- 2026-05-18：计划拆分图片预览相关 Compose 与请求辅助到 `ImagePreviewComponents.kt`；原因是 `ImageExtractPage.kt` 已承担 WebView 探测、状态分支、网格、预览弹窗、图片请求和格式化等多类职责，本次先低风险拆出纯 UI/格式化能力，保持行为等价。
+- 2026-05-18：完成 `ImagePreviewComponents.kt` 拆分并通过 `./gradlew :app:compileDebugKotlin` 验证；原因是图片预览弹窗、候选缩略图、Coil 请求头和元信息格式化已从页面入口移出，`ImageExtractPage.kt` 继续保留探测流程、状态分支和下载提交编排。
 - 2026-05-13：新增图片提取完整方案文档，记录现有提取链路和网格选择、底部预览、动图播放、元信息展示的实现计划；原因是图片提取交互从直接下载全部调整为下载前可筛选确认。
 - 2026-05-13：完成网格选择、底部可滚动预览、动图播放、图片元信息展示和确认已选下载；原因是用户需要在下载前筛除重复或低质量图片，并能通过尺寸、类型、体积判断保留哪张。
 - 2026-05-13：补齐 `ImageExtractVm` 预览元信息探测相关方法、状态字段和缓存字段的简体中文注释；原因是代码注释规范要求私有辅助方法和实体字段也说明职责、边界和取舍，本次无行为变化。

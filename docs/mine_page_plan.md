@@ -8,6 +8,8 @@
 
 本文记录我的页自身的入口、设置项和页面级交互；首页 Pager、底部 Tab 和一级标题详见 `docs/main_page_plan.md`，共享剪贴 item 的斜向快捷动作区、右滑菜单和回调规则详见 `docs/clip_result_list_plan.md`。
 
+当前代码组织已将我的页入口卡片、剪贴快捷动作设置弹窗和通用可展开设置卡片拆到同 package 组件文件中；`MinePage.kt` 保留页面状态收集、权限动作消费、生命周期刷新和系统跳转，避免页面入口继续混合所有 UI 细节。
+
 ## 目标
 
 - 保持我的页作为管理入口和偏好设置入口，避免在首页列表里堆叠全局设置。
@@ -34,6 +36,8 @@
 ## 涉及文件
 
 - `app/src/main/java/com/cla/clip/master/ui/page/mine/MinePage.kt`
+- `app/src/main/java/com/cla/clip/master/ui/page/mine/MineEntries.kt`
+- `app/src/main/java/com/cla/clip/master/ui/page/mine/MineSettingComponents.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/mine/MineVm.kt`
 - `base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt`
 - `base/general/src/main/res/values/strings.xml`
@@ -69,3 +73,4 @@
 - 2026-05-17：将设置说明从左半区动作更新为剪贴快捷操作；原因是共享 item 已改为左下斜向快捷动作区，需要同步用户可见文案、`AppSetting` 命名和页面说明。
 - 2026-05-17：为下载记录、折叠数据和回收站入口补充元素联动导航反馈，并排除设置弹窗入口；原因是导航层过渡会带来旧页面触摸命中问题，入口自身反馈可以保留页面打开感且不影响本页设置操作。
 - 2026-05-17：移除我的页入口元素联动反馈，恢复入口即时导航并交由 `AppNavigation` 官方左进右出转场呈现；原因是元素缩放观感较差，需要试验 Compose Navigation 原生页面切换能力。
+- 2026-05-18：按当前代码组织规则拆分我的页 UI，新增入口卡片组件和设置组件文件；原因是页面入口应聚焦权限动作、生命周期刷新和导航编排，通用入口卡片、快捷动作弹窗、可展开设置卡片和开关行应放在更可预测的位置。

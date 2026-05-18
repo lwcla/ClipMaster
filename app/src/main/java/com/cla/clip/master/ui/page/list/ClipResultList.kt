@@ -6,8 +6,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,16 +23,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ReportGmailerrorred
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,17 +44,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
-import androidx.compose.ui.input.pointer.PointerId
-import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.positionChange
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -67,15 +53,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -83,20 +63,13 @@ import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
-import coil3.compose.AsyncImage
 import com.cla.clip.base.general.config.ClipItemQuickAction
 import com.cla.clip.base.general.entity.ClipShowEntity
-import com.cla.clip.base.general.utils.toSourceAppDisplayName
 import com.cla.clip.master.R
 import com.cla.clip.master.ui.widget.ClipMasterCardDefaults
 import com.cla.clip.master.ui.widget.ClipMasterGestureCard
-import com.cla.clip.master.ui.widget.rememberDeletedFormattedTime
-import com.cla.clip.master.ui.widget.rememberFoldedFormattedTime
-import com.cla.clip.master.ui.widget.rememberFormattedTime
 import kotlinx.coroutines.launch
-import kotlin.math.abs
 import kotlin.math.max
-import kotlin.math.sign
 
 /**
  * 取消置顶会触发分页结果重新排序，LazyColumn 默认会按稳定 key 跟随被移动的 item。
@@ -790,512 +763,6 @@ fun ClipCard(
                 }
             }
         }
-    }
-}
-
-/** 剪贴卡片按压反馈区域，用于区分斜向快捷动作区和详情区的轻量触摸反馈。 */
-private enum class ClipCardPressedZone {
-    /** 用户按下位置落在左下斜向快捷动作区。 */
-    QuickAction,
-
-    /** 用户按下位置落在 详情区；未启用快捷动作区时代表整卡详情按压。 */
-    Detail
-}
-
-/** 剪贴卡片手势在触摸阈值或抬手后得到的分发结果。 */
-private sealed interface ClipCardGestureDecision {
-    /** 未超过触摸阈值并正常抬手，后续按抬手坐标分发点击。 */
-    data class Tap(val position: Offset, val isQuickActionTap: Boolean) : ClipCardGestureDecision
-
-    /** 到达长按时间且未超过触摸阈值，后续只触发长按并取消点击。 */
-    data object LongPress : ClipCardGestureDecision
-
-    /** 横向拖动符合 item 侧滑条件，后续进入右滑菜单或菜单收回流程。 */
-    data class Drag(val pointerId: PointerId, val initialOverSlopX: Float) : ClipCardGestureDecision
-
-    /** 手势被滚动、Pager、系统取消或其他消费打断，当前 item 不再分发点击。 */
-    data object Cancel : ClipCardGestureDecision
-}
-
-/**
- * 判断触点是否落在左下斜向快捷动作区。
- *
- * 快捷区固定为 `(0,0) -> (0,height) -> (width/2,height)`，边界使用严格大于，
- * 让斜线附近默认进入详情，降低删除和折叠等高影响动作的误触风险。
- */
-private fun isInQuickActionZone(
-    x: Float,
-    y: Float,
-    width: Float,
-    height: Float,
-): Boolean {
-    if (width <= 0f || height <= 0f) return false
-    val halfWidth = width / 2f
-    return x < halfWidth && y > (height / halfWidth) * x
-}
-
-/** 创建快捷动作区三角路径；背景、按压反馈和命中判断都使用这组尺寸规则。 */
-private fun quickActionZonePath(width: Float, height: Float): Path {
-    return Path().apply {
-        moveTo(0f, 0f)
-        lineTo(0f, height)
-        lineTo(width / 2f, height)
-        close()
-    }
-}
-
-/** 创建详情区路径；启用快捷动作区时排除左下三角，避免点击详情时左下角误亮。 */
-private fun detailZonePath(width: Float, height: Float): Path {
-    return Path().apply {
-        moveTo(0f, 0f)
-        lineTo(width, 0f)
-        lineTo(width, height)
-        lineTo(width / 2f, height)
-        close()
-    }
-}
-
-/** 创建整卡路径；未启用快捷动作区时详情按压反馈覆盖完整卡片。 */
-private fun fullCardPath(width: Float, height: Float): Path {
-    return Path().apply {
-        addRect(androidx.compose.ui.geometry.Rect(0f, 0f, width, height))
-    }
-}
-
-/**
- * 剪贴 item 的统一点击和右滑手势。
- *
- * 这里把 tap、长按、纵向滚动取消、首页 Pager 左滑和 item 右滑菜单放在同一个入口协调：
- * 未超过触摸阈值才分发点击或长按；横向右滑或菜单已展开时才消费拖动；其他移动交还父级滚动。
- *
- * @param isMenuOpened 当前 item 菜单是否已经露出，决定左滑是否由 item 优先消费。
- * @param isAnimating 偏移动画是否正在执行，动画中继续消费横向手势，避免父级 Pager 抢占。
- * @param isQuickActionEnabled 是否启用斜向快捷动作区，未启用时整卡点击进入详情。
- * @param onPressZoneChanged 按压反馈区域变化回调；所有取消路径都必须传 null 清理反馈。
- * @param onTap 未被拖动/长按取消时的点击回调，第二个参数表示是否命中快捷动作区。
- * @param onLongPress 长按回调，任意位置长按都交给页面层处理。
- * @param onDrag 接收本次横向拖动增量，正数表示右滑展开，负数表示左滑收回。
- * @param onDragEnd 用户正常松手后的吸附或折叠判断入口。
- * @param onDragCancel 手势被父级或系统取消时的兜底吸附入口。
- */
-private suspend fun PointerInputScope.detectClipCardGestures(
-    isMenuOpened: () -> Boolean,
-    isAnimating: () -> Boolean,
-    isQuickActionEnabled: () -> Boolean,
-    onPressZoneChanged: (ClipCardPressedZone?) -> Unit,
-    onTap: (Offset, Boolean) -> Unit,
-    onLongPress: () -> Unit,
-    onDrag: (Float) -> Unit,
-    onDragEnd: () -> Unit,
-    onDragCancel: () -> Unit,
-) {
-    awaitEachGesture {
-        val down = awaitFirstDown(requireUnconsumed = false)
-        val downInQuickActionZone = isQuickActionEnabled() &&
-            isInQuickActionZone(
-                x = down.position.x,
-                y = down.position.y,
-                width = size.width.toFloat(),
-                height = size.height.toFloat()
-            )
-        onPressZoneChanged(
-            if (downInQuickActionZone) {
-                ClipCardPressedZone.QuickAction
-            } else {
-                ClipCardPressedZone.Detail
-            }
-        )
-
-        val touchSlop = viewConfiguration.touchSlop
-        val longPressTimeoutMillis = viewConfiguration.longPressTimeoutMillis
-        val decision = withTimeoutOrNull(longPressTimeoutMillis) {
-            while (true) {
-                val event = awaitPointerEvent()
-                val change = event.changes.firstOrNull { it.id == down.id }
-                    ?: return@withTimeoutOrNull ClipCardGestureDecision.Cancel
-                if (change.isConsumed) {
-                    return@withTimeoutOrNull ClipCardGestureDecision.Cancel
-                }
-                if (!change.pressed) {
-                    val isQuickActionTap = isQuickActionEnabled() &&
-                        isInQuickActionZone(
-                            x = change.position.x,
-                            y = change.position.y,
-                            width = size.width.toFloat(),
-                            height = size.height.toFloat()
-                        )
-                    return@withTimeoutOrNull ClipCardGestureDecision.Tap(
-                        position = change.position,
-                        isQuickActionTap = isQuickActionTap
-                    )
-                }
-
-                val totalDelta = change.position - down.position
-                if (totalDelta.getDistance() > touchSlop) {
-                    val horizontalPastSlop = abs(totalDelta.x) > touchSlop &&
-                        abs(totalDelta.x) >= abs(totalDelta.y)
-                    val shouldHandleSwipe = horizontalPastSlop &&
-                        (isMenuOpened() || isAnimating() || totalDelta.x > 0f)
-                    if (shouldHandleSwipe) {
-                        val overSlopX = totalDelta.x - touchSlop * sign(totalDelta.x)
-                        change.consume()
-                        return@withTimeoutOrNull ClipCardGestureDecision.Drag(
-                            pointerId = down.id,
-                            initialOverSlopX = overSlopX
-                        )
-                    }
-
-                    // 纵向滚动、关闭状态下的左滑或非 item 侧滑移动都取消点击，让父级列表/Pager 继续处理。
-                    return@withTimeoutOrNull ClipCardGestureDecision.Cancel
-                }
-            }
-        } ?: ClipCardGestureDecision.LongPress
-
-        when (decision) {
-            is ClipCardGestureDecision.Tap -> {
-                onPressZoneChanged(null)
-                onTap(decision.position, decision.isQuickActionTap)
-            }
-
-            ClipCardGestureDecision.LongPress -> {
-                onPressZoneChanged(null)
-                onLongPress()
-                while (true) {
-                    val event = awaitPointerEvent()
-                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                    if (!change.pressed || change.isConsumed) break
-                }
-            }
-
-            is ClipCardGestureDecision.Drag -> {
-                onPressZoneChanged(null)
-                onDrag(decision.initialOverSlopX)
-                var finishedNormally = true
-                while (true) {
-                    val event = awaitPointerEvent()
-                    val change = event.changes.firstOrNull { it.id == decision.pointerId }
-                    if (change == null || change.isConsumed) {
-                        finishedNormally = false
-                        break
-                    }
-                    if (!change.pressed) {
-                        break
-                    }
-                    onDrag(change.positionChange().x)
-                    change.consume()
-                }
-                if (finishedNormally) {
-                    onDragEnd()
-                } else {
-                    onDragCancel()
-                }
-            }
-
-            ClipCardGestureDecision.Cancel -> {
-                onPressZoneChanged(null)
-            }
-        }
-    }
-}
-
-/** 剪贴数据来源 App 和时间，普通范围展示写入时间，折叠范围展示折叠时间，回收站展示删除时间。 */
-@Composable
-private fun SourceAppNameWithTime(
-    clip: ClipShowEntity,
-    highlightQuery: String?,
-    timeMode: ClipCardTimeMode,
-) {
-    val currentDensity = LocalDensity.current
-    val timeText = when (timeMode) {
-        ClipCardTimeMode.ClipTime -> clip.rememberFormattedTime()
-        ClipCardTimeMode.FoldedTime -> clip.rememberFoldedFormattedTime(
-            prefix = stringResource(com.cla.clip.base.general.R.string.base_general_folded_at_prefix)
-        )
-        ClipCardTimeMode.DeletedTime -> clip.rememberDeletedFormattedTime(
-            prefix = stringResource(com.cla.clip.base.general.R.string.base_general_deleted_at_prefix)
-        )
-    }
-    // 来源 App 与时间区域空间很窄，锁定 fontScale 可以避免系统大字体下挤压到不可读。
-    CompositionLocalProvider(LocalDensity provides Density(density = currentDensity.density, fontScale = 1f)) {
-        val sourceAppName = clip.appName.toSourceAppDisplayName()
-        Layout(
-            content = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    AsyncImage(
-                        model = clip.appIconPath,
-                        contentDescription = null,
-                        placeholder = rememberVectorPainter(Icons.Filled.ReportGmailerrorred),
-                        error = rememberVectorPainter(Icons.Filled.ReportGmailerrorred),
-                        modifier = Modifier.size(15.dp),
-                        contentScale = ContentScale.Crop,
-                        colorFilter = if (clip.appIconPath.isNullOrBlank()) {
-                            // 缺少真实图标时使用错误色提示来源未知，真实图标则保持原始颜色。
-                            ColorFilter.tint(MaterialTheme.colorScheme.error)
-                        } else {
-                            null
-                        }
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    HighlightableText(
-                        text = sourceAppName,
-                        highlightQuery = highlightQuery,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                    )
-                }
-
-                Text(
-                    text = timeText,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontSize = 11.sp,
-                    textAlign = TextAlign.End,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) { measurables, constraints ->
-            val leftNode = measurables[0]
-            val rightNode = measurables[1]
-
-            // 时间最多占一半宽度，优先保留来源 App 图标和名称的识别空间。
-            val maxTimeWidth = (constraints.maxWidth * 0.5f).toInt()
-            val rightPlaceable = rightNode.measure(
-                constraints.copy(
-                    minWidth = 0,
-                    maxWidth = maxTimeWidth
-                )
-            )
-
-            // 左右之间固定留 8dp 间隔，避免长 App 名和长时间文本贴在一起。
-            val remainingWidth = constraints.maxWidth - rightPlaceable.width - 8.dp.roundToPx()
-            val leftMaxWidth = max(0, remainingWidth)
-            val leftPlaceable = leftNode.measure(
-                constraints.copy(
-                    minWidth = 0,
-                    maxWidth = leftMaxWidth
-                )
-            )
-
-            val height = max(leftPlaceable.height, rightPlaceable.height)
-            layout(constraints.maxWidth, height) {
-                leftPlaceable.placeRelative(0, (height - leftPlaceable.height) / 2)
-                rightPlaceable.placeRelative(constraints.maxWidth - rightPlaceable.width, (height - rightPlaceable.height) / 2)
-            }
-        }
-    }
-}
-
-/**
- * 剪贴数据的内容显示。
- *
- * 链接预览、链接标题和链接地址优先集中显示在顶部，原始剪贴字符串始终保留三行以内，
- * 让列表 item 在保留必要上下文的同时不会被长文本撑得过高。
- */
-@Composable
-private fun ClipContent(clip: ClipShowEntity, highlightQuery: String?) {
-    Column {
-        LinkPreviewContent(clip, highlightQuery)
-
-        HighlightableText(
-            text = clip.content,
-            highlightQuery = highlightQuery,
-            style = MaterialTheme.typography.bodyLarge,
-            maxLines = 3
-        )
-    }
-}
-
-/**
- * 链接预览内容区。
- *
- * 只要记录里存在链接、标题或预览图就展示该区域；如果剪贴字符串本身就是链接，
- * 链接地址不再重复显示，避免一个 item 内出现两段完全相同的 URL。
- */
-@Composable
-private fun LinkPreviewContent(clip: ClipShowEntity, highlightQuery: String?) {
-    val link = clip.link?.takeIf { it.isNotBlank() }
-    val title = clip.linkTitle?.takeIf { it.isNotBlank() }
-    val imageUrl = clip.linkImgUrl?.takeIf { it.isNotBlank() }
-    val shouldShowLink = link != null && link != clip.content
-
-    if ((link == null || !shouldShowLink) && title == null && imageUrl == null) {
-        return
-    }
-
-    Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .padding(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (imageUrl != null) {
-                AsyncImage(
-                    model = imageUrl,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clip(RoundedCornerShape(8.dp)),
-                    contentScale = ContentScale.Crop
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-            }
-
-            Row(
-                modifier = Modifier.weight(1f),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    if (title != null) {
-                        HighlightableText(
-                            text = title,
-                            highlightQuery = highlightQuery,
-                            style = MaterialTheme.typography.labelMedium,
-                            maxLines = 2
-                        )
-                    }
-
-                    if (shouldShowLink) {
-                        if (title != null) {
-                            Spacer(modifier = Modifier.height(2.dp))
-                        }
-                        HighlightableText(
-                            text = link.orEmpty(),
-                            highlightQuery = highlightQuery,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1
-                        )
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-    }
-}
-
-/**
- * 侧滑露出的单个操作按钮。
- *
- * 按钮高度由外层 item 决定，图标始终放在点击区域中心；点击区域保持透明，
- * 让侧滑操作区沿用卡片背后的整体底色。
- */
-@Composable
-private fun SwipeActionButton(
-    painterRes: Int,
-    iconContentDescription: String,
-    iconTint: Color,
-    iconSize: Dp,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Box(
-        modifier = modifier
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            painter = painterResource(painterRes),
-            contentDescription = iconContentDescription,
-            tint = iconTint,
-            modifier = Modifier.size(iconSize)
-        )
-    }
-}
-
-/**
- * 支持搜索关键词高亮的文本。
- *
- * 高亮只处理用户看得见的字段，匹配词由搜索页传入；普通列表页传 null 时不会额外分配高亮片段。
- */
-@Composable
-private fun HighlightableText(
-    text: String,
-    highlightQuery: String?,
-    style: TextStyle,
-    modifier: Modifier = Modifier,
-    color: Color = Color.Unspecified,
-    maxLines: Int = Int.MAX_VALUE,
-) {
-    val highlightColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)
-    val highlightTextColor = MaterialTheme.colorScheme.onSurface
-    val highlightedText = remember(text, highlightQuery, highlightColor, highlightTextColor) {
-        text.highlightedBy(
-            query = highlightQuery,
-            highlightStyle = SpanStyle(
-                color = highlightTextColor,
-                background = highlightColor
-            )
-        )
-    }
-
-    Text(
-        text = highlightedText,
-        modifier = modifier,
-        style = style,
-        color = color,
-        maxLines = maxLines,
-        overflow = TextOverflow.Ellipsis
-    )
-}
-
-/**
- * 根据搜索词生成高亮文本。
- *
- * 这里按空白拆词、去重并做大小写不敏感匹配；如果多个词重叠，只给尚未覆盖的位置加样式，
- * 这样能避免重复添加 Span 造成样式边界不可预测。
- */
-private fun String.highlightedBy(query: String?, highlightStyle: SpanStyle): AnnotatedString {
-    val words = query
-        ?.trim()
-        ?.split(Regex("\\s+"))
-        ?.map { it.trim() }
-        ?.filter { it.isNotBlank() }
-        ?.distinctBy { it.lowercase() }
-        .orEmpty()
-
-    if (isBlank() || words.isEmpty()) {
-        return AnnotatedString(this)
-    }
-
-    return buildAnnotatedString {
-        append(this@highlightedBy)
-        val lowerText = this@highlightedBy.lowercase()
-        val highlightedRanges = mutableListOf<IntRange>()
-        words.forEach { word ->
-            val lowerWord = word.lowercase()
-            var startIndex = lowerText.indexOf(lowerWord)
-            while (startIndex >= 0) {
-                val endExclusive = startIndex + lowerWord.length
-                val range = startIndex until endExclusive
-                val hasOverlap = highlightedRanges.any { existing ->
-                    range.first <= existing.last && range.last >= existing.first
-                }
-                if (!hasOverlap) {
-                    addStyle(highlightStyle, startIndex, endExclusive)
-                    highlightedRanges += range
-                }
-                startIndex = lowerText.indexOf(lowerWord, startIndex + lowerWord.length)
-            }
-        }
-    }
-}
-
-/** 空状态屏幕。 */
-@Composable
-private fun EmptyScreen(text: String, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = 32.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(text, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
