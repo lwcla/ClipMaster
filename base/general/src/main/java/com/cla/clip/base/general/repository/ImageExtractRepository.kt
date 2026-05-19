@@ -1,6 +1,7 @@
 package com.cla.clip.base.general.repository
 
 import androidx.paging.PagingSource
+import com.cla.clip.base.general.config.AppSetting
 import com.cla.clip.base.general.dao.ImageExtractBatchData
 import com.cla.clip.base.general.dao.ImageExtractDao
 import com.cla.clip.base.general.dao.ImageHistoryFileRef
@@ -66,7 +67,9 @@ class ImageExtractRepository @Inject constructor(
                 height = candidate.height
             )
         }
-        return imageExtractDao.replaceBatchItems(batch, items)
+        val batchId = imageExtractDao.replaceBatchItems(batch, items)
+        AppSetting.markBackupDirty()
+        return batchId
     }
 
     /** 观察图片下载历史；Repository 隐藏“未确认提取批次不展示”的 SQL 细节，页面只关心历史列表。 */
@@ -167,6 +170,9 @@ class ImageExtractRepository @Inject constructor(
         errorMsg: String? = null
     ) {
         imageExtractDao.updateBatchStatus(batchId, status, successCount, failedCount, filteredCount, outputDir, errorMsg)
+        if (status != ImageExtractBatchData.STATUS_DOWNLOADING) {
+            AppSetting.markBackupDirty()
+        }
     }
 
     /** 更新单张图片状态，记录临时文件、最终 URI 或失败原因。 */
@@ -189,11 +195,13 @@ class ImageExtractRepository @Inject constructor(
      */
     suspend fun keepSelectedItems(batchId: Long, selectedItemIds: Set<Long>) {
         imageExtractDao.keepSelectedItems(batchId, selectedItemIds)
+        AppSetting.markBackupDirty()
     }
 
     /** 精确删除选中图片批次；图片项只通过外键级联删除这些批次下的数据。 */
     suspend fun deleteBatches(batchIds: Set<Long>) {
         if (batchIds.isEmpty()) return
         imageExtractDao.deleteBatches(batchIds)
+        AppSetting.markBackupDirty()
     }
 }

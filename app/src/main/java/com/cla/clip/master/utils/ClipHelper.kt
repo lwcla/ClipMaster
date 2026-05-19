@@ -13,6 +13,7 @@ import com.cla.clip.base.general.utils.ApplicationScope
 import com.cla.clip.base.general.utils.LinkUtils
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logI
+import com.cla.clip.master.work.BackupAutoScheduler
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -199,6 +200,7 @@ class ClipHelper @Inject constructor(
 
             // 保存到数据库
             val clipId = clipRepository.get().addNewClip(captureEntity)
+            BackupAutoScheduler.markDirtyAndSchedule(appContext)
 
             logD(TAG) { "processClip: 保存到数据库 clipId=${clipId}" }
             notificationHelper.get().notifyClipUpdate(

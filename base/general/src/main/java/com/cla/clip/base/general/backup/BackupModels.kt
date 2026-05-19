@@ -42,6 +42,28 @@ enum class BackupSource {
 }
 
 /**
+ * 备份类型。
+ *
+ * `source` 描述触发位置，`backupKind` 描述生命周期语义；保留清理和安全快照恢复提示必须依赖这个稳定字段，
+ * 不能通过文件名或来源枚举猜测，避免后续新增触发入口时误删手动备份。
+ */
+@Keep
+@Serializable
+enum class BackupKind {
+    /** 用户主动创建的手动备份，默认不参与自动保留清理。 */
+    @SerialName("manual")
+    Manual,
+
+    /** 后台自动创建的普通备份，按用户配置的保留份数滚动清理。 */
+    @SerialName("auto")
+    Auto,
+
+    /** 恢复前自动创建的回滚点，独立保留最近几份，不上传 WebDAV。 */
+    @SerialName("safety")
+    Safety,
+}
+
+/**
  * 统一备份快照的内存聚合模型。
  *
  * 当前落盘格式不是单个 JSON，而是 zip 包里的 `manifest.json` 和多个 `data/xxx.json`；该模型用于导出后聚合、
@@ -89,6 +111,10 @@ data class BackupSnapshot(
     /** 本次备份来源，用于列表和恢复报告展示。 */
     @SerialName("source")
     val source: BackupSource,
+
+    /** 备份类型，用于区分手动备份、自动备份和恢复前安全快照。 */
+    @SerialName("backup_kind")
+    val backupKind: BackupKind = BackupKind.Manual,
 
     /** 数据文件清单汇总 SHA-256，用于判断备份包是否损坏或被截断。 */
     @SerialName("checksum")
@@ -171,6 +197,10 @@ data class BackupManifest(
     /** 本次备份来源。 */
     @SerialName("source")
     val source: BackupSource,
+
+    /** 备份类型，列表展示和保留清理必须使用它，不从文件名反推。 */
+    @SerialName("backup_kind")
+    val backupKind: BackupKind = BackupKind.Manual,
 
     /** 完整快照文件名，用于 WebDAV 列表点击后定位真实备份。 */
     @SerialName("snapshot_file_name")
@@ -390,6 +420,8 @@ data class BackupPreview(
     val schemaVersion: Int,
     /** 脱敏安装标识。 */
     val deviceLabel: String,
+    /** 备份类型，用于安全快照预览和二次确认文案。 */
+    val backupKind: BackupKind,
     /** 数据区 checksum 是否通过。 */
     val checksumValid: Boolean,
     /** 数量摘要。 */
@@ -404,9 +436,97 @@ data class BackupRestoreReport(
     val updatedCount: Int,
     /** 因本地较新或重复而跳过的记录数量。 */
     val skippedCount: Int,
+    /** 恢复前安全快照结果；为空表示调用方未要求创建或旧流程尚未接入。 */
+    val safetySnapshot: BackupSafetySnapshotResult? = null,
     /** 用户可读但不含敏感内容的提示列表。 */
     val warnings: List<String> = emptyList(),
 )
+
+/** 恢复前安全快照写入结果，用于恢复报告和失败排查。 */
+data class BackupSafetySnapshotResult(
+    /** 安全快照文件名。 */
+    val fileName: String,
+    /** 用户可读保存位置，例如本地授权目录名或应用私有目录。 */
+    val locationLabel: String,
+    /** 安全快照文件大小，单位字节。 */
+    val fileSize: Long,
+)
+
+/**
+ * 备份长任务状态。
+ *
+ * 页面、Worker 和最近状态持久化都使用同一组状态，避免 UI 通过字符串拼接推断运行结果。
+ */
+enum class BackupTaskStatus {
+    /** 没有任务或尚未产生结果。 */
+    Idle,
+    /** 当前正在执行备份或恢复。 */
+    Running,
+    /** 所有目标都成功。 */
+    Success,
+    /** 至少一个目标成功，同时存在另一个目标失败。 */
+    PartialSuccess,
+    /** 因 dirty=false、无目标或约束未满足而跳过。 */
+    Skipped,
+    /** 可重试失败已交给 WorkManager 退避。 */
+    RetryScheduled,
+    /** 不可自动恢复或最终失败。 */
+    Failed,
+}
+
+/** 最近一次自动备份摘要，保存到本机配置用于备份页无需刷新远端列表也能展示可用恢复点。 */
+@Keep
+@Serializable
+data class BackupSuccessSummary(
+    /** 最近成功备份时间，单位毫秒。 */
+    @SerialName("created_at")
+    val createdAt: Long,
+    /** 备份文件名。 */
+    @SerialName("file_name")
+    val fileName: String,
+    /** 备份包大小，单位字节。 */
+    @SerialName("file_size")
+    val fileSize: Long,
+    /** 本次备份来源。 */
+    @SerialName("source")
+    val source: BackupSource,
+    /** 备份类型；自动备份摘要通常为 auto。 */
+    @SerialName("backup_kind")
+    val backupKind: BackupKind,
+    /** 数量摘要，不包含用户原文。 */
+    @SerialName("summary")
+    val summary: BackupSummary,
+    /** 本地目标是否成功。 */
+    @SerialName("local_success")
+    val localSuccess: Boolean,
+    /** WebDAV 目标是否成功。 */
+    @SerialName("webdav_success")
+    val webDavSuccess: Boolean,
+    /** 本地保留清理数量。 */
+    @SerialName("local_retention_deleted")
+    val localRetentionDeleted: Int = 0,
+    /** WebDAV 保留清理数量。 */
+    @SerialName("webdav_retention_deleted")
+    val webDavRetentionDeleted: Int = 0,
+)
+
+/** 保留份数清理结果，只记录删除数量和类型，不记录文件内容或用户数据。 */
+data class BackupRetentionCleanupResult(
+    /** 删除的备份数量，zip 和 manifest 配对按一份计算。 */
+    val deletedCount: Int,
+    /** 本次删除对象的备份类型集合，用于最近备份摘要展示和排查。 */
+    val deletedKinds: List<BackupKind> = emptyList(),
+)
+
+/** WebDAV 目标最近一次健康检查状态，仅缓存脱敏状态，不保存密码或完整 URL。 */
+enum class BackupTargetHealth {
+    /** 尚未检查或用户清空了配置。 */
+    Unknown,
+    /** 最近一次主动测试连接成功。 */
+    Available,
+    /** 最近一次主动测试连接失败。 */
+    Unavailable,
+}
 
 /**
  * 备份失败类型。
@@ -434,6 +554,9 @@ sealed class BackupFailure(message: String, cause: Throwable? = null) : Exceptio
 
     /** 网络或服务器行为不符合预期。 */
     class RemoteFailed(cause: Throwable? = null) : BackupFailure("remote_failed", cause)
+
+    /** 备份包超过当前内存式导出的保护上限。 */
+    class FileTooLarge : BackupFailure("file_too_large")
 
     /** 解析 zip 包或包内 JSON 失败。 */
     class ParseFailed(cause: Throwable? = null) : BackupFailure("parse_failed", cause)

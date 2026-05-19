@@ -2,6 +2,7 @@ package com.cla.clip.base.general.backup
 
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
+import com.cla.clip.base.general.utils.logW
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Credentials
@@ -48,13 +49,17 @@ class WebDavClient @Inject constructor(
      *
      * 目录不存在时会逐级 MKCOL 创建；创建后上传并删除一个空探测文件，确认用户有写权限。
      */
-    suspend fun testAndPrepare(config: WebDavConfig) = withContext(Dispatchers.IO) {
+    suspend fun testAndPrepare(config: WebDavConfig, taskId: String? = null) = withContext(Dispatchers.IO) {
         validateWebDavEndpoint(config.endpoint, config.allowInsecureHttp)
+        logD(TAG) {
+            "开始测试 WebDAV 并准备目录 ${backupTaskLogField(taskId)}allowHttp=${config.allowInsecureHttp} " +
+                "hasUsername=${config.username.isNotBlank()} remoteDirLength=${config.remoteDir.length}"
+        }
         ensureDirectory(config)
         val probeName = ".clip_master_probe.json"
         uploadText(config, probeName, "{}")
         deleteFile(config, probeName)
-        logD(TAG) { "testAndPrepare: ok dir=${normalizeWebDavRemoteDir(config.remoteDir)}" }
+        logD(TAG) { "WebDAV 测试和目录准备成功 ${backupTaskLogField(taskId)}remoteDirLength=${normalizeWebDavRemoteDir(config.remoteDir).length}" }
     }
 
     /** 上传文本文件。 */
@@ -122,11 +127,15 @@ class WebDavClient @Inject constructor(
      */
     suspend fun listBackups(config: WebDavConfig): List<RemoteBackupFile> = withContext(Dispatchers.IO) {
         validateWebDavEndpoint(config.endpoint, config.allowInsecureHttp)
+        logD(TAG) { "开始读取 WebDAV 备份列表 remoteDirLength=${config.remoteDir.length}" }
         val entries = propfind(config, buildWebDavUrl(config))
             .filter { it.fileName.endsWith(".zip") && it.fileName.startsWith("clip_master_backup_") }
-        entries.map { entry ->
+        var manifestMissingOrBroken = 0
+        val files = entries.map { entry ->
             val manifest = runCatching {
                 BackupJson.decodeManifest(downloadText(config, buildManifestFileName(entry.fileName)))
+            }.onFailure {
+                manifestMissingOrBroken += 1
             }.getOrNull()
             RemoteBackupFile(
                 fileName = entry.fileName,
@@ -140,23 +149,82 @@ class WebDavClient @Inject constructor(
                 .thenByDescending { it.lastModified ?: 0L }
                 .thenByDescending { it.fileName }
         )
+        logD(TAG) { "WebDAV 备份列表读取成功 count=${files.size} manifestMissingOrBroken=$manifestMissingOrBroken" }
+        files
     }
 
     /** 上传完整备份包和 manifest，并更新 latest.json。 */
-    suspend fun uploadBackup(config: WebDavConfig, export: BackupExportResult) = withContext(Dispatchers.IO) {
+    suspend fun uploadBackup(config: WebDavConfig, export: BackupExportResult, taskId: String? = null) = withContext(Dispatchers.IO) {
+        val startedAt = System.currentTimeMillis()
+        logD(TAG) {
+            "开始上传 WebDAV 备份 ${backupTaskLogField(taskId)}fileName=${export.fileName} " +
+                "backupKind=${export.snapshot.backupKind.logCode()} fileSize=${export.packageBytes.size}"
+        }
         ensureDirectory(config)
         val tempSnapshot = "${export.fileName}.tmp"
         val tempManifest = "${export.manifestFileName}.tmp"
+        logD(TAG) { "开始上传 WebDAV 临时备份文件 ${backupTaskLogField(taskId)}fileName=${export.fileName}" }
         uploadBytes(config, tempSnapshot, export.packageBytes)
         uploadText(config, tempManifest, export.manifestJson)
         val uploaded = downloadBytes(config, tempSnapshot)
         uploaded.decodeBackupPackage().validateForRestore(export.snapshot.applicationId)
+        logD(TAG) { "WebDAV 临时备份文件校验通过 ${backupTaskLogField(taskId)}fileName=${export.fileName} tempSize=${uploaded.size}" }
         uploadBytes(config, export.fileName, uploaded)
         uploadText(config, export.manifestFileName, export.manifestJson)
         uploadText(config, "latest.json", export.manifestJson)
         deleteFile(config, tempSnapshot)
         deleteFile(config, tempManifest)
-        logD(TAG) { "uploadBackup: file=${export.fileName}" }
+        logD(TAG) {
+            "WebDAV 备份上传成功 ${backupTaskLogField(taskId)}fileName=${export.fileName} " +
+                "durationMs=${System.currentTimeMillis() - startedAt}"
+        }
+    }
+
+    /**
+     * 按保留份数清理远端自动备份。
+     *
+     * 只删除 manifest 明确标记为指定 `backupKind` 且设备标识匹配的备份，避免多设备共用目录时误删别的恢复点。
+     * 调用方必须在新备份发布成功后再调用该方法，保证清理不会早于新恢复点落盘。
+     */
+    suspend fun pruneBackups(
+        config: WebDavConfig,
+        keepCount: Int,
+        backupKind: BackupKind,
+        deviceLabel: String,
+        taskId: String? = null,
+    ): BackupRetentionCleanupResult = withContext(Dispatchers.IO) {
+        val candidates = listBackups(config)
+            .filter { file ->
+                file.manifest?.backupKind == backupKind && file.manifest.deviceLabel == deviceLabel
+            }
+            .sortedWith(
+                compareByDescending<RemoteBackupFile> { it.manifest?.createdAt ?: 0L }
+                    .thenByDescending { it.lastModified ?: 0L }
+                    .thenByDescending { it.fileName }
+            )
+        val toDelete = candidates.drop(keepCount.coerceAtLeast(0))
+        logD(TAG) {
+            "开始清理 WebDAV 旧备份 ${backupTaskLogField(taskId)}target=webdav backupKind=${backupKind.logCode()} " +
+                "keepCount=$keepCount candidates=${candidates.size} toDelete=${toDelete.size}"
+        }
+        var deleted = 0
+        toDelete.forEach { file ->
+            runCatching {
+                deleteFile(config, file.fileName)
+                runCatching { deleteFile(config, buildManifestFileName(file.fileName)) }
+                deleted += 1
+                logD(TAG) { "WebDAV 旧备份删除成功 ${backupTaskLogField(taskId)}target=webdav fileName=${file.fileName}" }
+            }.onFailure { throwable ->
+                logE(TAG) {
+                    "WebDAV 旧备份删除失败 ${backupTaskLogField(taskId)}target=webdav fileName=${file.fileName} " +
+                        "reasonCode=${throwable.backupReasonCode()} type=${throwable::class.simpleName}"
+                }
+            }
+        }
+        logD(TAG) {
+            "WebDAV 旧备份清理完成 ${backupTaskLogField(taskId)}target=webdav backupKind=${backupKind.logCode()} deleted=$deleted"
+        }
+        BackupRetentionCleanupResult(deletedCount = deleted, deletedKinds = toDelete.mapNotNull { it.manifest?.backupKind }.distinct())
     }
 
     /** 确保远端目录存在，按路径片段逐级创建以兼容只支持父目录已存在的 WebDAV 服务端。 */
@@ -170,6 +238,7 @@ class WebDavClient @Inject constructor(
             val url = buildWebDavUrl(partialConfig)
             val exists = runCatching { propfind(config, url) }.isSuccess
             if (!exists) {
+                logD(TAG) { "WebDAV 目录不存在，开始创建 segmentLength=${segment.length} partialLength=${partial.length}" }
                 mkcol(config, url)
             }
         }
@@ -183,6 +252,7 @@ class WebDavClient @Inject constructor(
         okHttpClient.newCall(request).execute().use { response ->
             if (response.code == 401 || response.code == 403) throw BackupFailure.AuthenticationFailed()
             if (!response.isSuccessful && response.code != 201 && response.code != 405) {
+                logW(TAG) { "WebDAV 目录创建失败 statusCode=${response.code} reasonCode=storage_not_writable" }
                 throw BackupFailure.StorageNotWritable()
             }
         }
@@ -240,7 +310,7 @@ class WebDavClient @Inject constructor(
                 }
             }
         }.getOrElse { throwable ->
-            logE(TAG, throwable) { "parsePropfind failed" }
+            logE(TAG) { "WebDAV 目录响应解析失败 reasonCode=${throwable.backupReasonCode()} type=${throwable::class.simpleName}" }
             emptyList()
         }
     }

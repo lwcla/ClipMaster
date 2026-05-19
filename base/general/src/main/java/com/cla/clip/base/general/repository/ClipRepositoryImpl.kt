@@ -2,6 +2,7 @@ package com.cla.clip.base.general.repository
 
 import androidx.paging.PagingSource
 import androidx.room.withTransaction
+import com.cla.clip.base.general.config.AppSetting
 import com.cla.clip.base.general.dao.AppDatabase
 import com.cla.clip.base.general.dao.ClipDao
 import com.cla.clip.base.general.dao.ClipData
@@ -244,16 +245,19 @@ class ClipRepositoryImpl @Inject constructor(
             )
             // 执行更新
             clipDao.upsertClip(clipToUpdate)
+            AppSetting.markBackupDirty()
             return@withContext existingClip.clip.id
         } else {
             // 插入数据
             val rowId = clipDao.upsertClip(newClip.copy(id = 0))
             // 关键：如果是更新旧任务，直接返回旧 id
-            return@withContext when {
+            val clipId = when {
                 rowId > 0L -> rowId
                 else -> clipDao.loadClipDetail(newClip.content, sourceApp.packageName)?.clip?.id
                     ?: error("addNewClip: upsertClip 后未找到任务 newClip=$newClip")
             }
+            AppSetting.markBackupDirty()
+            return@withContext clipId
         }
     }
 
@@ -265,11 +269,13 @@ class ClipRepositoryImpl @Inject constructor(
         val normalizedIds = ids.filter { it > 0L }.distinct()
         if (normalizedIds.isEmpty()) return@withContext 0
         val deletedAt = System.currentTimeMillis()
-        appDatabase.withTransaction {
+        val moved = appDatabase.withTransaction {
             normalizedIds.chunked(ID_BATCH_SIZE).sumOf { chunk ->
                 clipDao.moveClipsToRecycleBin(chunk, deletedAt)
             }
         }
+        if (moved > 0) AppSetting.markBackupDirty()
+        moved
     }
 
     override suspend fun deleteClipPermanently(clip: ClipShowEntity) = withContext(Dispatchers.IO) {
@@ -279,21 +285,25 @@ class ClipRepositoryImpl @Inject constructor(
     override suspend fun deleteClipsPermanently(ids: Set<Long>): Int = withContext(Dispatchers.IO) {
         val normalizedIds = ids.filter { it > 0L }.distinct()
         if (normalizedIds.isEmpty()) return@withContext 0
-        appDatabase.withTransaction {
+        val deleted = appDatabase.withTransaction {
             normalizedIds.chunked(ID_BATCH_SIZE).sumOf { chunk ->
                 clipDao.deleteClipsByIds(chunk)
             }
         }
+        if (deleted > 0) AppSetting.markBackupDirty()
+        deleted
     }
 
     override suspend fun restoreClipsFromRecycleBin(ids: Set<Long>): Int = withContext(Dispatchers.IO) {
         val normalizedIds = ids.filter { it > 0L }.distinct()
         if (normalizedIds.isEmpty()) return@withContext 0
-        appDatabase.withTransaction {
+        val restored = appDatabase.withTransaction {
             normalizedIds.chunked(ID_BATCH_SIZE).sumOf { chunk ->
                 clipDao.restoreClipsFromRecycleBin(chunk)
             }
         }
+        if (restored > 0) AppSetting.markBackupDirty()
+        restored
     }
 
     override fun loadRecycleBinClips(): PagingSource<Int, ClipDetail> {
@@ -303,17 +313,20 @@ class ClipRepositoryImpl @Inject constructor(
     override suspend fun updatePinStatus(clipId: Long, isPinned: Boolean) {
         val pinnedTime = if (isPinned) System.currentTimeMillis() else 0L
         clipDao.updatePinStatus(clipId, pinnedTime)
+        AppSetting.markBackupDirty()
     }
 
     override suspend fun updateFoldStatus(clipId: Long, isFolded: Boolean) = withContext(Dispatchers.IO) {
         val foldedAt = if (isFolded) System.currentTimeMillis() else 0L
         clipDao.updateFoldStatus(clipId, isFolded, foldedAt)
+        AppSetting.markBackupDirty()
     }
 
     override suspend fun updateTimestamp(clipId: Long) {
         val currentTime = System.currentTimeMillis()
         // 这里直接调用 upsertClip 来更新 timestamp，保持逻辑一致性
         clipDao.updateTimestamp(clipId, currentTime)
+        AppSetting.markBackupDirty()
     }
 
     override fun loadClips(visibilityScope: ClipVisibilityScope): PagingSource<Int, ClipDetail> {
@@ -329,17 +342,22 @@ class ClipRepositoryImpl @Inject constructor(
     }
 
     override suspend fun clearRecycleBinPermanently(): Int = withContext(Dispatchers.IO) {
-        clipDao.clearRecycleBinPermanently()
+        val deleted = clipDao.clearRecycleBinPermanently()
+        if (deleted > 0) AppSetting.markBackupDirty()
+        deleted
     }
 
     override suspend fun cleanupExpiredRecycleBinClips(days: Int): Int = withContext(Dispatchers.IO) {
         val safeDays = days.coerceIn(MIN_RETENTION_DAYS, MAX_RETENTION_DAYS)
         val cutoffMillis = System.currentTimeMillis() - safeDays * 24L * 60L * 60L * 1_000L
-        clipDao.cleanupExpiredRecycleBinClips(cutoffMillis)
+        val deleted = clipDao.cleanupExpiredRecycleBinClips(cutoffMillis)
+        if (deleted > 0) AppSetting.markBackupDirty()
+        deleted
     }
 
     override suspend fun clearAll() = withContext(Dispatchers.IO) {
         clipDao.clearAll()
+        AppSetting.markBackupDirty()
     }
 
     override suspend fun loadSourceApp(packageName: String) = withContext(Dispatchers.IO) {
@@ -371,6 +389,7 @@ class ClipRepositoryImpl @Inject constructor(
             siteName = old?.siteName.takeUnless { it.isNullOrBlank() } ?: preview.siteName,
         )
         linkPreviewDao.upsert(merged)
+        AppSetting.markBackupDirty()
 
         clipDao.loadClipDetailsByLink(preview.link).forEach { detail ->
             val clip = detail.clip

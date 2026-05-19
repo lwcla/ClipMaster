@@ -1,6 +1,7 @@
 package com.cla.clip.base.general.repository
 
 import androidx.room.withTransaction
+import com.cla.clip.base.general.config.AppSetting
 import com.cla.clip.base.general.dao.AppDatabase
 import com.cla.clip.base.general.dao.SearchHistoryDao
 import com.cla.clip.base.general.dao.SearchHistoryData
@@ -96,16 +97,21 @@ class SearchHistoryRepositoryImpl @Inject constructor(
             )
             searchHistoryDao.trimScopeToLimit(isFolded, HISTORY_LIMIT)
         }
+        AppSetting.markBackupDirty()
         Unit
     }
 
     override suspend fun deleteHistory(id: Long): Int = withContext(Dispatchers.IO) {
         if (id <= 0L) return@withContext 0
-        searchHistoryDao.deleteById(id)
+        val deleted = searchHistoryDao.deleteById(id)
+        if (deleted > 0) AppSetting.markBackupDirty()
+        deleted
     }
 
     override suspend fun clearHistories(scope: ClipVisibilityScope): Int = withContext(Dispatchers.IO) {
-        searchHistoryDao.clearByScope(scope.toFoldState())
+        val deleted = searchHistoryDao.clearByScope(scope.toFoldState())
+        if (deleted > 0) AppSetting.markBackupDirty()
+        deleted
     }
 
     /** 将搜索范围转换为数据库字段；集中转换可避免调用方散落布尔语义。 */

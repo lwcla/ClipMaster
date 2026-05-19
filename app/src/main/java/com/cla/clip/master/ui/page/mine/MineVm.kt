@@ -14,6 +14,7 @@ import com.cla.clip.base.general.utils.hasNotificationRuntimePermission
 import com.cla.clip.base.general.utils.hasOverlayPermission
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.master.entity.SettingSwitchItemUi
+import com.cla.clip.master.work.BackupAutoScheduler
 import com.cla.clip.shizuku.ShizukuStatus
 import com.cla.clip.shizuku.ShizukuUtils
 import dagger.Lazy
@@ -126,6 +127,7 @@ class MineVm @Inject constructor(
      */
     fun updateClipItemQuickAction(action: ClipItemQuickAction) {
         AppSetting.clipItemQuickAction = action
+        BackupAutoScheduler.markDirtyAndSchedule(appContext)
     }
 
     /**

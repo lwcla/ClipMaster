@@ -6,6 +6,7 @@ import androidx.work.WorkManager
 import com.cla.clip.base.general.BaseApplication
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.master.utils.ShizukuConnector
+import com.cla.clip.master.work.BackupAutoScheduler
 import com.cla.clip.master.work.DownloadVideoWorker
 import com.cla.clip.master.work.RecycleBinCleanupScheduler
 import com.cla.clip.master.work.ShizukuWorkScheduler
@@ -60,6 +61,7 @@ class App : BaseApplication(), Configuration.Provider {
             ShizukuWorkScheduler.checkNow(this)
             RecycleBinCleanupScheduler.schedulePeriodic(this)
             RecycleBinCleanupScheduler.cleanupNow(this)
+            BackupAutoScheduler.reschedule(this)
 
             shizukuConnector.connect()
         }

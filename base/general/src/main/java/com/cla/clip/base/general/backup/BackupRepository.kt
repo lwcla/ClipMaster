@@ -38,6 +38,9 @@ class BackupRepository @Inject constructor(
 
         /** 分块写入大小，避免一次性向 Room 绑定过多实体造成内存和 SQL 参数压力。 */
         private const val WRITE_CHUNK_SIZE = 300
+
+        /** 当前内存式 zip 生成的保护上限，避免极端数据量下继续写入半截备份或触发 OOM。 */
+        private const val MAX_BACKUP_PACKAGE_BYTES = 100L * 1024L * 1024L
     }
 
     /**
@@ -55,6 +58,7 @@ class BackupRepository @Inject constructor(
      */
     suspend fun createSnapshot(
         source: BackupSource,
+        backupKind: BackupKind = source.defaultBackupKind(),
         now: Long = System.currentTimeMillis(),
     ): BackupExportResult = withContext(Dispatchers.IO) {
         backupMutex.withLock {
@@ -79,14 +83,21 @@ class BackupRepository @Inject constructor(
                 appVersionName = BuildConfig.VERSION_NAME,
                 deviceLabel = buildBackupDeviceLabel(AppSetting.pid),
                 source = source,
+                backupKind = backupKind,
                 checksum = checksum,
                 summary = summary,
                 data = data
             )
             val packageBytes = snapshot.encodeToPackageBytes()
-            val fileName = buildBackupFileName(snapshot.deviceLabel, snapshot.createdAt)
+            if (packageBytes.size.toLong() > MAX_BACKUP_PACKAGE_BYTES) {
+                throw BackupFailure.FileTooLarge()
+            }
+            val fileName = buildBackupFileName(snapshot.deviceLabel, snapshot.createdAt, backupKind)
             val manifest = snapshot.toManifest(fileName, packageBytes.size.toLong())
-            logD(TAG) { "createSnapshot: source=$source clips=${summary.clipCount} videos=${summary.videoDownloadCount} images=${summary.imageBatchCount}" }
+            logD(TAG) {
+                "备份快照已生成 source=${source.logCode()} backupKind=${backupKind.logCode()} " +
+                    "clips=${summary.clipCount} videos=${summary.videoDownloadCount} images=${summary.imageBatchCount}"
+            }
             BackupExportResult(
                 snapshot = snapshot,
                 packageBytes = packageBytes,
@@ -110,6 +121,7 @@ class BackupRepository @Inject constructor(
             appVersionName = snapshot.appVersionName,
             schemaVersion = snapshot.schemaVersion,
             deviceLabel = snapshot.deviceLabel,
+            backupKind = snapshot.backupKind,
             checksumValid = true,
             summary = snapshot.summary
         )
@@ -133,7 +145,9 @@ class BackupRepository @Inject constructor(
     private fun decodeAndValidateSnapshot(packageBytes: ByteArray): BackupSnapshot {
         val snapshot = runCatching { packageBytes.decodeBackupPackage() }
             .getOrElse { throwable ->
-                logE(TAG, throwable) { "decodeAndValidateSnapshot: package parse failed" }
+                logE(TAG, throwable) {
+                    "备份包解析失败 reasonCode=${throwable.backupReasonCode()} type=${throwable::class.simpleName}"
+                }
                 if (throwable is BackupFailure) throw throwable else throw BackupFailure.ParseFailed(throwable)
             }
         snapshot.validateForRestore(BuildConfig.APPLICATION_ID)
@@ -180,7 +194,7 @@ class BackupRepository @Inject constructor(
         updated += imageItemRestore.updated
         skipped += imageItemRestore.skipped
 
-        logD(TAG) { "restoreSnapshot: inserted=$inserted updated=$updated skipped=$skipped" }
+        logD(TAG) { "备份恢复写库完成 inserted=$inserted updated=$updated skipped=$skipped" }
         return BackupRestoreReport(
             insertedCount = inserted,
             updatedCount = updated,

@@ -80,6 +80,16 @@ object BackupJson {
     fun decodeManifest(text: String): BackupManifest {
         return json.decodeFromString(text)
     }
+
+    /** 编码最近一次自动备份成功摘要，用于本机配置展示。 */
+    fun encodeSuccessSummary(summary: BackupSuccessSummary): String {
+        return json.encodeToString(summary)
+    }
+
+    /** 解码最近一次自动备份成功摘要；失败时由调用方决定回退为空。 */
+    fun decodeSuccessSummary(text: String): BackupSuccessSummary {
+        return json.decodeFromString(text)
+    }
 }
 
 /**
@@ -119,6 +129,7 @@ fun BackupSnapshot.toManifest(snapshotFileName: String, fileSize: Long): BackupM
         appVersionName = appVersionName,
         deviceLabel = deviceLabel,
         source = source,
+        backupKind = backupKind,
         snapshotFileName = snapshotFileName,
         fileSize = fileSize,
         checksum = checksum,
@@ -140,10 +151,21 @@ fun buildBackupTimestamp(createdAt: Long): String {
     return formatter.format(java.util.Date(createdAt))
 }
 
-/** 生成本应用备份快照文件名。 */
-fun buildBackupFileName(deviceLabel: String, createdAt: Long): String {
+/** 生成本应用备份快照文件名；安全快照额外带 `safety` 标识，方便用户在文件管理器里识别回滚点。 */
+fun buildBackupFileName(deviceLabel: String, createdAt: Long, backupKind: BackupKind = BackupKind.Manual): String {
     val safeDevice = deviceLabel.replace(Regex("[^A-Za-z0-9_-]"), "_")
-    return "clip_master_backup_${safeDevice}_${buildBackupTimestamp(createdAt)}.zip"
+    val kindSegment = if (backupKind == BackupKind.Safety) "_safety" else ""
+    return "clip_master_backup_${safeDevice}${kindSegment}_${buildBackupTimestamp(createdAt)}.zip"
+}
+
+/** 根据触发来源推导默认备份类型，调用方需要安全快照时必须显式传入 `BackupKind.Safety`。 */
+fun BackupSource.defaultBackupKind(): BackupKind {
+    return when (this) {
+        BackupSource.LocalManual,
+        BackupSource.WebDavManual -> BackupKind.Manual
+        BackupSource.LocalAuto,
+        BackupSource.WebDavAuto -> BackupKind.Auto
+    }
 }
 
 /** 生成 manifest sidecar 文件名。 */
@@ -279,6 +301,7 @@ fun ByteArray.decodeBackupPackage(): BackupSnapshot {
         appVersionName = manifest.appVersionName,
         deviceLabel = manifest.deviceLabel,
         source = manifest.source,
+        backupKind = manifest.backupKind,
         checksum = manifest.checksum,
         summary = manifest.summary,
         data = data

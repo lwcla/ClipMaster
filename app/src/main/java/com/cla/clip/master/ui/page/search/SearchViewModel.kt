@@ -1,5 +1,6 @@
 package com.cla.clip.master.ui.page.search
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.Pager
@@ -14,8 +15,10 @@ import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.base.general.repository.SearchHistoryRepository
 import com.cla.clip.master.processor.ClipboardDataProcessor
 import com.cla.clip.master.processor.DefaultClipboardDataProcessor
+import com.cla.clip.master.work.BackupAutoScheduler
 import dagger.Lazy
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
@@ -82,6 +85,7 @@ data class SearchFilterState(
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class, FlowPreview::class)
 @HiltViewModel
 class SearchViewModel @Inject constructor(
+    @param:ApplicationContext private val appContext: Context,
     private val clipRepository: Lazy<ClipRepository>,
     private val searchHistoryRepository: Lazy<SearchHistoryRepository>,
     private val clipboardDataProcessor: DefaultClipboardDataProcessor,
@@ -214,6 +218,7 @@ class SearchViewModel @Inject constructor(
         val query = _filterState.value.query
         viewModelScope.launch {
             searchHistoryRepository.get().saveHistory(scope, query)
+            BackupAutoScheduler.markDirtyAndSchedule(appContext)
         }
     }
 
@@ -228,6 +233,7 @@ class SearchViewModel @Inject constructor(
         _filterState.update { it.copy(query = singleLineQuery) }
         viewModelScope.launch {
             searchHistoryRepository.get().saveHistory(scope, singleLineQuery)
+            BackupAutoScheduler.markDirtyAndSchedule(appContext)
         }
     }
 
@@ -239,6 +245,7 @@ class SearchViewModel @Inject constructor(
     fun deleteHistory(id: Long) {
         viewModelScope.launch {
             searchHistoryRepository.get().deleteHistory(id)
+            BackupAutoScheduler.markDirtyAndSchedule(appContext)
         }
     }
 
@@ -251,6 +258,7 @@ class SearchViewModel @Inject constructor(
         val scope = visibilityScope.value ?: return
         viewModelScope.launch {
             searchHistoryRepository.get().clearHistories(scope)
+            BackupAutoScheduler.markDirtyAndSchedule(appContext)
         }
     }
 }

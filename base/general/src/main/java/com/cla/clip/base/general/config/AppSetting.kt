@@ -1,6 +1,10 @@
 package com.cla.clip.base.general.config
 
 import com.cla.clip.base.general.utils.logE
+import com.cla.clip.base.general.backup.BackupJson
+import com.cla.clip.base.general.backup.BackupSuccessSummary
+import com.cla.clip.base.general.backup.BackupTargetHealth
+import com.cla.clip.base.general.backup.BackupTaskStatus
 import com.tencent.mmkv.MMKV
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -157,6 +161,7 @@ object AppSetting {
         set(value) {
             mmkv.putString(KEY_CLIP_ITEM_QUICK_ACTION, value.storageValue)
             _clipItemQuickActionFlow.value = value
+            markBackupDirty()
         }
 
     /** 回收站默认保留天数，单位天；默认 30 天，和产品默认自动清理策略保持一致。 */
@@ -180,6 +185,7 @@ object AppSetting {
                 KEY_RECYCLE_BIN_RETENTION_DAYS,
                 value.coerceIn(MIN_RECYCLE_BIN_RETENTION_DAYS, MAX_RECYCLE_BIN_RETENTION_DAYS)
             )
+            markBackupDirty()
         }
 
     /** WebDAV 服务地址配置 key；该值只保存在本机，不进入备份包。 */
@@ -202,6 +208,48 @@ object AppSetting {
 
     /** 本地备份目录展示名配置 key；只用于 UI 展示，授权是否有效仍以 URI 为准。 */
     private const val KEY_LOCAL_BACKUP_DIR_LABEL = "local_backup_dir_label"
+
+    /** 自动备份总开关配置 key；默认关闭，避免用户未理解明文风险时后台生成备份。 */
+    private const val KEY_AUTO_BACKUP_ENABLED = "auto_backup_enabled"
+
+    /** 普通自动备份默认保留份数。 */
+    const val DEFAULT_BACKUP_RETENTION_COUNT = 5
+
+    /** 普通自动备份最少保留份数，避免清理掉全部自动恢复点。 */
+    const val MIN_BACKUP_RETENTION_COUNT = 1
+
+    /** 普通自动备份最多保留份数，限制 WebDAV 和本地目录长期膨胀。 */
+    const val MAX_BACKUP_RETENTION_COUNT = 20
+
+    /** 普通自动备份保留份数配置 key。 */
+    private const val KEY_BACKUP_RETENTION_COUNT = "backup_retention_count"
+
+    /** WebDAV 自动备份是否只在 Wi-Fi 下运行；本地备份不需要网络约束。 */
+    private const val KEY_AUTO_BACKUP_ONLY_WIFI = "auto_backup_only_wifi"
+
+    /** 数据是否相对最近成功备份发生变化；dirty 为 false 时自动备份可跳过。 */
+    private const val KEY_BACKUP_DIRTY = "backup_dirty"
+
+    /** 最近一次自动备份状态 key，使用 BackupTaskStatus.name 保存本机内部枚举。 */
+    private const val KEY_LAST_AUTO_BACKUP_STATUS = "last_auto_backup_status"
+
+    /** 最近一次自动备份成功时间，单位毫秒。 */
+    private const val KEY_LAST_AUTO_BACKUP_SUCCESS_AT = "last_auto_backup_success_at"
+
+    /** 最近一次自动备份失败原因，必须是脱敏后的可行动摘要。 */
+    private const val KEY_LAST_AUTO_BACKUP_FAILURE_REASON = "last_auto_backup_failure_reason"
+
+    /** 最近一次自动备份跳过原因，和失败分开展示，避免用户误判。 */
+    private const val KEY_LAST_AUTO_BACKUP_SKIP_REASON = "last_auto_backup_skip_reason"
+
+    /** WebDAV 最近健康状态 key，来自用户主动测试连接或刷新。 */
+    private const val KEY_WEBDAV_HEALTH = "webdav_health"
+
+    /** WebDAV 最近健康检查时间，单位毫秒。 */
+    private const val KEY_WEBDAV_HEALTH_CHECKED_AT = "webdav_health_checked_at"
+
+    /** 最近一次成功自动备份摘要 JSON，不包含剪贴正文或凭据。 */
+    private const val KEY_LAST_BACKUP_SUCCESS_SUMMARY = "last_backup_success_summary"
 
     /** WebDAV 服务根地址。 */
     var webDavEndpoint: String
@@ -250,5 +298,102 @@ object AppSetting {
         get() = mmkv.getString(KEY_LOCAL_BACKUP_DIR_LABEL, "") ?: ""
         set(value) {
             mmkv.putString(KEY_LOCAL_BACKUP_DIR_LABEL, value)
+        }
+
+    /** 自动备份统一开关；开启前调用方必须确认至少存在一个可用目标。 */
+    var autoBackupEnabled: Boolean
+        get() = mmkv.getBoolean(KEY_AUTO_BACKUP_ENABLED, false)
+        set(value) {
+            mmkv.putBoolean(KEY_AUTO_BACKUP_ENABLED, value)
+        }
+
+    /** 自动备份保留份数；保存和读取都裁剪到 1-20，避免异常配置参与删除。 */
+    var backupRetentionCount: Int
+        get() = mmkv.getInt(KEY_BACKUP_RETENTION_COUNT, DEFAULT_BACKUP_RETENTION_COUNT)
+            .coerceIn(MIN_BACKUP_RETENTION_COUNT, MAX_BACKUP_RETENTION_COUNT)
+        set(value) {
+            mmkv.putInt(KEY_BACKUP_RETENTION_COUNT, value.coerceIn(MIN_BACKUP_RETENTION_COUNT, MAX_BACKUP_RETENTION_COUNT))
+        }
+
+    /** WebDAV 自动备份仅 Wi-Fi 约束；本地目录备份仍可在无网络时执行。 */
+    var autoBackupOnlyWifi: Boolean
+        get() = mmkv.getBoolean(KEY_AUTO_BACKUP_ONLY_WIFI, false)
+        set(value) {
+            mmkv.putBoolean(KEY_AUTO_BACKUP_ONLY_WIFI, value)
+        }
+
+    /** 数据变更标记；自动备份成功后清除，恢复完成后重新置为 true。 */
+    var backupDirty: Boolean
+        get() = mmkv.getBoolean(KEY_BACKUP_DIRTY, true)
+        set(value) {
+            mmkv.putBoolean(KEY_BACKUP_DIRTY, value)
+        }
+
+    /** 标记备份数据已变化；跨安装有意义的设置保存时使用，调度由 app 层统一处理。 */
+    fun markBackupDirty() {
+        backupDirty = true
+    }
+
+    /** 最近一次自动备份状态，未知枚举值回退 Idle，避免版本变更导致页面崩溃。 */
+    var lastAutoBackupStatus: BackupTaskStatus
+        get() = runCatching {
+            BackupTaskStatus.valueOf(mmkv.getString(KEY_LAST_AUTO_BACKUP_STATUS, BackupTaskStatus.Idle.name) ?: BackupTaskStatus.Idle.name)
+        }.getOrDefault(BackupTaskStatus.Idle)
+        set(value) {
+            mmkv.putString(KEY_LAST_AUTO_BACKUP_STATUS, value.name)
+        }
+
+    /** 最近一次自动备份成功时间，0 表示没有成功记录。 */
+    var lastAutoBackupSuccessAt: Long
+        get() = mmkv.getLong(KEY_LAST_AUTO_BACKUP_SUCCESS_AT, 0L)
+        set(value) {
+            mmkv.putLong(KEY_LAST_AUTO_BACKUP_SUCCESS_AT, value)
+        }
+
+    /** 最近一次自动备份失败原因，调用方只能写入脱敏后的可行动原因。 */
+    var lastAutoBackupFailureReason: String
+        get() = mmkv.getString(KEY_LAST_AUTO_BACKUP_FAILURE_REASON, "") ?: ""
+        set(value) {
+            mmkv.putString(KEY_LAST_AUTO_BACKUP_FAILURE_REASON, value)
+        }
+
+    /** 最近一次自动备份跳过原因，和失败原因分开保存。 */
+    var lastAutoBackupSkipReason: String
+        get() = mmkv.getString(KEY_LAST_AUTO_BACKUP_SKIP_REASON, "") ?: ""
+        set(value) {
+            mmkv.putString(KEY_LAST_AUTO_BACKUP_SKIP_REASON, value)
+        }
+
+    /** WebDAV 目标健康状态缓存，页面进入时只读缓存，不自动发网络请求。 */
+    var webDavHealth: BackupTargetHealth
+        get() = runCatching {
+            BackupTargetHealth.valueOf(mmkv.getString(KEY_WEBDAV_HEALTH, BackupTargetHealth.Unknown.name) ?: BackupTargetHealth.Unknown.name)
+        }.getOrDefault(BackupTargetHealth.Unknown)
+        set(value) {
+            mmkv.putString(KEY_WEBDAV_HEALTH, value.name)
+        }
+
+    /** WebDAV 最近健康检查时间，0 表示从未检查。 */
+    var webDavHealthCheckedAt: Long
+        get() = mmkv.getLong(KEY_WEBDAV_HEALTH_CHECKED_AT, 0L)
+        set(value) {
+            mmkv.putLong(KEY_WEBDAV_HEALTH_CHECKED_AT, value)
+        }
+
+    /** 最近一次自动备份成功摘要；解析失败会清空并回退为空，避免坏配置持续影响页面。 */
+    var lastBackupSuccessSummary: BackupSuccessSummary?
+        get() {
+            val text = mmkv.getString(KEY_LAST_BACKUP_SUCCESS_SUMMARY, "")?.takeIf { it.isNotBlank() } ?: return null
+            return runCatching { BackupJson.decodeSuccessSummary(text) }.getOrElse {
+                mmkv.removeValueForKey(KEY_LAST_BACKUP_SUCCESS_SUMMARY)
+                null
+            }
+        }
+        set(value) {
+            if (value == null) {
+                mmkv.removeValueForKey(KEY_LAST_BACKUP_SUCCESS_SUMMARY)
+            } else {
+                mmkv.putString(KEY_LAST_BACKUP_SUCCESS_SUMMARY, BackupJson.encodeSuccessSummary(value))
+            }
         }
 }

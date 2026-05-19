@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logI
+import com.cla.clip.master.work.BackupAutoScheduler
 import com.cla.clip.master.work.ShizukuWorkScheduler
 
 class BootRebuildReceiver : BroadcastReceiver() {
@@ -15,17 +16,19 @@ class BootRebuildReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent?) {
 
-        logD(TAG) { "onReceive: action=${intent?.action}" }
+        logD(TAG) { "收到系统广播 action=${intent?.action}" }
 
         when (intent?.action) {
             Intent.ACTION_BOOT_COMPLETED -> {
-                logI(TAG) { "onReceive: 系统启动" }
+                logI(TAG) { "收到系统启动广播" }
                 ShizukuWorkScheduler.schedulePeriodic(context)
+                BackupAutoScheduler.reschedule(context)
             }
 
             Intent.ACTION_MY_PACKAGE_REPLACED -> {
-                logI(TAG) { "onReceive: 应用升级" }
+                logI(TAG) { "收到应用升级广播" }
                 ShizukuWorkScheduler.schedulePeriodic(context)
+                BackupAutoScheduler.reschedule(context)
             }
         }
     }

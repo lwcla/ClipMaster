@@ -41,6 +41,9 @@ class RecycleBinCleanupWorker @AssistedInject constructor(
         return runCatching {
             val days = AppSetting.recycleBinRetentionDays
             val count = clipRepository.get().cleanupExpiredRecycleBinClips(days)
+            if (count > 0) {
+                BackupAutoScheduler.markDirtyAndSchedule(applicationContext)
+            }
             logD(TAG) { "doWork: 清理过期回收站数据 days=$days count=$count" }
             Result.success()
         }.getOrElse { throwable ->

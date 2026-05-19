@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.backup.BackupExportResult
 import com.cla.clip.base.general.backup.BackupFailure
+import com.cla.clip.base.general.backup.BackupKind
 import com.cla.clip.base.general.backup.BackupPreview
 import com.cla.clip.base.general.backup.BackupRepository
 import com.cla.clip.base.general.backup.BackupRestoreReport
@@ -16,11 +17,24 @@ import com.cla.clip.base.general.backup.BackupSource
 import com.cla.clip.base.general.backup.RemoteBackupFile
 import com.cla.clip.base.general.backup.WebDavClient
 import com.cla.clip.base.general.backup.WebDavConfig
+import com.cla.clip.base.general.backup.BackupSafetySnapshotResult
+import com.cla.clip.base.general.backup.BackupSuccessSummary
+import com.cla.clip.base.general.backup.BackupTargetHealth
+import com.cla.clip.base.general.backup.BackupTaskStatus
+import com.cla.clip.base.general.backup.backupReasonCode
 import com.cla.clip.base.general.backup.buildBackupFileName
 import com.cla.clip.base.general.backup.buildBackupDeviceLabel
+import com.cla.clip.base.general.backup.logCode
+import com.cla.clip.base.general.backup.newBackupTaskId
 import com.cla.clip.base.general.backup.normalizeWebDavRemoteDir
+import com.cla.clip.base.general.backup.toLogFields
 import com.cla.clip.base.general.config.AppSetting
+import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
+import com.cla.clip.base.general.utils.logI
+import com.cla.clip.base.general.utils.logW
+import com.cla.clip.master.work.BackupAutoScheduler
+import com.cla.clip.master.work.BackupTaskGate
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -52,10 +66,15 @@ class BackupVm @Inject constructor(
     private val webDavClient: WebDavClient,
     /** 本地备份文件夹写入器，负责 SAF 目录下的文件创建和字节写入。 */
     private val localBackupDirectoryWriter: LocalBackupDirectoryWriter,
+    /** 应用私有安全快照存储，用于用户未设置本地目录时的恢复回滚点。 */
+    private val privateSafetySnapshotStore: PrivateSafetySnapshotStore,
 ) : ViewModel() {
     companion object {
         /** 日志标签，只记录失败类型，不记录用户内容或密码。 */
         private const val TAG = "BackupVm"
+
+        /** 恢复前安全快照固定保留 3 份，不占用用户配置的普通自动备份保留份数。 */
+        private const val SAFETY_SNAPSHOT_RETENTION_COUNT = 3
     }
 
     /** 页面状态。 */
@@ -83,18 +102,22 @@ class BackupVm @Inject constructor(
     /** 更新 WebDAV 服务地址。 */
     fun updateEndpoint(value: String) {
         AppSetting.webDavEndpoint = value
-        _uiState.update { it.copy(webDavEndpoint = value) }
+        AppSetting.webDavHealth = BackupTargetHealth.Unknown
+        BackupAutoScheduler.reschedule(appContext)
+        _uiState.update { it.copy(webDavEndpoint = value, webDavHealth = BackupTargetHealth.Unknown) }
     }
 
     /** 更新 WebDAV 用户名。 */
     fun updateUsername(value: String) {
         AppSetting.webDavUsername = value
+        AppSetting.webDavHealth = BackupTargetHealth.Unknown
         _uiState.update { it.copy(webDavUsername = value) }
     }
 
     /** 更新 WebDAV 密码。 */
     fun updatePassword(value: String) {
         AppSetting.webDavPassword = value
+        AppSetting.webDavHealth = BackupTargetHealth.Unknown
         _uiState.update { it.copy(webDavPassword = value) }
     }
 
@@ -105,9 +128,12 @@ class BackupVm @Inject constructor(
             normalizeWebDavRemoteDir(value)
         }.onSuccess { normalized ->
             AppSetting.webDavRemoteDir = normalized
-            _uiState.update { it.copy(webDavRemoteDir = normalized) }
+            AppSetting.webDavHealth = BackupTargetHealth.Unknown
+            BackupAutoScheduler.reschedule(appContext)
+            _uiState.update { it.copy(webDavRemoteDir = normalized, webDavHealth = BackupTargetHealth.Unknown) }
         }.onFailure {
             AppSetting.webDavRemoteDir = value
+            AppSetting.webDavHealth = BackupTargetHealth.Unknown
         }
     }
 
@@ -115,6 +141,45 @@ class BackupVm @Inject constructor(
     fun updateAllowHttp(value: Boolean) {
         AppSetting.webDavAllowInsecureHttp = value
         _uiState.update { it.copy(webDavAllowHttp = value) }
+        BackupAutoScheduler.reschedule(appContext)
+    }
+
+    /** 更新自动备份统一开关；开启时要求至少有一个目标，并立即排队一次生成首个恢复点。 */
+    fun updateAutoBackupEnabled(value: Boolean) {
+        if (value && !hasAnyBackupTarget()) {
+            logW(TAG) { "自动备份开关变更被拒绝 reasonCode=no_available_target requested=$value" }
+            emitMessage(R.string.base_general_backup_auto_no_target)
+            return
+        }
+        AppSetting.autoBackupEnabled = value
+        if (value) {
+            AppSetting.backupDirty = true
+            BackupAutoScheduler.reschedule(appContext)
+            BackupAutoScheduler.enqueueNow(appContext)
+            emitMessage(R.string.base_general_backup_auto_enabled_hint)
+        } else {
+            BackupAutoScheduler.reschedule(appContext)
+        }
+        logI(TAG) {
+            "自动备份开关已变更 enabled=$value hasLocalTarget=${uiState.value.localBackupDirUri.isNotBlank()} " +
+                "webDavHealth=${uiState.value.webDavHealth} dirty=${AppSetting.backupDirty}"
+        }
+        _uiState.update { it.copy(autoBackupEnabled = value, backupDirty = AppSetting.backupDirty) }
+    }
+
+    /** 更新自动备份保留份数，保存后重新调度以便后续任务按新配置清理。 */
+    fun updateRetentionCount(value: Int) {
+        AppSetting.backupRetentionCount = value
+        BackupAutoScheduler.reschedule(appContext)
+        logD(TAG) { "自动备份保留份数已变更 value=${AppSetting.backupRetentionCount}" }
+        _uiState.update { it.copy(backupRetentionCount = AppSetting.backupRetentionCount) }
+    }
+
+    /** 更新仅 Wi-Fi 约束。 */
+    fun updateOnlyWifi(value: Boolean) {
+        AppSetting.autoBackupOnlyWifi = value
+        BackupAutoScheduler.reschedule(appContext)
+        _uiState.update { it.copy(autoBackupOnlyWifi = value) }
     }
 
     /** 保存用户选择的本地备份目录授权，并把 URI 同步到页面状态；授权失败时不保存，避免后续重启后写入失败。 */
@@ -126,10 +191,15 @@ class BackupVm @Inject constructor(
             val label = resolveLocalBackupDirLabel(uri)
             AppSetting.localBackupDirUri = uri.toString()
             AppSetting.localBackupDirLabel = label
+            BackupAutoScheduler.reschedule(appContext)
             _uiState.update { it.copy(localBackupDirUri = uri.toString(), localBackupDirLabel = label) }
+            refreshLocalBackups()
+            logI(TAG) { "本地备份目录已保存 hasUri=true labelLength=${label.length}" }
             emitMessage(R.string.base_general_local_backup_dir_save_success)
         }.onFailure { throwable ->
-            logE(TAG, throwable) { "updateLocalBackupDir: persist permission failed" }
+            logE(TAG) {
+                "本地备份目录保存失败 reasonCode=${throwable.backupReasonCode()} type=${throwable::class.simpleName}"
+            }
             emitMessage(R.string.base_general_backup_error_storage)
         }
     }
@@ -138,17 +208,34 @@ class BackupVm @Inject constructor(
     fun clearLocalBackupDir() {
         AppSetting.localBackupDirUri = ""
         AppSetting.localBackupDirLabel = ""
-        _uiState.update { it.copy(localBackupDirUri = "", localBackupDirLabel = "") }
+        BackupAutoScheduler.reschedule(appContext)
+        _uiState.update { it.copy(localBackupDirUri = "", localBackupDirLabel = "", localBackups = emptyList()) }
+        logI(TAG) { "本地备份目录已清除" }
     }
 
     /** 导出本地备份到用户选择的 URI。 */
     fun exportToUri(uri: Uri) {
         viewModelScope.launch {
-            runOperation(BackupBusyOperation.Exporting) {
-                val export = backupRepository.createSnapshot(BackupSource.LocalManual)
-                writeBytes(uri, export.packageBytes)
-                _uiState.update { it.copy(lastExport = export) }
-                emitMessage(R.string.base_general_backup_export_success)
+            val taskId = newBackupTaskId("manual-local")
+            runOperation(BackupBusyOperation.Exporting, taskId = taskId) {
+                BackupTaskGate.runExclusive {
+                    val startedAt = System.currentTimeMillis()
+                    logI(TAG) { "开始手动本地备份 taskId=$taskId operation=manual_local_backup" }
+                    val export = backupRepository.createSnapshot(BackupSource.LocalManual)
+                    logD(TAG) {
+                        "手动本地备份快照已生成 taskId=$taskId fileName=${export.fileName} fileSize=${export.packageBytes.size} " +
+                            "${export.snapshot.summary.toLogFields()}"
+                    }
+                    writeBytes(uri, export.packageBytes)
+                    _uiState.update { it.copy(lastExport = export) }
+                    AppSetting.backupDirty = false
+                    _uiState.update { it.copy(backupDirty = false) }
+                    logI(TAG) {
+                        "手动本地备份成功 taskId=$taskId fileName=${export.fileName} fileSize=${export.packageBytes.size} " +
+                            "durationMs=${System.currentTimeMillis() - startedAt}"
+                    }
+                    emitMessage(R.string.base_general_backup_export_success)
+                }
             }
         }
     }
@@ -174,17 +261,34 @@ class BackupVm @Inject constructor(
     fun restoreSelectedBackup() {
         val packageBytes = uiState.value.selectedBackupBytes ?: return
         viewModelScope.launch {
-            runOperation(BackupBusyOperation.Restoring) {
-                val report = backupRepository.restoreSnapshot(packageBytes)
-                _uiState.update { it.copy(lastRestoreReport = report) }
-                emitMessage(
-                    appContext.getString(
-                        R.string.base_general_backup_restore_success,
-                        report.insertedCount,
-                        report.updatedCount,
-                        report.skippedCount
+            val taskId = newBackupTaskId("restore")
+            runOperation(BackupBusyOperation.Restoring, taskId = taskId) {
+                BackupTaskGate.runExclusive {
+                    val startedAt = System.currentTimeMillis()
+                    val preview = uiState.value.selectedPreview
+                    logI(TAG) {
+                        "开始恢复备份 taskId=$taskId backupKind=${preview?.backupKind?.logCode()} " +
+                            "fileSize=${packageBytes.size} ${preview?.summary?.toLogFields().orEmpty()}"
+                    }
+                    val safetySnapshot = createSafetySnapshot(taskId)
+                    val report = backupRepository.restoreSnapshot(packageBytes).copy(safetySnapshot = safetySnapshot)
+                    AppSetting.markBackupDirty()
+                    BackupAutoScheduler.markDirtyAndSchedule(appContext)
+                    _uiState.update { it.copy(lastRestoreReport = report) }
+                    logI(TAG) {
+                        "备份恢复成功 taskId=$taskId inserted=${report.insertedCount} updated=${report.updatedCount} " +
+                            "skipped=${report.skippedCount} safetyFile=${safetySnapshot.fileName} " +
+                            "safetySize=${safetySnapshot.fileSize} durationMs=${System.currentTimeMillis() - startedAt}"
+                    }
+                    emitMessage(
+                        appContext.getString(
+                            R.string.base_general_backup_restore_success,
+                            report.insertedCount,
+                            report.updatedCount,
+                            report.skippedCount
+                        )
                     )
-                )
+                }
             }
         }
     }
@@ -192,11 +296,25 @@ class BackupVm @Inject constructor(
     /** 测试 WebDAV 连接，并在成功时保存规范化目录。 */
     fun testWebDav() {
         viewModelScope.launch {
-            runOperation(BackupBusyOperation.TestingWebDav) {
+            val taskId = newBackupTaskId("webdav-test")
+            runOperation(
+                operation = BackupBusyOperation.TestingWebDav,
+                taskId = taskId,
+                onFailure = { markWebDavUnavailable(taskId, it) }
+            ) {
+                val startedAt = System.currentTimeMillis()
                 val config = currentWebDavConfig()
-                webDavClient.testAndPrepare(config)
+                logI(TAG) {
+                    "开始测试 WebDAV 连接 taskId=$taskId allowHttp=${config.allowInsecureHttp} " +
+                        "hasUsername=${config.username.isNotBlank()} remoteDirLength=${config.remoteDir.length}"
+                }
+                webDavClient.testAndPrepare(config, taskId)
+                AppSetting.webDavHealth = BackupTargetHealth.Available
+                AppSetting.webDavHealthCheckedAt = System.currentTimeMillis()
+                BackupAutoScheduler.reschedule(appContext)
                 _uiState.update { it.copy(webDavRemoteDir = normalizeWebDavRemoteDir(config.remoteDir)) }
                 refreshRemoteBackupsInternal()
+                logI(TAG) { "WebDAV 连接测试成功 taskId=$taskId durationMs=${System.currentTimeMillis() - startedAt}" }
                 emitMessage(R.string.base_general_webdav_test_success)
             }
         }
@@ -205,13 +323,31 @@ class BackupVm @Inject constructor(
     /** 手动上传一份 WebDAV 备份。 */
     fun uploadWebDavBackup() {
         viewModelScope.launch {
-            runOperation(BackupBusyOperation.UploadingWebDav) {
-                val export = backupRepository.createSnapshot(BackupSource.WebDavManual)
-                writeConfiguredLocalBackupIfNeeded(export)
-                webDavClient.uploadBackup(currentWebDavConfig(), export)
-                _uiState.update { it.copy(lastExport = export) }
-                emitMessage(R.string.base_general_webdav_upload_success)
-                refreshRemoteBackupsInternal()
+            val taskId = newBackupTaskId("manual-webdav")
+            runOperation(BackupBusyOperation.UploadingWebDav, taskId = taskId) {
+                BackupTaskGate.runExclusive {
+                    val startedAt = System.currentTimeMillis()
+                    logI(TAG) {
+                        "开始手动 WebDAV 备份 taskId=$taskId hasLocalDir=${uiState.value.localBackupDirUri.isNotBlank()} " +
+                            "webDavHealth=${uiState.value.webDavHealth}"
+                    }
+                    val export = backupRepository.createSnapshot(BackupSource.WebDavManual)
+                    logD(TAG) {
+                        "手动 WebDAV 备份快照已生成 taskId=$taskId fileName=${export.fileName} fileSize=${export.packageBytes.size} " +
+                            "${export.snapshot.summary.toLogFields()}"
+                    }
+                    writeConfiguredLocalBackupIfNeeded(export, taskId)
+                    webDavClient.uploadBackup(currentWebDavConfig(), export, taskId)
+                    _uiState.update { it.copy(lastExport = export) }
+                    AppSetting.backupDirty = false
+                    _uiState.update { it.copy(backupDirty = false) }
+                    logI(TAG) {
+                        "手动 WebDAV 备份成功 taskId=$taskId fileName=${export.fileName} fileSize=${export.packageBytes.size} " +
+                            "durationMs=${System.currentTimeMillis() - startedAt}"
+                    }
+                    emitMessage(R.string.base_general_webdav_upload_success)
+                    refreshRemoteBackupsInternal()
+                }
             }
         }
     }
@@ -219,8 +355,44 @@ class BackupVm @Inject constructor(
     /** 刷新远端备份列表。 */
     fun refreshRemoteBackups() {
         viewModelScope.launch {
-            runOperation(BackupBusyOperation.RefreshingWebDav) {
+            val taskId = newBackupTaskId("webdav-list")
+            runOperation(
+                operation = BackupBusyOperation.RefreshingWebDav,
+                taskId = taskId,
+                onFailure = { markWebDavUnavailable(taskId, it) }
+            ) {
+                logD(TAG) { "开始刷新 WebDAV 备份列表 taskId=$taskId" }
                 refreshRemoteBackupsInternal()
+            }
+        }
+    }
+
+    /** 刷新本地备份目录列表，只读取 manifest 和文件元数据。 */
+    fun refreshLocalBackups() {
+        val dir = uiState.value.localBackupDirUri.takeIf { it.isNotBlank() } ?: return
+        viewModelScope.launch {
+            val taskId = newBackupTaskId("local-list")
+            runOperation(BackupBusyOperation.RefreshingLocal, taskId = taskId) {
+                val files = localBackupDirectoryWriter.listBackups(Uri.parse(dir))
+                _uiState.update { it.copy(localBackups = files) }
+                logD(TAG) { "本地备份列表刷新成功 taskId=$taskId count=${files.size}" }
+            }
+        }
+    }
+
+    /** 从本地备份目录列表读取并预览。 */
+    fun previewLocalBackup(file: LocalBackupFile) {
+        viewModelScope.launch {
+            runOperation(BackupBusyOperation.PreviewingLocal) {
+                val bytes = localBackupDirectoryWriter.readBackupBytes(file.uri)
+                val preview = backupRepository.previewSnapshot(bytes)
+                _uiState.update {
+                    it.copy(
+                        selectedBackupBytes = bytes,
+                        selectedPreview = preview,
+                        selectedRemoteFile = null
+                    )
+                }
             }
         }
     }
@@ -257,13 +429,59 @@ class BackupVm @Inject constructor(
     /** 刷新远端备份列表的内部实现，调用方负责包装加载状态。 */
     private suspend fun refreshRemoteBackupsInternal() {
         val files = webDavClient.listBackups(currentWebDavConfig())
-        _uiState.update { it.copy(remoteBackups = files) }
+        AppSetting.webDavHealth = BackupTargetHealth.Available
+        AppSetting.webDavHealthCheckedAt = System.currentTimeMillis()
+        _uiState.update {
+            it.copy(
+                remoteBackups = files,
+                webDavHealth = AppSetting.webDavHealth,
+                webDavHealthCheckedAt = AppSetting.webDavHealthCheckedAt
+            )
+        }
+        logD(TAG) { "WebDAV 备份列表刷新成功 count=${files.size}" }
     }
 
     /** 如果用户设置了本地备份目录，WebDAV 备份前先写入同一份 zip 快照和 manifest。 */
-    private suspend fun writeConfiguredLocalBackupIfNeeded(export: BackupExportResult) {
+    private suspend fun writeConfiguredLocalBackupIfNeeded(export: BackupExportResult, taskId: String) {
         val dir = uiState.value.localBackupDirUri.takeIf { it.isNotBlank() } ?: return
-        localBackupDirectoryWriter.writeExport(Uri.parse(dir), export)
+        logD(TAG) { "开始写入 WebDAV 备份的本地镜像 taskId=$taskId fileName=${export.fileName} fileSize=${export.packageBytes.size}" }
+        localBackupDirectoryWriter.writeExport(Uri.parse(dir), export, taskId)
+        logD(TAG) { "WebDAV 备份的本地镜像写入成功 taskId=$taskId fileName=${export.fileName}" }
+    }
+
+    /** 恢复前创建安全快照；失败会向上抛出并阻止恢复写库。 */
+    private suspend fun createSafetySnapshot(taskId: String): BackupSafetySnapshotResult {
+        val startedAt = System.currentTimeMillis()
+        logD(TAG) { "开始创建恢复前安全快照 taskId=$taskId target=${if (uiState.value.localBackupDirUri.isNotBlank()) "local_dir" else "private_dir"}" }
+        val export = backupRepository.createSnapshot(BackupSource.LocalManual, backupKind = BackupKind.Safety)
+        val dir = uiState.value.localBackupDirUri.takeIf { it.isNotBlank() }
+        return if (dir != null) {
+            val result = localBackupDirectoryWriter.writeSafetySnapshot(
+                dirUri = Uri.parse(dir),
+                export = export,
+                locationLabel = uiState.value.localBackupDirLabel.ifBlank { appContext.getString(R.string.base_general_local_backup) },
+                taskId = taskId
+            )
+            localBackupDirectoryWriter.pruneBackups(
+                dirUri = Uri.parse(dir),
+                keepCount = SAFETY_SNAPSHOT_RETENTION_COUNT,
+                backupKind = BackupKind.Safety,
+                deviceLabel = buildBackupDeviceLabel(AppSetting.pid),
+                taskId = taskId
+            )
+            logI(TAG) {
+                "恢复前安全快照创建成功 taskId=$taskId target=local_dir fileName=${result.fileName} fileSize=${result.fileSize} " +
+                    "durationMs=${System.currentTimeMillis() - startedAt}"
+            }
+            result
+        } else {
+            privateSafetySnapshotStore.writeSafetySnapshot(export, taskId).also { result ->
+                logI(TAG) {
+                    "恢复前安全快照创建成功 taskId=$taskId target=private_dir fileName=${result.fileName} fileSize=${result.fileSize} " +
+                        "durationMs=${System.currentTimeMillis() - startedAt}"
+                }
+            }
+        }
     }
 
     /** 解析本地备份目录的用户可读展示名，优先使用系统返回的 displayName，失败时用 URI 尾段兜底。 */
@@ -297,16 +515,49 @@ class BackupVm @Inject constructor(
         )
     }
 
+    /** 判断是否存在任一备份目标；WebDAV 目标只检查基础配置，真实可写性仍由测试连接或 Worker 处理。 */
+    private fun hasAnyBackupTarget(): Boolean {
+        val state = uiState.value
+        return state.localBackupDirUri.isNotBlank() ||
+            (state.webDavEndpoint.isNotBlank() && state.webDavHealth == BackupTargetHealth.Available)
+    }
+
     /** 统一包装长任务加载状态和失败提示，保留具体操作类型给 UI 决定展示方式。 */
-    private suspend fun runOperation(operation: BackupBusyOperation, block: suspend () -> Unit) {
+    private suspend fun runOperation(
+        operation: BackupBusyOperation,
+        taskId: String? = null,
+        onFailure: (Throwable) -> Unit = {},
+        block: suspend () -> Unit
+    ) {
         _uiState.update { it.copy(busyOperation = operation) }
         runCatching {
             block()
         }.onFailure { throwable ->
-            logE(TAG, throwable) { "backup operation failed type=${throwable::class.simpleName}" }
+            logE(TAG) {
+                "备份页面操作失败 ${com.cla.clip.base.general.backup.backupTaskLogField(taskId)}operation=$operation " +
+                    "reasonCode=${throwable.backupReasonCode()} type=${throwable::class.simpleName}"
+            }
+            onFailure(throwable)
             emitMessage(mapErrorMessage(throwable))
         }
         _uiState.update { it.copy(busyOperation = BackupBusyOperation.None) }
+    }
+
+    /** 记录 WebDAV 当前不可用；只缓存健康状态，不输出 URL、账号或密码。 */
+    private fun markWebDavUnavailable(taskId: String?, throwable: Throwable) {
+        AppSetting.webDavHealth = BackupTargetHealth.Unavailable
+        AppSetting.webDavHealthCheckedAt = System.currentTimeMillis()
+        BackupAutoScheduler.reschedule(appContext)
+        _uiState.update {
+            it.copy(
+                webDavHealth = AppSetting.webDavHealth,
+                webDavHealthCheckedAt = AppSetting.webDavHealthCheckedAt
+            )
+        }
+        logW(TAG) {
+            "WebDAV 健康状态已标记为不可用 ${com.cla.clip.base.general.backup.backupTaskLogField(taskId)}" +
+                "reasonCode=${throwable.backupReasonCode()} type=${throwable::class.simpleName}"
+        }
     }
 
     /** 向用户展示字符串资源提示。 */
@@ -328,6 +579,7 @@ class BackupVm @Inject constructor(
             is BackupFailure.ChecksumMismatch -> R.string.base_general_backup_error_checksum
             is BackupFailure.AuthenticationFailed -> R.string.base_general_backup_error_auth
             is BackupFailure.StorageNotWritable -> R.string.base_general_backup_error_storage
+            is BackupFailure.FileTooLarge -> R.string.base_general_backup_error_file_too_large
             else -> R.string.base_general_backup_error_unknown
         }
         return appContext.getString(resId)
@@ -358,7 +610,18 @@ class BackupVm @Inject constructor(
             localBackupDirUri = AppSetting.localBackupDirUri,
             localBackupDirLabel = AppSetting.localBackupDirLabel.ifBlank {
                 AppSetting.localBackupDirUri.takeIf { it.isNotBlank() }?.let { resolveLocalBackupDirLabel(Uri.parse(it)) } ?: ""
-            }
+            },
+            autoBackupEnabled = AppSetting.autoBackupEnabled,
+            backupRetentionCount = AppSetting.backupRetentionCount,
+            autoBackupOnlyWifi = AppSetting.autoBackupOnlyWifi,
+            backupDirty = AppSetting.backupDirty,
+            lastAutoBackupStatus = AppSetting.lastAutoBackupStatus,
+            lastAutoBackupSuccessAt = AppSetting.lastAutoBackupSuccessAt,
+            lastAutoBackupFailureReason = AppSetting.lastAutoBackupFailureReason,
+            lastAutoBackupSkipReason = AppSetting.lastAutoBackupSkipReason,
+            webDavHealth = AppSetting.webDavHealth,
+            webDavHealthCheckedAt = AppSetting.webDavHealthCheckedAt,
+            lastBackupSuccessSummary = AppSetting.lastBackupSuccessSummary
         )
     }
 }
@@ -384,6 +647,8 @@ enum class BackupBusyOperation {
     UploadingWebDav,
     /** 正在刷新 WebDAV 备份列表。 */
     RefreshingWebDav,
+    /** 正在刷新本地备份目录列表。 */
+    RefreshingLocal,
     /** 正在下载远端备份并预览。 */
     PreviewingRemote,
 }
@@ -408,6 +673,30 @@ data class BackupUiState(
     val localBackupDirLabel: String = "",
     /** 远端备份列表。 */
     val remoteBackups: List<RemoteBackupFile> = emptyList(),
+    /** 本地备份目录列表。 */
+    val localBackups: List<LocalBackupFile> = emptyList(),
+    /** 自动备份统一开关。 */
+    val autoBackupEnabled: Boolean = false,
+    /** 自动备份保留份数。 */
+    val backupRetentionCount: Int = AppSetting.DEFAULT_BACKUP_RETENTION_COUNT,
+    /** WebDAV 自动备份仅 Wi-Fi。 */
+    val autoBackupOnlyWifi: Boolean = false,
+    /** 当前是否存在未备份变化。 */
+    val backupDirty: Boolean = true,
+    /** 最近自动备份状态。 */
+    val lastAutoBackupStatus: BackupTaskStatus = BackupTaskStatus.Idle,
+    /** 最近自动备份成功时间。 */
+    val lastAutoBackupSuccessAt: Long = 0,
+    /** 最近自动备份失败原因。 */
+    val lastAutoBackupFailureReason: String = "",
+    /** 最近自动备份跳过原因。 */
+    val lastAutoBackupSkipReason: String = "",
+    /** WebDAV 健康状态缓存。 */
+    val webDavHealth: BackupTargetHealth = BackupTargetHealth.Unknown,
+    /** WebDAV 最近健康检查时间。 */
+    val webDavHealthCheckedAt: Long = 0,
+    /** 最近一次成功自动备份摘要。 */
+    val lastBackupSuccessSummary: BackupSuccessSummary? = null,
     /** 当前预览的 zip 备份包字节。 */
     val selectedBackupBytes: ByteArray? = null,
     /** 当前预检摘要。 */

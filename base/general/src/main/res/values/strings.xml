@@ -258,13 +258,47 @@
     <string name="base_general_backup_created_at">创建于：%1$s</string>
     <string name="base_general_backup_confirm_restore_title">恢复备份</string>
     <string name="base_general_backup_confirm_restore_message">恢复会合并到当前数据，不会清空本地已有数据。是否继续？</string>
+    <string name="base_general_backup_confirm_restore_safety_message">这是恢复前回滚点，通常用于撤回上一次恢复。恢复会合并到当前数据，不会清空本地已有数据。是否继续？</string>
     <string name="base_general_backup_error_invalid_format">这不是剪贴板助手的备份文件</string>
     <string name="base_general_backup_error_app_mismatch">备份文件不属于当前应用</string>
     <string name="base_general_backup_error_schema">当前版本不支持该备份格式</string>
     <string name="base_general_backup_error_checksum">备份文件可能已损坏</string>
     <string name="base_general_backup_error_auth">WebDAV 账号或密码错误</string>
     <string name="base_general_backup_error_storage">备份目录不可写</string>
+    <string name="base_general_backup_error_file_too_large">备份文件过大，请先清理数据或等待后续流式备份支持</string>
     <string name="base_general_backup_error_unknown">操作失败，请稍后重试</string>
+    <string name="base_general_backup_auto_title">自动备份</string>
+    <string name="base_general_backup_auto_no_target">请先设置本地备份文件夹，或测试通过 WebDAV 连接</string>
+    <string name="base_general_backup_auto_enabled_hint">自动备份已开启，正在排队生成一次备份</string>
+    <string name="base_general_backup_retention_count">自动备份保留：%1$d 份</string>
+    <string name="base_general_backup_auto_only_wifi">WebDAV 仅 Wi-Fi 备份</string>
+    <string name="base_general_backup_auto_skip_disabled">自动备份未开启</string>
+    <string name="base_general_backup_auto_skip_clean">数据没有变化，已跳过</string>
+    <string name="base_general_backup_auto_skip_no_target">未配置可用备份目标</string>
+    <string name="base_general_backup_auto_failure_auth">WebDAV 认证失败，请检查账号或密码</string>
+    <string name="base_general_backup_auto_failure_storage">备份目录不可写，请重新选择目录或检查 WebDAV 权限</string>
+    <string name="base_general_backup_auto_failure_remote">网络或 WebDAV 服务异常，稍后会重试</string>
+    <string name="base_general_backup_auto_failure_checksum">备份校验失败，请稍后重试</string>
+    <string name="base_general_backup_auto_failure_parse">备份文件生成失败，请稍后重试</string>
+    <string name="base_general_backup_auto_failure_unknown">自动备份失败，稍后会重试</string>
+    <string name="base_general_backup_auto_status_idle">还没有自动备份记录</string>
+    <string name="base_general_backup_auto_status_running">自动备份正在运行</string>
+    <string name="base_general_backup_auto_status_success">最近自动备份成功：%1$s</string>
+    <string name="base_general_backup_auto_status_partial">自动备份部分成功：%1$s</string>
+    <string name="base_general_backup_auto_status_skipped">自动备份已跳过：%1$s</string>
+    <string name="base_general_backup_auto_status_retry">自动备份等待重试：%1$s</string>
+    <string name="base_general_backup_auto_status_failed">自动备份失败：%1$s</string>
+    <string name="base_general_backup_auto_skip_unknown">当前无需备份</string>
+    <string name="base_general_backup_last_success_summary">最近成功：%1$s，剪贴 %2$d，大小 %3$s；清理本地 %4$d 份，WebDAV %5$d 份</string>
+    <string name="base_general_webdav_health_unknown">WebDAV 状态：未检查</string>
+    <string name="base_general_webdav_health_available">WebDAV 状态：可用（%1$s）</string>
+    <string name="base_general_webdav_health_unavailable">WebDAV 状态：不可用（%1$s）</string>
+    <string name="base_general_backup_kind_manual">类型：手动备份</string>
+    <string name="base_general_backup_kind_auto">类型：自动备份</string>
+    <string name="base_general_backup_kind_safety">类型：恢复前回滚点</string>
+    <string name="base_general_backup_kind_unknown">类型：未知</string>
+    <string name="base_general_backup_private_safety_location">应用私有目录</string>
+    <string name="base_general_backup_safety_snapshot_report">恢复前回滚点：%1$s\n位置：%2$s</string>
     <string name="base_general_shizuku" translatable="false">shizuku</string>
 
 </resources>

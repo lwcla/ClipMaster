@@ -3,6 +3,7 @@ package com.cla.clip.base.general.repository
 import android.content.Context
 import androidx.paging.PagingSource
 import com.cla.clip.base.general.R
+import com.cla.clip.base.general.config.AppSetting
 import com.cla.clip.base.general.dao.DownloadDao
 import com.cla.clip.base.general.dao.DownloadTaskData
 import com.cla.clip.base.general.dao.DownloadTaskData.Companion.STATUS_DOWNLOADING
@@ -54,7 +55,9 @@ class DownloadRepository @Inject constructor(
             fileName = fileName
         )
 
-        return downloadDao.insertTask(task)
+        val id = downloadDao.insertTask(task)
+        AppSetting.markBackupDirty()
+        return id
     }
 
     /** 观察全部视频下载历史，按最近更新倒序返回，供下载记录页展示和多选管理。 */
@@ -122,16 +125,19 @@ class DownloadRepository @Inject constructor(
     /** 记录当前下载占用的 MediaStore 输出 URI（用于异常恢复时清理半成品） */
     suspend fun markPath(taskId: Long, uri: String?, savePath: String?) {
         downloadDao.updatePath(taskId, uri, savePath)
+        AppSetting.markBackupDirty()
     }
 
     /** 标记任务下载成功；输出路径应已通过 markPath 写入。 */
     suspend fun markSuccess(taskId: Long) {
         downloadDao.updateStatus(taskId, STATUS_SUCCESS)
+        AppSetting.markBackupDirty()
     }
 
     /** 标记任务失败，并使用字符串资源兜底错误文案，避免 UI 展示空错误。 */
     suspend fun markFailed(context: Context, taskId: Long, errorMsg: String?) {
         downloadDao.updateStatus(id = taskId, status = STATUS_FAILED, errorMsg = errorMsg ?: context.getString(R.string.base_general_download_failed))
+        AppSetting.markBackupDirty()
     }
 
     /** 按 id 获取任务，Worker 启动时用来读取 URL、请求头和文件名。 */
@@ -142,6 +148,7 @@ class DownloadRepository @Inject constructor(
     /** 删除任务记录；不会删除已经发布到媒体库的视频文件。 */
     suspend fun deleteTask(taskId: Long) {
         downloadDao.deleteTask(taskId)
+        AppSetting.markBackupDirty()
     }
 
     /** 批量读取任务，用于删除前取消 Worker、清理精确关联的媒体项或生成结果汇总。 */
@@ -154,5 +161,6 @@ class DownloadRepository @Inject constructor(
     suspend fun deleteTasks(taskIds: Set<Long>) {
         if (taskIds.isEmpty()) return
         downloadDao.deleteTasks(taskIds)
+        AppSetting.markBackupDirty()
     }
 }

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -47,6 +48,9 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cla.clip.base.general.R
+import com.cla.clip.base.general.backup.BackupKind
+import com.cla.clip.base.general.backup.BackupTargetHealth
+import com.cla.clip.base.general.backup.BackupTaskStatus
 import com.cla.clip.base.general.backup.RemoteBackupFile
 import com.cla.clip.master.ui.widget.ClipMasterCard
 import com.cla.clip.master.ui.widget.TitleBar
@@ -85,6 +89,12 @@ fun BackupPage(
         }
     }
 
+    LaunchedEffect(state.localBackupDirUri) {
+        if (state.localBackupDirUri.isNotBlank()) {
+            backupVm.refreshLocalBackups()
+        }
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
@@ -102,6 +112,15 @@ fun BackupPage(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             item {
+                AutoBackupSection(
+                    state = state,
+                    onEnabledChange = backupVm::updateAutoBackupEnabled,
+                    onRetentionChange = backupVm::updateRetentionCount,
+                    onOnlyWifiChange = backupVm::updateOnlyWifi,
+                )
+            }
+
+            item {
                 LocalBackupSection(
                     state = state,
                     isBusy = state.isBusy,
@@ -109,7 +128,21 @@ fun BackupPage(
                     onImport = { importLauncher.launch(arrayOf("application/zip", "application/octet-stream")) },
                     onChooseDir = { localDirLauncher.launch(null) },
                     onClearDir = backupVm::clearLocalBackupDir,
+                    onRefreshLocal = backupVm::refreshLocalBackups,
                 )
+            }
+
+            if (state.localBackups.isNotEmpty()) {
+                items(
+                    items = state.localBackups,
+                    key = { it.fileName }
+                ) { file ->
+                    LocalBackupCard(
+                        file = file,
+                        isBusy = state.isBusy,
+                        onPreview = { backupVm.previewLocalBackup(file) }
+                    )
+                }
             }
 
             item {
@@ -155,6 +188,7 @@ fun BackupPage(
 
     if (showRestoreConfirm) {
         RestoreConfirmDialog(
+            isSafetySnapshot = state.selectedPreview?.backupKind == BackupKind.Safety,
             onConfirm = {
                 showRestoreConfirm = false
                 backupVm.restoreSelectedBackup()
@@ -170,6 +204,104 @@ fun BackupPage(
     }
 }
 
+/** 自动备份配置和状态区。 */
+@Composable
+private fun AutoBackupSection(
+    state: BackupUiState,
+    onEnabledChange: (Boolean) -> Unit,
+    onRetentionChange: (Int) -> Unit,
+    onOnlyWifiChange: (Boolean) -> Unit,
+) {
+    ClipMasterCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = androidx.compose.ui.res.stringResource(R.string.base_general_backup_auto_title),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = autoBackupStatusText(state),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = state.autoBackupEnabled,
+                    onCheckedChange = onEnabledChange,
+                    enabled = !state.isBusy
+                )
+            }
+            RetentionControl(
+                count = state.backupRetentionCount,
+                enabled = !state.isBusy,
+                onChange = onRetentionChange
+            )
+            ToggleRow(
+                title = androidx.compose.ui.res.stringResource(R.string.base_general_backup_auto_only_wifi),
+                checked = state.autoBackupOnlyWifi,
+                enabled = !state.isBusy,
+                onCheckedChange = onOnlyWifiChange
+            )
+            state.lastBackupSuccessSummary?.let { summary ->
+                Text(
+                    text = androidx.compose.ui.res.stringResource(
+                        R.string.base_general_backup_last_success_summary,
+                        summary.createdAt.toBackupDisplayTime(),
+                        summary.summary.clipCount,
+                        formatBackupSize(summary.fileSize),
+                        summary.localRetentionDeleted,
+                        summary.webDavRetentionDeleted
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+/** 保留份数加减控件，限制在 1-20。 */
+@Composable
+private fun RetentionControl(
+    count: Int,
+    enabled: Boolean,
+    onChange: (Int) -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = androidx.compose.ui.res.stringResource(R.string.base_general_backup_retention_count, count),
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyMedium
+        )
+        OutlinedButton(onClick = { onChange(count - 1) }, enabled = enabled && count > 1) {
+            Text(text = "-")
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        OutlinedButton(onClick = { onChange(count + 1) }, enabled = enabled && count < 20) {
+            Text(text = "+")
+        }
+    }
+}
+
+/** 简单开关行，用于自动备份约束设置。 */
+@Composable
+private fun ToggleRow(
+    title: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(text = title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+    }
+}
+
 /** 本地备份操作区，提供导出和选择文件预检入口。 */
 @Composable
 private fun LocalBackupSection(
@@ -179,6 +311,7 @@ private fun LocalBackupSection(
     onImport: () -> Unit,
     onChooseDir: () -> Unit,
     onClearDir: () -> Unit,
+    onRefreshLocal: () -> Unit,
 ) {
     ClipMasterCard(
         modifier = Modifier
@@ -195,11 +328,11 @@ private fun LocalBackupSection(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onExport, enabled = !isBusy) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                Button(onClick = onExport, enabled = !isBusy, modifier = Modifier.weight(1f)) {
                     Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_export_backup))
                 }
-                Button(onClick = onImport, enabled = !isBusy) {
+                Button(onClick = onImport, enabled = !isBusy, modifier = Modifier.weight(1f)) {
                     Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_import_backup))
                 }
             }
@@ -217,12 +350,15 @@ private fun LocalBackupSection(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onChooseDir, enabled = !isBusy) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(onClick = onChooseDir, enabled = !isBusy, modifier = Modifier.weight(1f)) {
                     Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_local_backup_choose_dir))
                 }
                 if (state.localBackupDirUri.isNotBlank()) {
-                    TextButton(onClick = onClearDir, enabled = !isBusy) {
+                    OutlinedButton(onClick = onRefreshLocal, enabled = !isBusy, modifier = Modifier.widthIn(min = 48.dp)) {
+                        Icon(imageVector = Icons.Default.Refresh, contentDescription = null)
+                    }
+                    TextButton(onClick = onClearDir, enabled = !isBusy, modifier = Modifier.weight(1f)) {
                         Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_local_backup_clear_dir))
                     }
                 }
@@ -333,6 +469,11 @@ private fun WebDavConfigSection(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            Text(
+                text = webDavHealthText(state),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -348,10 +489,47 @@ private fun EmptyRemoteBackups() {
     )
 }
 
+/** 本地备份列表项。 */
+@Composable
+private fun LocalBackupCard(
+    file: LocalBackupFile,
+    isBusy: Boolean,
+    onPreview: () -> Unit,
+) {
+    BackupFileCard(
+        fileName = file.fileName,
+        createdAt = file.manifest?.createdAt ?: file.lastModified,
+        size = file.size,
+        backupKind = file.manifest?.backupKind,
+        isBusy = isBusy,
+        onPreview = onPreview
+    )
+}
+
 /** 远端备份列表项。 */
 @Composable
 private fun RemoteBackupCard(
     file: RemoteBackupFile,
+    isBusy: Boolean,
+    onPreview: () -> Unit,
+) {
+    BackupFileCard(
+        fileName = file.fileName,
+        createdAt = file.manifest?.createdAt ?: file.lastModified,
+        size = file.size,
+        backupKind = file.manifest?.backupKind,
+        isBusy = isBusy,
+        onPreview = onPreview
+    )
+}
+
+/** 本地和远端备份共用卡片。 */
+@Composable
+private fun BackupFileCard(
+    fileName: String,
+    createdAt: Long?,
+    size: Long?,
+    backupKind: BackupKind?,
     isBusy: Boolean,
     onPreview: () -> Unit,
 ) {
@@ -377,12 +555,11 @@ private fun RemoteBackupCard(
                     .padding(start = 12.dp)
             ) {
                 Text(
-                    text = file.fileName,
+                    text = fileName,
                     style = MaterialTheme.typography.titleSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                val createdAt = file.manifest?.createdAt ?: file.lastModified
                 if (createdAt != null) {
                     Text(
                         text = androidx.compose.ui.res.stringResource(R.string.base_general_backup_created_at, createdAt.toBackupDisplayTime()),
@@ -390,13 +567,18 @@ private fun RemoteBackupCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                file.size?.let { size ->
+                size?.let { bytes ->
                     Text(
-                        text = androidx.compose.ui.res.stringResource(R.string.base_general_backup_file_size, formatBackupSize(size)),
+                        text = androidx.compose.ui.res.stringResource(R.string.base_general_backup_file_size, formatBackupSize(bytes)),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                Text(
+                    text = backupKind.labelText(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -452,6 +634,17 @@ private fun PreviewSection(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary
                     )
+                    report.safetySnapshot?.let { safety ->
+                        Text(
+                            text = androidx.compose.ui.res.stringResource(
+                                R.string.base_general_backup_safety_snapshot_report,
+                                safety.fileName,
+                                safety.locationLabel
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = onRestore, enabled = !state.isBusy) {
@@ -469,13 +662,19 @@ private fun PreviewSection(
 /** 恢复确认弹窗，明确恢复采用合并策略而不是清空覆盖。 */
 @Composable
 private fun RestoreConfirmDialog(
+    isSafetySnapshot: Boolean,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val messageRes = if (isSafetySnapshot) {
+        R.string.base_general_backup_confirm_restore_safety_message
+    } else {
+        R.string.base_general_backup_confirm_restore_message
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_backup_confirm_restore_title)) },
-        text = { Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_backup_confirm_restore_message)) },
+        text = { Text(text = androidx.compose.ui.res.stringResource(messageRes)) },
         confirmButton = {
             TextButton(onClick = onConfirm) {
                 Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_restore_backup))
@@ -533,6 +732,57 @@ private fun formatBackupSize(size: Long): String {
         size >= 1024L * 1024L -> String.format(java.util.Locale.getDefault(), "%.1f MB", size / 1024f / 1024f)
         size >= 1024L -> String.format(java.util.Locale.getDefault(), "%.1f KB", size / 1024f)
         else -> "$size B"
+    }
+}
+
+/** 自动备份状态展示文案，区分跳过和失败，避免用户误判。 */
+@Composable
+private fun autoBackupStatusText(state: BackupUiState): String {
+    return when (state.lastAutoBackupStatus) {
+        BackupTaskStatus.Idle -> androidx.compose.ui.res.stringResource(R.string.base_general_backup_auto_status_idle)
+        BackupTaskStatus.Running -> androidx.compose.ui.res.stringResource(R.string.base_general_backup_auto_status_running)
+        BackupTaskStatus.Success -> androidx.compose.ui.res.stringResource(
+            R.string.base_general_backup_auto_status_success,
+            state.lastAutoBackupSuccessAt.takeIf { it > 0 }?.toBackupDisplayTime().orEmpty()
+        )
+        BackupTaskStatus.PartialSuccess -> androidx.compose.ui.res.stringResource(
+            R.string.base_general_backup_auto_status_partial,
+            state.lastAutoBackupFailureReason.ifBlank { androidx.compose.ui.res.stringResource(R.string.base_general_backup_error_unknown) }
+        )
+        BackupTaskStatus.Skipped -> androidx.compose.ui.res.stringResource(
+            R.string.base_general_backup_auto_status_skipped,
+            state.lastAutoBackupSkipReason.ifBlank { androidx.compose.ui.res.stringResource(R.string.base_general_backup_auto_skip_unknown) }
+        )
+        BackupTaskStatus.RetryScheduled -> androidx.compose.ui.res.stringResource(
+            R.string.base_general_backup_auto_status_retry,
+            state.lastAutoBackupFailureReason.ifBlank { androidx.compose.ui.res.stringResource(R.string.base_general_backup_error_unknown) }
+        )
+        BackupTaskStatus.Failed -> androidx.compose.ui.res.stringResource(
+            R.string.base_general_backup_auto_status_failed,
+            state.lastAutoBackupFailureReason.ifBlank { androidx.compose.ui.res.stringResource(R.string.base_general_backup_error_unknown) }
+        )
+    }
+}
+
+/** WebDAV 健康状态展示文案，只读缓存，不触发网络请求。 */
+@Composable
+private fun webDavHealthText(state: BackupUiState): String {
+    val time = state.webDavHealthCheckedAt.takeIf { it > 0 }?.toBackupDisplayTime().orEmpty()
+    return when (state.webDavHealth) {
+        BackupTargetHealth.Unknown -> androidx.compose.ui.res.stringResource(R.string.base_general_webdav_health_unknown)
+        BackupTargetHealth.Available -> androidx.compose.ui.res.stringResource(R.string.base_general_webdav_health_available, time)
+        BackupTargetHealth.Unavailable -> androidx.compose.ui.res.stringResource(R.string.base_general_webdav_health_unavailable, time)
+    }
+}
+
+/** 备份类型展示文案。 */
+@Composable
+private fun BackupKind?.labelText(): String {
+    return when (this) {
+        BackupKind.Manual -> androidx.compose.ui.res.stringResource(R.string.base_general_backup_kind_manual)
+        BackupKind.Auto -> androidx.compose.ui.res.stringResource(R.string.base_general_backup_kind_auto)
+        BackupKind.Safety -> androidx.compose.ui.res.stringResource(R.string.base_general_backup_kind_safety)
+        null -> androidx.compose.ui.res.stringResource(R.string.base_general_backup_kind_unknown)
     }
 }
 

@@ -7,6 +7,7 @@ import com.cla.clip.base.general.R
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.base.general.utils.toast
+import com.cla.clip.master.work.BackupAutoScheduler
 import dagger.Lazy
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -73,6 +74,7 @@ class DefaultClipboardDataProcessor @Inject constructor(
     override fun copyToClipboard(clip: ClipShowEntity) {
         scope.launch(Dispatchers.IO) {
             clipRepository.get().updateTimestamp(clip.id)
+            BackupAutoScheduler.markDirtyAndSchedule(appContext)
         }
 
         copyToClipboard(clip.content)
@@ -97,6 +99,7 @@ class DefaultClipboardDataProcessor @Inject constructor(
         scope.launch(Dispatchers.IO) {
             val success = clipRepository.get().deleteClip(clip)
             if (success) {
+                BackupAutoScheduler.markDirtyAndSchedule(appContext)
                 if (sendEvent) {
                     _deleteSuccessFlow.emit(clip.id)
                 }
@@ -109,6 +112,7 @@ class DefaultClipboardDataProcessor @Inject constructor(
         scope.launch(Dispatchers.IO) {
             val success = clipRepository.get().deleteClipPermanently(clip)
             if (success) {
+                BackupAutoScheduler.markDirtyAndSchedule(appContext)
                 if (sendEvent) {
                     _deleteSuccessFlow.emit(clip.id)
                 }
@@ -120,12 +124,14 @@ class DefaultClipboardDataProcessor @Inject constructor(
     override fun updatePinStatus(clip: ClipShowEntity, isPinned: Boolean) {
         scope.launch(Dispatchers.IO) {
             clipRepository.get().updatePinStatus(clip.id, isPinned)
+            BackupAutoScheduler.markDirtyAndSchedule(appContext)
         }
     }
 
     override fun updateFoldStatus(clip: ClipShowEntity, isFolded: Boolean) {
         scope.launch(Dispatchers.IO) {
             clipRepository.get().updateFoldStatus(clip.id, isFolded)
+            BackupAutoScheduler.markDirtyAndSchedule(appContext)
         }
     }
 }

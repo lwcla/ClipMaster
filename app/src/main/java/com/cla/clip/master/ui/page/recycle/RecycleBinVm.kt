@@ -12,6 +12,7 @@ import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.entity.toUi
 import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.base.general.utils.toast
+import com.cla.clip.master.work.BackupAutoScheduler
 import dagger.Lazy
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -137,6 +138,7 @@ class RecycleBinVm @Inject constructor(
             AppSetting.MAX_RECYCLE_BIN_RETENTION_DAYS
         )
         AppSetting.recycleBinRetentionDays = safeDays
+        BackupAutoScheduler.markDirtyAndSchedule(appContext)
         _retentionDays.value = safeDays
         viewModelScope.launch(Dispatchers.IO) {
             val count = clipRepository.get().cleanupExpiredRecycleBinClips(safeDays)
