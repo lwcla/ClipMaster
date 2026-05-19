@@ -65,6 +65,22 @@ interface LinkPreviewDao {
     suspend fun upsert(data: LinkPreviewData): Long
 
     /**
+     * 备份恢复批量写入链接预览缓存。
+     *
+     * 链接预览以 URL 为主键，重复恢复只会刷新同一行，不会产生重复缓存。
+     */
+    @Upsert
+    suspend fun upsertAllForBackup(data: List<LinkPreviewData>)
+
+    /**
+     * 备份导出读取全部链接预览缓存。
+     *
+     * 预览缓存可能被多条剪贴记录共享，因此不按剪贴记录筛选；恢复后关系继续通过 link 字段重建。
+     */
+    @Query("SELECT * FROM link_previews ORDER BY link ASC")
+    suspend fun loadAllForBackup(): List<LinkPreviewData>
+
+    /**
      * 根据包名查询对应的LinkPreviewData
      * @param link 要查询的链接。
      * @return 对应的LinkPreviewData对象，如果不存在则返回null。

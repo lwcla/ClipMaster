@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.google.devtools.ksp)                 // 应用KSP插件，用于代码生成
     alias(libs.plugins.google.dagger.hilt.android)                // 应用Hilt插件，用于依赖注入
+    alias(libs.plugins.kotlin.serialization) // 备份包使用 kotlinx.serialization 固定 JSON 字段协议
 }
 
 android {
@@ -42,6 +43,12 @@ android {
                 "int",
                 "VERSION_CODE",
                 "${rootProject.project(":app").androidApp.defaultConfig.versionCode}"
+            )
+
+            buildConfigField(
+                "String",
+                "VERSION_NAME",
+                "\"${rootProject.project(":app").androidApp.defaultConfig.versionName}\""
             )
         }
 

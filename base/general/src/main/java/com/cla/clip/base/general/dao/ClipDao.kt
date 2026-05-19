@@ -120,6 +120,30 @@ interface ClipDao {
     suspend fun upsertClip(clip: ClipData): Long
 
     /**
+     * 备份恢复写入剪贴记录。
+     *
+     * 备份恢复需要保留原始 id，方便重复恢复时通过主键幂等覆盖；常规新增剪贴仍使用 `id = 0` 自动生成。
+     */
+    @Upsert
+    suspend fun upsertClipsForBackup(clips: List<ClipData>)
+
+    /**
+     * 备份导出读取全部剪贴记录。
+     *
+     * 这里包含普通、折叠和回收站数据；彻底删除的数据已经不在表中，因此不会进入新备份。
+     */
+    @Query("SELECT * FROM clips ORDER BY id ASC")
+    suspend fun loadAllClipsForBackup(): List<ClipData>
+
+    /**
+     * 备份恢复前按主键批量读取已有剪贴记录。
+     *
+     * 用于合并规则判断本地记录是否比备份更新，避免旧备份覆盖用户恢复前刚调整的置顶、折叠或回收站状态。
+     */
+    @Query("SELECT * FROM clips WHERE id IN (:ids)")
+    suspend fun loadClipsByIdsForBackup(ids: List<Long>): List<ClipData>
+
+    /**
      * Get 基础查询：查找是否存在相同内容的最新条目。这是去重逻辑的核心查询，必须高效。
      *
      * @param content 要查询的内容。FTS5会自动处理分词和匹配，所以这里直接传入原始内容即可。

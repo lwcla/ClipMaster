@@ -60,6 +60,22 @@ object AppSetting {
     /** 默认 MMKV 实例，首次访问时初始化；调用方需要确保 BaseApplication 已在主进程初始化 MMKV。 */
     private val mmkv by lazy { MMKV.defaultMMKV() }
 
+    /** 独立保存敏感小配置的 MMKV 文件名；系统 Auto Backup 已排除整个 MMKV 目录，避免跨设备恢复设备绑定密文。 */
+    private const val SECURE_MMKV_ID = "app_setting_secure"
+
+    /**
+     * 加密 MMKV 的本地文件密钥。
+     *
+     * 这里用于避免 WebDAV 密码继续落在默认明文配置文件中，不等同于用户可管理的端到端备份加密密码。
+     * 后续如果接入 Android Keystore，需要在方案文档里同步说明系统恢复和密文失效边界。
+     */
+    private const val SECURE_MMKV_CRYPT_KEY = "ClipMasterKeyV1!"
+
+    /** 加密 MMKV 实例，仅保存密码这类不应进入默认配置文件的小字段。 */
+    private val secureMmkv by lazy {
+        MMKV.mmkvWithID(SECURE_MMKV_ID, MMKV.SINGLE_PROCESS_MODE, SECURE_MMKV_CRYPT_KEY)
+    }
+
     /** 视频下载任务 ID，值为 -1 表示没有正在下载的任务 */
     private const val KEY_VIDEO_DOWNLOAD_TASK_ID = "video_download_task_id"
 
@@ -164,5 +180,65 @@ object AppSetting {
                 KEY_RECYCLE_BIN_RETENTION_DAYS,
                 value.coerceIn(MIN_RECYCLE_BIN_RETENTION_DAYS, MAX_RECYCLE_BIN_RETENTION_DAYS)
             )
+        }
+
+    /** WebDAV 服务地址配置 key；该值只保存在本机，不进入备份包。 */
+    private const val KEY_WEBDAV_ENDPOINT = "webdav_endpoint"
+
+    /** WebDAV 用户名配置 key；用户名只用于连接服务，不进入备份包。 */
+    private const val KEY_WEBDAV_USERNAME = "webdav_username"
+
+    /** WebDAV 密码配置 key；只保存到独立加密 MMKV，不再读写默认 MMKV。 */
+    private const val KEY_WEBDAV_PASSWORD = "webdav_password"
+
+    /** WebDAV 远端目录配置 key；默认 `/ClipMaster/backups/`，允许用户修改。 */
+    private const val KEY_WEBDAV_REMOTE_DIR = "webdav_remote_dir"
+
+    /** WebDAV 是否允许 HTTP 配置 key；默认 false，避免明文传输剪贴内容。 */
+    private const val KEY_WEBDAV_ALLOW_INSECURE_HTTP = "webdav_allow_insecure_http"
+
+    /** 本地自动/联动备份目录授权 URI 配置 key；属于设备绑定授权，不进入备份包。 */
+    private const val KEY_LOCAL_BACKUP_DIR_URI = "local_backup_dir_uri"
+
+    /** WebDAV 服务根地址。 */
+    var webDavEndpoint: String
+        get() = mmkv.getString(KEY_WEBDAV_ENDPOINT, "") ?: ""
+        set(value) {
+            mmkv.putString(KEY_WEBDAV_ENDPOINT, value.trim())
+        }
+
+    /** WebDAV 用户名。 */
+    var webDavUsername: String
+        get() = mmkv.getString(KEY_WEBDAV_USERNAME, "") ?: ""
+        set(value) {
+            mmkv.putString(KEY_WEBDAV_USERNAME, value)
+        }
+
+    /** WebDAV 密码或应用专用密码；保存到加密 MMKV，不参与备份导出。 */
+    var webDavPassword: String
+        get() = secureMmkv.getString(KEY_WEBDAV_PASSWORD, "") ?: ""
+        set(value) {
+            secureMmkv.putString(KEY_WEBDAV_PASSWORD, value)
+        }
+
+    /** WebDAV 远端备份目录，保存用户原始配置，使用前由备份模块规范化。 */
+    var webDavRemoteDir: String
+        get() = mmkv.getString(KEY_WEBDAV_REMOTE_DIR, "/ClipMaster/backups/") ?: "/ClipMaster/backups/"
+        set(value) {
+            mmkv.putString(KEY_WEBDAV_REMOTE_DIR, value)
+        }
+
+    /** 是否允许 HTTP WebDAV；只建议调试或可信内网使用。 */
+    var webDavAllowInsecureHttp: Boolean
+        get() = mmkv.getBoolean(KEY_WEBDAV_ALLOW_INSECURE_HTTP, false)
+        set(value) {
+            mmkv.putBoolean(KEY_WEBDAV_ALLOW_INSECURE_HTTP, value)
+        }
+
+    /** 本地备份文件夹 SAF 授权 URI；为空表示未设置，授权失效时由备份页提示用户重新选择。 */
+    var localBackupDirUri: String
+        get() = mmkv.getString(KEY_LOCAL_BACKUP_DIR_URI, "") ?: ""
+        set(value) {
+            mmkv.putString(KEY_LOCAL_BACKUP_DIR_URI, value)
         }
 }

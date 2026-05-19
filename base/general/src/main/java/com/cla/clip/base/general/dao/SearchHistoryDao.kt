@@ -96,6 +96,22 @@ interface SearchHistoryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(history: SearchHistoryData): Long
 
+    /**
+     * 备份恢复批量写入搜索历史。
+     *
+     * 搜索历史表通过范围和规范化关键词唯一索引去重，重复恢复时会刷新同一范围内同一关键词的展示文本和时间。
+     */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAllForBackup(histories: List<SearchHistoryData>)
+
+    /**
+     * 备份导出读取全部搜索历史。
+     *
+     * 普通搜索和折叠搜索历史都需要导出，恢复后继续由 `is_folded` 隔离展示。
+     */
+    @Query("SELECT * FROM search_histories ORDER BY id ASC")
+    suspend fun loadAllForBackup(): List<SearchHistoryData>
+
     /** 删除指定历史；调用方只传数据库主键，删除失败时 Room 返回 0。 */
     @Query("DELETE FROM search_histories WHERE id = :id")
     suspend fun deleteById(id: Long): Int

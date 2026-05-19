@@ -17,6 +17,7 @@ import androidx.navigation.toRoute
 import com.cla.clip.master.ui.page.detail.DetailPage
 import com.cla.clip.master.ui.page.download.DownloadHistoryPage
 import com.cla.clip.master.ui.page.image.ImageExtractPage
+import com.cla.clip.master.ui.page.backup.BackupPage
 import com.cla.clip.master.ui.page.list.ClipListPage
 import com.cla.clip.master.ui.page.list.FoldedClipListPage
 import com.cla.clip.master.ui.page.main.MainPage
@@ -153,6 +154,13 @@ fun AppNavigation(navController: NavHostController) {
         // 回收站
         composable<RecycleBinRoute> {
             RecycleBinPage(
+                onBack = onBack
+            )
+        }
+
+        // 备份与恢复
+        composable<BackupRoute> {
+            BackupPage(
                 onBack = onBack
             )
         }

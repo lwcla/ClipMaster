@@ -84,6 +84,10 @@ data object FoldedClipsRoute : Route()
 @Serializable
 data object RecycleBinRoute : Route()
 
+/** 备份与恢复页 */
+@Serializable
+data object BackupRoute : Route()
+
 /** 我的页面 */
 @Serializable
 data object MineRoute : Route()

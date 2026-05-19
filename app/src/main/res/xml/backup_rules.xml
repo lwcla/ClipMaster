@@ -7,6 +7,10 @@
 -->
 <full-backup-content xmlns:tools="http://schemas.android.com/tools"
     tools:ignore="ResourceName">
+    <!-- WebDAV 密码、备份目录授权和备份健康状态属于设备绑定/敏感配置，不应被系统 Auto Backup 搬到新安装中。 -->
+    <exclude
+        domain="file"
+        path="mmkv/" />
     <!--
    <include domain="sharedpref" path="."/>
    <exclude domain="sharedpref" path="device.xml"/>

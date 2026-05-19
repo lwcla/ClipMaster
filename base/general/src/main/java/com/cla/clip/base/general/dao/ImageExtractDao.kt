@@ -232,9 +232,25 @@ interface ImageExtractDao {
     @Insert
     suspend fun insertBatch(batch: ImageExtractBatchData): Long
 
+    /**
+     * 备份恢复批量写入图片下载批次。
+     *
+     * 批次 id 会保留在备份包中；重复恢复时通过 Upsert 覆盖同一批次，保证图片项外键关系仍可重建。
+     */
+    @androidx.room.Upsert
+    suspend fun upsertBatchesForBackup(batches: List<ImageExtractBatchData>)
+
     /** 批量插入图片项；冲突时忽略，避免同一批次重复 URL 或顺序导致任务失败。 */
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertItems(items: List<ImageExtractItemData>)
+
+    /**
+     * 备份恢复批量写入图片项。
+     *
+     * 图片项使用 Upsert 而不是 IGNORE，确保同一备份重复恢复时可以修正旧数据，但 mapper 会清理临时路径和 Cookie。
+     */
+    @androidx.room.Upsert
+    suspend fun upsertItemsForBackup(items: List<ImageExtractItemData>)
 
     /** 更新完整批次对象，适合 Repository 已经拿到最新对象后整体回写。 */
     @Update
@@ -243,6 +259,38 @@ interface ImageExtractDao {
     /** 按 id 读取批次，Worker 启动和 Repository 业务判断时使用。 */
     @Query("SELECT * FROM image_extract_batches WHERE id = :batchId")
     suspend fun getBatch(batchId: Long): ImageExtractBatchData?
+
+    /**
+     * 备份导出读取全部图片提取/下载批次。
+     *
+     * 未确认下载的 extracted 批次也保留在数据库中，因此第一版作为元数据一起导出，后续可按产品决策裁剪。
+     */
+    @Query("SELECT * FROM image_extract_batches ORDER BY id ASC")
+    suspend fun loadAllBatchesForBackup(): List<ImageExtractBatchData>
+
+    /**
+     * 备份导出读取全部图片项。
+     *
+     * 具体敏感字段过滤由备份 mapper 负责，DAO 只提供一致性快照。
+     */
+    @Query("SELECT * FROM image_extract_items ORDER BY id ASC")
+    suspend fun loadAllItemsForBackup(): List<ImageExtractItemData>
+
+    /**
+     * 备份恢复前按 id 批量读取已有图片批次。
+     *
+     * 用于冲突合并时保护本地较新的批次状态。
+     */
+    @Query("SELECT * FROM image_extract_batches WHERE id IN (:batchIds)")
+    suspend fun loadBatchesByIdsForBackup(batchIds: List<Long>): List<ImageExtractBatchData>
+
+    /**
+     * 备份恢复前按 id 批量读取已有图片项。
+     *
+     * 用于重复恢复时跳过本地较新的单项结果，避免旧备份覆盖新下载结果。
+     */
+    @Query("SELECT * FROM image_extract_items WHERE id IN (:itemIds)")
+    suspend fun loadItemsByIdsForBackup(itemIds: List<Long>): List<ImageExtractItemData>
 
     /** 批量读取选中的图片下载批次，供删除、清空和重新下载前组装精确操作范围。 */
     @Query("SELECT * FROM image_extract_batches WHERE id IN (:batchIds)")

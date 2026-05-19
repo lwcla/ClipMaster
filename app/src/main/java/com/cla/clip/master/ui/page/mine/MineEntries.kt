@@ -3,6 +3,7 @@ package com.cla.clip.master.ui.page.mine
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
@@ -11,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.config.ClipItemQuickAction
+import com.cla.clip.master.ui.navigation.BackupRoute
 import com.cla.clip.master.ui.navigation.DownloadHistoryRoute
 import com.cla.clip.master.ui.navigation.FoldedClipsRoute
 import com.cla.clip.master.ui.navigation.RecycleBinRoute
@@ -85,6 +87,29 @@ internal fun DownloadHistoryEntry(
         title = stringResource(R.string.base_general_download_history),
         description = stringResource(R.string.base_general_download_history_entry_desc),
         onClick = { onNavigate(DownloadHistoryRoute) }
+    )
+}
+
+/**
+ * 备份与恢复入口。
+ *
+ * 放在“我的”页管理入口区域，入口只负责导航；具体文件选择、WebDAV 配置和恢复预检都由备份页承载。
+ */
+@Composable
+internal fun BackupEntry(
+    onNavigate: (route: Route) -> Unit,
+) {
+    ListEntryCard(
+        icon = {
+            Icon(
+                imageVector = Icons.Default.CloudSync,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+        },
+        title = stringResource(R.string.base_general_backup_restore),
+        description = stringResource(R.string.base_general_backup_restore_entry_desc),
+        onClick = { onNavigate(BackupRoute) }
     )
 }
 

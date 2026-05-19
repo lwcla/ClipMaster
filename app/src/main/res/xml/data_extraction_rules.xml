@@ -6,6 +6,10 @@
 <data-extraction-rules xmlns:tools="http://schemas.android.com/tools"
     tools:ignore="ResourceName">
     <cloud-backup>
+        <!-- WebDAV 密码、备份目录授权和备份健康状态属于设备绑定/敏感配置，不应由系统云备份自动恢复。 -->
+        <exclude
+            domain="file"
+            path="mmkv/" />
         <!--
         <include .../>
         <exclude .../>

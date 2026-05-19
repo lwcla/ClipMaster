@@ -63,6 +63,22 @@ interface SourceAppDao {
     suspend fun upsert(sourceApp: SourceAppData): Long
 
     /**
+     * 备份恢复批量写入来源 App 缓存。
+     *
+     * 来源 App 以包名为主键，重复恢复同一备份时使用 Upsert 覆盖同一行，避免重复数据。
+     */
+    @Upsert
+    suspend fun upsertAllForBackup(sourceApps: List<SourceAppData>)
+
+    /**
+     * 备份导出读取全部来源 App 缓存。
+     *
+     * 图标路径只作为历史展示 hint 导出，卸载重装后文件可能不存在，UI 仍需按现有兜底逻辑处理。
+     */
+    @Query("SELECT * FROM source_apps ORDER BY package_name ASC")
+    suspend fun loadAllForBackup(): List<SourceAppData>
+
+    /**
      * 根据包名查询对应的SourceApp条目。
      * @param packageName 要查询的应用包名。
      * @return 对应的SourceApp对象，如果不存在则返回null。

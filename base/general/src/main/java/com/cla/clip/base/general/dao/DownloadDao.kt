@@ -121,6 +121,30 @@ interface DownloadDao {
     @Insert
     suspend fun insertTask(task: DownloadTaskData): Long
 
+    /**
+     * 备份恢复批量写入视频下载历史。
+     *
+     * 恢复时保留原始 id 以保证重复恢复幂等；进行中任务会在 mapper 层降级为失败/中断状态后再写入。
+     */
+    @Upsert
+    suspend fun upsertTasksForBackup(tasks: List<DownloadTaskData>)
+
+    /**
+     * 备份导出读取全部视频下载历史。
+     *
+     * Cookie、pending URI 等敏感或临时字段不会由备份 mapper 写入备份包，DAO 只负责提供当前数据库快照。
+     */
+    @Query("SELECT * FROM download_tasks ORDER BY id ASC")
+    suspend fun loadAllTasksForBackup(): List<DownloadTaskData>
+
+    /**
+     * 备份恢复前按 id 批量读取已有视频下载历史。
+     *
+     * 用于重复恢复时跳过本地较新的记录，避免旧备份覆盖用户最近的重新下载结果。
+     */
+    @Query("SELECT * FROM download_tasks WHERE id IN (:ids)")
+    suspend fun loadTasksByIdsForBackup(ids: List<Long>): List<DownloadTaskData>
+
     /** 按主键读取单个下载任务，Worker 启动时使用。 */
     @Query("SELECT * FROM download_tasks WHERE id = :id")
     suspend fun getTask(id: Long): DownloadTaskData?

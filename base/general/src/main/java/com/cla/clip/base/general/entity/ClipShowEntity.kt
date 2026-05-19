@@ -6,7 +6,6 @@ import androidx.core.graphics.green
 import androidx.core.graphics.red
 import com.cla.clip.base.general.dao.data.ClipDetail
 import com.cla.clip.base.general.utils.toRelativeTimeSpanString
-import kotlinx.serialization.Serializable
 
 /**
  * 剪贴记录在 UI 层使用的展示实体。
@@ -14,7 +13,6 @@ import kotlinx.serialization.Serializable
  * 这里把数据库记录、来源应用和链接预览合并成页面所需的扁平结构；时间字段同时保留剪贴时间、折叠时间和删除时间，
  * 由不同页面选择对应展示模式，避免共享列表组件理解 Room 关系结构。
  */
-@Serializable
 data class ClipShowEntity(
     /** 剪贴记录主键，用于详情导航、Paging key 和侧滑状态保存。 */
     val id: Long,
