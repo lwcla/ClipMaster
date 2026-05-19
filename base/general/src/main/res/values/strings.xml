@@ -223,7 +223,7 @@
     <string name="base_general_local_backup_choose_dir">设置备份文件夹</string>
     <string name="base_general_local_backup_clear_dir">清除文件夹</string>
     <string name="base_general_local_backup_dir_not_set">未设置本地备份文件夹。设置后，WebDAV 备份会先保存到本地文件夹。</string>
-    <string name="base_general_local_backup_dir_set">已设置本地备份文件夹。WebDAV 备份会先保存到本地文件夹。</string>
+    <string name="base_general_local_backup_dir_set">已设置本地备份文件夹：%1$s\nWebDAV 备份会先保存到本地文件夹。</string>
     <string name="base_general_local_backup_dir_save_success">本地备份文件夹已设置</string>
     <string name="base_general_preview_backup">预览备份</string>
     <string name="base_general_restore_backup">恢复备份</string>
@@ -233,6 +233,9 @@
     <string name="base_general_backup_import_failed">读取备份失败</string>
     <string name="base_general_backup_restore_success">恢复完成：新增 %1$d，更新 %2$d，跳过 %3$d</string>
     <string name="base_general_backup_restore_failed">恢复备份失败</string>
+    <string name="base_general_backup_backing_up_title">正在备份</string>
+    <string name="base_general_backup_exporting_message">正在生成并写入备份文件，请稍候。</string>
+    <string name="base_general_backup_uploading_message">正在生成备份并上传到 WebDAV，请稍候。</string>
     <string name="base_general_backup_restoring_title">正在恢复</string>
     <string name="base_general_backup_restoring_message">正在合并备份数据，请稍候。</string>
     <string name="base_general_backup_preview_summary">备份时间：%1$s\nApp 版本：%2$s\n协议版本：%3$d\n剪贴：%4$d，搜索历史：%5$d，视频记录：%6$d，图片批次：%7$d</string>

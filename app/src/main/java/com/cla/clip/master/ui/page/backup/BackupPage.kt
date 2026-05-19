@@ -163,10 +163,10 @@ fun BackupPage(
         )
     }
 
-    if (state.busyOperation == BackupBusyOperation.Restoring) {
-        // 恢复进入数据库事务后不支持中途取消；拦截系统返回，避免用户误以为可以安全退出。
+    if (state.busyOperation.isModalProgress) {
+        // 备份和恢复都涉及文件/网络/数据库写入；拦截系统返回，避免用户误以为可以安全中断长任务。
         BackHandler(enabled = true) {}
-        RestoreProgressDialog()
+        BackupTaskProgressDialog(operation = state.busyOperation)
     }
 }
 
@@ -207,7 +207,10 @@ private fun LocalBackupSection(
                 text = if (state.localBackupDirUri.isBlank()) {
                     androidx.compose.ui.res.stringResource(R.string.base_general_local_backup_dir_not_set)
                 } else {
-                    androidx.compose.ui.res.stringResource(R.string.base_general_local_backup_dir_set)
+                    androidx.compose.ui.res.stringResource(
+                        R.string.base_general_local_backup_dir_set,
+                        state.localBackupDirLabel.ifBlank { state.localBackupDirUri }
+                    )
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -487,23 +490,35 @@ private fun RestoreConfirmDialog(
 }
 
 /**
- * 恢复进行中弹窗。
+ * 备份/恢复进行中弹窗。
  *
- * 这里使用不可取消的模态反馈替代标题栏加载动画，因为恢复阶段已经进入写库流程，用户更需要明确知道页面正在处理数据。
+ * 这里使用不可取消的模态反馈替代标题栏加载动画，因为备份会写文件/上传网络，恢复会写数据库，用户需要明确知道页面正在处理数据。
  */
 @Composable
-private fun RestoreProgressDialog() {
+private fun BackupTaskProgressDialog(operation: BackupBusyOperation) {
+    val titleRes = when (operation) {
+        BackupBusyOperation.Exporting,
+        BackupBusyOperation.UploadingWebDav -> R.string.base_general_backup_backing_up_title
+        BackupBusyOperation.Restoring -> R.string.base_general_backup_restoring_title
+        else -> R.string.base_general_backup_backing_up_title
+    }
+    val messageRes = when (operation) {
+        BackupBusyOperation.Exporting -> R.string.base_general_backup_exporting_message
+        BackupBusyOperation.UploadingWebDav -> R.string.base_general_backup_uploading_message
+        BackupBusyOperation.Restoring -> R.string.base_general_backup_restoring_message
+        else -> R.string.base_general_backup_exporting_message
+    }
     AlertDialog(
         onDismissRequest = {},
-        title = { Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_backup_restoring_title)) },
+        title = { Text(text = androidx.compose.ui.res.stringResource(titleRes)) },
         text = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.dp)
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                 Text(
-                    text = androidx.compose.ui.res.stringResource(R.string.base_general_backup_restoring_message),
+                    text = androidx.compose.ui.res.stringResource(messageRes),
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
@@ -520,3 +535,9 @@ private fun formatBackupSize(size: Long): String {
         else -> "$size B"
     }
 }
+
+/** 需要用不可取消弹窗明确展示的备份/恢复长任务。 */
+private val BackupBusyOperation.isModalProgress: Boolean
+    get() = this == BackupBusyOperation.Exporting ||
+        this == BackupBusyOperation.UploadingWebDav ||
+        this == BackupBusyOperation.Restoring

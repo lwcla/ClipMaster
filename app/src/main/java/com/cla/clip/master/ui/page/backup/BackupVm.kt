@@ -2,6 +2,8 @@ package com.cla.clip.master.ui.page.backup
 
 import android.content.Context
 import android.net.Uri
+import android.provider.DocumentsContract
+import android.provider.OpenableColumns
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cla.clip.base.general.R
@@ -121,8 +123,10 @@ class BackupVm @Inject constructor(
         runCatching {
             appContext.contentResolver.takePersistableUriPermission(uri, flags)
         }.onSuccess {
+            val label = resolveLocalBackupDirLabel(uri)
             AppSetting.localBackupDirUri = uri.toString()
-            _uiState.update { it.copy(localBackupDirUri = uri.toString()) }
+            AppSetting.localBackupDirLabel = label
+            _uiState.update { it.copy(localBackupDirUri = uri.toString(), localBackupDirLabel = label) }
             emitMessage(R.string.base_general_local_backup_dir_save_success)
         }.onFailure { throwable ->
             logE(TAG, throwable) { "updateLocalBackupDir: persist permission failed" }
@@ -133,7 +137,8 @@ class BackupVm @Inject constructor(
     /** 清除本地备份目录配置；已授予的系统 URI 权限由系统按生命周期管理，不影响已生成的备份文件。 */
     fun clearLocalBackupDir() {
         AppSetting.localBackupDirUri = ""
-        _uiState.update { it.copy(localBackupDirUri = "") }
+        AppSetting.localBackupDirLabel = ""
+        _uiState.update { it.copy(localBackupDirUri = "", localBackupDirLabel = "") }
     }
 
     /** 导出本地备份到用户选择的 URI。 */
@@ -261,6 +266,25 @@ class BackupVm @Inject constructor(
         localBackupDirectoryWriter.writeExport(Uri.parse(dir), export)
     }
 
+    /** 解析本地备份目录的用户可读展示名，优先使用系统返回的 displayName，失败时用 URI 尾段兜底。 */
+    private fun resolveLocalBackupDirLabel(uri: Uri): String {
+        return queryDisplayName(uri)
+            ?: runCatching { DocumentsContract.getTreeDocumentId(uri).substringAfterLast(':').ifBlank { null } }.getOrNull()
+            ?: uri.lastPathSegment
+            ?: uri.toString()
+    }
+
+    /** 查询 SAF 目录的 displayName；部分文件管理器不返回名称，调用方需要自行兜底。 */
+    private fun queryDisplayName(uri: Uri): String? {
+        return runCatching {
+            val documentId = DocumentsContract.getTreeDocumentId(uri)
+            val documentUri = DocumentsContract.buildDocumentUriUsingTree(uri, documentId)
+            appContext.contentResolver.query(documentUri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0)?.takeIf { it.isNotBlank() } else null
+            }
+        }.getOrNull()
+    }
+
     /** 当前 WebDAV 配置快照。 */
     private fun currentWebDavConfig(): WebDavConfig {
         val state = uiState.value
@@ -331,7 +355,10 @@ class BackupVm @Inject constructor(
             webDavPassword = AppSetting.webDavPassword,
             webDavRemoteDir = AppSetting.webDavRemoteDir,
             webDavAllowHttp = AppSetting.webDavAllowInsecureHttp,
-            localBackupDirUri = AppSetting.localBackupDirUri
+            localBackupDirUri = AppSetting.localBackupDirUri,
+            localBackupDirLabel = AppSetting.localBackupDirLabel.ifBlank {
+                AppSetting.localBackupDirUri.takeIf { it.isNotBlank() }?.let { resolveLocalBackupDirLabel(Uri.parse(it)) } ?: ""
+            }
         )
     }
 }
@@ -377,6 +404,8 @@ data class BackupUiState(
     val webDavAllowHttp: Boolean = false,
     /** 本地备份文件夹授权 URI；为空表示未设置。 */
     val localBackupDirUri: String = "",
+    /** 本地备份文件夹展示路径或名称；只用于 UI 展示，不参与实际写入。 */
+    val localBackupDirLabel: String = "",
     /** 远端备份列表。 */
     val remoteBackups: List<RemoteBackupFile> = emptyList(),
     /** 当前预览的 zip 备份包字节。 */

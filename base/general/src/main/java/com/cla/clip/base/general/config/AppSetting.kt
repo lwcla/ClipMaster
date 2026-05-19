@@ -200,6 +200,9 @@ object AppSetting {
     /** 本地自动/联动备份目录授权 URI 配置 key；属于设备绑定授权，不进入备份包。 */
     private const val KEY_LOCAL_BACKUP_DIR_URI = "local_backup_dir_uri"
 
+    /** 本地备份目录展示名配置 key；只用于 UI 展示，授权是否有效仍以 URI 为准。 */
+    private const val KEY_LOCAL_BACKUP_DIR_LABEL = "local_backup_dir_label"
+
     /** WebDAV 服务根地址。 */
     var webDavEndpoint: String
         get() = mmkv.getString(KEY_WEBDAV_ENDPOINT, "") ?: ""
@@ -240,5 +243,12 @@ object AppSetting {
         get() = mmkv.getString(KEY_LOCAL_BACKUP_DIR_URI, "") ?: ""
         set(value) {
             mmkv.putString(KEY_LOCAL_BACKUP_DIR_URI, value)
+        }
+
+    /** 本地备份文件夹展示路径或名称；不参与文件写入，清空目录 URI 时也需要同步清空。 */
+    var localBackupDirLabel: String
+        get() = mmkv.getString(KEY_LOCAL_BACKUP_DIR_LABEL, "") ?: ""
+        set(value) {
+            mmkv.putString(KEY_LOCAL_BACKUP_DIR_LABEL, value)
         }
 }
