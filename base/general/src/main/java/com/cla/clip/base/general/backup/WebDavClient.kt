@@ -6,12 +6,15 @@ import com.cla.clip.base.general.utils.logW
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Credentials
+import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.w3c.dom.Element
 import java.io.ByteArrayInputStream
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
@@ -75,19 +78,6 @@ class WebDavClient @Inject constructor(
         }
     }
 
-    /** 上传二进制备份包。 */
-    suspend fun uploadBytes(config: WebDavConfig, fileName: String, bytes: ByteArray) = withContext(Dispatchers.IO) {
-        val request = baseRequest(config, buildWebDavUrl(config, fileName))
-            .put(bytes.toRequestBody(ZipMediaType))
-            .build()
-        okHttpClient.newCall(request).execute().use { response ->
-            if (response.code == 401 || response.code == 403) throw BackupFailure.AuthenticationFailed()
-            if (!response.isSuccessful && response.code != 201 && response.code != 204) {
-                throw BackupFailure.StorageNotWritable()
-            }
-        }
-    }
-
     /** 下载文本文件。 */
     suspend fun downloadText(config: WebDavConfig, fileName: String): String = withContext(Dispatchers.IO) {
         val request = baseRequest(config, buildWebDavUrl(config, fileName)).get().build()
@@ -98,14 +88,17 @@ class WebDavClient @Inject constructor(
         }
     }
 
-    /** 下载二进制备份包。 */
-    suspend fun downloadBytes(config: WebDavConfig, fileName: String): ByteArray = withContext(Dispatchers.IO) {
+    /** 下载远端备份包到私有临时文件，避免大文件进入内存。 */
+    suspend fun downloadFile(config: WebDavConfig, fileName: String, targetFile: File): File = withContext(Dispatchers.IO) {
         val request = baseRequest(config, buildWebDavUrl(config, fileName)).get().build()
         okHttpClient.newCall(request).execute().use { response ->
             if (response.code == 401 || response.code == 403) throw BackupFailure.AuthenticationFailed()
             if (!response.isSuccessful) throw BackupFailure.RemoteFailed()
-            response.body.bytes()
+            targetFile.outputStream().use { output ->
+                response.body.byteStream().use { input -> input.copyTo(output) }
+            }
         }
+        targetFile
     }
 
     /** 删除远端文件；404 视为已经不存在，不作为失败。 */
@@ -145,7 +138,7 @@ class WebDavClient @Inject constructor(
                 manifest = manifest
             )
         }.sortedWith(
-            compareByDescending<RemoteBackupFile> { it.manifest?.createdAt ?: 0L }
+            compareByDescending<RemoteBackupFile> { it.sortCreatedAt }
                 .thenByDescending { it.lastModified ?: 0L }
                 .thenByDescending { it.fileName }
         )
@@ -158,22 +151,24 @@ class WebDavClient @Inject constructor(
         val startedAt = System.currentTimeMillis()
         logD(TAG) {
             "开始上传 WebDAV 备份 ${backupTaskLogField(taskId)}fileName=${export.fileName} " +
-                "backupKind=${export.snapshot.backupKind.logCode()} fileSize=${export.packageBytes.size}"
+                "backupKind=${export.manifest.backupKind.logCode()} fileSize=${export.fileSize}"
         }
         ensureDirectory(config)
         val tempSnapshot = "${export.fileName}.tmp"
         val tempManifest = "${export.manifestFileName}.tmp"
         logD(TAG) { "开始上传 WebDAV 临时备份文件 ${backupTaskLogField(taskId)}fileName=${export.fileName}" }
-        uploadBytes(config, tempSnapshot, export.packageBytes)
+        uploadFile(config, tempSnapshot, export.packageFile)
         uploadText(config, tempManifest, export.manifestJson)
-        val uploaded = downloadBytes(config, tempSnapshot)
-        uploaded.decodeBackupPackage().validateForRestore(export.snapshot.applicationId)
-        logD(TAG) { "WebDAV 临时备份文件校验通过 ${backupTaskLogField(taskId)}fileName=${export.fileName} tempSize=${uploaded.size}" }
-        uploadBytes(config, export.fileName, uploaded)
+        val verifyFile = File(export.taskDir, "${export.fileName}.webdav_verify")
+        downloadFile(config, tempSnapshot, verifyFile)
+        verifyFile.validateBackupPackageFile(export.manifest.applicationId)
+        logD(TAG) { "WebDAV 临时备份文件校验通过 ${backupTaskLogField(taskId)}fileName=${export.fileName} tempSize=${verifyFile.length()}" }
+        uploadFile(config, export.fileName, verifyFile)
         uploadText(config, export.manifestFileName, export.manifestJson)
         uploadText(config, "latest.json", export.manifestJson)
         deleteFile(config, tempSnapshot)
         deleteFile(config, tempManifest)
+        verifyFile.delete()
         logD(TAG) {
             "WebDAV 备份上传成功 ${backupTaskLogField(taskId)}fileName=${export.fileName} " +
                 "durationMs=${System.currentTimeMillis() - startedAt}"
@@ -198,7 +193,7 @@ class WebDavClient @Inject constructor(
                 file.manifest?.backupKind == backupKind && file.manifest.deviceLabel == deviceLabel
             }
             .sortedWith(
-                compareByDescending<RemoteBackupFile> { it.manifest?.createdAt ?: 0L }
+                compareByDescending<RemoteBackupFile> { it.sortCreatedAt }
                     .thenByDescending { it.lastModified ?: 0L }
                     .thenByDescending { it.fileName }
             )
@@ -290,6 +285,19 @@ class WebDavClient @Inject constructor(
         return builder
     }
 
+    /** 上传本地文件并提供准确 Content-Length，提升 WebDAV 大文件 PUT 兼容性。 */
+    private suspend fun uploadFile(config: WebDavConfig, fileName: String, file: File) = withContext(Dispatchers.IO) {
+        val request = baseRequest(config, buildWebDavUrl(config, fileName))
+            .put(file.asRequestBody(ZipMediaType))
+            .build()
+        okHttpClient.newCall(request).execute().use { response ->
+            if (response.code == 401 || response.code == 403) throw BackupFailure.AuthenticationFailed()
+            if (!response.isSuccessful && response.code != 201 && response.code != 204) {
+                throw BackupFailure.StorageNotWritable()
+            }
+        }
+    }
+
     /** 解析 PROPFIND XML。 */
     private fun parsePropfind(xml: String): List<WebDavEntry> {
         return runCatching {
@@ -340,4 +348,21 @@ private fun String.parseHttpDateMillis(): Long? {
         formatter.timeZone = TimeZone.getTimeZone("GMT")
         formatter.parse(this)?.time
     }.getOrNull()
+}
+
+/** 文件 RequestBody，显式返回 contentLength，避免 WebDAV 服务端拒绝未知长度 chunked PUT。 */
+private fun File.asRequestBody(mediaType: MediaType): RequestBody {
+    return object : RequestBody() {
+        override fun contentType(): MediaType = mediaType
+
+        override fun contentLength(): Long = length()
+
+        override fun writeTo(sink: okio.BufferedSink) {
+            inputStream().use { input ->
+                sink.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+        }
+    }
 }

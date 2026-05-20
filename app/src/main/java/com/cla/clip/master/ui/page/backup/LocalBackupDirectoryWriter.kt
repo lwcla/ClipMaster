@@ -9,10 +9,13 @@ import com.cla.clip.base.general.backup.BackupKind
 import com.cla.clip.base.general.backup.BackupExportResult
 import com.cla.clip.base.general.backup.BackupFailure
 import com.cla.clip.base.general.backup.BackupManifest
+import com.cla.clip.base.general.backup.BackupPackageRef
 import com.cla.clip.base.general.backup.BackupRetentionCleanupResult
 import com.cla.clip.base.general.backup.backupReasonCode
 import com.cla.clip.base.general.backup.backupTaskLogField
 import com.cla.clip.base.general.backup.logCode
+import com.cla.clip.base.general.backup.parseBackupKindFromFileName
+import com.cla.clip.base.general.backup.parseBackupTimestampFromFileName
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -39,26 +42,43 @@ class LocalBackupDirectoryWriter @Inject constructor(
     /**
      * 将一次导出的备份结果写入用户授权的本地目录。
      *
-     * 写入顺序为完整 zip 备份包、manifest sidecar；二者都写入成功才视为本地备份成功。这里复用 WebDAV 上传的同一份
+     * 写入顺序为 `.tmp` zip、`.tmp` manifest、发布正式 zip、发布正式 manifest；列表扫描只识别正式文件名，
+     * 因此写入中途失败不会把临时文件当成可恢复备份展示。这里复用 WebDAV 上传的同一份
      * `BackupExportResult`，确保本地和远端拥有相同快照内容、文件名和 checksum。
      */
     suspend fun writeExport(dirUri: Uri, export: BackupExportResult, taskId: String? = null) = withContext(Dispatchers.IO) {
         logD(TAG) {
             "开始写入本地备份 ${backupTaskLogField(taskId)}fileName=${export.fileName} " +
-                "backupKind=${export.snapshot.backupKind.logCode()} fileSize=${export.packageBytes.size}"
+                "backupKind=${export.manifest.backupKind.logCode()} fileSize=${export.fileSize}"
         }
-        writeFile(
-            dirUri = dirUri,
-            fileName = export.fileName,
-            mimeType = "application/zip",
-            bytes = export.packageBytes
-        )
-        writeFile(
-            dirUri = dirUri,
-            fileName = export.manifestFileName,
-            mimeType = "application/json",
-            bytes = export.manifestJson.toByteArray(Charsets.UTF_8)
-        )
+        val tempBackupName = "${export.fileName}.tmp"
+        val tempManifestName = "${export.manifestFileName}.tmp"
+        var tempBackupUri: Uri? = null
+        var tempManifestUri: Uri? = null
+        var publishedBackupUri: Uri? = null
+        var publishedManifestUri: Uri? = null
+        runCatching {
+            tempBackupUri = writeFile(
+                dirUri = dirUri,
+                fileName = tempBackupName,
+                mimeType = "application/zip",
+                sourceFile = export.packageFile
+            )
+            tempManifestUri = writeFile(
+                dirUri = dirUri,
+                fileName = tempManifestName,
+                mimeType = "application/json",
+                bytes = export.manifestJson.toByteArray(Charsets.UTF_8)
+            )
+            publishedBackupUri = publishTempFile(dirUri, tempBackupUri ?: throw BackupFailure.StorageNotWritable(), export.fileName)
+            publishedManifestUri = publishTempFile(dirUri, tempManifestUri ?: throw BackupFailure.StorageNotWritable(), export.manifestFileName)
+        }.onFailure { throwable ->
+            tempBackupUri?.let(::deleteDocument)
+            tempManifestUri?.let(::deleteDocument)
+            publishedBackupUri?.let(::deleteDocument)
+            publishedManifestUri?.let(::deleteDocument)
+            throw throwable
+        }.getOrThrow()
         logD(TAG) { "本地备份写入成功 ${backupTaskLogField(taskId)}fileName=${export.fileName}" }
     }
 
@@ -69,7 +89,7 @@ class LocalBackupDirectoryWriter @Inject constructor(
             BackupSafetySnapshotResult(
                 fileName = export.fileName,
                 locationLabel = locationLabel,
-                fileSize = export.packageBytes.size.toLong()
+                fileSize = export.fileSize
             )
         }
 
@@ -101,15 +121,18 @@ class LocalBackupDirectoryWriter @Inject constructor(
                 )
             }
             .sortedWith(
-                compareByDescending<LocalBackupFile> { it.manifest?.createdAt ?: 0L }
+                compareByDescending<LocalBackupFile> { it.sortCreatedAt }
                     .thenByDescending { it.lastModified ?: 0L }
                     .thenByDescending { it.fileName }
             )
     }
 
-    /** 读取本地备份 zip 字节，用于本地目录列表点击预览。 */
-    suspend fun readBackupBytes(fileUri: Uri): ByteArray = withContext(Dispatchers.IO) {
-        appContext.contentResolver.openInputStream(fileUri)?.use { it.readBytes() } ?: throw BackupFailure.ParseFailed()
+    /** 把本地备份目录中的 zip 复制到私有临时文件，用于列表点击预览和恢复。 */
+    suspend fun copyBackupToRef(file: LocalBackupFile, targetFile: java.io.File, taskDir: java.io.File): BackupPackageRef = withContext(Dispatchers.IO) {
+        appContext.contentResolver.openInputStream(file.uri)?.use { input ->
+            targetFile.outputStream().use { output -> input.copyTo(output) }
+        } ?: throw BackupFailure.ParseFailed()
+        BackupPackageRef(file = targetFile, fileName = file.fileName, taskDir = taskDir)
     }
 
     /**
@@ -129,7 +152,7 @@ class LocalBackupDirectoryWriter @Inject constructor(
                 file.manifest?.backupKind == backupKind && file.manifest.deviceLabel == deviceLabel
             }
             .sortedWith(
-                compareByDescending<LocalBackupFile> { it.manifest?.createdAt ?: 0L }
+                compareByDescending<LocalBackupFile> { it.sortCreatedAt }
                     .thenByDescending { it.lastModified ?: 0L }
                     .thenByDescending { it.fileName }
             )
@@ -203,16 +226,39 @@ class LocalBackupDirectoryWriter @Inject constructor(
         }
     }
 
-    /**
-     * 在 SAF 目录中创建并写入单个文件。
-     *
-     * 同名文件可能被不同系统文件管理器以不同策略处理；这里先尝试删除旧文件，再创建新文件，减少用户重复备份时
-     * 出现“同名 (1)”文件或旧尾部字节残留的概率。
-     */
-    private fun writeFile(dirUri: Uri, fileName: String, mimeType: String, bytes: ByteArray) {
+    /** 在 SAF 目录中创建并写入单个小文件，返回文档 URI 供两阶段发布或失败清理使用。 */
+    private fun writeFile(dirUri: Uri, fileName: String, mimeType: String, bytes: ByteArray): Uri {
         val fileUri = createOrReplaceFile(dirUri, fileName, mimeType)
         appContext.contentResolver.openOutputStream(fileUri, "wt")?.use { output ->
             output.write(bytes)
+        } ?: throw BackupFailure.StorageNotWritable()
+        return fileUri
+    }
+
+    /** 以文件流写入 SAF 文档，避免大备份包进入内存，并返回临时文档 URI 供后续发布。 */
+    private fun writeFile(dirUri: Uri, fileName: String, mimeType: String, sourceFile: java.io.File): Uri {
+        val fileUri = createOrReplaceFile(dirUri, fileName, mimeType)
+        appContext.contentResolver.openOutputStream(fileUri, "wt")?.use { output ->
+            sourceFile.inputStream().use { input -> input.copyTo(output) }
+        } ?: throw BackupFailure.StorageNotWritable()
+        return fileUri
+    }
+
+    /**
+     * 将写完整的临时 SAF 文档发布为正式文件名。
+     *
+     * Android SAF 没有跨 Provider 一致的原子替换能力；这里先删除同名正式文件，再调用 `renameDocument`，至少保证
+     * 备份列表只会在临时文件完整写入后看到正式文件，并且 `.tmp` 残留不会参与列表、latest 或保留清理。
+     */
+    private fun publishTempFile(dirUri: Uri, tempUri: Uri, finalName: String): Uri {
+        return runCatching {
+            findChildUri(dirUri, finalName)?.let { existing ->
+                if (!deleteDocument(existing)) throw BackupFailure.StorageNotWritable()
+            }
+            DocumentsContract.renameDocument(appContext.contentResolver, tempUri, finalName)
+        }.getOrElse { throwable ->
+            if (throwable is BackupFailure) throw throwable
+            throw BackupFailure.StorageNotWritable(throwable)
         } ?: throw BackupFailure.StorageNotWritable()
     }
 
@@ -286,4 +332,16 @@ data class LocalBackupFile(
     val lastModified: Long?,
     /** 对应 sidecar manifest；损坏或缺失时为空。 */
     val manifest: BackupManifest?,
-)
+) {
+    /** 列表排序使用的创建时间：manifest 优先，手动导出的单 zip 通过文件名时间戳兜底。 */
+    val sortCreatedAt: Long
+        get() = manifest?.createdAt ?: parseBackupTimestampFromFileName(fileName) ?: 0L
+
+    /** 列表展示使用的有效类型：manifest 优先，缺失时通过安全快照文件名兜底识别。 */
+    val effectiveBackupKind: BackupKind?
+        get() = manifest?.backupKind ?: parseBackupKindFromFileName(fileName)
+
+    /** 是否是恢复前安全快照；安全快照要从普通备份列表中分离，避免被误认为最新可恢复备份。 */
+    val isSafetySnapshot: Boolean
+        get() = effectiveBackupKind == BackupKind.Safety
+}

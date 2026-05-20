@@ -78,6 +78,10 @@ interface SourceAppDao {
     @Query("SELECT * FROM source_apps ORDER BY package_name ASC")
     suspend fun loadAllForBackup(): List<SourceAppData>
 
+    /** 分页导出来源 App 缓存；主键是包名，使用字典序游标避免一次性读取完整缓存。 */
+    @Query("SELECT * FROM source_apps WHERE package_name > :lastPackageName ORDER BY package_name ASC LIMIT :limit")
+    suspend fun loadPageForBackup(lastPackageName: String, limit: Int): List<SourceAppData>
+
     /**
      * 根据包名查询对应的SourceApp条目。
      * @param packageName 要查询的应用包名。

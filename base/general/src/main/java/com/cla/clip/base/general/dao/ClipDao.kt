@@ -135,6 +135,14 @@ interface ClipDao {
     @Query("SELECT * FROM clips ORDER BY id ASC")
     suspend fun loadAllClipsForBackup(): List<ClipData>
 
+    /** 备份流式导出开始时读取当前最大 id，作为本次快照的 high-water mark。 */
+    @Query("SELECT COALESCE(MAX(id), 0) FROM clips")
+    suspend fun maxClipIdForBackup(): Long
+
+    /** 按 high-water mark 分页导出剪贴记录，避免大数据量备份一次性读取完整表。 */
+    @Query("SELECT * FROM clips WHERE id > :lastId AND id <= :maxId ORDER BY id ASC LIMIT :limit")
+    suspend fun loadClipsPageForBackup(lastId: Long, maxId: Long, limit: Int): List<ClipData>
+
     /**
      * 备份恢复前按主键批量读取已有剪贴记录。
      *

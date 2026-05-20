@@ -42,8 +42,8 @@ class PrivateSafetySnapshotStore @Inject constructor(
     /** 写入私有安全快照并清理旧 safety 文件。 */
     suspend fun writeSafetySnapshot(export: BackupExportResult, taskId: String? = null): BackupSafetySnapshotResult = withContext(Dispatchers.IO) {
         logD(TAG) {
-            "开始写入私有安全快照 ${backupTaskLogField(taskId)}target=private backupKind=${export.snapshot.backupKind.logCode()} " +
-                "fileName=${export.fileName} fileSize=${export.packageBytes.size}"
+            "开始写入私有安全快照 ${backupTaskLogField(taskId)}target=private backupKind=${export.manifest.backupKind.logCode()} " +
+                "fileName=${export.fileName} fileSize=${export.fileSize}"
         }
         val dir = File(appContext.filesDir, SAFETY_DIR_NAME).apply {
             if (!exists() && !mkdirs()) throw BackupFailure.StorageNotWritable()
@@ -51,7 +51,7 @@ class PrivateSafetySnapshotStore @Inject constructor(
         val snapshotFile = File(dir, export.fileName)
         val manifestFile = File(dir, export.manifestFileName)
         runCatching {
-            snapshotFile.writeBytes(export.packageBytes)
+            export.packageFile.copyTo(snapshotFile, overwrite = true)
             manifestFile.writeText(export.manifestJson, Charsets.UTF_8)
         }.getOrElse { throwable ->
             logE(TAG) {
@@ -62,12 +62,12 @@ class PrivateSafetySnapshotStore @Inject constructor(
         val deleted = pruneSafetySnapshots(dir, taskId)
         logD(TAG) {
             "私有安全快照写入成功 ${backupTaskLogField(taskId)}target=private fileName=${export.fileName} " +
-                "fileSize=${export.packageBytes.size} safetyDeleted=$deleted"
+                "fileSize=${export.fileSize} safetyDeleted=$deleted"
         }
         BackupSafetySnapshotResult(
             fileName = export.fileName,
             locationLabel = appContext.getString(R.string.base_general_backup_private_safety_location),
-            fileSize = export.packageBytes.size.toLong()
+            fileSize = export.fileSize
         )
     }
 

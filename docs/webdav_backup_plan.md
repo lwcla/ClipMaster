@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-项目当前数据主要存放在 Room 数据库和 MMKV 中：剪贴数据、来源 App、链接预览、搜索历史、视频下载记录和图片下载记录由 Room 承载；剪贴快捷动作、回收站保留天数等轻量设置由 `AppSetting` 承载。当前已接入 v1 统一备份恢复能力，支持本地手动导出/导入预检恢复，以及 WebDAV 手动测试、上传、列表、预览和恢复。
+项目当前数据主要存放在 Room 数据库和 MMKV 中：剪贴数据、来源 App、链接预览、搜索历史、视频下载记录和图片下载记录由 Room 承载；剪贴快捷动作、回收站保留天数等轻量设置由 `AppSetting` 承载。当前已接入统一备份恢复能力，支持本地手动导出/导入预检恢复，以及 WebDAV 手动测试、上传、列表、预览和恢复；新导出使用 `schemaVersion = 2` 的 zip + JSONL 流式协议，旧 v1 JSON 数组 zip 只读兼容导入。
 
 本方案新增统一 `BackupSnapshot` 备份包，同一套导出、预检、恢复和报告逻辑同时服务本地文件备份与 WebDAV 备份。第一版定位是“备份/恢复”，不是多设备实时同步；多个设备可以共用同一 WebDAV 目录并看到彼此备份，但不保证自动双向同步或冲突同步。
 
@@ -12,8 +12,8 @@
 
 - 完成“导出备份 → 卸载重装 → 恢复数据”的可靠闭环。
 - 第一版支持本地手动导出/导入、WebDAV 手动备份/恢复、恢复前预检、恢复前安全快照和恢复后报告。
-- 当前阶段补齐 WebDAV/本地统一自动备份、dirty 标记、普通自动备份保留份数和恢复前安全快照；后续阶段再补齐前台通知、首次恢复引导、媒体重新定位和分类恢复。
-- 备份包不加密；当前以 `.zip` 承载 `manifest.json` 和多个业务 JSON 文件，用户界面必须提示备份文件包含剪贴内容，应保存到可信位置。
+- 当前阶段补齐 WebDAV/本地统一自动备份、dirty 标记、普通自动备份保留份数、恢复前安全快照和大数据量导出/导入流式化；后续阶段再补齐前台通知、首次恢复引导、媒体重新定位和分类恢复。
+- 备份包不加密；当前以 `.zip` 承载 `manifest.json`、设置 JSON 和多个业务 JSONL 文件，用户界面必须提示备份文件包含剪贴内容，应保存到可信位置。
 
 ## 范围
 
@@ -48,7 +48,7 @@
 - 恢复后展示结果报告：新增、更新、跳过数量、安全快照保存位置，以及失败或不兼容项摘要。
 - 自动备份默认关闭。用户开启时必须至少配置一个备份目标；已设置本地目录则先写本地，WebDAV 配置可用时再上传远端。
 - 自动备份页内配置统一开关、保留份数和仅 Wi-Fi；页面展示最近自动备份状态、最近成功摘要、跳过/失败原因和 WebDAV 健康状态缓存。
-- 本地备份目录列表会展示本地自动备份和恢复前安全快照，安全快照以回滚点文案标识；第一版仍允许通过“选择备份文件”恢复安全快照。
+- 本地备份目录列表会把普通备份和恢复前安全快照分开展示；普通备份按创建时间从新到旧排序，安全快照单独放在“恢复前回滚点”分组，不参与普通备份的最新排序。manifest 缺失时，安全快照通过文件名中的 `safety` 标识兜底识别。
 - 用户预览并恢复安全快照时，确认弹窗会明确提示这是“恢复前回滚点”，降低误把安全快照当普通备份恢复的风险。
 
 ## 数据流
@@ -57,9 +57,9 @@
 
 1. 用户选择“导出本地备份”。
 2. 页面通过系统文件创建器拿到写入 URI。
-3. `BackupRepository` 使用 Room 一致性读取窗口导出当前数据。
-4. 生成 `BackupSnapshot` 和 `BackupManifest`。
-5. 生成 `.zip` 备份包，校验包内 `manifest.json`、业务 JSON、文件大小和 checksum 后写入用户选择的文件。
+3. `BackupRepository` 记录各表 high-water mark，并按分页读取当前窗口内的数据。
+4. `BackupPackageWriter` 先写入各业务 JSONL 临时文件和设置 JSON，再生成 `BackupManifest`。
+5. 生成 `.zip` 备份包，校验包内 `manifest.json`、业务 entry、文件大小和 checksum 后写入用户选择的文件。
 
 ### 本地备份文件夹
 
@@ -71,9 +71,9 @@
 ### 本地导入
 
 1. 用户通过系统文件选择器选择备份文件。
-2. `BackupRepository` 解包并校验格式标识、`applicationId`、schemaVersion、包内文件清单和 checksum。
+2. `BackupRepository` 通过私有临时文件和 `ZipFile` 校验格式标识、`applicationId`、schemaVersion、包内文件清单和 checksum。
 3. 页面展示预检摘要，只预览不写库。
-4. 用户确认后，Repository 在事务中合并恢复。
+4. 用户确认后，Repository 按 JSONL 行和 chunk 解析数据，并在事务中合并恢复。
 5. 恢复完成后展示恢复报告。
 
 ### WebDAV 手动备份
@@ -110,6 +110,7 @@
 3. 有本地备份目录时写入该目录；未设置时写入应用私有目录。
 4. 安全快照固定保留最近 3 份，不占用普通自动备份保留份数，也不上传 WebDAV。
 5. 安全快照失败时阻止恢复，并提示目录不可写、空间不足或文件过大等可行动原因。
+6. 安全快照只作为恢复回滚点展示，不参与普通备份列表的最新排序；如果 App 数据被清除后目录中存在空安全快照，刷新列表时仍应优先让用户看到真正的普通备份。
 
 ### WebDAV 手动恢复
 
@@ -220,6 +221,20 @@ manifest 简化示例：
 - 更新 `AGENTS.md` 的备份覆盖维护规则。
 - 编译验证 `./gradlew :base:general:compileDebugKotlin` 和 `./gradlew :app:compileDebugKotlin`。
 
+### 当前阶段：大数据量备份导出/导入流式化
+
+- 对外仍保持单个 `.zip` 备份文件和 manifest sidecar，不改成本地目录包，不备份媒体文件本体。
+- 新导出使用 `schemaVersion = 2` 和 JSONL 数据文件；旧 `schemaVersion = 1` 的 JSON 数组 zip 只读兼容导入，不再新生成。
+- 导出不再生成整包 `ByteArray`：先分页写 JSONL 临时文件并计算 size/checksum，再生成 manifest，最后组装 zip。
+- 导出开始时记录可分页表的 high-water mark，本次只导出已存在记录；导出期间新增变化继续保留 dirty，由下一次自动备份补齐。
+- 预览和恢复改为 `BackupPackageRef` 文件引用；外部 URI 和 WebDAV 下载先复制到应用私有临时文件，再用 `ZipFile` 读取 manifest、entry 和 checksum。
+- 预览只解析 manifest 和流式校验完整性，不反序列化全部业务数据。
+- 恢复按 JSONL 行和 chunk 解析、查询已有记录并写库；进入 Room transaction 后不可取消。
+- 本地 SAF 和 WebDAV 写入都改为文件流复制；WebDAV 上传使用带 `Content-Length` 的文件 RequestBody，发布正式文件前重新校验远端临时 zip。
+- 临时文件按导出、导入下载和安全快照分区保存，文件名带 taskId；启动或进入备份页时清理过期临时文件，保留清理忽略 `.tmp`。
+- 备份/恢复弹窗从单一文案升级为阶段 + 数量；日志按阶段和类别节流记录，不按 JSONL 每行输出。
+- v2 只优化元数据备份，不包含视频/图片文件本体；媒体重新定位仍是后续阶段。
+
 ### 后续增强
 
 - 首次恢复引导。
@@ -228,7 +243,6 @@ manifest 简化示例：
 - 分类恢复。
 - gzip 压缩和加密备份。
 - 媒体文件化备份目录：只在明确启用媒体备份后保存媒体文件本体。
-- 大数据量导出/导入使用流式 JSON、分批恢复和明确进度值，恢复弹窗从不定进度升级为分阶段进度。
 - golden 备份测试文件。
 
 ## 测试验证
@@ -249,7 +263,7 @@ manifest 简化示例：
 - 第一版不备份媒体文件本体，只恢复下载记录元数据。
 - 第一版不做多设备同步，只做备份快照和手动恢复。
 - 第一版不做备份包加密，隐私依赖用户选择可信存储位置与 WebDAV HTTPS。
-- 第一版已经从单个 JSON 文件切换为 `.zip` 文件化备份包；当前仍会在内存中聚合 zip 字节，极大数据量时后续需要继续升级为流式写入和分批解析。
+- 新导出已经升级为 `.zip` + JSONL 文件化流式管线；旧 v1 JSON 数组 zip 仅用于兼容导入，仍可能走局部字节读取，因此大文件性能基准主要以 v2 备份为准。
 - 第一版 WebDAV 密码已保存到独立加密 MMKV，但该方案不等同于用户可跨安装恢复的端到端加密；后续需要评估 Keystore、用户恢复密码和系统 Auto Backup 的兼容边界。
 - 自动备份第一版使用统一开关，不拆分本地/WebDAV 独立开关；本地目录和 WebDAV 配置作为目标可用性共同决定执行范围。
 - 保留清理默认只清理当前安装标识生成的自动备份，避免多设备共用同一目录时误删其他设备的恢复点。
@@ -275,9 +289,20 @@ manifest 简化示例：
 - 2026-05-19：已运行 `./gradlew :base:general:compileDebugKotlin` 与 `./gradlew :app:compileDebugKotlin`，结果通过；自动备份、保留清理、安全快照、WebDAV 健康检查和手动备份/恢复的脱敏日志接入编译通过，并通过 `git diff --check` 检查。
 - 2026-05-19：移除仅充电备份选项后，再次运行 `./gradlew :base:general:compileDebugKotlin` 与 `./gradlew :app:compileDebugKotlin`，结果通过；确认自动备份设置和 WorkManager 约束只保留统一开关、保留份数和仅 Wi-Fi。
 - 2026-05-19：已运行 `git diff --check`、`./gradlew :base:general:compileDebugKotlin` 与 `./gradlew :app:compileDebugKotlin`，结果通过；备份相关日志正文已统一调整为简体中文，并保留低敏结构化字段英文命名。
+- 2026-05-19：已运行 `./gradlew :base:general:compileDebugKotlin` 与 `./gradlew :app:compileDebugKotlin`，结果通过；schemaVersion 2、JSONL 导出、文件引用预览/恢复、WebDAV 文件流上传下载、本地 SAF 两阶段发布、临时文件清理和阶段进度弹窗接入编译通过。
+- 2026-05-19：最终再次运行 `./gradlew :base:general:compileDebugKotlin`、`./gradlew :app:compileDebugKotlin` 和 `git diff --check`，结果通过；确认非法 zip entry 拒绝、包内 manifest fileSize 稳定重写和 v1/v2 校验边界编译通过。
+- 2026-05-19：新增 `BackupPackageIoTest` 并运行 `./gradlew :base:general:testDebugUnitTest`，结果通过；覆盖 v2 JSONL zip 的 manifest/checksum 校验和非法 zip entry 路径拒绝。
+- 2026-05-19：针对“备份包约 2KB、预览无有效数据”反馈，已运行 `./gradlew :base:general:compileDebugKotlin`、`./gradlew :app:compileDebugKotlin`、`./gradlew :base:general:testDebugUnitTest` 和 `git diff --check`，结果通过；新增分页导出为空时的旧全量查询兜底和 high-water mark 脱敏日志。
+- 2026-05-19：针对“本地备份列表刷新后不是从新到旧排序”反馈，已运行 `./gradlew :base:general:compileDebugKotlin`、`./gradlew :app:compileDebugKotlin`、`./gradlew :base:general:testDebugUnitTest` 和 `git diff --check`，结果通过；本地/WebDAV 列表排序新增文件名时间戳兜底，覆盖无 manifest 的手动导出 zip。
+- 2026-05-19：针对“清数据后安全快照 2KB 文件显示成最新备份”反馈，已运行 `./gradlew :base:general:compileDebugKotlin`、`./gradlew :app:compileDebugKotlin`、`./gradlew :base:general:testDebugUnitTest` 和 `git diff --check`，结果通过；本地备份列表改为普通备份与安全快照分组展示，安全快照通过 manifest 或文件名兜底识别，不参与普通备份最新排序。
 
 ## 变更记录
 
+- 2026-05-19：将大数据量备份导出/导入流式化提升为当前阶段，明确 schemaVersion 2、JSONL、文件引用、临时文件治理和 WebDAV 文件流上传；原因是当前 zip 包仍围绕整包 `ByteArray`，大量数据时存在 OOM 和半成品备份风险。
+- 2026-05-19：落地大数据量备份导出/导入流式化，新导出统一使用 schemaVersion 2 + JSONL，预览/恢复改为文件引用，WebDAV 和本地目录写入改为流式文件复制；原因是降低备份包在导出、上传、预览和恢复阶段的内存峰值，并减少半成品正式备份风险。
+- 2026-05-19：修复 v2 导出可能生成小体积空备份的问题，分页导出仍作为主路径，但当分页结果为空而旧全量查询能读到数据时，写入旧全量查询结果并记录 `paged_export_empty` 诊断日志；原因是优先保证用户已有数据能进入备份包，同时保留后续定位分页通道异常的低敏线索。
+- 2026-05-19：修复本地备份列表排序兜底，列表排序从 `manifest.createdAt -> lastModified -> fileName` 调整为 `manifest.createdAt -> 文件名时间戳 -> lastModified -> fileName`；原因是系统文件创建器导出的单 zip 可能没有 sidecar manifest，且部分 SAF Provider 不提供可靠修改时间。
+- 2026-05-19：修复安全快照混入普通备份列表的问题，普通备份与 `backupKind = safety` 回滚点分组展示，并在 manifest 缺失时通过文件名 `_safety_` 兜底识别；原因是清除 App 数据后可能出现只有 2KB 的空安全快照，不能让它覆盖用户真正需要恢复的普通备份入口。
 - 2026-05-19：新增 WebDAV + 本地备份恢复方案并标记为实现中；原因是需要为卸载重装后恢复数据建立统一备份闭环。
 - 2026-05-19：落地 v1 本地手动导出/导入预检恢复、WebDAV 手动测试/上传/列表/预览/恢复、备份字段白名单和系统 Auto Backup 排除；原因是先完成可恢复闭环并为后续自动备份阶段保留扩展点。
 - 2026-05-19：根据手动验证反馈优化恢复弹窗、WebDAV 列表刷新提示、WebDAV 密码加密 MMKV 存储，并记录单 JSON 大数据量风险和文件化备份包升级方向；原因是提升恢复过程可感知性、安全边界和大数据量可演进性。

@@ -137,6 +137,14 @@ interface DownloadDao {
     @Query("SELECT * FROM download_tasks ORDER BY id ASC")
     suspend fun loadAllTasksForBackup(): List<DownloadTaskData>
 
+    /** 备份流式导出开始时读取当前最大任务 id，作为本次下载记录快照边界。 */
+    @Query("SELECT COALESCE(MAX(id), 0) FROM download_tasks")
+    suspend fun maxTaskIdForBackup(): Long
+
+    /** 按 high-water mark 分页导出下载记录，避免大量历史任务导致内存峰值过高。 */
+    @Query("SELECT * FROM download_tasks WHERE id > :lastId AND id <= :maxId ORDER BY id ASC LIMIT :limit")
+    suspend fun loadTasksPageForBackup(lastId: Long, maxId: Long, limit: Int): List<DownloadTaskData>
+
     /**
      * 备份恢复前按 id 批量读取已有视频下载历史。
      *

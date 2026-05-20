@@ -39,7 +39,15 @@ data class RemoteBackupFile(
     val lastModified: Long?,
     /** 对应 manifest，损坏或缺失时为 null。 */
     val manifest: BackupManifest?,
-)
+) {
+    /** 列表排序使用的创建时间：manifest 优先，缺失时从标准备份文件名解析时间戳。 */
+    val sortCreatedAt: Long
+        get() = manifest?.createdAt ?: parseBackupTimestampFromFileName(fileName) ?: 0L
+
+    /** 列表展示使用的有效类型：manifest 优先，缺失时通过安全快照文件名兜底识别。 */
+    val effectiveBackupKind: BackupKind?
+        get() = manifest?.backupKind ?: parseBackupKindFromFileName(fileName)
+}
 
 /**
  * 规范化 WebDAV 远端目录。

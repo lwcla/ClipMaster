@@ -18,6 +18,7 @@ import com.cla.clip.base.general.backup.BackupKind
 import com.cla.clip.base.general.backup.BackupSource
 import com.cla.clip.base.general.backup.BackupSuccessSummary
 import com.cla.clip.base.general.backup.BackupTaskStatus
+import com.cla.clip.base.general.backup.BackupTempFileStore
 import com.cla.clip.base.general.backup.WebDavClient
 import com.cla.clip.base.general.backup.WebDavConfig
 import com.cla.clip.base.general.backup.buildBackupDeviceLabel
@@ -54,6 +55,8 @@ class BackupAutoWorker @AssistedInject constructor(
     private val localBackupDirectoryWriter: LocalBackupDirectoryWriter,
     /** WebDAV 客户端，负责远端上传和保留清理。 */
     private val webDavClient: WebDavClient,
+    /** 临时文件目录管理器，自动备份完成后清理导出临时文件。 */
+    private val tempFileStore: BackupTempFileStore,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -93,82 +96,86 @@ class BackupAutoWorker @AssistedInject constructor(
 
             val source = if (webDavConfig != null) BackupSource.WebDavAuto else BackupSource.LocalAuto
             val export = try {
-                backupRepository.createSnapshot(source = source, backupKind = BackupKind.Auto)
+                backupRepository.createSnapshot(source = source, backupKind = BackupKind.Auto, taskId = taskId)
             } catch (throwable: Throwable) {
                 logE(TAG) {
                     "自动备份快照生成失败 taskId=$taskId reasonCode=${throwable.backupReasonCode()} type=${throwable::class.simpleName}"
                 }
                 return@runExclusive handleFailure(taskId, throwable, startedAt)
             }
-            logD(TAG) {
-                "自动备份快照已生成 taskId=$taskId source=${export.snapshot.source.logCode()} " +
-                    "backupKind=${export.snapshot.backupKind.logCode()} fileName=${export.fileName} " +
-                    "fileSize=${export.packageBytes.size} ${export.snapshot.summary.toLogFields()}"
-            }
+            try {
+                logD(TAG) {
+                    "自动备份快照已生成 taskId=$taskId source=${export.manifest.source.logCode()} " +
+                        "backupKind=${export.manifest.backupKind.logCode()} fileName=${export.fileName} " +
+                        "fileSize=${export.fileSize} ${export.manifest.summary.toLogFields()}"
+                }
 
-            var localSuccess = false
-            var webDavSuccess = false
-            var localDeleted = 0
-            var webDavDeleted = 0
-            val failures = mutableListOf<Throwable>()
-            val retention = AppSetting.backupRetentionCount
-            val deviceLabel = buildBackupDeviceLabel(AppSetting.pid)
+                var localSuccess = false
+                var webDavSuccess = false
+                var localDeleted = 0
+                var webDavDeleted = 0
+                val failures = mutableListOf<Throwable>()
+                val retention = AppSetting.backupRetentionCount
+                val deviceLabel = buildBackupDeviceLabel(AppSetting.pid)
 
-            if (localDir != null) {
-                runCatching {
-                    logD(TAG) { "开始写入自动本地备份 taskId=$taskId fileName=${export.fileName} fileSize=${export.packageBytes.size}" }
-                    localBackupDirectoryWriter.writeExport(Uri.parse(localDir), export)
-                    localSuccess = true
-                    logD(TAG) { "自动本地备份写入成功 taskId=$taskId fileName=${export.fileName}" }
-                    localDeleted = localBackupDirectoryWriter
-                        .pruneBackups(Uri.parse(localDir), retention, BackupKind.Auto, deviceLabel, taskId)
-                        .deletedCount
-                }.onFailure { throwable ->
-                    failures += throwable
-                    logE(TAG) {
-                        "自动本地备份写入失败 taskId=$taskId reasonCode=${throwable.backupReasonCode()} type=${throwable::class.simpleName}"
+                if (localDir != null) {
+                    runCatching {
+                        logD(TAG) { "开始写入自动本地备份 taskId=$taskId fileName=${export.fileName} fileSize=${export.fileSize}" }
+                        localBackupDirectoryWriter.writeExport(Uri.parse(localDir), export)
+                        localSuccess = true
+                        logD(TAG) { "自动本地备份写入成功 taskId=$taskId fileName=${export.fileName}" }
+                        localDeleted = localBackupDirectoryWriter
+                            .pruneBackups(Uri.parse(localDir), retention, BackupKind.Auto, deviceLabel, taskId)
+                            .deletedCount
+                    }.onFailure { throwable ->
+                        failures += throwable
+                        logE(TAG) {
+                            "自动本地备份写入失败 taskId=$taskId reasonCode=${throwable.backupReasonCode()} type=${throwable::class.simpleName}"
+                        }
                     }
                 }
-            }
 
-            if (webDavConfig != null) {
-                runCatching {
-                    logD(TAG) { "开始上传自动 WebDAV 备份 taskId=$taskId fileName=${export.fileName} fileSize=${export.packageBytes.size}" }
-                    webDavClient.uploadBackup(webDavConfig, export, taskId)
-                    webDavSuccess = true
-                    logD(TAG) { "自动 WebDAV 备份上传成功 taskId=$taskId fileName=${export.fileName}" }
-                    webDavDeleted = webDavClient
-                        .pruneBackups(webDavConfig, retention, BackupKind.Auto, deviceLabel, taskId)
-                        .deletedCount
-                }.onFailure { throwable ->
-                    failures += throwable
-                    logE(TAG) {
-                        "自动 WebDAV 备份上传失败 taskId=$taskId reasonCode=${throwable.backupReasonCode()} type=${throwable::class.simpleName}"
+                if (webDavConfig != null) {
+                    runCatching {
+                        logD(TAG) { "开始上传自动 WebDAV 备份 taskId=$taskId fileName=${export.fileName} fileSize=${export.fileSize}" }
+                        webDavClient.uploadBackup(webDavConfig, export, taskId)
+                        webDavSuccess = true
+                        logD(TAG) { "自动 WebDAV 备份上传成功 taskId=$taskId fileName=${export.fileName}" }
+                        webDavDeleted = webDavClient
+                            .pruneBackups(webDavConfig, retention, BackupKind.Auto, deviceLabel, taskId)
+                            .deletedCount
+                    }.onFailure { throwable ->
+                        failures += throwable
+                        logE(TAG) {
+                            "自动 WebDAV 备份上传失败 taskId=$taskId reasonCode=${throwable.backupReasonCode()} type=${throwable::class.simpleName}"
+                        }
                     }
                 }
-            }
 
-            finishTargetResults(
-                taskId = taskId,
-                exportSummary = BackupSuccessSummary(
-                    createdAt = export.snapshot.createdAt,
-                    fileName = export.fileName,
-                    fileSize = export.packageBytes.size.toLong(),
-                    source = export.snapshot.source,
-                    backupKind = export.snapshot.backupKind,
-                    summary = export.snapshot.summary,
+                finishTargetResults(
+                    taskId = taskId,
+                    exportSummary = BackupSuccessSummary(
+                        createdAt = export.manifest.createdAt,
+                        fileName = export.fileName,
+                        fileSize = export.fileSize,
+                        source = export.manifest.source,
+                        backupKind = export.manifest.backupKind,
+                        summary = export.manifest.summary,
+                        localSuccess = localSuccess,
+                        webDavSuccess = webDavSuccess,
+                        localRetentionDeleted = localDeleted,
+                        webDavRetentionDeleted = webDavDeleted
+                    ),
+                    failures = failures,
                     localSuccess = localSuccess,
                     webDavSuccess = webDavSuccess,
-                    localRetentionDeleted = localDeleted,
-                    webDavRetentionDeleted = webDavDeleted
-                ),
-                failures = failures,
-                localSuccess = localSuccess,
-                webDavSuccess = webDavSuccess,
-                localTargetConfigured = localDir != null,
-                webDavTargetConfigured = webDavConfig != null,
-                startedAt = startedAt
-            )
+                    localTargetConfigured = localDir != null,
+                    webDavTargetConfigured = webDavConfig != null,
+                    startedAt = startedAt
+                )
+            } finally {
+                tempFileStore.cleanupTaskDir(export.taskDir, taskId)
+            }
         }
     }
 

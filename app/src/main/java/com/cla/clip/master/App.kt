@@ -4,6 +4,7 @@ import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import androidx.work.WorkManager
 import com.cla.clip.base.general.BaseApplication
+import com.cla.clip.base.general.backup.BackupTempFileStore
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.master.utils.ShizukuConnector
 import com.cla.clip.master.work.BackupAutoScheduler
@@ -37,6 +38,10 @@ class App : BaseApplication(), Configuration.Provider {
     @Inject
     lateinit var shizukuConnector: ShizukuConnector
 
+    /** 备份临时文件管理器，启动时清理上次异常退出遗留的过期临时文件。 */
+    @Inject
+    lateinit var backupTempFileStore: BackupTempFileStore
+
     /** WorkManager 配置入口，返回带 HiltWorkerFactory 的配置，供手动初始化和系统读取使用。 */
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
@@ -61,6 +66,7 @@ class App : BaseApplication(), Configuration.Provider {
             ShizukuWorkScheduler.checkNow(this)
             RecycleBinCleanupScheduler.schedulePeriodic(this)
             RecycleBinCleanupScheduler.cleanupNow(this)
+            backupTempFileStore.cleanupExpired()
             BackupAutoScheduler.reschedule(this)
 
             shizukuConnector.connect()

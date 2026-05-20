@@ -49,6 +49,8 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.backup.BackupKind
+import com.cla.clip.base.general.backup.BackupProgress
+import com.cla.clip.base.general.backup.BackupProgressPhase
 import com.cla.clip.base.general.backup.BackupTargetHealth
 import com.cla.clip.base.general.backup.BackupTaskStatus
 import com.cla.clip.base.general.backup.RemoteBackupFile
@@ -69,6 +71,9 @@ fun BackupPage(
     val state by backupVm.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     var showRestoreConfirm by remember { mutableStateOf(false) }
+    // 普通备份和恢复前回滚点分开展示，避免清数据后的空安全快照抢占“最新备份”位置。
+    val normalLocalBackups = state.localBackups.filterNot { it.isSafetySnapshot }
+    val safetyLocalBackups = state.localBackups.filter { it.isSafetySnapshot }
 
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/zip"),
@@ -132,10 +137,26 @@ fun BackupPage(
                 )
             }
 
-            if (state.localBackups.isNotEmpty()) {
+            if (normalLocalBackups.isNotEmpty()) {
                 items(
-                    items = state.localBackups,
+                    items = normalLocalBackups,
                     key = { it.fileName }
+                ) { file ->
+                    LocalBackupCard(
+                        file = file,
+                        isBusy = state.isBusy,
+                        onPreview = { backupVm.previewLocalBackup(file) }
+                    )
+                }
+            }
+
+            if (safetyLocalBackups.isNotEmpty()) {
+                item {
+                    LocalSafetySnapshotHeader()
+                }
+                items(
+                    items = safetyLocalBackups,
+                    key = { "safety-${it.fileName}" }
                 ) { file ->
                     LocalBackupCard(
                         file = file,
@@ -200,7 +221,28 @@ fun BackupPage(
     if (state.busyOperation.isModalProgress) {
         // 备份和恢复都涉及文件/网络/数据库写入；拦截系统返回，避免用户误以为可以安全中断长任务。
         BackHandler(enabled = true) {}
-        BackupTaskProgressDialog(operation = state.busyOperation)
+        BackupTaskProgressDialog(operation = state.busyOperation, progress = state.backupProgress)
+    }
+}
+
+/** 恢复前回滚点分组标题，避免安全快照混在普通备份里抢占最新备份位置。 */
+@Composable
+private fun LocalSafetySnapshotHeader() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Text(
+            text = androidx.compose.ui.res.stringResource(R.string.base_general_backup_safety_snapshot_section_title),
+            style = MaterialTheme.typography.titleSmall
+        )
+        Text(
+            text = androidx.compose.ui.res.stringResource(R.string.base_general_backup_safety_snapshot_section_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -498,9 +540,9 @@ private fun LocalBackupCard(
 ) {
     BackupFileCard(
         fileName = file.fileName,
-        createdAt = file.manifest?.createdAt ?: file.lastModified,
+        createdAt = file.manifest?.createdAt ?: file.sortCreatedAt.takeIf { it > 0L } ?: file.lastModified,
         size = file.size,
-        backupKind = file.manifest?.backupKind,
+        backupKind = file.effectiveBackupKind,
         isBusy = isBusy,
         onPreview = onPreview
     )
@@ -515,9 +557,9 @@ private fun RemoteBackupCard(
 ) {
     BackupFileCard(
         fileName = file.fileName,
-        createdAt = file.manifest?.createdAt ?: file.lastModified,
+        createdAt = file.manifest?.createdAt ?: file.sortCreatedAt.takeIf { it > 0L } ?: file.lastModified,
         size = file.size,
-        backupKind = file.manifest?.backupKind,
+        backupKind = file.effectiveBackupKind,
         isBusy = isBusy,
         onPreview = onPreview
     )
@@ -694,18 +736,29 @@ private fun RestoreConfirmDialog(
  * 这里使用不可取消的模态反馈替代标题栏加载动画，因为备份会写文件/上传网络，恢复会写数据库，用户需要明确知道页面正在处理数据。
  */
 @Composable
-private fun BackupTaskProgressDialog(operation: BackupBusyOperation) {
+private fun BackupTaskProgressDialog(operation: BackupBusyOperation, progress: BackupProgress?) {
     val titleRes = when (operation) {
         BackupBusyOperation.Exporting,
         BackupBusyOperation.UploadingWebDav -> R.string.base_general_backup_backing_up_title
         BackupBusyOperation.Restoring -> R.string.base_general_backup_restoring_title
         else -> R.string.base_general_backup_backing_up_title
     }
-    val messageRes = when (operation) {
+    val messageRes = when (progress?.phase) {
+        BackupProgressPhase.Exporting -> R.string.base_general_backup_progress_exporting
+        BackupProgressPhase.UploadingWebDav -> R.string.base_general_backup_progress_uploading
+        BackupProgressPhase.Restoring -> R.string.base_general_backup_progress_restoring
+        BackupProgressPhase.Verifying -> R.string.base_general_backup_progress_verifying
+        BackupProgressPhase.Packaging -> R.string.base_general_backup_progress_packaging
+        BackupProgressPhase.WritingLocal -> R.string.base_general_backup_progress_writing_local
+        BackupProgressPhase.Downloading -> R.string.base_general_backup_progress_downloading
+        BackupProgressPhase.Completed -> R.string.base_general_backup_progress_completed
+        BackupProgressPhase.Preparing,
+        null -> when (operation) {
         BackupBusyOperation.Exporting -> R.string.base_general_backup_exporting_message
         BackupBusyOperation.UploadingWebDav -> R.string.base_general_backup_uploading_message
         BackupBusyOperation.Restoring -> R.string.base_general_backup_restoring_message
         else -> R.string.base_general_backup_exporting_message
+        }
     }
     AlertDialog(
         onDismissRequest = {},

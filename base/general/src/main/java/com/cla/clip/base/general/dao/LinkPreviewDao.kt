@@ -80,6 +80,10 @@ interface LinkPreviewDao {
     @Query("SELECT * FROM link_previews ORDER BY link ASC")
     suspend fun loadAllForBackup(): List<LinkPreviewData>
 
+    /** 分页导出链接预览缓存；主键是 link，使用字典序游标避免一次性读取完整缓存。 */
+    @Query("SELECT * FROM link_previews WHERE link > :lastLink ORDER BY link ASC LIMIT :limit")
+    suspend fun loadPageForBackup(lastLink: String, limit: Int): List<LinkPreviewData>
+
     /**
      * 根据包名查询对应的LinkPreviewData
      * @param link 要查询的链接。

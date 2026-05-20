@@ -7,14 +7,20 @@ import kotlinx.serialization.Serializable
 /** 备份文件格式标识，用于恢复前快速判断用户选择的备份包是否属于本应用。 */
 const val BACKUP_FORMAT = "clip_master_backup"
 
-/** 当前备份协议版本；后续字段语义变化时通过 mapper 兼容旧版本，而不是直接绑定 Room schema。 */
-const val BACKUP_SCHEMA_VERSION = 1
+/** 当前备份协议版本；v2 将列表数据从 JSON 数组升级为 JSONL，降低大数据量导出和恢复的内存峰值。 */
+const val BACKUP_SCHEMA_VERSION = 2
 
 /** 第一版备份不加密，但保留协议字段，后续可以平滑扩展到密码加密格式。 */
 const val BACKUP_ENCRYPTION_NONE = "none"
 
 /** 当前备份以 zip 包承载多个 JSON 数据文件；zip 只是包格式，不代表备份包已经加密。 */
 const val BACKUP_COMPRESSION_ZIP = "zip"
+
+/** v1 备份包内列表文件格式，使用完整 JSON 数组；仅用于旧备份导入兼容。 */
+const val BACKUP_DATA_FORMAT_JSON_ARRAY = "json_array"
+
+/** v2 备份包内列表文件格式，使用一行一条记录的 JSONL。 */
+const val BACKUP_DATA_FORMAT_JSONL = "jsonl"
 
 /**
  * 备份来源。
@@ -217,6 +223,10 @@ data class BackupManifest(
     /** 包内业务数据文件清单；恢复时必须逐个校验大小和 SHA-256。 */
     @SerialName("files")
     val files: List<BackupPackageFile> = emptyList(),
+
+    /** 包内列表数据格式；v1 旧备份缺失时按 JSON 数组兼容读取。 */
+    @SerialName("data_format")
+    val dataFormat: String = BACKUP_DATA_FORMAT_JSON_ARRAY,
 
     /** 轻量数量摘要。 */
     @SerialName("summary")
@@ -438,8 +448,22 @@ data class BackupRestoreReport(
     val skippedCount: Int,
     /** 恢复前安全快照结果；为空表示调用方未要求创建或旧流程尚未接入。 */
     val safetySnapshot: BackupSafetySnapshotResult? = null,
+    /** 按数据类别统计的恢复报告，用于大数据恢复后判断各类数据是否完整写入。 */
+    val categoryReports: List<BackupRestoreCategoryReport> = emptyList(),
     /** 用户可读但不含敏感内容的提示列表。 */
     val warnings: List<String> = emptyList(),
+)
+
+/** 单个备份数据类别的恢复统计。 */
+data class BackupRestoreCategoryReport(
+    /** 类别稳定 code，用于日志和 UI 后续映射，不包含用户内容。 */
+    val category: BackupProgressCategory,
+    /** 新增记录数量。 */
+    val insertedCount: Int,
+    /** 更新记录数量。 */
+    val updatedCount: Int,
+    /** 因本地较新或重复而跳过的记录数量。 */
+    val skippedCount: Int,
 )
 
 /** 恢复前安全快照写入结果，用于恢复报告和失败排查。 */
@@ -518,6 +542,74 @@ data class BackupRetentionCleanupResult(
     val deletedKinds: List<BackupKind> = emptyList(),
 )
 
+/**
+ * 备份/恢复阶段。
+ *
+ * 阶段 code 只描述任务进度，不包含路径、账号、剪贴内容或下载 URL，可安全用于 UI 状态和日志。
+ */
+enum class BackupProgressPhase {
+    /** 正在准备目录、临时文件或读取配置。 */
+    Preparing,
+    /** 正在分页导出数据库和设置。 */
+    Exporting,
+    /** 正在组装 zip 备份包。 */
+    Packaging,
+    /** 正在写入本地文件或 SAF 目录。 */
+    WritingLocal,
+    /** 正在上传 WebDAV。 */
+    UploadingWebDav,
+    /** 正在下载 WebDAV 或复制外部 URI。 */
+    Downloading,
+    /** 正在校验 manifest、checksum 和 App 身份。 */
+    Verifying,
+    /** 正在恢复写库。 */
+    Restoring,
+    /** 当前任务已完成。 */
+    Completed,
+}
+
+/**
+ * 备份数据类别。
+ *
+ * 类别用于进度、日志和恢复报告；显示文案由 UI 层根据资源映射，避免底层持有页面文案。
+ */
+enum class BackupProgressCategory {
+    /** 全局或无法归入单表的阶段。 */
+    Overall,
+    /** 剪贴记录。 */
+    Clips,
+    /** 来源 App 缓存。 */
+    SourceApps,
+    /** 链接预览缓存。 */
+    LinkPreviews,
+    /** 搜索历史。 */
+    SearchHistories,
+    /** 用户设置。 */
+    Settings,
+    /** 视频下载记录。 */
+    VideoDownloads,
+    /** 图片下载批次。 */
+    ImageBatches,
+    /** 图片下载项。 */
+    ImageItems,
+}
+
+/** 统一备份进度模型，供 Repository、Worker、页面和日志复用。 */
+data class BackupProgress(
+    /** 当前任务 id，仅用于串联日志和 UI 状态，不进入备份协议。 */
+    val taskId: String,
+    /** 当前阶段。 */
+    val phase: BackupProgressPhase,
+    /** 当前处理的数据类别。 */
+    val category: BackupProgressCategory = BackupProgressCategory.Overall,
+    /** 当前阶段已处理条数。 */
+    val processedCount: Long = 0,
+    /** 当前文件大小，未知时为 0。 */
+    val fileSize: Long = 0,
+    /** 用户可见文案资源 id；底层不强依赖具体字符串，默认由 UI 根据阶段兜底。 */
+    val messageRes: Int? = null,
+)
+
 /** WebDAV 目标最近一次健康检查状态，仅缓存脱敏状态，不保存密码或完整 URL。 */
 enum class BackupTargetHealth {
     /** 尚未检查或用户清空了配置。 */
@@ -560,4 +652,10 @@ sealed class BackupFailure(message: String, cause: Throwable? = null) : Exceptio
 
     /** 解析 zip 包或包内 JSON 失败。 */
     class ParseFailed(cause: Throwable? = null) : BackupFailure("parse_failed", cause)
+
+    /** 备份临时文件已经被清理或不可读，需要用户重新选择文件。 */
+    class TempFileUnavailable(cause: Throwable? = null) : BackupFailure("temp_file_unavailable", cause)
+
+    /** 私有临时目录空间不足，无法安全生成或复制备份包。 */
+    class InsufficientSpace(cause: Throwable? = null) : BackupFailure("insufficient_space", cause)
 }

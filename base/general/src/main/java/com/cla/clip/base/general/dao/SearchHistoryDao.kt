@@ -112,6 +112,14 @@ interface SearchHistoryDao {
     @Query("SELECT * FROM search_histories ORDER BY id ASC")
     suspend fun loadAllForBackup(): List<SearchHistoryData>
 
+    /** 备份流式导出开始时读取当前最大 id，作为本次搜索历史快照边界。 */
+    @Query("SELECT COALESCE(MAX(id), 0) FROM search_histories")
+    suspend fun maxIdForBackup(): Long
+
+    /** 按 high-water mark 分页导出搜索历史，避免历史数量增长后一次性读取完整表。 */
+    @Query("SELECT * FROM search_histories WHERE id > :lastId AND id <= :maxId ORDER BY id ASC LIMIT :limit")
+    suspend fun loadPageForBackup(lastId: Long, maxId: Long, limit: Int): List<SearchHistoryData>
+
     /** 删除指定历史；调用方只传数据库主键，删除失败时 Room 返回 0。 */
     @Query("DELETE FROM search_histories WHERE id = :id")
     suspend fun deleteById(id: Long): Int

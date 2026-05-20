@@ -64,6 +64,8 @@ fun BackupFailure.reasonCode(): String {
         is BackupFailure.RemoteFailed -> "remote_failed"
         is BackupFailure.FileTooLarge -> "file_too_large"
         is BackupFailure.ParseFailed -> "parse_failed"
+        is BackupFailure.TempFileUnavailable -> "temp_file_unavailable"
+        is BackupFailure.InsufficientSpace -> "insufficient_space"
     }
 }
 

@@ -268,6 +268,14 @@ interface ImageExtractDao {
     @Query("SELECT * FROM image_extract_batches ORDER BY id ASC")
     suspend fun loadAllBatchesForBackup(): List<ImageExtractBatchData>
 
+    /** 备份流式导出开始时读取当前最大批次 id，作为本次图片批次快照边界。 */
+    @Query("SELECT COALESCE(MAX(id), 0) FROM image_extract_batches")
+    suspend fun maxBatchIdForBackup(): Long
+
+    /** 按 high-water mark 分页导出图片批次，避免一次性读取全部历史批次。 */
+    @Query("SELECT * FROM image_extract_batches WHERE id > :lastId AND id <= :maxId ORDER BY id ASC LIMIT :limit")
+    suspend fun loadBatchesPageForBackup(lastId: Long, maxId: Long, limit: Int): List<ImageExtractBatchData>
+
     /**
      * 备份导出读取全部图片项。
      *
@@ -275,6 +283,14 @@ interface ImageExtractDao {
      */
     @Query("SELECT * FROM image_extract_items ORDER BY id ASC")
     suspend fun loadAllItemsForBackup(): List<ImageExtractItemData>
+
+    /** 备份流式导出开始时读取当前最大图片项 id，作为本次图片项快照边界。 */
+    @Query("SELECT COALESCE(MAX(id), 0) FROM image_extract_items")
+    suspend fun maxItemIdForBackup(): Long
+
+    /** 按 high-water mark 分页导出图片项，避免一个批次包含大量图片时占满内存。 */
+    @Query("SELECT * FROM image_extract_items WHERE id > :lastId AND id <= :maxId ORDER BY id ASC LIMIT :limit")
+    suspend fun loadItemsPageForBackup(lastId: Long, maxId: Long, limit: Int): List<ImageExtractItemData>
 
     /**
      * 备份恢复前按 id 批量读取已有图片批次。
