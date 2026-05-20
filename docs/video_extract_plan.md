@@ -48,6 +48,7 @@
 - 页面加载完成且进度达到完成状态后，`AUTO_PLAY_JS` 会尝试静音播放页面内所有 `video` 元素，提升捕获真实视频请求的概率。
 - `isLikelyVideoRequest` 按抖音播放接口、常见视频扩展名、视频关键词、请求头 MIME 判断候选视频地址。
 - `VideoCandidate` 记录视频地址、Referer、User-Agent、Cookie 和文件名，作为提取页到下载任务之间的核心数据结构。
+- `VideoCandidate` 只作为提取页内存态和创建下载任务前的轻量候选对象使用，不承担导航参数、Parcelable 或 JSON 序列化契约。
 - `VideoExtractVm.startDownloadAndGo` 调用 `DownloadRepository.createTask` 写入或更新下载任务，成功后通过 SharedFlow 通知页面跳转到 `VideoDownloadRoute`。
 - `DownloadRepository` 每次下载都会创建新的 `download_tasks` 记录；`video_url` 只保留普通索引，允许同一地址多次下载并分别指向各自的本地媒体文件。
 - `VideoDownloadPage` 观察下载任务状态并触发 `DownloadVideoWorker.enqueue`；已成功的历史任务只观察和播放，不会因进入页面自动重新下载，失败状态点击后通过递增 `sessionId` 重试当前任务。
@@ -123,6 +124,7 @@
 - 下载失败时任务状态变为失败，MediaStore pending 文件或旧文件路径会被清理。
 - 下载成功后点击成功状态可唤起系统视频播放器；没有可用播放器时显示 Toast。
 - 运行 `./gradlew :app:compileDebugKotlin` 验证编译。
+- 如果后续重新启用候选对象跨路由或跨进程传递，需要重新评估 Parcelable、JSON 字段协议和 release R8 保留策略。
 - 在知乎等首轮 Jsoup/OkHttp 返回 403 的页面中，复制链接后列表可先展示域名兜底；进入视频提取页并成功加载网页后返回列表，链接卡片可显示 WebView 阶段补齐后的标题或预览图。
 
 ## 已知取舍
@@ -152,4 +154,5 @@
 - 2026-05-14：完成 WebView 链接预览补全实现并将状态更新为已完成，通过 `./gradlew :app:compileDebugKotlin` 验证；原因是视频提取页已能在页面加载完成或视频候选命中前补写 `link_previews`，且不改变首轮 `LinkMetaParser` 行为。
 - 2026-05-14：同步下载记录页实现后的下载任务契约，记录 `video_url` 从唯一索引调整为普通索引、每次下载创建新任务、成功历史任务进入下载页不自动重新入队；原因是下载记录功能已经落地，需要避免文档继续描述旧的任务复用行为。
 - 2026-05-18：按当前代码组织规则拆分视频提取页，新增状态 UI 组件和 WebView 探测辅助文件；原因是页面入口同时承担状态机、权限触发、WebView 配置、请求判断和 UI 展示，拆分后更符合入口负责流程编排、工具/组件按职责放置的约定。
+- 2026-05-20：移除未接入导航链路的 `VideoCandidate` 自定义参数契约说明，代码同步退回普通内存态 data class；原因是当前下载导航已经只传递 `taskId`，候选对象无需 Parcelable、JSON 字段协议或 release R8 类名稳定契约。
 - 2026-05-18：视频提取页加载、失败和成功行内提示接入共享媒体状态组件；原因是图片提取页和视频提取页存在相同的轻量状态展示模式，应由 `MediaStateContent` 统一维护图标、颜色、字号和点击区域。

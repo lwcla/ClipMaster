@@ -468,7 +468,9 @@ data class BackupRestoreCategoryReport(
  * 备份长任务状态。
  *
  * 页面、Worker 和最近状态持久化都使用同一组状态，避免 UI 通过字符串拼接推断运行结果。
+ * 最近状态通过 `AppSetting` 使用枚举名保存到 MMKV，必须保留 release R8 混淆后的枚举名称契约。
  */
+@Keep
 enum class BackupTaskStatus {
     /** 没有任务或尚未产生结果。 */
     Idle,
@@ -598,7 +600,8 @@ data class BackupProgress(
     val messageRes: Int? = null,
 )
 
-/** WebDAV 目标最近一次健康检查状态，仅缓存脱敏状态，不保存密码或完整 URL。 */
+/** WebDAV 目标最近一次健康检查状态，仅缓存脱敏状态，不保存密码或完整 URL；枚举名会写入 MMKV，需要保留 R8 名称契约。 */
+@Keep
 enum class BackupTargetHealth {
     /** 尚未检查或用户清空了配置。 */
     Unknown,

@@ -8,6 +8,8 @@
 
 本次只增加 Compose Navigation 官方页面级左进右出动画：前进时新页面从右侧进入、当前页向左退出；返回时上一层从左侧进入、当前页向右退出。页面转场只负责视觉效果，不额外处理点击穿透，不关闭退出页动画，也不在具体页面里增加为了动画服务的点击拦截逻辑。
 
+本次补充 release/R8 导航协议约束：`Routes.kt` 中所有类型安全路由和 `SearchScope` 都通过 `@Keep` 保留默认完整类名，避免 `composable<T>`、`toRoute<T>` 或返回栈恢复在混淆包中按默认 serialName 找不到路由参数类型。
+
 ## 目标
 
 - 使用 Compose Navigation 官方转场能力实现完整左进右出页面切换。
@@ -38,6 +40,7 @@
 ## 涉及文件
 
 - `app/src/main/java/com/cla/clip/master/ui/navigation/AppNavigation.kt`
+- `app/src/main/java/com/cla/clip/master/ui/navigation/Routes.kt`
 - `docs/app_navigation_plan.md`
 
 ## 实现步骤
@@ -54,6 +57,7 @@
 - 从“我的 > 折叠数据”进入和返回时，应表现为完整左进右出动画。
 - 点击“剪贴快捷操作”设置行应立即打开弹窗，不触发导航转场。
 - 运行 `./gradlew :app:compileDebugKotlin`。
+- release 混淆包进入普通搜索和折叠搜索时，`SearchRoute.scope` 应能正常解析，不再因 `SearchScope` 类名被混淆而崩溃。
 
 ## 已知取舍
 
@@ -74,3 +78,4 @@
 - 2026-05-17：将官方左进右出转场时长从进入 180ms/退出 150ms 调整为进入 260ms/退出 220ms；原因是上一版动画时间偏短，页面切换层级感不够明显，需要先加长观察实际观感和回收站返回稳定性。
 - 2026-05-17：全局关闭 `exitTransition` 和 `popExitTransition`，只保留前进/返回进入页滑动；原因是只处理回收站业务点击属于局部兜底，其他页面退出动画仍可能拦截新页面点击，需要从导航层减少所有旧目的地的触摸命中窗口。
 - 2026-05-17：按用户要求回退点击穿透和退出页无动画相关修改，只保留完整页面级左进右出动画；原因是本次目标收敛为单纯增加页面切换视觉效果，不混入交互治理。
+- 2026-05-20：为类型安全导航 route 和 `SearchScope` 补充 `@Keep` 混淆边界；原因是 release 包中 Navigation 会按默认完整类名解析 route serialName，枚举参数类被 R8 重命名后会导致搜索页路由恢复崩溃。
