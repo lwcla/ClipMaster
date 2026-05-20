@@ -1,0 +1,4 @@
+interface:
+  display_name: "Repo Git Discipline"
+  short_description: "Chinese commit scope and safe git workflow"
+  default_prompt: "Use $repo-git-discipline when staging files or creating commits in this repo."

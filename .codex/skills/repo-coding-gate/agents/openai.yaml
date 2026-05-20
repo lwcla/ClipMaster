@@ -1,0 +1,4 @@
+interface:
+  display_name: "Repo Coding Gate"
+  short_description: "Repository code-change gate and workflow"
+  default_prompt: "Use $repo-coding-gate before making code changes in this repo."

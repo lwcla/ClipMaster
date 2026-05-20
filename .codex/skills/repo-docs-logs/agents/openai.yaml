@@ -1,0 +1,4 @@
+interface:
+  display_name: "Repo Docs Logs"
+  short_description: "Plan docs, diagnostics, and privacy-safe logs"
+  default_prompt: "Use $repo-docs-logs when changing behavior, architecture, logging, or diagnostics."

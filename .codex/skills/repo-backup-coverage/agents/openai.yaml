@@ -1,0 +1,4 @@
+interface:
+  display_name: "Repo Backup Coverage"
+  short_description: "Backup restore scope and idempotency checks"
+  default_prompt: "Use $repo-backup-coverage when adding data, settings, Room tables, or restore behavior."

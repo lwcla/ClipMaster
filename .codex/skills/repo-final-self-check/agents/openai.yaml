@@ -1,0 +1,4 @@
+interface:
+  display_name: "Repo Final Self Check"
+  short_description: "Final reply checklist for repository changes"
+  default_prompt: "Use $repo-final-self-check before finalizing code changes in this repo."

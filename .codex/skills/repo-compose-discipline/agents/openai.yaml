@@ -1,0 +1,4 @@
+interface:
+  display_name: "Repo Compose Discipline"
+  short_description: "Compose UI reuse, state, and component rules"
+  default_prompt: "Use $repo-compose-discipline when changing Compose UI."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Repo Architecture Boundaries"
+  short_description: "Class, method, mapper, and module boundaries"
+  default_prompt: "Use $repo-architecture-boundaries when changing ViewModels, Repositories, DAOs, mappers, helpers, or utilities."
