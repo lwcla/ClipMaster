@@ -9,7 +9,6 @@ import androidx.lifecycle.viewModelScope
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.backup.BackupExportResult
 import com.cla.clip.base.general.backup.BackupFailure
-import com.cla.clip.base.general.backup.BackupKind
 import com.cla.clip.base.general.backup.BackupPackageRef
 import com.cla.clip.base.general.backup.BackupProgress
 import com.cla.clip.base.general.backup.BackupProgressCategory
@@ -21,7 +20,6 @@ import com.cla.clip.base.general.backup.BackupSource
 import com.cla.clip.base.general.backup.RemoteBackupFile
 import com.cla.clip.base.general.backup.WebDavClient
 import com.cla.clip.base.general.backup.WebDavConfig
-import com.cla.clip.base.general.backup.BackupSafetySnapshotResult
 import com.cla.clip.base.general.backup.BackupSuccessSummary
 import com.cla.clip.base.general.backup.BackupTargetHealth
 import com.cla.clip.base.general.backup.BackupTaskStatus
@@ -72,17 +70,12 @@ class BackupVm @Inject constructor(
     private val webDavClient: WebDavClient,
     /** 本地备份文件夹写入器，负责 SAF 目录下的文件创建和字节写入。 */
     private val localBackupDirectoryWriter: LocalBackupDirectoryWriter,
-    /** 应用私有安全快照存储，用于用户未设置本地目录时的恢复回滚点。 */
-    private val privateSafetySnapshotStore: PrivateSafetySnapshotStore,
     /** 备份临时文件目录管理器，用于导入预览和导出完成后的清理。 */
     private val tempFileStore: BackupTempFileStore,
 ) : ViewModel() {
     companion object {
         /** 日志标签，只记录失败类型，不记录用户内容或密码。 */
         private const val TAG = "BackupVm"
-
-        /** 恢复前安全快照固定保留 3 份，不占用用户配置的普通自动备份保留份数。 */
-        private const val SAFETY_SNAPSHOT_RETENTION_COUNT = 3
     }
 
     /** 页面状态。 */
@@ -179,12 +172,16 @@ class BackupVm @Inject constructor(
         _uiState.update { it.copy(autoBackupEnabled = value, backupDirty = AppSetting.backupDirty) }
     }
 
-    /** 更新自动备份保留份数，保存后重新调度以便后续任务按新配置清理。 */
+    /** 更新普通备份保留份数，保存后刷新本地/WebDAV 列表以便立即按新配置清理。 */
     fun updateRetentionCount(value: Int) {
         AppSetting.backupRetentionCount = value
         BackupAutoScheduler.reschedule(appContext)
-        logD(TAG) { "自动备份保留份数已变更 value=${AppSetting.backupRetentionCount}" }
+        logD(TAG) { "备份保留份数已变更 value=${AppSetting.backupRetentionCount}" }
         _uiState.update { it.copy(backupRetentionCount = AppSetting.backupRetentionCount) }
+        refreshLocalBackups()
+        if (uiState.value.webDavHealth == BackupTargetHealth.Available) {
+            refreshRemoteBackups()
+        }
     }
 
     /** 更新仅 Wi-Fi 约束。 */
@@ -287,15 +284,14 @@ class BackupVm @Inject constructor(
                         "开始恢复备份 taskId=$taskId backupKind=${preview?.backupKind?.logCode()} " +
                             "fileSize=${readable.length()} ${preview?.summary?.toLogFields().orEmpty()}"
                     }
-                    val safetySnapshot = createSafetySnapshot(taskId)
-                    val report = backupRepository.restoreSnapshot(packageRef).copy(safetySnapshot = safetySnapshot)
+                    // 恢复写库阶段由 Room 事务保证失败回滚；不再额外生成恢复前安全快照，避免用户目录出现难理解的回滚文件。
+                    val report = backupRepository.restoreSnapshot(packageRef)
                     AppSetting.markBackupDirty()
                     BackupAutoScheduler.markDirtyAndSchedule(appContext)
                     _uiState.update { it.copy(lastRestoreReport = report) }
                     logI(TAG) {
                         "备份恢复成功 taskId=$taskId inserted=${report.insertedCount} updated=${report.updatedCount} " +
-                            "skipped=${report.skippedCount} safetyFile=${safetySnapshot.fileName} " +
-                            "safetySize=${safetySnapshot.fileSize} durationMs=${System.currentTimeMillis() - startedAt}"
+                            "skipped=${report.skippedCount} durationMs=${System.currentTimeMillis() - startedAt}"
                     }
                     emitMessage(
                         appContext.getString(
@@ -330,7 +326,7 @@ class BackupVm @Inject constructor(
                 AppSetting.webDavHealthCheckedAt = System.currentTimeMillis()
                 BackupAutoScheduler.reschedule(appContext)
                 _uiState.update { it.copy(webDavRemoteDir = normalizeWebDavRemoteDir(config.remoteDir)) }
-                refreshRemoteBackupsInternal()
+                refreshRemoteBackupsInternal(taskId)
                 logI(TAG) { "WebDAV 连接测试成功 taskId=$taskId durationMs=${System.currentTimeMillis() - startedAt}" }
                 emitMessage(R.string.base_general_webdav_test_success)
             }
@@ -363,7 +359,7 @@ class BackupVm @Inject constructor(
                                 "durationMs=${System.currentTimeMillis() - startedAt}"
                         }
                         emitMessage(R.string.base_general_webdav_upload_success)
-                        refreshRemoteBackupsInternal()
+                        refreshRemoteBackupsInternal(taskId)
                     } finally {
                         tempFileStore.cleanupTaskDir(export.taskDir, taskId)
                     }
@@ -382,20 +378,21 @@ class BackupVm @Inject constructor(
                 onFailure = { markWebDavUnavailable(taskId, it) }
             ) {
                 logD(TAG) { "开始刷新 WebDAV 备份列表 taskId=$taskId" }
-                refreshRemoteBackupsInternal()
+                refreshRemoteBackupsInternal(taskId)
             }
         }
     }
 
-    /** 刷新本地备份目录列表，只读取 manifest 和文件元数据。 */
+    /** 刷新本地备份目录列表，刷新前按保留份数清理普通备份，只读取 manifest 和文件元数据。 */
     fun refreshLocalBackups() {
         val dir = uiState.value.localBackupDirUri.takeIf { it.isNotBlank() } ?: return
         viewModelScope.launch {
             val taskId = newBackupTaskId("local-list")
             runOperation(BackupBusyOperation.RefreshingLocal, taskId = taskId) {
+                val cleanup = localBackupDirectoryWriter.pruneBackups(Uri.parse(dir), AppSetting.backupRetentionCount, taskId)
                 val files = localBackupDirectoryWriter.listBackups(Uri.parse(dir))
                 _uiState.update { it.copy(localBackups = files) }
-                logD(TAG) { "本地备份列表刷新成功 taskId=$taskId count=${files.size}" }
+                logD(TAG) { "本地备份列表刷新成功 taskId=$taskId count=${files.size} deleted=${cleanup.deletedCount}" }
             }
         }
     }
@@ -458,8 +455,13 @@ class BackupVm @Inject constructor(
         tempFileStore.cleanupTaskDir(oldRef?.taskDir)
     }
 
-    /** 刷新远端备份列表的内部实现，调用方负责包装加载状态。 */
-    private suspend fun refreshRemoteBackupsInternal() {
+    /** 刷新远端备份列表的内部实现；刷新前会按保留份数清理普通备份，确保列表与配置一致。 */
+    private suspend fun refreshRemoteBackupsInternal(taskId: String? = null) {
+        val cleanup = webDavClient.pruneBackups(
+            config = currentWebDavConfig(),
+            keepCount = AppSetting.backupRetentionCount,
+            taskId = taskId
+        )
         val files = webDavClient.listBackups(currentWebDavConfig())
         AppSetting.webDavHealth = BackupTargetHealth.Available
         AppSetting.webDavHealthCheckedAt = System.currentTimeMillis()
@@ -470,7 +472,7 @@ class BackupVm @Inject constructor(
                 webDavHealthCheckedAt = AppSetting.webDavHealthCheckedAt
             )
         }
-        logD(TAG) { "WebDAV 备份列表刷新成功 count=${files.size}" }
+        logD(TAG) { "WebDAV 备份列表刷新成功 taskId=$taskId count=${files.size} deleted=${cleanup.deletedCount}" }
     }
 
     /** 如果用户设置了本地备份目录，WebDAV 备份前先写入同一份 zip 快照和 manifest。 */
@@ -478,46 +480,8 @@ class BackupVm @Inject constructor(
         val dir = uiState.value.localBackupDirUri.takeIf { it.isNotBlank() } ?: return
         logD(TAG) { "开始写入 WebDAV 备份的本地镜像 taskId=$taskId fileName=${export.fileName} fileSize=${export.fileSize}" }
         localBackupDirectoryWriter.writeExport(Uri.parse(dir), export, taskId)
-        logD(TAG) { "WebDAV 备份的本地镜像写入成功 taskId=$taskId fileName=${export.fileName}" }
-    }
-
-    /** 恢复前创建安全快照；失败会向上抛出并阻止恢复写库。 */
-    private suspend fun createSafetySnapshot(taskId: String): BackupSafetySnapshotResult {
-        val startedAt = System.currentTimeMillis()
-        logD(TAG) { "开始创建恢复前安全快照 taskId=$taskId target=${if (uiState.value.localBackupDirUri.isNotBlank()) "local_dir" else "private_dir"}" }
-        val export = backupRepository.createSnapshot(BackupSource.LocalManual, backupKind = BackupKind.Safety, taskId = taskId)
-        try {
-            val dir = uiState.value.localBackupDirUri.takeIf { it.isNotBlank() }
-            return if (dir != null) {
-                val result = localBackupDirectoryWriter.writeSafetySnapshot(
-                    dirUri = Uri.parse(dir),
-                    export = export,
-                    locationLabel = uiState.value.localBackupDirLabel.ifBlank { appContext.getString(R.string.base_general_local_backup) },
-                    taskId = taskId
-                )
-                localBackupDirectoryWriter.pruneBackups(
-                    dirUri = Uri.parse(dir),
-                    keepCount = SAFETY_SNAPSHOT_RETENTION_COUNT,
-                    backupKind = BackupKind.Safety,
-                    deviceLabel = buildBackupDeviceLabel(AppSetting.pid),
-                    taskId = taskId
-                )
-                logI(TAG) {
-                    "恢复前安全快照创建成功 taskId=$taskId target=local_dir fileName=${result.fileName} fileSize=${result.fileSize} " +
-                        "durationMs=${System.currentTimeMillis() - startedAt}"
-                }
-                result
-            } else {
-                privateSafetySnapshotStore.writeSafetySnapshot(export, taskId).also { result ->
-                    logI(TAG) {
-                        "恢复前安全快照创建成功 taskId=$taskId target=private_dir fileName=${result.fileName} fileSize=${result.fileSize} " +
-                            "durationMs=${System.currentTimeMillis() - startedAt}"
-                    }
-                }
-            }
-        } finally {
-            tempFileStore.cleanupTaskDir(export.taskDir, taskId)
-        }
+        val cleanup = localBackupDirectoryWriter.pruneBackups(Uri.parse(dir), AppSetting.backupRetentionCount, taskId)
+        logD(TAG) { "WebDAV 备份的本地镜像写入成功 taskId=$taskId fileName=${export.fileName} deleted=${cleanup.deletedCount}" }
     }
 
     /** 解析本地备份目录的用户可读展示名，优先使用系统返回的 displayName，失败时用 URI 尾段兜底。 */
@@ -736,7 +700,7 @@ data class BackupUiState(
     val localBackups: List<LocalBackupFile> = emptyList(),
     /** 自动备份统一开关。 */
     val autoBackupEnabled: Boolean = false,
-    /** 自动备份保留份数。 */
+    /** 普通备份保留份数。 */
     val backupRetentionCount: Int = AppSetting.DEFAULT_BACKUP_RETENTION_COUNT,
     /** WebDAV 自动备份仅 Wi-Fi。 */
     val autoBackupOnlyWifi: Boolean = false,

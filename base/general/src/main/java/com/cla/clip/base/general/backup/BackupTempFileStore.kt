@@ -12,7 +12,7 @@ import javax.inject.Singleton
 /**
  * 备份临时文件目录管理器。
  *
- * 流式备份会产生导出中间 JSONL、最终 zip、WebDAV 下载临时包和安全快照临时文件；这些文件不属于用户正式备份，
+ * 流式备份会产生导出中间 JSONL、最终 zip 和 WebDAV 下载临时包；这些文件不属于用户正式备份，
  * 必须集中放在应用私有缓存目录并按 taskId 标记，避免失败或取消后长期占用空间。
  */
 @Singleton
@@ -36,9 +36,6 @@ class BackupTempFileStore @Inject constructor(
 
     /** 创建外部导入或 WebDAV 下载临时目录。 */
     fun createImportDir(taskId: String): File = createTaskDir("import", taskId)
-
-    /** 创建恢复前安全快照临时目录。 */
-    fun createSafetyDir(taskId: String): File = createTaskDir("safety", taskId)
 
     /** 检查私有缓存目录剩余空间；不足时提前失败，避免写出半截备份。 */
     fun ensureAvailableSpace(requiredBytes: Long) {

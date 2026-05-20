@@ -108,9 +108,9 @@ class BackupPackageIoTest {
         assertEquals(expected, parseBackupTimestampFromFileName(fileName))
     }
 
-    /** manifest 缺失时也要从文件名识别安全快照，避免回滚点混入普通备份最新列表。 */
+    /** 历史版本 safety 文件仍要能被识别，方便新列表隐藏旧回滚文件，不再把它当普通备份展示。 */
     @Test
-    fun parseBackupKindFromFileNameDetectsSafetySnapshot() {
+    fun parseBackupKindFromFileNameDetectsLegacySafetySnapshot() {
         val fileName = "clip_master_backup_install-test_safety_20260519_213045.zip"
 
         assertEquals(BackupKind.Safety, parseBackupKindFromFileName(fileName))

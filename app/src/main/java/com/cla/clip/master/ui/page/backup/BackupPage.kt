@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -71,9 +70,9 @@ fun BackupPage(
     val state by backupVm.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     var showRestoreConfirm by remember { mutableStateOf(false) }
-    // 普通备份和恢复前回滚点分开展示，避免清数据后的空安全快照抢占“最新备份”位置。
-    val normalLocalBackups = state.localBackups.filterNot { it.isSafetySnapshot }
-    val safetyLocalBackups = state.localBackups.filter { it.isSafetySnapshot }
+    // 列表只展示会参与保留份数的普通备份；历史 safety 或异常文件隐藏，避免数量超过用户设置造成误解。
+    val normalLocalBackups = state.localBackups.filter { it.isRegularBackup }
+    val normalRemoteBackups = state.remoteBackups.filter { it.isRegularBackup }
 
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/zip"),
@@ -132,7 +131,6 @@ fun BackupPage(
                     onExport = { exportLauncher.launch(backupVm.suggestedBackupFileName()) },
                     onImport = { importLauncher.launch(arrayOf("application/zip", "application/octet-stream")) },
                     onChooseDir = { localDirLauncher.launch(null) },
-                    onClearDir = backupVm::clearLocalBackupDir,
                     onRefreshLocal = backupVm::refreshLocalBackups,
                 )
             }
@@ -140,23 +138,7 @@ fun BackupPage(
             if (normalLocalBackups.isNotEmpty()) {
                 items(
                     items = normalLocalBackups,
-                    key = { it.fileName }
-                ) { file ->
-                    LocalBackupCard(
-                        file = file,
-                        isBusy = state.isBusy,
-                        onPreview = { backupVm.previewLocalBackup(file) }
-                    )
-                }
-            }
-
-            if (safetyLocalBackups.isNotEmpty()) {
-                item {
-                    LocalSafetySnapshotHeader()
-                }
-                items(
-                    items = safetyLocalBackups,
-                    key = { "safety-${it.fileName}" }
+                    key = { it.lazyListKey() }
                 ) { file ->
                     LocalBackupCard(
                         file = file,
@@ -180,14 +162,14 @@ fun BackupPage(
                 )
             }
 
-            if (state.remoteBackups.isEmpty()) {
+            if (normalRemoteBackups.isEmpty()) {
                 item {
                     EmptyRemoteBackups()
                 }
             } else {
                 items(
-                    items = state.remoteBackups,
-                    key = { it.fileName }
+                    items = normalRemoteBackups,
+                    key = { it.lazyListKey() }
                 ) { file ->
                     RemoteBackupCard(
                         file = file,
@@ -209,7 +191,6 @@ fun BackupPage(
 
     if (showRestoreConfirm) {
         RestoreConfirmDialog(
-            isSafetySnapshot = state.selectedPreview?.backupKind == BackupKind.Safety,
             onConfirm = {
                 showRestoreConfirm = false
                 backupVm.restoreSelectedBackup()
@@ -225,26 +206,11 @@ fun BackupPage(
     }
 }
 
-/** 恢复前回滚点分组标题，避免安全快照混在普通备份里抢占最新备份位置。 */
-@Composable
-private fun LocalSafetySnapshotHeader() {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp)
-    ) {
-        Text(
-            text = androidx.compose.ui.res.stringResource(R.string.base_general_backup_safety_snapshot_section_title),
-            style = MaterialTheme.typography.titleSmall
-        )
-        Text(
-            text = androidx.compose.ui.res.stringResource(R.string.base_general_backup_safety_snapshot_section_desc),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
+/** LazyColumn 的 key 在整条列表内必须唯一；同名备份可能同时存在于本地镜像和 WebDAV 远端。 */
+private fun LocalBackupFile.lazyListKey(): String = "local:${uri}:${fileName}"
+
+/** LazyColumn 的 key 在整条列表内必须唯一；远端条目用路径区分同名备份来源。 */
+private fun RemoteBackupFile.lazyListKey(): String = "remote:${path}:${fileName}"
 
 /** 自动备份配置和状态区。 */
 @Composable
@@ -352,7 +318,6 @@ private fun LocalBackupSection(
     onExport: () -> Unit,
     onImport: () -> Unit,
     onChooseDir: () -> Unit,
-    onClearDir: () -> Unit,
     onRefreshLocal: () -> Unit,
 ) {
     ClipMasterCard(
@@ -397,13 +362,19 @@ private fun LocalBackupSection(
                     Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_local_backup_choose_dir))
                 }
                 if (state.localBackupDirUri.isNotBlank()) {
-                    OutlinedButton(onClick = onRefreshLocal, enabled = !isBusy, modifier = Modifier.widthIn(min = 48.dp)) {
+                    OutlinedButton(onClick = onRefreshLocal, enabled = !isBusy, modifier = Modifier.weight(1f)) {
                         Icon(imageVector = Icons.Default.Refresh, contentDescription = null)
-                    }
-                    TextButton(onClick = onClearDir, enabled = !isBusy, modifier = Modifier.weight(1f)) {
-                        Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_local_backup_clear_dir))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_local_backup_refresh))
                     }
                 }
+            }
+            if (state.localBackupDirUri.isNotBlank()) {
+                Text(
+                    text = androidx.compose.ui.res.stringResource(R.string.base_general_local_backup_list_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -676,17 +647,6 @@ private fun PreviewSection(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary
                     )
-                    report.safetySnapshot?.let { safety ->
-                        Text(
-                            text = androidx.compose.ui.res.stringResource(
-                                R.string.base_general_backup_safety_snapshot_report,
-                                safety.fileName,
-                                safety.locationLabel
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = onRestore, enabled = !state.isBusy) {
@@ -704,19 +664,13 @@ private fun PreviewSection(
 /** 恢复确认弹窗，明确恢复采用合并策略而不是清空覆盖。 */
 @Composable
 private fun RestoreConfirmDialog(
-    isSafetySnapshot: Boolean,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val messageRes = if (isSafetySnapshot) {
-        R.string.base_general_backup_confirm_restore_safety_message
-    } else {
-        R.string.base_general_backup_confirm_restore_message
-    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_backup_confirm_restore_title)) },
-        text = { Text(text = androidx.compose.ui.res.stringResource(messageRes)) },
+        text = { Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_backup_confirm_restore_message)) },
         confirmButton = {
             TextButton(onClick = onConfirm) {
                 Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_restore_backup))
@@ -834,7 +788,8 @@ private fun BackupKind?.labelText(): String {
     return when (this) {
         BackupKind.Manual -> androidx.compose.ui.res.stringResource(R.string.base_general_backup_kind_manual)
         BackupKind.Auto -> androidx.compose.ui.res.stringResource(R.string.base_general_backup_kind_auto)
-        BackupKind.Safety -> androidx.compose.ui.res.stringResource(R.string.base_general_backup_kind_safety)
+        // safety 只用于识别并隐藏旧版回滚文件；正常列表不会展示这个分支，保留兜底避免异常数据崩溃。
+        BackupKind.Safety,
         null -> androidx.compose.ui.res.stringResource(R.string.base_general_backup_kind_unknown)
     }
 }

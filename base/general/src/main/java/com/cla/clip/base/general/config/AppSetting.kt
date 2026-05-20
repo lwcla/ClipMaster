@@ -212,16 +212,16 @@ object AppSetting {
     /** 自动备份总开关配置 key；默认关闭，避免用户未理解明文风险时后台生成备份。 */
     private const val KEY_AUTO_BACKUP_ENABLED = "auto_backup_enabled"
 
-    /** 普通自动备份默认保留份数。 */
+    /** 普通备份默认保留份数；本地和 WebDAV 目标都会按该值保留最近的普通备份。 */
     const val DEFAULT_BACKUP_RETENTION_COUNT = 5
 
-    /** 普通自动备份最少保留份数，避免清理掉全部自动恢复点。 */
+    /** 普通备份最少保留份数，避免清理掉全部恢复点。 */
     const val MIN_BACKUP_RETENTION_COUNT = 1
 
-    /** 普通自动备份最多保留份数，限制 WebDAV 和本地目录长期膨胀。 */
+    /** 普通备份最多保留份数，限制 WebDAV 和本地目录长期膨胀。 */
     const val MAX_BACKUP_RETENTION_COUNT = 20
 
-    /** 普通自动备份保留份数配置 key。 */
+    /** 普通备份保留份数配置 key。 */
     private const val KEY_BACKUP_RETENTION_COUNT = "backup_retention_count"
 
     /** WebDAV 自动备份是否只在 Wi-Fi 下运行；本地备份不需要网络约束。 */
@@ -307,7 +307,7 @@ object AppSetting {
             mmkv.putBoolean(KEY_AUTO_BACKUP_ENABLED, value)
         }
 
-    /** 自动备份保留份数；保存和读取都裁剪到 1-20，避免异常配置参与删除。 */
+    /** 普通备份保留份数；保存和读取都裁剪到 1-20，避免异常配置参与删除。 */
     var backupRetentionCount: Int
         get() = mmkv.getInt(KEY_BACKUP_RETENTION_COUNT, DEFAULT_BACKUP_RETENTION_COUNT)
             .coerceIn(MIN_BACKUP_RETENTION_COUNT, MAX_BACKUP_RETENTION_COUNT)

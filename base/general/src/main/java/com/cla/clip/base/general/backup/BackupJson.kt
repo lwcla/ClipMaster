@@ -157,7 +157,7 @@ fun buildBackupTimestamp(createdAt: Long): String {
     return formatter.format(java.util.Date(createdAt))
 }
 
-/** 生成本应用备份快照文件名；安全快照额外带 `safety` 标识，方便用户在文件管理器里识别回滚点。 */
+/** 生成本应用备份快照文件名；新流程只生成手动或自动普通备份，`Safety` 分支仅兼容旧版调用。 */
 fun buildBackupFileName(deviceLabel: String, createdAt: Long, backupKind: BackupKind = BackupKind.Manual): String {
     val safeDevice = deviceLabel.replace(Regex("[^A-Za-z0-9_-]"), "_")
     val kindSegment = if (backupKind == BackupKind.Safety) "_safety" else ""
@@ -181,7 +181,7 @@ fun parseBackupTimestampFromFileName(fileName: String): Long? {
     }
 }
 
-/** 从标准备份文件名解析备份类型；manifest 缺失时用于避免安全快照混入普通备份列表。 */
+/** 从标准备份文件名解析备份类型；manifest 缺失时用于识别并隐藏旧版 safety 文件。 */
 fun parseBackupKindFromFileName(fileName: String): BackupKind? {
     return if (Regex("""^clip_master_backup_.+_safety_\d{8}_\d{6}\.zip$""").matches(fileName)) {
         BackupKind.Safety
@@ -190,7 +190,7 @@ fun parseBackupKindFromFileName(fileName: String): BackupKind? {
     }
 }
 
-/** 根据触发来源推导默认备份类型，调用方需要安全快照时必须显式传入 `BackupKind.Safety`。 */
+/** 根据触发来源推导默认备份类型；新流程不再创建恢复前 safety 文件。 */
 fun BackupSource.defaultBackupKind(): BackupKind {
     return when (this) {
         BackupSource.LocalManual,

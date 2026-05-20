@@ -44,9 +44,18 @@ data class RemoteBackupFile(
     val sortCreatedAt: Long
         get() = manifest?.createdAt ?: parseBackupTimestampFromFileName(fileName) ?: 0L
 
-    /** 列表展示使用的有效类型：manifest 优先，缺失时通过安全快照文件名兜底识别。 */
+    /** 列表展示使用的有效类型：manifest 优先，缺失时通过旧版 safety 文件名兜底识别。 */
     val effectiveBackupKind: BackupKind?
         get() = manifest?.backupKind ?: parseBackupKindFromFileName(fileName)
+
+    /** 是否是参与保留份数的普通备份；manifest 缺失但文件名标准时按手动旧备份兼容处理。 */
+    val isRegularBackup: Boolean
+        get() = when (effectiveBackupKind) {
+            BackupKind.Manual,
+            BackupKind.Auto -> true
+            BackupKind.Safety -> false
+            null -> parseBackupTimestampFromFileName(fileName) != null
+        }
 }
 
 /**

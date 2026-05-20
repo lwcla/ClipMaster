@@ -3,7 +3,6 @@ package com.cla.clip.master.ui.page.backup
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
-import com.cla.clip.base.general.backup.BackupSafetySnapshotResult
 import com.cla.clip.base.general.backup.BackupJson
 import com.cla.clip.base.general.backup.BackupKind
 import com.cla.clip.base.general.backup.BackupExportResult
@@ -82,17 +81,6 @@ class LocalBackupDirectoryWriter @Inject constructor(
         logD(TAG) { "本地备份写入成功 ${backupTaskLogField(taskId)}fileName=${export.fileName}" }
     }
 
-    /** 写入恢复前安全快照并返回报告需要的保存信息。 */
-    suspend fun writeSafetySnapshot(dirUri: Uri, export: BackupExportResult, locationLabel: String, taskId: String? = null): BackupSafetySnapshotResult =
-        withContext(Dispatchers.IO) {
-            writeExport(dirUri, export, taskId)
-            BackupSafetySnapshotResult(
-                fileName = export.fileName,
-                locationLabel = locationLabel,
-                fileSize = export.fileSize
-            )
-        }
-
     /**
      * 列出用户授权目录中的本应用备份。
      *
@@ -136,21 +124,18 @@ class LocalBackupDirectoryWriter @Inject constructor(
     }
 
     /**
-     * 按备份类型和设备标识清理旧本地备份。
+     * 按保留份数清理本地普通备份。
      *
-     * 清理只作用于 manifest 可识别、类型匹配、设备标识匹配的备份；手动备份、安全快照或其它设备备份不会被误删。
+     * 清理只作用于 manifest 或文件名可识别的本 App 普通备份，手动/自动备份一起按时间保留最近 `keepCount` 份；
+     * 历史 safety、manifest 损坏文件和其它不可识别文件不删除，避免把异常文件误当作普通备份清理。
      */
     suspend fun pruneBackups(
         dirUri: Uri,
         keepCount: Int,
-        backupKind: BackupKind,
-        deviceLabel: String,
         taskId: String? = null,
     ): BackupRetentionCleanupResult = withContext(Dispatchers.IO) {
         val candidates = listBackups(dirUri)
-            .filter { file ->
-                file.manifest?.backupKind == backupKind && file.manifest.deviceLabel == deviceLabel
-            }
+            .filter { file -> file.isRegularBackup }
             .sortedWith(
                 compareByDescending<LocalBackupFile> { it.sortCreatedAt }
                     .thenByDescending { it.lastModified ?: 0L }
@@ -158,8 +143,8 @@ class LocalBackupDirectoryWriter @Inject constructor(
             )
         val toDelete = candidates.drop(keepCount.coerceAtLeast(0))
         logD(TAG) {
-            "开始清理本地旧备份 ${backupTaskLogField(taskId)}target=local backupKind=${backupKind.logCode()} " +
-                "keepCount=$keepCount candidates=${candidates.size} toDelete=${toDelete.size}"
+            "开始清理本地旧备份 ${backupTaskLogField(taskId)}target=local keepCount=$keepCount " +
+                "candidates=${candidates.size} toDelete=${toDelete.size}"
         }
         var deleted = 0
         toDelete.forEach { file ->
@@ -175,7 +160,7 @@ class LocalBackupDirectoryWriter @Inject constructor(
             }
         }
         logD(TAG) {
-            "本地旧备份清理完成 ${backupTaskLogField(taskId)}target=local backupKind=${backupKind.logCode()} deleted=$deleted"
+            "本地旧备份清理完成 ${backupTaskLogField(taskId)}target=local deleted=$deleted"
         }
         BackupRetentionCleanupResult(deletedCount = deleted, deletedKinds = toDelete.mapNotNull { it.manifest?.backupKind }.distinct())
     }
@@ -337,11 +322,20 @@ data class LocalBackupFile(
     val sortCreatedAt: Long
         get() = manifest?.createdAt ?: parseBackupTimestampFromFileName(fileName) ?: 0L
 
-    /** 列表展示使用的有效类型：manifest 优先，缺失时通过安全快照文件名兜底识别。 */
+    /** 列表展示使用的有效类型：manifest 优先，缺失时通过旧版 safety 文件名兜底识别。 */
     val effectiveBackupKind: BackupKind?
         get() = manifest?.backupKind ?: parseBackupKindFromFileName(fileName)
 
-    /** 是否是恢复前安全快照；安全快照要从普通备份列表中分离，避免被误认为最新可恢复备份。 */
+    /** 是否是旧版恢复前回滚文件；备份页会隐藏它，避免用户误认为这是普通备份。 */
     val isSafetySnapshot: Boolean
         get() = effectiveBackupKind == BackupKind.Safety
+
+    /** 是否是参与保留份数的普通备份；manifest 缺失但文件名标准时按手动旧备份兼容处理。 */
+    val isRegularBackup: Boolean
+        get() = when (effectiveBackupKind) {
+            BackupKind.Manual,
+            BackupKind.Auto -> true
+            BackupKind.Safety -> false
+            null -> parseBackupTimestampFromFileName(fileName) != null
+        }
 }

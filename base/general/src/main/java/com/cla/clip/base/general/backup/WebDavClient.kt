@@ -176,22 +176,19 @@ class WebDavClient @Inject constructor(
     }
 
     /**
-     * 按保留份数清理远端自动备份。
+     * 按保留份数清理远端普通备份。
      *
-     * 只删除 manifest 明确标记为指定 `backupKind` 且设备标识匹配的备份，避免多设备共用目录时误删别的恢复点。
-     * 调用方必须在新备份发布成功后再调用该方法，保证清理不会早于新恢复点落盘。
+     * 清理只作用于 manifest 或文件名可识别的本 App 普通备份，手动/自动备份一起按时间保留最近 `keepCount` 份；
+     * 历史 safety、manifest 损坏文件和其它不可识别文件不删除。调用方必须在新备份发布成功后再调用该方法，
+     * 保证清理不会早于新恢复点落盘。
      */
     suspend fun pruneBackups(
         config: WebDavConfig,
         keepCount: Int,
-        backupKind: BackupKind,
-        deviceLabel: String,
         taskId: String? = null,
     ): BackupRetentionCleanupResult = withContext(Dispatchers.IO) {
         val candidates = listBackups(config)
-            .filter { file ->
-                file.manifest?.backupKind == backupKind && file.manifest.deviceLabel == deviceLabel
-            }
+            .filter { file -> file.isRegularBackup }
             .sortedWith(
                 compareByDescending<RemoteBackupFile> { it.sortCreatedAt }
                     .thenByDescending { it.lastModified ?: 0L }
@@ -199,8 +196,8 @@ class WebDavClient @Inject constructor(
             )
         val toDelete = candidates.drop(keepCount.coerceAtLeast(0))
         logD(TAG) {
-            "开始清理 WebDAV 旧备份 ${backupTaskLogField(taskId)}target=webdav backupKind=${backupKind.logCode()} " +
-                "keepCount=$keepCount candidates=${candidates.size} toDelete=${toDelete.size}"
+            "开始清理 WebDAV 旧备份 ${backupTaskLogField(taskId)}target=webdav keepCount=$keepCount " +
+                "candidates=${candidates.size} toDelete=${toDelete.size}"
         }
         var deleted = 0
         toDelete.forEach { file ->
@@ -217,7 +214,7 @@ class WebDavClient @Inject constructor(
             }
         }
         logD(TAG) {
-            "WebDAV 旧备份清理完成 ${backupTaskLogField(taskId)}target=webdav backupKind=${backupKind.logCode()} deleted=$deleted"
+            "WebDAV 旧备份清理完成 ${backupTaskLogField(taskId)}target=webdav deleted=$deleted"
         }
         BackupRetentionCleanupResult(deletedCount = deleted, deletedKinds = toDelete.mapNotNull { it.manifest?.backupKind }.distinct())
     }

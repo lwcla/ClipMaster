@@ -50,8 +50,8 @@ enum class BackupSource {
 /**
  * 备份类型。
  *
- * `source` 描述触发位置，`backupKind` 描述生命周期语义；保留清理和安全快照恢复提示必须依赖这个稳定字段，
- * 不能通过文件名或来源枚举猜测，避免后续新增触发入口时误删手动备份。
+ * `source` 描述触发位置，`backupKind` 描述生命周期语义；保留清理必须依赖这个稳定字段，不能通过文件名或来源枚举猜测，
+ * 避免后续新增触发入口时误删手动备份。`Safety` 仅用于识别旧版本生成的恢复前回滚文件，新流程不再创建。
  */
 @Keep
 @Serializable
@@ -64,7 +64,7 @@ enum class BackupKind {
     @SerialName("auto")
     Auto,
 
-    /** 恢复前自动创建的回滚点，独立保留最近几份，不上传 WebDAV。 */
+    /** 旧版本恢复前自动创建的回滚点；保留枚举值只为兼容和隐藏历史文件，新流程不再生成。 */
     @SerialName("safety")
     Safety,
 }
@@ -118,7 +118,7 @@ data class BackupSnapshot(
     @SerialName("source")
     val source: BackupSource,
 
-    /** 备份类型，用于区分手动备份、自动备份和恢复前安全快照。 */
+    /** 备份类型，用于区分手动备份、自动备份，并兼容识别旧版 safety 文件。 */
     @SerialName("backup_kind")
     val backupKind: BackupKind = BackupKind.Manual,
 
@@ -430,7 +430,7 @@ data class BackupPreview(
     val schemaVersion: Int,
     /** 脱敏安装标识。 */
     val deviceLabel: String,
-    /** 备份类型，用于安全快照预览和二次确认文案。 */
+    /** 备份类型，用于区分手动备份、自动备份以及兼容识别旧版回滚文件。 */
     val backupKind: BackupKind,
     /** 数据区 checksum 是否通过。 */
     val checksumValid: Boolean,
@@ -446,8 +446,6 @@ data class BackupRestoreReport(
     val updatedCount: Int,
     /** 因本地较新或重复而跳过的记录数量。 */
     val skippedCount: Int,
-    /** 恢复前安全快照结果；为空表示调用方未要求创建或旧流程尚未接入。 */
-    val safetySnapshot: BackupSafetySnapshotResult? = null,
     /** 按数据类别统计的恢复报告，用于大数据恢复后判断各类数据是否完整写入。 */
     val categoryReports: List<BackupRestoreCategoryReport> = emptyList(),
     /** 用户可读但不含敏感内容的提示列表。 */
@@ -464,16 +462,6 @@ data class BackupRestoreCategoryReport(
     val updatedCount: Int,
     /** 因本地较新或重复而跳过的记录数量。 */
     val skippedCount: Int,
-)
-
-/** 恢复前安全快照写入结果，用于恢复报告和失败排查。 */
-data class BackupSafetySnapshotResult(
-    /** 安全快照文件名。 */
-    val fileName: String,
-    /** 用户可读保存位置，例如本地授权目录名或应用私有目录。 */
-    val locationLabel: String,
-    /** 安全快照文件大小，单位字节。 */
-    val fileSize: Long,
 )
 
 /**

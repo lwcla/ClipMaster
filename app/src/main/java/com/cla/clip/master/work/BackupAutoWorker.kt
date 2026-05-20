@@ -21,7 +21,6 @@ import com.cla.clip.base.general.backup.BackupTaskStatus
 import com.cla.clip.base.general.backup.BackupTempFileStore
 import com.cla.clip.base.general.backup.WebDavClient
 import com.cla.clip.base.general.backup.WebDavConfig
-import com.cla.clip.base.general.backup.buildBackupDeviceLabel
 import com.cla.clip.base.general.backup.normalizeWebDavRemoteDir
 import com.cla.clip.base.general.backup.BackupRepository
 import com.cla.clip.base.general.R
@@ -116,7 +115,6 @@ class BackupAutoWorker @AssistedInject constructor(
                 var webDavDeleted = 0
                 val failures = mutableListOf<Throwable>()
                 val retention = AppSetting.backupRetentionCount
-                val deviceLabel = buildBackupDeviceLabel(AppSetting.pid)
 
                 if (localDir != null) {
                     runCatching {
@@ -125,7 +123,7 @@ class BackupAutoWorker @AssistedInject constructor(
                         localSuccess = true
                         logD(TAG) { "自动本地备份写入成功 taskId=$taskId fileName=${export.fileName}" }
                         localDeleted = localBackupDirectoryWriter
-                            .pruneBackups(Uri.parse(localDir), retention, BackupKind.Auto, deviceLabel, taskId)
+                            .pruneBackups(Uri.parse(localDir), retention, taskId)
                             .deletedCount
                     }.onFailure { throwable ->
                         failures += throwable
@@ -142,7 +140,7 @@ class BackupAutoWorker @AssistedInject constructor(
                         webDavSuccess = true
                         logD(TAG) { "自动 WebDAV 备份上传成功 taskId=$taskId fileName=${export.fileName}" }
                         webDavDeleted = webDavClient
-                            .pruneBackups(webDavConfig, retention, BackupKind.Auto, deviceLabel, taskId)
+                            .pruneBackups(webDavConfig, retention, taskId)
                             .deletedCount
                     }.onFailure { throwable ->
                         failures += throwable
