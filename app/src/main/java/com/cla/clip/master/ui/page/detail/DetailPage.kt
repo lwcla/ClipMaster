@@ -136,7 +136,6 @@ fun DetailPage(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .verticalScroll(rememberScrollState())
-                                .padding(12.dp)
                         )
                     }
                 }

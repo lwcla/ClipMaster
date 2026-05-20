@@ -264,7 +264,7 @@ fun ClipCard(
     val appColor = clip.appColor ?: MaterialTheme.colorScheme.outlineVariant
     val borderColor = appColor.copy(alpha = 0.3f)
     // 斜向快捷区底色只保留很轻的同源提示，避免压住铺满整 卡的剪贴内容。
-    val quickActionBackgroundColor = appColor.copy(alpha = 0.02f)
+    val quickActionBackgroundColor = appColor.copy(alpha = 0.05f)
     val quickActionPressedColor = appColor.copy(alpha = 0.10f)
     val detailPressedColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.035f)
     val density = LocalDensity.current
