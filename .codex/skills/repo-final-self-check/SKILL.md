@@ -1,42 +1,42 @@
 ---
 name: repo-final-self-check
-description: Final response self-check for repository code changes. Use before finalizing any code edit, refactor, bug fix, UI change, data-layer change, docs/rules update, backup/restore change, or commit-related task to ensure the final answer reports docs, reuse, component/class/method changes, rule exceptions, and validation.
+description: 当前仓库的最终回复自检工作流。用于任何代码编辑、重构、修复、UI 改动、数据层改动、文档/规则更新、备份恢复改动或 Git 相关任务完成前，确保最终回复报告方案文档、复用检查、组件/类/方法变化、规则例外和验证结果。
 ---
 
-# Repo Final Self Check
+# 仓库最终自检
 
-Use this skill immediately before the final answer after code or rule/document changes.
+代码、文档或规则改动完成后，最终回复前立即使用本 skill。
 
-## Check Before Final
+## 回复前检查
 
-1. Run `git diff --check` unless there is a clear reason not to.
-2. Run the closest compile/test command for Kotlin/Compose/Android changes. If not run, state why.
-3. Confirm whether docs needed updating and whether they were updated.
-4. Confirm reuse search results:
-   - reused existing ability, or
-   - did not reuse because of responsibility, dependency direction, unstable contract, or risk.
-5. Confirm component/class/method changes:
-   - added/split/moved components, classes, methods, mapper, formatter, validator, utility, DAO, state model,
-   - or no such changes.
-6. Confirm rule exceptions:
-   - temporary no split,
-   - no tests,
-   - no logs,
-   - no docs,
-   - no R8/release validation,
-   - backup coverage not updated,
-   - any other tracked exception.
-7. Confirm privacy/logging risks are not introduced.
-8. Confirm no unrelated dirty user changes were reverted.
+1. 除非有明确原因，运行 `git diff --check`。
+2. Kotlin/Compose/Android 改动运行最贴近的编译或测试命令；没有运行时说明原因。
+3. 确认是否需要更新文档，以及是否已经更新。
+4. 确认复用检查结果：
+   - 复用了已有能力；或
+   - 因职责、依赖方向、契约不稳定或风险原因没有复用。
+5. 确认组件、类、方法变化：
+   - 新增、拆分或移动了哪些组件、类、方法、mapper、formatter、validator、工具、DAO、state model；
+   - 或确认没有这类变化。
+6. 确认规则例外：
+   - 临时未拆分；
+   - 未补测试；
+   - 未新增日志；
+   - 未更新文档；
+   - 未做 R8/release 验证；
+   - 未更新备份覆盖；
+   - 其他已记录例外。
+7. 确认没有引入隐私或日志风险。
+8. 确认没有回退或覆盖用户的无关改动。
 
-## Final Answer Shape
+## 最终回复格式
 
-Keep it concise, but include:
+保持简洁，但必须包含：
 
-- **方案文档**: updated doc or why not needed.
-- **复用检查**: reused or reason not reused.
-- **组件/类/方法**: what changed and any split decisions.
-- **规则例外**: none, or list tracked exceptions.
-- **验证结果**: commands and result, or not run with reason.
+- **方案文档**：更新了哪份文档，或为什么不需要；
+- **复用检查**：复用了什么，或为什么不能复用；
+- **组件/类/方法**：改了什么，以及拆分决策；
+- **规则例外**：没有例外，或列出已记录例外；
+- **验证结果**：命令和结果，或未运行原因。
 
-For tiny non-code documentation-only changes, compress the same five items into one short paragraph.
+很小的非代码文档改动可以压缩成一小段，但不能省略以上信息。

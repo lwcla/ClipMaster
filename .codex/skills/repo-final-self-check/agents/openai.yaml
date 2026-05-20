@@ -1,4 +1,4 @@
 interface:
-  display_name: "Repo Final Self Check"
-  short_description: "Final reply checklist for repository changes"
-  default_prompt: "Use $repo-final-self-check before finalizing code changes in this repo."
+  display_name: "仓库最终自检"
+  short_description: "当前仓库改动完成前的最终回复检查清单"
+  default_prompt: "在当前仓库代码、文档或规则改动收尾前使用 $repo-final-self-check。"

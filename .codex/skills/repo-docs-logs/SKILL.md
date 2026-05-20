@@ -1,39 +1,39 @@
 ---
 name: repo-docs-logs
-description: Documentation and logging workflow for repository changes. Use when changing behavior, architecture, UI flow, data contracts, lifecycle, background work, network, file IO, database writes, backup/restore, diagnostics, logging, errors, rules, or any user-visible behavior that should update docs or log plans.
+description: 当前仓库的文档与日志工作流。用于修改行为、架构、UI 流程、数据契约、生命周期、后台任务、网络、文件 IO、数据库写入、备份恢复、诊断、日志、错误、规则，或任何需要更新方案文档和日志计划的用户可见行为。
 ---
 
-# Repo Docs Logs
+# 仓库文档与日志
 
-Use this skill with `$repo-coding-gate` whenever code changes affect behavior, design, data flow, diagnostics, or rules.
+当代码或规则改动影响行为、设计、数据流、诊断或用户可见流程时，配合 `$repo-coding-gate` 使用本 skill。
 
-## Documentation Workflow
+## 文档流程
 
-1. Find the existing plan document in `docs/` before creating a new one.
-2. Update the existing document when the change affects:
-   - behavior or UX,
-   - architecture or responsibilities,
-   - data contracts or schema,
-   - backup/restore coverage,
-   - lifecycle/performance,
-   - logging/diagnostics,
-   - rules or conventions.
-3. Keep one shared master document for shared components/capabilities; page docs should only summarize page-specific integration.
-4. Every plan document must have a status and a change record.
-5. If implementation differs from the plan, update the document to describe the final behavior and tradeoff.
-6. If docs are not needed, state why in the final answer.
+1. 新建文档前先在 `docs/` 中查找已有方案文档。
+2. 改动影响以下内容时更新既有文档：
+   - 行为或用户体验；
+   - 架构或职责；
+   - 数据契约或 schema；
+   - 备份/恢复覆盖；
+   - 生命周期或性能；
+   - 日志或诊断；
+   - 规则或约定。
+3. 共享组件或共享能力只维护一份主文档，页面文档只补充页面接入差异。
+4. 每份方案文档必须包含状态和变更记录。
+5. 实现与方案不一致时，更新文档说明最终行为和取舍。
+6. 如果判断不需要文档，在最终回复中说明原因。
 
-## Logging Workflow
+## 日志流程
 
-For network, file IO, database writes, background tasks, permissions, system APIs, long tasks, retry, cache, parse, migration, restore, backup, or error branches:
+涉及网络、文件 IO、数据库写入、后台任务、权限、系统 API、长任务、重试、缓存、解析、迁移、恢复、备份或错误分支时：
 
-1. Add or update a "日志与诊断计划" section before or with implementation.
-2. Specify log level, trigger, fields, `taskId`/`traceId` propagation, reasonCode, retry/skipped semantics, and cleanup boundaries.
-3. Use simplified Chinese in log text; keep stable field names, TAG, enum values, and reasonCode in English if already stable.
-4. Never log clipboard content, search query full text, cookies, tokens, passwords, complete URL query strings, local authorization URI, WebDAV endpoint/password, request/response bodies, full JSON/HTML, or backup contents.
-5. Prefer low-sensitive structured fields: counts, booleans, status codes, duration, file size, sanitized file name, retryable, reasonCode.
-6. Rate-limit or avoid high-frequency logs.
+1. 在实现前或同步补充“日志与诊断计划”。
+2. 写清日志级别、触发时机、字段、`taskId`/`traceId` 传递、reasonCode、重试/跳过语义和清理边界。
+3. 日志正文使用简体中文；已经稳定的字段名、TAG、枚举值和 reasonCode 可以保留英文。
+4. 禁止记录剪贴内容、搜索词全文、Cookie、Token、密码、完整 URL 查询串、本地授权 URI、WebDAV 地址/密码、请求/响应体、完整 JSON/HTML 或备份内容。
+5. 优先使用低敏结构化字段：数量、布尔值、状态码、耗时、文件大小、脱敏文件名、是否可重试、reasonCode。
+6. 高频日志必须限频、抽样或避免输出。
 
-## Final Answer Requirements
+## 最终回复要求
 
-Report which docs changed, what log plan changed, and whether any logging was intentionally omitted.
+说明更新了哪些文档、日志计划是否变化，以及是否有意不新增日志。

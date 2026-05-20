@@ -1,52 +1,52 @@
 ---
 name: repo-backup-coverage
-description: Backup and restore coverage workflow for this repository. Use when adding or changing Room tables, DAO fields, settings, user-generated data, download/cache metadata, cross-install state, WebDAV/local backup behavior, restore reports, dirty marking, retention, Auto Backup exclusions, or anything that may need backup/restore support.
+description: 当前仓库的备份与恢复覆盖检查工作流。用于新增或修改 Room 表、DAO 字段、设置项、用户生成数据、下载/缓存元数据、跨安装状态、WebDAV/本地备份行为、恢复报告、dirty 标记、保留策略、Auto Backup 排除规则，或任何可能影响备份恢复的数据。
 ---
 
-# Repo Backup Coverage
+# 仓库备份覆盖
 
-Use this skill with `$repo-coding-gate` whenever a change may affect data that should survive uninstall/reinstall or restore.
+当改动可能影响卸载重装、跨设备迁移或恢复后的数据可用性时，配合 `$repo-coding-gate` 使用本 skill。
 
-## Coverage Decision
+## 覆盖决策
 
-1. Open or update `docs/webdav_backup_plan.md`.
-2. Classify new/changed data:
-   - user-generated data,
-   - cache with cross-install meaning,
-   - settings/user preference,
-   - download or media metadata,
-   - temporary/device-bound/sensitive state,
-   - derived/recomputable data.
-3. Decide whether to include it in backup:
-   - Include if it is user-created, user-visible, costly to recreate, or meaningful after reinstall.
-   - Exclude if it is credential, token, cookie, local permission URI, temp path, pending output URI, health state, retry count, running task state, or safely recomputable.
-4. Document the decision and reason.
+1. 打开或更新 `docs/webdav_backup_plan.md`。
+2. 分类新增或变更的数据：
+   - 用户生成数据；
+   - 具有跨安装意义的缓存；
+   - 设置项或用户偏好；
+   - 下载或媒体元数据；
+   - 临时、设备绑定或敏感状态；
+   - 可派生或可重新计算的数据。
+3. 判断是否纳入备份：
+   - 用户创建、用户可见、重建成本高或重装后仍有意义的数据应纳入；
+   - 凭据、Token、Cookie、本地授权 URI、临时路径、pending 输出 URI、健康状态、重试次数、运行中任务状态或可安全重算的数据应排除。
+4. 在文档和最终回复中说明决策和原因。
 
-## If Included
+## 如果纳入备份
 
-Update all relevant layers:
+同步更新相关层：
 
-- backup protocol/model/manifest summary,
-- export mapper and field whitelist,
-- restore mapper,
-- stable dedupe key and conflict rules,
-- preview counts,
-- restore report category/counts,
-- dirty marking trigger,
-- retention/list behavior if applicable,
-- system Auto Backup exclusion if sensitive or device-bound,
-- tests or validation plan.
+- 备份协议、模型、manifest 摘要；
+- 导出 mapper 和字段白名单；
+- 恢复 mapper；
+- 稳定去重 key 和冲突规则；
+- 预检数量；
+- 恢复报告分类和数量；
+- dirty 标记触发点；
+- 保留和列表行为；
+- 敏感或设备绑定数据的系统 Auto Backup 排除；
+- 测试或验证计划。
 
-Restore must be idempotent: repeating the same backup should not duplicate data or incorrectly report new/updated rows.
+恢复必须保持幂等：重复恢复同一备份不能产生重复数据，也不能错误报告新增/更新行。
 
-## If Excluded
+## 如果排除备份
 
-Document:
+记录以下内容：
 
-- why it is excluded,
-- user impact after reinstall,
-- whether future work may include it.
+- 排除原因；
+- 卸载重装后的用户影响；
+- 后续是否可能纳入备份。
 
-## Privacy
+## 隐私边界
 
-Never back up WebDAV password, cookies, tokens, auth state, local SAF URI, temp paths, pending output URI, complete URL query values, or media file bodies unless a future explicit media-backup feature says so.
+不得备份 WebDAV 密码、Cookie、Token、登录态、本地 SAF URI、临时路径、pending 输出 URI、完整 URL 查询值或媒体文件本体，除非未来有明确的媒体备份功能方案。

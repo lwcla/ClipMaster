@@ -1,55 +1,55 @@
 ---
 name: repo-git-discipline
-description: Git workflow discipline for this repository. Use when staging files, creating commits, rewriting commit messages, checking commit scope, preparing commit bodies, reviewing git status, pushing, or handling any git operation so Codex uses simplified Chinese commit messages, preserves user changes, avoids destructive history operations, validates scope, and reports results.
+description: 当前仓库的 Git 工作流纪律。用于暂存文件、创建提交、修改提交信息、检查提交范围、准备提交正文、查看 Git 状态、推送或处理任何 Git 操作，要求 Codex 使用简体中文提交信息、保护用户改动、避免破坏性历史操作、验证提交范围并报告结果。
 ---
 
-# Repo Git Discipline
+# 仓库 Git 纪律
 
-Use this skill with `$repo-coding-gate` when the user asks to generate a commit, stage files, adjust a commit message, inspect commit scope, or perform any git operation.
+当用户要求生成 commit、暂存文件、调整提交信息、检查提交范围或执行任何 Git 操作时，配合 `$repo-coding-gate` 使用本 skill。
 
-## Before Staging
+## 暂存前
 
-1. Run `git status --short`.
-2. Inspect the relevant diff before staging:
-   - use `git diff -- <path>` for unstaged files,
-   - use `git diff --staged` for staged files.
-3. Stage only files related to the current task. Do not use `git add .` unless the whole dirty worktree has been confirmed as part of the requested commit.
-4. Preserve unrelated user changes. Never revert, discard, or overwrite unrelated dirty files.
-5. Keep commit scope single-purpose. Separate unrelated rule changes, refactors, formatting, and feature changes unless they are part of one behavior change.
+1. 运行 `git status --short`。
+2. 暂存前检查相关 diff：
+   - 未暂存文件使用 `git diff -- <path>`；
+   - 已暂存文件使用 `git diff --staged`。
+3. 只暂存当前任务相关文件。除非已确认整个脏工作区都属于本次提交，不要使用 `git add .`。
+4. 保护无关用户改动，不要回退、丢弃或覆盖无关脏文件。
+5. 保持 commit 目的单一。无关规则变更、重构、格式化和功能修改应拆开，除非它们共同服务同一行为变化。
 
-## Commit Message Rules
+## 提交信息规则
 
-- Use simplified Chinese for title and body.
-- Title should be a short verb-object phrase describing the real scope and purpose.
-- Use a scoped title when helpful, for example `备份：修复恢复报告统计`.
-- Do not create a commit with title only.
-- Body must include:
-  - key changes,
-  - validation commands and results,
-  - risks, tradeoffs, unverified items, or follow-up notes when applicable.
-- If a commit contains both rule docs and code, explain whether the rule change drove the code change.
+- 标题和正文使用简体中文。
+- 标题用简短动宾短语描述真实范围和目的。
+- 范围明确时可使用形如 `备份：修复恢复报告统计` 的标题。
+- 不要创建只有标题的 commit。
+- 正文必须包含：
+  - 关键改动；
+  - 验证命令和结果；
+  - 适用时说明风险、取舍、未验证项或后续注意事项。
+- 如果一个 commit 同时包含规则文档和代码，说明规则变更是否驱动了代码变更。
 
-## Validation Before Commit
+## 提交前验证
 
-- For Kotlin/Compose/Android changes, run the closest compile/test command, commonly `./gradlew :app:compileDebugKotlin` or a more specific module command.
-- Always run `git diff --check` unless clearly unnecessary or impossible.
-- If validation cannot run, state why in the commit body or final answer.
+- Kotlin/Compose/Android 改动运行最贴近的编译或测试命令，常用 `./gradlew :app:compileDebugKotlin` 或更具体模块命令。
+- 除非明显不需要或无法执行，始终运行 `git diff --check`。
+- 验证无法运行时，在 commit 正文或最终回复中说明原因。
 
-## Forbidden Without Explicit User Approval
+## 未经用户明确同意禁止执行
 
-Do not run:
+不要运行：
 
 - `git reset --hard`
 - `git checkout --`
 - `git rebase`
 - `git commit --amend`
-- force push
-- any command that discards user work or rewrites history
+- 强制推送
+- 任何会丢弃用户工作或改写历史的命令
 
-If such an operation is truly needed, ask the user first.
+如果确实需要此类操作，必须先询问用户。
 
-## After Commit
+## 提交后
 
-1. Run `git status --short`.
-2. Run `git log -1 --oneline --stat`.
-3. Report the commit hash, title, files included, validation run, and any remaining dirty files.
+1. 运行 `git status --short`。
+2. 运行 `git log -1 --oneline --stat`。
+3. 向用户报告提交哈希、标题、包含文件、验证结果和剩余脏文件。

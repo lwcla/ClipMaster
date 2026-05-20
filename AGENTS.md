@@ -10,6 +10,7 @@
 
 ## Mandatory Coding Gate
 
+- 本项目后续新增或更新 `.codex/skills/` 下的项目专用 skill 时，必须默认使用简体中文编写；除 skill 目录名、`name`、命令、路径、类型名、配置 key、稳定协议字段和第三方专有名词外，触发说明、正文工作流、UI 元数据、维护规则和示例说明都应使用简体中文。
 - 本项目专用 skill 位于 `.codex/skills/`，只适用于当前仓库；后续代码修改、重构、修复、UI 调整、文档/日志/备份相关任务，必须按仓库硬规则 + 项目内 skill 工作流 + 最终回复强制自检执行，不能把这些项目专用 skill 当成其他仓库的通用规则。
 - 每次新增或修改代码前，必须先向用户发送一句简短执行说明，说明将检查哪些已有能力、将更新哪份方案文档或为什么不需要更新、预计如何拆分组件/类/方法、将运行什么验证；如果用户明确要求“只回答、不修改代码”，则不进入本门禁。
 - 复用检查是进入代码修改前的硬门禁：必须先用 `rg`、`rg --files`、类型引用或等价方式，按当前 feature/package、当前模块、共享模块、全仓兜底的顺序查找相近组件、类、方法、工具、Repository、Mapper、Formatter、Parser、Validator、Dialog/Sheet/Card/Toolbar/EmptyState/LoadingState/ActionRow 等能力。

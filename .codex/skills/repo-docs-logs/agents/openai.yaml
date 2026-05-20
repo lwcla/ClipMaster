@@ -1,4 +1,4 @@
 interface:
-  display_name: "Repo Docs Logs"
-  short_description: "Plan docs, diagnostics, and privacy-safe logs"
-  default_prompt: "Use $repo-docs-logs when changing behavior, architecture, logging, or diagnostics."
+  display_name: "仓库文档与日志"
+  short_description: "维护方案文档、诊断计划和隐私安全日志"
+  default_prompt: "修改行为、架构、日志或诊断时使用 $repo-docs-logs。"

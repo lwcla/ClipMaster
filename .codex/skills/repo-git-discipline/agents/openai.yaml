@@ -1,4 +1,4 @@
 interface:
-  display_name: "Repo Git Discipline"
-  short_description: "Chinese commit scope and safe git workflow"
-  default_prompt: "Use $repo-git-discipline when staging files or creating commits in this repo."
+  display_name: "仓库 Git 纪律"
+  short_description: "简体中文提交信息和安全 Git 工作流"
+  default_prompt: "暂存文件、创建提交或处理 Git 操作时使用 $repo-git-discipline。"

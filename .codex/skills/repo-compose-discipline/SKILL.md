@@ -1,45 +1,45 @@
 ---
 name: repo-compose-discipline
-description: Compose UI discipline for repository work. Use when adding, editing, extracting, or reviewing Jetpack Compose pages, components, dialogs, sheets, lists, cards, toolbars, action rows, empty/loading/error states, navigation UI, or UI state models, especially when reuse, component placement, stable keys, previews, lifecycle, or string resources matter.
+description: 当前仓库的 Compose UI 纪律工作流。用于新增、编辑、抽取或评审 Jetpack Compose 页面、组件、弹窗、底部弹层、列表、卡片、工具栏、操作行、空态/加载/错误态、导航 UI 或 UI state 模型，尤其关注复用、组件归属、稳定 key、Preview、生命周期和字符串资源。
 ---
 
-# Repo Compose Discipline
+# 仓库 Compose 纪律
 
-Use this skill with `$repo-coding-gate` for Compose/UI changes.
+Compose 或 UI 改动应与 `$repo-coding-gate` 配合使用本 skill。
 
-## Before Editing
+## 修改前检查
 
-1. Search for existing UI capability in this order:
-   - same page/package,
-   - same feature component/widget package,
-   - shared UI/widget/design-system areas,
-   - full repo fallback.
-2. Decide placement:
-   - page-level composable only orchestrates state and structure,
-   - feature reusable component goes near the feature,
-   - cross-feature component goes to shared UI/widget/design-system area,
-   - page-private component requires a real page-specific reason.
-3. Convert business entities to stable UI state/config where possible.
-4. Prefer slots/callbacks/config objects over many booleans or nullable parameters.
-5. Check string resources before adding user-visible text.
-6. Check lifecycle: collect Flow/Paging with lifecycle-aware APIs; avoid starting heavy work from invisible UI.
+1. 按顺序查找已有 UI 能力：
+   - 同页面或同 package；
+   - 同 feature 的 component/widget package；
+   - 共享 UI、widget 或设计系统目录；
+   - 全仓兜底。
+2. 决定组件归属：
+   - 页面级 Composable 只负责状态和结构编排；
+   - feature 内可复用组件放在对应 feature 附近；
+   - 跨 feature 组件放到共享 UI/widget/设计系统目录；
+   - 页面私有组件必须有真实的页面专属原因。
+3. 尽量把业务实体转换为稳定 UI state 或 config。
+4. 优先使用 slot、callback、config 对象，避免大量 Boolean 或可空参数。
+5. 新增用户可见文案前检查字符串资源。
+6. 检查生命周期：Flow/Paging 使用生命周期感知 API，不从不可见 UI 启动重型任务。
 
-## Implementation Rules
+## 实现规则
 
-- Provide `modifier: Modifier = Modifier` for reusable composables.
-- Keep business side effects out of shared composables; pass callbacks instead.
-- Use stable keys for `LazyColumn`, `LazyRow`, grids, pagers, and animated items.
-- Do not nest cards inside cards or build page sections as decorative cards unless existing design requires it.
-- Avoid one-off duplicated dialogs/sheets/cards; extract a component or document why not.
-- Keep UI text fitting on small screens and dynamic font sizes.
-- Add concise Chinese comments for non-obvious state, side effects, or component boundaries.
-- Add or update previews/sample states for complex shared UI when practical.
+- 可复用 Composable 提供 `modifier: Modifier = Modifier`。
+- 共享 Composable 不直接做业务副作用，业务动作通过 callback 交给调用方。
+- `LazyColumn`、`LazyRow`、grid、pager 和动画 item 使用稳定 key。
+- 除非现有设计要求，不要卡片套卡片，也不要把页面区块做成装饰性卡片。
+- 避免一次性复制 Dialog、Sheet、Card；应抽组件，或记录为什么不能抽。
+- 小屏和动态字体下确保文本不溢出、不重叠。
+- 非显然状态、副作用和组件边界补充简体中文注释。
+- 复杂共享 UI 尽量新增或更新 Preview/sample state。
 
-## Final Notes
+## 最终回复要点
 
-In the final answer, state:
+最终回复说明：
 
-- what existing component was reused or why not,
-- what component was added/split and where,
-- whether any page-private component remains as a tracked exception,
-- validation run.
+- 复用了哪个已有组件，或为什么不能复用；
+- 新增或拆分了什么组件，放在哪里；
+- 是否存在页面私有组件作为已记录例外；
+- 运行了什么验证。

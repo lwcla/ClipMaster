@@ -1,4 +1,4 @@
 interface:
-  display_name: "Repo Architecture Boundaries"
-  short_description: "Class, method, mapper, and module boundaries"
-  default_prompt: "Use $repo-architecture-boundaries when changing ViewModels, Repositories, DAOs, mappers, helpers, or utilities."
+  display_name: "仓库架构边界"
+  short_description: "检查类、方法、mapper 与模块职责边界"
+  default_prompt: "修改 ViewModel、Repository、DAO、mapper、helper 或工具类时使用 $repo-architecture-boundaries。"

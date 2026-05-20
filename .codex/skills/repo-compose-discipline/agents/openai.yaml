@@ -1,4 +1,4 @@
 interface:
-  display_name: "Repo Compose Discipline"
-  short_description: "Compose UI reuse, state, and component rules"
-  default_prompt: "Use $repo-compose-discipline when changing Compose UI."
+  display_name: "仓库 Compose 纪律"
+  short_description: "Compose UI 复用、状态和组件归属规则"
+  default_prompt: "修改 Compose UI 时使用 $repo-compose-discipline。"
