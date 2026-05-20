@@ -1,6 +1,5 @@
 package com.cla.clip.master.ui.page.backup
 
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -22,7 +21,6 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -32,13 +30,10 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -53,26 +48,32 @@ import com.cla.clip.base.general.backup.BackupProgressPhase
 import com.cla.clip.base.general.backup.BackupTargetHealth
 import com.cla.clip.base.general.backup.BackupTaskStatus
 import com.cla.clip.base.general.backup.RemoteBackupFile
+import com.cla.clip.master.ui.navigation.AppSharedViewModel
+import com.cla.clip.master.ui.navigation.BackupRestoreRequest
+import com.cla.clip.master.ui.navigation.BackupRestoreRoute
+import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.widget.ClipMasterCard
 import com.cla.clip.master.ui.widget.TitleBar
 
 /**
  * 备份与恢复页面。
  *
- * 页面只负责系统文件选择器、恢复确认弹窗和基础表单展示；备份生成、WebDAV 访问、预检和恢复写库都委托给 ViewModel，
+ * 页面只负责系统文件选择器、恢复流程页和基础表单展示；备份生成、WebDAV 访问、预检和恢复写库都委托给 ViewModel，
  * 避免 Composable 直接触碰数据库、网络或 ContentResolver 细节。
  */
 @Composable
 fun BackupPage(
     onBack: () -> Unit,
+    onNavigate: (Route) -> Unit,
+    appSharedViewModel: AppSharedViewModel,
     backupVm: BackupVm = hiltViewModel(),
 ) {
     val state by backupVm.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
-    var showRestoreConfirm by remember { mutableStateOf(false) }
     // 列表只展示会参与保留份数的普通备份；历史 safety 或异常文件隐藏，避免数量超过用户设置造成误解。
     val normalLocalBackups = state.localBackups.filter { it.isRegularBackup }
     val normalRemoteBackups = state.remoteBackups.filter { it.isRegularBackup }
+    val pageActionsEnabled = !state.isBusy
 
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/zip"),
@@ -80,7 +81,12 @@ fun BackupPage(
     )
     val importLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
-        onResult = { uri -> uri?.let { backupVm.previewFromUri(it) } }
+        onResult = { uri ->
+            uri?.let {
+                appSharedViewModel.setBackupRestoreRequest(BackupRestoreRequest.LocalFile(it))
+                onNavigate(BackupRestoreRoute)
+            }
+        }
     )
     val localDirLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree(),
@@ -127,7 +133,7 @@ fun BackupPage(
             item {
                 LocalBackupSection(
                     state = state,
-                    isBusy = state.isBusy,
+                    isBusy = !pageActionsEnabled,
                     onExport = { exportLauncher.launch(backupVm.suggestedBackupFileName()) },
                     onImport = { importLauncher.launch(arrayOf("application/zip", "application/octet-stream")) },
                     onChooseDir = { localDirLauncher.launch(null) },
@@ -142,8 +148,11 @@ fun BackupPage(
                 ) { file ->
                     LocalBackupCard(
                         file = file,
-                        isBusy = state.isBusy,
-                        onPreview = { backupVm.previewLocalBackup(file) }
+                        isBusy = !pageActionsEnabled,
+                        onPreview = {
+                            appSharedViewModel.setBackupRestoreRequest(BackupRestoreRequest.LocalDirectory(file))
+                            onNavigate(BackupRestoreRoute)
+                        }
                     )
                 }
             }
@@ -158,7 +167,8 @@ fun BackupPage(
                     onAllowHttpChange = backupVm::updateAllowHttp,
                     onTest = backupVm::testWebDav,
                     onUpload = backupVm::uploadWebDavBackup,
-                    onRefresh = backupVm::refreshRemoteBackups
+                    onRefresh = backupVm::refreshRemoteBackups,
+                    actionsEnabled = pageActionsEnabled
                 )
             }
 
@@ -173,35 +183,19 @@ fun BackupPage(
                 ) { file ->
                     RemoteBackupCard(
                         file = file,
-                        isBusy = state.isBusy,
-                        onPreview = { backupVm.previewRemoteBackup(file) }
+                        isBusy = !pageActionsEnabled,
+                        onPreview = {
+                            appSharedViewModel.setBackupRestoreRequest(BackupRestoreRequest.WebDav(file))
+                            onNavigate(BackupRestoreRoute)
+                        }
                     )
                 }
-            }
-
-            item {
-                PreviewSection(
-                    state = state,
-                    onRestore = { showRestoreConfirm = true },
-                    onClear = backupVm::clearPreview
-                )
             }
         }
     }
 
-    if (showRestoreConfirm) {
-        RestoreConfirmDialog(
-            onConfirm = {
-                showRestoreConfirm = false
-                backupVm.restoreSelectedBackup()
-            },
-            onDismiss = { showRestoreConfirm = false }
-        )
-    }
-
     if (state.busyOperation.isModalProgress) {
-        // 备份和恢复都涉及文件/网络/数据库写入；拦截系统返回，避免用户误以为可以安全中断长任务。
-        BackHandler(enabled = true) {}
+        // 备份写入涉及文件/网络副作用；弹窗期间拦截返回，避免用户误以为可以安全中断长任务。
         BackupTaskProgressDialog(operation = state.busyOperation, progress = state.backupProgress)
     }
 }
@@ -392,6 +386,7 @@ private fun WebDavConfigSection(
     onTest: () -> Unit,
     onUpload: () -> Unit,
     onRefresh: () -> Unit,
+    actionsEnabled: Boolean,
 ) {
     ClipMasterCard(
         modifier = Modifier
@@ -444,7 +439,7 @@ private fun WebDavConfigSection(
                 Switch(
                     checked = state.webDavAllowHttp,
                     onCheckedChange = onAllowHttpChange,
-                    enabled = !state.isBusy
+                    enabled = actionsEnabled
                 )
             }
             Row(
@@ -453,14 +448,14 @@ private fun WebDavConfigSection(
             ) {
                 Button(
                     onClick = onTest,
-                    enabled = !state.isBusy,
+                    enabled = actionsEnabled,
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_webdav_test))
                 }
                 Button(
                     onClick = onUpload,
-                    enabled = !state.isBusy,
+                    enabled = actionsEnabled,
                     modifier = Modifier.weight(1f)
                 ) {
                     Icon(imageVector = Icons.Default.CloudUpload, contentDescription = null)
@@ -470,7 +465,7 @@ private fun WebDavConfigSection(
             }
             OutlinedButton(
                 onClick = onRefresh,
-                enabled = !state.isBusy,
+                enabled = actionsEnabled,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(imageVector = Icons.Default.Refresh, contentDescription = null)
@@ -597,93 +592,6 @@ private fun BackupFileCard(
     }
 }
 
-/** 当前预检摘要和恢复入口。 */
-@Composable
-private fun PreviewSection(
-    state: BackupUiState,
-    onRestore: () -> Unit,
-    onClear: () -> Unit,
-) {
-    ClipMasterCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(
-                text = androidx.compose.ui.res.stringResource(R.string.base_general_preview_backup),
-                style = MaterialTheme.typography.titleMedium
-            )
-            val preview = state.selectedPreview
-            if (preview == null) {
-                Text(
-                    text = androidx.compose.ui.res.stringResource(R.string.base_general_backup_no_preview),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                Text(
-                    text = androidx.compose.ui.res.stringResource(
-                        R.string.base_general_backup_preview_summary,
-                        preview.createdAt.toBackupDisplayTime(),
-                        preview.appVersionName,
-                        preview.schemaVersion,
-                        preview.summary.clipCount,
-                        preview.summary.searchHistoryCount,
-                        preview.summary.videoDownloadCount,
-                        preview.summary.imageBatchCount
-                    ),
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                state.lastRestoreReport?.let { report ->
-                    HorizontalDivider()
-                    Text(
-                        text = androidx.compose.ui.res.stringResource(
-                            R.string.base_general_backup_restore_success,
-                            report.insertedCount,
-                            report.updatedCount,
-                            report.skippedCount
-                        ),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = onRestore, enabled = !state.isBusy) {
-                        Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_restore_backup))
-                    }
-                    TextButton(onClick = onClear, enabled = !state.isBusy) {
-                        Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_cancel))
-                    }
-                }
-            }
-        }
-    }
-}
-
-/** 恢复确认弹窗，明确恢复采用合并策略而不是清空覆盖。 */
-@Composable
-private fun RestoreConfirmDialog(
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_backup_confirm_restore_title)) },
-        text = { Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_backup_confirm_restore_message)) },
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_restore_backup))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_cancel))
-            }
-        }
-    )
-}
-
 /**
  * 备份/恢复进行中弹窗。
  *
@@ -734,7 +642,7 @@ private fun BackupTaskProgressDialog(operation: BackupBusyOperation, progress: B
 }
 
 /** 备份文件大小展示，避免列表直接显示原始字节数。 */
-private fun formatBackupSize(size: Long): String {
+fun formatBackupSize(size: Long): String {
     return when {
         size >= 1024L * 1024L -> String.format(java.util.Locale.getDefault(), "%.1f MB", size / 1024f / 1024f)
         size >= 1024L -> String.format(java.util.Locale.getDefault(), "%.1f KB", size / 1024f)
@@ -797,5 +705,4 @@ private fun BackupKind?.labelText(): String {
 /** 需要用不可取消弹窗明确展示的备份/恢复长任务。 */
 private val BackupBusyOperation.isModalProgress: Boolean
     get() = this == BackupBusyOperation.Exporting ||
-        this == BackupBusyOperation.UploadingWebDav ||
-        this == BackupBusyOperation.Restoring
+        this == BackupBusyOperation.UploadingWebDav

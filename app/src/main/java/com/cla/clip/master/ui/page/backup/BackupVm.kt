@@ -9,13 +9,10 @@ import androidx.lifecycle.viewModelScope
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.backup.BackupExportResult
 import com.cla.clip.base.general.backup.BackupFailure
-import com.cla.clip.base.general.backup.BackupPackageRef
 import com.cla.clip.base.general.backup.BackupProgress
 import com.cla.clip.base.general.backup.BackupProgressCategory
 import com.cla.clip.base.general.backup.BackupProgressPhase
-import com.cla.clip.base.general.backup.BackupPreview
 import com.cla.clip.base.general.backup.BackupRepository
-import com.cla.clip.base.general.backup.BackupRestoreReport
 import com.cla.clip.base.general.backup.BackupSource
 import com.cla.clip.base.general.backup.RemoteBackupFile
 import com.cla.clip.base.general.backup.WebDavClient
@@ -27,7 +24,6 @@ import com.cla.clip.base.general.backup.BackupTempFileStore
 import com.cla.clip.base.general.backup.backupReasonCode
 import com.cla.clip.base.general.backup.buildBackupFileName
 import com.cla.clip.base.general.backup.buildBackupDeviceLabel
-import com.cla.clip.base.general.backup.logCode
 import com.cla.clip.base.general.backup.newBackupTaskId
 import com.cla.clip.base.general.backup.normalizeWebDavRemoteDir
 import com.cla.clip.base.general.backup.toLogFields
@@ -48,9 +44,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import java.io.File
 import javax.inject.Inject
 
@@ -252,60 +245,6 @@ class BackupVm @Inject constructor(
         }
     }
 
-    /** 从用户选择的 URI 读取备份并只做预检，不写入数据库。 */
-    fun previewFromUri(uri: Uri) {
-        viewModelScope.launch {
-            val taskId = newBackupTaskId("preview-local")
-            runOperation(BackupBusyOperation.PreviewingLocal, taskId = taskId) {
-                val ref = copyUriToPackageRef(uri, taskId)
-                val preview = backupRepository.previewSnapshot(ref)
-                _uiState.update {
-                    it.copy(
-                        selectedBackupRef = ref,
-                        selectedPreview = preview,
-                        selectedRemoteFile = null
-                    )
-                }
-            }
-        }
-    }
-
-    /** 恢复当前预检过的备份。 */
-    fun restoreSelectedBackup() {
-        val packageRef = uiState.value.selectedBackupRef ?: return
-        viewModelScope.launch {
-            val taskId = newBackupTaskId("restore")
-            runOperation(BackupBusyOperation.Restoring, taskId = taskId) {
-                BackupTaskGate.runExclusive {
-                    val startedAt = System.currentTimeMillis()
-                    val preview = uiState.value.selectedPreview
-                    val readable = packageRef.requireReadable()
-                    logI(TAG) {
-                        "开始恢复备份 taskId=$taskId backupKind=${preview?.backupKind?.logCode()} " +
-                            "fileSize=${readable.length()} ${preview?.summary?.toLogFields().orEmpty()}"
-                    }
-                    // 恢复写库阶段由 Room 事务保证失败回滚；不再额外生成恢复前安全快照，避免用户目录出现难理解的回滚文件。
-                    val report = backupRepository.restoreSnapshot(packageRef)
-                    AppSetting.markBackupDirty()
-                    BackupAutoScheduler.markDirtyAndSchedule(appContext)
-                    _uiState.update { it.copy(lastRestoreReport = report) }
-                    logI(TAG) {
-                        "备份恢复成功 taskId=$taskId inserted=${report.insertedCount} updated=${report.updatedCount} " +
-                            "skipped=${report.skippedCount} durationMs=${System.currentTimeMillis() - startedAt}"
-                    }
-                    emitMessage(
-                        appContext.getString(
-                            R.string.base_general_backup_restore_success,
-                            report.insertedCount,
-                            report.updatedCount,
-                            report.skippedCount
-                        )
-                    )
-                }
-            }
-        }
-    }
-
     /** 测试 WebDAV 连接，并在成功时保存规范化目录。 */
     fun testWebDav() {
         viewModelScope.launch {
@@ -395,64 +334,6 @@ class BackupVm @Inject constructor(
                 logD(TAG) { "本地备份列表刷新成功 taskId=$taskId count=${files.size} deleted=${cleanup.deletedCount}" }
             }
         }
-    }
-
-    /** 从本地备份目录列表读取并预览。 */
-    fun previewLocalBackup(file: LocalBackupFile) {
-        viewModelScope.launch {
-            val taskId = newBackupTaskId("preview-local-list")
-            runOperation(BackupBusyOperation.PreviewingLocal, taskId = taskId) {
-                val taskDir = tempFileStore.createImportDir(taskId)
-                val ref = localBackupDirectoryWriter.copyBackupToRef(
-                    file = file,
-                    targetFile = File(taskDir, file.fileName),
-                    taskDir = taskDir
-                )
-                val preview = backupRepository.previewSnapshot(ref)
-                _uiState.update {
-                    it.copy(
-                        selectedBackupRef = ref,
-                        selectedPreview = preview,
-                        selectedRemoteFile = null
-                    )
-                }
-            }
-        }
-    }
-
-    /** 下载并预览指定远端备份。 */
-    fun previewRemoteBackup(file: RemoteBackupFile) {
-        viewModelScope.launch {
-            val taskId = newBackupTaskId("preview-remote")
-            runOperation(BackupBusyOperation.PreviewingRemote, taskId = taskId) {
-                val taskDir = tempFileStore.createImportDir(taskId)
-                val localFile = File(taskDir, file.fileName)
-                webDavClient.downloadFile(currentWebDavConfig(), file.fileName, localFile)
-                val ref = BackupPackageRef(file = localFile, fileName = file.fileName, taskDir = taskDir)
-                val preview = backupRepository.previewSnapshot(ref)
-                _uiState.update {
-                    it.copy(
-                        selectedBackupRef = ref,
-                        selectedPreview = preview,
-                        selectedRemoteFile = file
-                    )
-                }
-            }
-        }
-    }
-
-    /** 清空当前预览。 */
-    fun clearPreview() {
-        val oldRef = _uiState.value.selectedBackupRef
-        _uiState.update {
-            it.copy(
-                selectedBackupRef = null,
-                selectedPreview = null,
-                selectedRemoteFile = null,
-                lastRestoreReport = null
-            )
-        }
-        tempFileStore.cleanupTaskDir(oldRef?.taskDir)
     }
 
     /** 刷新远端备份列表的内部实现；刷新前会按保留份数清理普通备份，确保列表与配置一致。 */
@@ -604,17 +485,6 @@ class BackupVm @Inject constructor(
         return appContext.getString(resId)
     }
 
-    /** 将用户选择的外部备份复制到私有临时文件，避免 UI state 持有完整字节数组。 */
-    private suspend fun copyUriToPackageRef(uri: Uri, taskId: String): BackupPackageRef = withContext(Dispatchers.IO) {
-        val taskDir = tempFileStore.createImportDir(taskId)
-        val fileName = queryDisplayName(uri) ?: "selected_backup.zip"
-        val target = File(taskDir, fileName)
-        appContext.contentResolver.openInputStream(uri)?.use { input ->
-            target.outputStream().use { output -> input.copyTo(output) }
-        } ?: throw BackupFailure.ParseFailed()
-        BackupPackageRef(file = target, fileName = fileName, taskDir = taskDir)
-    }
-
     /** 向用户授权 URI 写入 zip 备份包文件；`t` 表示截断旧内容，避免覆盖同名文件时残留旧字节。 */
     private suspend fun writeFile(uri: Uri, file: File) = withContext(Dispatchers.IO) {
         appContext.contentResolver.openOutputStream(uri, "wt")?.use { output ->
@@ -652,8 +522,7 @@ class BackupVm @Inject constructor(
 /**
  * 备份页正在执行的长任务类型。
  *
- * UI 需要区分恢复写库和普通网络/文件读取任务：恢复进入事务后不适合让用户取消，因此展示不可取消弹窗；
- * 其他任务只禁用按钮即可，避免用标题栏动画制造突兀的视觉干扰。
+ * 备份页和独立恢复页复用同一组任务枚举，便于进度文案和日志字段保持一致。
  */
 enum class BackupBusyOperation {
     /** 当前没有长任务。 */
@@ -720,24 +589,10 @@ data class BackupUiState(
     val webDavHealthCheckedAt: Long = 0,
     /** 最近一次成功自动备份摘要。 */
     val lastBackupSuccessSummary: BackupSuccessSummary? = null,
-    /** 当前预览的 zip 备份包文件引用。 */
-    val selectedBackupRef: BackupPackageRef? = null,
     /** 当前备份/恢复阶段进度；第一版展示阶段，后续可接入类别和数量节流更新。 */
     val backupProgress: BackupProgress? = null,
-    /** 当前预检摘要。 */
-    val selectedPreview: BackupPreview? = null,
-    /** 当前预览来自哪个远端文件，本地文件时为 null。 */
-    val selectedRemoteFile: RemoteBackupFile? = null,
-    /** 最近一次恢复报告。 */
-    val lastRestoreReport: BackupRestoreReport? = null,
 ) {
     /** 是否正在执行备份、预检、恢复或 WebDAV 操作，用于统一禁用会产生并发冲突的按钮。 */
     val isBusy: Boolean
         get() = busyOperation != BackupBusyOperation.None
-}
-
-/** 把毫秒时间格式化为备份页面展示文本。 */
-fun Long.toBackupDisplayTime(): String {
-    val formatter = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-    return formatter.format(Date(this))
 }

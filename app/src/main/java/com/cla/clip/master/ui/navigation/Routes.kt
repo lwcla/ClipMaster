@@ -88,6 +88,10 @@ data object RecycleBinRoute : Route()
 @Serializable
 data object BackupRoute : Route()
 
+/** 备份恢复流程页 */
+@Serializable
+data object BackupRestoreRoute : Route()
+
 /** 我的页面 */
 @Serializable
 data object MineRoute : Route()

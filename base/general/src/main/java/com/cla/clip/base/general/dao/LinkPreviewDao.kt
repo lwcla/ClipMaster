@@ -84,6 +84,10 @@ interface LinkPreviewDao {
     @Query("SELECT * FROM link_previews WHERE link > :lastLink ORDER BY link ASC LIMIT :limit")
     suspend fun loadPageForBackup(lastLink: String, limit: Int): List<LinkPreviewData>
 
+    /** 备份恢复按稳定主键批量查询已有链接预览，用于生成幂等恢复报告。 */
+    @Query("SELECT * FROM link_previews WHERE link IN (:links)")
+    suspend fun loadByLinksForBackup(links: List<String>): List<LinkPreviewData>
+
     /**
      * 根据包名查询对应的LinkPreviewData
      * @param link 要查询的链接。

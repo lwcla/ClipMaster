@@ -82,6 +82,10 @@ interface SourceAppDao {
     @Query("SELECT * FROM source_apps WHERE package_name > :lastPackageName ORDER BY package_name ASC LIMIT :limit")
     suspend fun loadPageForBackup(lastPackageName: String, limit: Int): List<SourceAppData>
 
+    /** 备份恢复按稳定主键批量查询已有来源 App，用于生成幂等恢复报告。 */
+    @Query("SELECT * FROM source_apps WHERE package_name IN (:packageNames)")
+    suspend fun loadByPackageNamesForBackup(packageNames: List<String>): List<SourceAppData>
+
     /**
      * 根据包名查询对应的SourceApp条目。
      * @param packageName 要查询的应用包名。

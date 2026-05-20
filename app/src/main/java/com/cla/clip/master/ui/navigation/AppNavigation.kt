@@ -9,15 +9,23 @@ import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
+import com.cla.clip.master.ui.page.backup.BackupPage
+import com.cla.clip.master.ui.page.backup.BackupRestoreFlowPage
+import com.cla.clip.master.ui.page.backup.BackupRestoreFlowState
+import com.cla.clip.master.ui.page.backup.BackupRestoreVm
 import com.cla.clip.master.ui.page.detail.DetailPage
 import com.cla.clip.master.ui.page.download.DownloadHistoryPage
 import com.cla.clip.master.ui.page.image.ImageExtractPage
-import com.cla.clip.master.ui.page.backup.BackupPage
 import com.cla.clip.master.ui.page.list.ClipListPage
 import com.cla.clip.master.ui.page.list.FoldedClipListPage
 import com.cla.clip.master.ui.page.main.MainPage
@@ -41,6 +49,8 @@ private const val NAV_PAGE_EXIT_DURATION_MS = 260
  */
 @Composable
 fun AppNavigation(navController: NavHostController) {
+    val appSharedViewModel = viewModel<AppSharedViewModel>()
+
     /** 子页面统一使用的跳转回调，保持所有页面都通过类型安全 Route 导航。 */
     val onNavigate = { route: Route ->
         navController.navigate(route)
@@ -161,6 +171,16 @@ fun AppNavigation(navController: NavHostController) {
         // 备份与恢复
         composable<BackupRoute> {
             BackupPage(
+                onBack = onBack,
+                onNavigate = onNavigate,
+                appSharedViewModel = appSharedViewModel
+            )
+        }
+
+        // 备份恢复流程页
+        composable<BackupRestoreRoute> {
+            BackupRestoreFlowRoute(
+                appSharedViewModel = appSharedViewModel,
                 onBack = onBack
             )
         }
@@ -171,6 +191,48 @@ fun AppNavigation(navController: NavHostController) {
             )
         }
     }
+}
+
+/**
+ * 备份恢复流程的真实导航页面。
+ *
+ * 备份页只把一次性打开请求写入 Activity 级临时 ViewModel；恢复页接管后立即清理请求，避免长期持有备份页状态。
+ */
+@Composable
+private fun BackupRestoreFlowRoute(
+    appSharedViewModel: AppSharedViewModel,
+    onBack: () -> Unit,
+    restoreVm: BackupRestoreVm = hiltViewModel(),
+) {
+    val request by appSharedViewModel.backupRestoreRequest.collectAsStateWithLifecycle()
+    val state by restoreVm.uiState.collectAsStateWithLifecycle()
+    val restoreFlow = state.restoreFlow
+    LaunchedEffect(request?.requestId) {
+        request?.let {
+            restoreVm.startFromRequest(it)
+            appSharedViewModel.clearBackupRestoreRequest(it.requestId)
+        }
+    }
+    if (restoreFlow is BackupRestoreFlowState.Hidden) {
+        LaunchedEffect(request) {
+            if (request == null) onBack()
+        }
+        return
+    }
+    BackupRestoreFlowPage(
+        state = restoreFlow,
+        onBack = {
+            restoreVm.dismissRestoreFlow()
+            appSharedViewModel.clearBackupRestoreRequest()
+            onBack()
+        },
+        onForceBack = {
+            restoreVm.forceCloseRestoreFlow()
+            appSharedViewModel.clearBackupRestoreRequest()
+            onBack()
+        },
+        onRestore = restoreVm::restoreSelectedBackup
+    )
 }
 
 /**

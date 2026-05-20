@@ -120,6 +120,19 @@ interface SearchHistoryDao {
     @Query("SELECT * FROM search_histories WHERE id > :lastId AND id <= :maxId ORDER BY id ASC LIMIT :limit")
     suspend fun loadPageForBackup(lastId: Long, maxId: Long, limit: Int): List<SearchHistoryData>
 
+    /** 备份恢复按稳定业务键查询已有搜索历史，用于区分新增、更新和跳过。 */
+    @Query(
+        """
+        SELECT * FROM search_histories
+        WHERE is_folded = :isFolded
+          AND normalized_query IN (:normalizedQueries)
+        """
+    )
+    suspend fun loadByScopeAndQueriesForBackup(
+        isFolded: Boolean,
+        normalizedQueries: List<String>
+    ): List<SearchHistoryData>
+
     /** 删除指定历史；调用方只传数据库主键，删除失败时 Room 返回 0。 */
     @Query("DELETE FROM search_histories WHERE id = :id")
     suspend fun deleteById(id: Long): Int
