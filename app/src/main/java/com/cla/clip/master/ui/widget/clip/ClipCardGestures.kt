@@ -86,6 +86,7 @@ internal fun fullCardPath(width: Float, height: Float): Path {
  *
  * 这里把 tap、长按、纵向滚动取消、首页 Pager 左滑和 item 右滑菜单放在同一个入口协调：
  * 未超过触摸阈值才分发点击或长按；横向右滑或菜单已展开时才消费拖动；其他移动交还父级滚动。
+ * 抬手事件也会按最终位移兜底检查，避免快速滑动时首个可见变化已经是抬手而误判为点击。
  *
  * @param isMenuOpened 当前 item 菜单是否已经露出，决定左滑是否由 item 优先消费。
  * @param isAnimating 偏移动画是否正在执行，动画中继续消费横向手势，避免父级 Pager 抢占。
@@ -136,6 +137,10 @@ internal suspend fun PointerInputScope.detectClipCardGestures(
                     return@withTimeoutOrNull ClipCardGestureDecision.Cancel
                 }
                 if (!change.pressed) {
+                    val totalDelta = change.position - down.position
+                    if (totalDelta.getDistance() > touchSlop) {
+                        return@withTimeoutOrNull ClipCardGestureDecision.Cancel
+                    }
                     val isQuickActionTap = isQuickActionEnabled() &&
                         isInQuickActionZone(
                             x = change.position.x,
