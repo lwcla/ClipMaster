@@ -456,15 +456,19 @@ class BackupRepository @Inject constructor(
     suspend fun restoreSnapshot(ref: BackupPackageRef): BackupRestoreReport = withContext(Dispatchers.IO) {
         backupMutex.withLock {
             val manifest = packageReader.preview(ref)
+            val timeNormalizer = BackupRestoreTimeNormalizer(
+                restoreStartedAt = System.currentTimeMillis(),
+                manifestCreatedAt = manifest.createdAt
+            )
             if (manifest.schemaVersion <= 1 || manifest.dataFormat == BACKUP_DATA_FORMAT_JSON_ARRAY) {
                 val snapshot = ref.requireReadable().readBytes().decodeBackupPackage()
                 snapshot.validateForRestore(BuildConfig.APPLICATION_ID)
                 return@withContext appDatabase.withTransaction {
-                    restoreSnapshotInTransaction(snapshot)
+                    restoreSnapshotInTransaction(snapshot, timeNormalizer)
                 }
             }
             appDatabase.withTransaction {
-                restorePackageInTransaction(ref, manifest)
+                restorePackageInTransaction(ref, manifest, timeNormalizer)
             }
         }
     }
@@ -473,8 +477,12 @@ class BackupRepository @Inject constructor(
     suspend fun restoreSnapshot(packageBytes: ByteArray): BackupRestoreReport = withContext(Dispatchers.IO) {
         backupMutex.withLock {
             val snapshot = decodeAndValidateSnapshot(packageBytes)
+            val timeNormalizer = BackupRestoreTimeNormalizer(
+                restoreStartedAt = System.currentTimeMillis(),
+                manifestCreatedAt = snapshot.createdAt
+            )
             appDatabase.withTransaction {
-                restoreSnapshotInTransaction(snapshot)
+                restoreSnapshotInTransaction(snapshot, timeNormalizer)
             }
         }
     }
@@ -493,7 +501,10 @@ class BackupRepository @Inject constructor(
     }
 
     /** 在事务内执行实际恢复，调用方必须已经持有 Room transaction。 */
-    private suspend fun restoreSnapshotInTransaction(snapshot: BackupSnapshot): BackupRestoreReport {
+    private suspend fun restoreSnapshotInTransaction(
+        snapshot: BackupSnapshot,
+        timeNormalizer: BackupRestoreTimeNormalizer,
+    ): BackupRestoreReport {
         var inserted = 0
         var updated = 0
         var skipped = 0
@@ -508,7 +519,7 @@ class BackupRepository @Inject constructor(
         updated += linkPreviewRestore.updated
         skipped += linkPreviewRestore.skipped
 
-        val clipRestore = restoreClips(snapshot)
+        val clipRestore = restoreClips(snapshot, timeNormalizer)
         inserted += clipRestore.inserted
         updated += clipRestore.updated
         skipped += clipRestore.skipped
@@ -535,7 +546,10 @@ class BackupRepository @Inject constructor(
         updated += imageItemRestore.updated
         skipped += imageItemRestore.skipped
 
-        logD(TAG) { "备份恢复写库完成 inserted=$inserted updated=$updated skipped=$skipped" }
+        logD(TAG) {
+            "备份恢复写库完成 inserted=$inserted updated=$updated skipped=$skipped " +
+                "futureTimeNormalized=${timeNormalizer.normalizedFieldCount} clockSkewMs=${timeNormalizer.clockSkewMillis}"
+        }
         return BackupRestoreReport(
             insertedCount = inserted,
             updatedCount = updated,
@@ -553,7 +567,11 @@ class BackupRepository @Inject constructor(
     }
 
     /** 在事务内执行 v2 文件型备份恢复，调用方必须已经完成 manifest/checksum 校验。 */
-    private suspend fun restorePackageInTransaction(ref: BackupPackageRef, manifest: BackupManifest): BackupRestoreReport {
+    private suspend fun restorePackageInTransaction(
+        ref: BackupPackageRef,
+        manifest: BackupManifest,
+        timeNormalizer: BackupRestoreTimeNormalizer,
+    ): BackupRestoreReport {
         val sourceApps = mutableListOf<BackupSourceApp>()
         packageReader.readJsonLines(ref, SOURCE_APPS_JSONL_PATH, BackupSourceApp.serializer()) { sourceApps += it }
         val sourceAppRestore = restoreSourceAppEntities(sourceApps.map { it.toEntity() })
@@ -564,7 +582,7 @@ class BackupRepository @Inject constructor(
 
         val sourceAppsByPackage = sourceApps.associateBy { it.packageName }
         val linkPreviewsByLink = linkPreviews.associateBy { it.link }
-        val clipRestore = restoreJsonlClips(ref, manifest, sourceAppsByPackage, linkPreviewsByLink)
+        val clipRestore = restoreJsonlClips(ref, manifest, sourceAppsByPackage, linkPreviewsByLink, timeNormalizer)
         val historyRestore = restoreJsonlSearchHistories(ref)
         restoreSettings(BackupJson.decodeSettings(packageReader.readText(ref, SETTINGS_PATH)))
         val videoRestore = restoreJsonlVideoDownloads(ref, manifest)
@@ -582,7 +600,10 @@ class BackupRepository @Inject constructor(
         val inserted = reports.sumOf { it.insertedCount }
         val updated = reports.sumOf { it.updatedCount }
         val skipped = reports.sumOf { it.skippedCount }
-        logD(TAG) { "备份恢复写库完成 inserted=$inserted updated=$updated skipped=$skipped schema=${manifest.schemaVersion}" }
+        logD(TAG) {
+            "备份恢复写库完成 inserted=$inserted updated=$updated skipped=$skipped schema=${manifest.schemaVersion} " +
+                "futureTimeNormalized=${timeNormalizer.normalizedFieldCount} clockSkewMs=${timeNormalizer.clockSkewMillis}"
+        }
         return BackupRestoreReport(
             insertedCount = inserted,
             updatedCount = updated,
@@ -597,17 +618,18 @@ class BackupRepository @Inject constructor(
         manifest: BackupManifest,
         sourceApps: Map<String, BackupSourceApp>,
         linkPreviews: Map<String, BackupLinkPreview>,
+        timeNormalizer: BackupRestoreTimeNormalizer,
     ): RestoreCounter {
         var counter = RestoreCounter()
         val chunk = mutableListOf<BackupClip>()
         packageReader.readJsonLines(ref, CLIPS_JSONL_PATH, BackupClip.serializer()) { item ->
             chunk += item
             if (chunk.size >= WRITE_CHUNK_SIZE) {
-                counter += restoreClipChunk(chunk, manifest, sourceApps, linkPreviews)
+                counter += restoreClipChunk(chunk, manifest, sourceApps, linkPreviews, timeNormalizer)
                 chunk.clear()
             }
         }
-        if (chunk.isNotEmpty()) counter += restoreClipChunk(chunk, manifest, sourceApps, linkPreviews)
+        if (chunk.isNotEmpty()) counter += restoreClipChunk(chunk, manifest, sourceApps, linkPreviews, timeNormalizer)
         return counter
     }
 
@@ -617,6 +639,7 @@ class BackupRepository @Inject constructor(
         manifest: BackupManifest,
         sourceApps: Map<String, BackupSourceApp>,
         linkPreviews: Map<String, BackupLinkPreview>,
+        timeNormalizer: BackupRestoreTimeNormalizer,
     ): RestoreCounter {
         val existing = appDatabase.clipDao().loadClipsByIdsForBackup(backups.map { it.id }).associateBy { it.id }
         val toWrite = mutableListOf<ClipData>()
@@ -626,7 +649,8 @@ class BackupRepository @Inject constructor(
         backups.forEach { backup ->
             val entity = backup.toEntity(
                 sourceApp = backup.sourceAppPackage?.let { sourceApps[it] },
-                linkPreview = backup.link?.let { linkPreviews[it] }
+                linkPreview = backup.link?.let { linkPreviews[it] },
+                timeNormalizer = timeNormalizer
             )
             val local = existing[entity.id]
             when {
@@ -634,7 +658,8 @@ class BackupRepository @Inject constructor(
                     inserted++
                     toWrite += entity
                 }
-                local.lastUserStateTime() > manifest.createdAt || local.lastUserStateTime() >= entity.lastUserStateTime() -> skipped++
+                local.lastUserStateTime() > timeNormalizer.normalizedManifestCreatedAt ||
+                    local.lastUserStateTime() >= entity.lastUserStateTime() -> skipped++
                 else -> {
                     updated++
                     toWrite += entity
@@ -882,7 +907,10 @@ class BackupRepository @Inject constructor(
     }
 
     /** 恢复剪贴记录，并保护本地较新的状态不被旧备份覆盖。 */
-    private suspend fun restoreClips(snapshot: BackupSnapshot): RestoreCounter {
+    private suspend fun restoreClips(
+        snapshot: BackupSnapshot,
+        timeNormalizer: BackupRestoreTimeNormalizer,
+    ): RestoreCounter {
         val backupClips = snapshot.data.clips
         if (backupClips.isEmpty()) return RestoreCounter()
         val existing = appDatabase.clipDao()
@@ -897,7 +925,8 @@ class BackupRepository @Inject constructor(
         backupClips.forEach { backup ->
             val entity = backup.toEntity(
                 sourceApp = backup.sourceAppPackage?.let { sourceApps[it] },
-                linkPreview = backup.link?.let { linkPreviews[it] }
+                linkPreview = backup.link?.let { linkPreviews[it] },
+                timeNormalizer = timeNormalizer
             )
             val local = existing[entity.id]
             when {
@@ -906,7 +935,7 @@ class BackupRepository @Inject constructor(
                     toWrite += entity
                 }
 
-                local.lastUserStateTime() > snapshot.createdAt -> {
+                local.lastUserStateTime() > timeNormalizer.normalizedManifestCreatedAt -> {
                     skipped++
                 }
 
@@ -1138,6 +1167,7 @@ private fun ClipData.toBackupClip(): BackupClip {
 private fun BackupClip.toEntity(
     sourceApp: BackupSourceApp?,
     linkPreview: BackupLinkPreview?,
+    timeNormalizer: BackupRestoreTimeNormalizer,
 ): ClipData {
     val rebuiltSearchText = buildString {
         append(content)
@@ -1151,11 +1181,11 @@ private fun BackupClip.toEntity(
     return ClipData(
         id = id,
         content = content,
-        timestamp = timestamp,
-        pinnedTime = pinnedTime,
+        timestamp = timeNormalizer.normalizeUserTime(timestamp),
+        pinnedTime = timeNormalizer.normalizeUserTime(pinnedTime),
         isFolded = isFolded,
-        foldedAt = foldedAt,
-        deletedAt = deletedAt,
+        foldedAt = timeNormalizer.normalizeUserTime(foldedAt),
+        deletedAt = timeNormalizer.normalizeUserTime(deletedAt),
         link = link,
         sourceAppPackage = sourceAppPackage,
         searchText = rebuiltSearchText
