@@ -27,10 +27,14 @@ description: 当前仓库的代码修改门禁工作流。用于任何代码修�
    - 行为、架构、日志、诊断、生命周期或用户可见流程改动使用 `$repo-docs-logs`；
    - Room 表、设置、用户数据、下载/缓存元数据、备份恢复、dirty 状态或 Auto Backup 影响使用 `$repo-backup-coverage`；
    - 暂存、提交、改提交信息、检查提交范围或任何 Git 操作使用 `$repo-git-discipline`。
-5. 涉及行为、UI、架构、数据契约、日志、备份、生命周期或规则变化时，先或同步更新文档。
-6. 实现时保持范围收敛。入口类只做流程编排，复用逻辑下沉到命名清晰的协作者。
-7. 运行最贴近的验证命令。Kotlin/Compose/Android 改动优先运行模块编译命令，并运行 `git diff --check`。
-8. 最终回复前使用 `$repo-final-self-check`。
+5. 做反混淆/R8 检查：
+   - 新增或修改实体、模型、data class、enum、sealed class、序列化模型、导航参数、Intent/通知/WebView JS 协议、第三方 SDK 回调、反射入口、系统框架入口或跨模块稳定 ABI 时，必须评估是否需要反混淆。
+   - 需要稳定外部契约时，确认是否添加 `@Keep` 或项目语义化 keep 注解、是否用 `@SerialName`/`@SerializedName` 固定字段名、是否需要 ProGuard/R8 或 consumer rules。
+   - 如果判断不需要 keep/R8 处理，最终回复要说明原因，例如只在编译期调用、仅页面 UI state、仅 Worker 内部边界或没有外部协议/反射依赖。
+6. 涉及行为、UI、架构、数据契约、日志、备份、生命周期、规则或反混淆契约变化时，先或同步更新文档。
+7. 实现时保持范围收敛。入口类只做流程编排，复用逻辑下沉到命名清晰的协作者。
+8. 运行最贴近的验证命令。Kotlin/Compose/Android 改动优先运行模块编译命令；涉及混淆规则、反射、序列化、导航协议、Intent/通知/WebView JS 或 SDK 回调时，优先补充 release/R8 验证，无法运行则在最终回复和方案文档说明风险；始终运行 `git diff --check`。
+9. 最终回复前使用 `$repo-final-self-check`。
 
 ## Skill 语言规则
 
@@ -46,4 +50,5 @@ description: 当前仓库的代码修改门禁工作流。用于任何代码修�
 - 必须同步的文档缺失或过期；
 - 新逻辑会继续塞进已经过载的文件，且没有记录例外；
 - 日志、隐私或诊断边界不清晰；
+- 外部协议、序列化、反射、导航或 SDK 回调模型的 keep/R8 契约不清晰；
 - 无法验证且没有说明风险。

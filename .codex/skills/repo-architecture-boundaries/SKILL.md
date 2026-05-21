@@ -27,7 +27,17 @@ description: 当前仓库的架构边界工作流。用于修改或新增 ViewMo
 - 除非记录为临时例外，不要把业务 mapper、comparator 或 parser 逻辑放进大型 ViewModel/Repository 文件。
 - 保持模块依赖单向，不要为了复用让底层模块依赖 app feature 代码。
 - 类型、方法、字段、契约和非显然分支补充简体中文注释。
-- 新增序列化或外部协议模型时，使用稳定字段注解，并评估 keep/R8 需求。
+- 新增或修改序列化、外部协议或运行时反射相关模型时，使用稳定字段注解，并评估 keep/R8 需求。
+
+## 反混淆与稳定契约
+
+- 先判断稳定边界：只有被 JSON/序列化、Intent、通知协议、WebView JS、导航类型安全路由、第三方 SDK、反射、系统框架或跨模块稳定 ABI 依赖的类型，才默认进入反混淆评估；普通 Room 实体、页面 UI state、Worker 内部结果和纯流程对象不因 data class 身份自动 keep。
+- 需要反混淆时优先使用统一注解标记，例如 AndroidX `@Keep` 或项目后续语义化注解；类型注释必须说明谁依赖稳定，以及稳定的是类名、字段名、构造函数、方法签名、枚举值还是序列化 type name。
+- 外部字段必须用协议注解固定，例如 `@SerialName`、`@SerializedName` 或项目等价注解；禁止依赖 Kotlin 属性名、枚举 `name`、ordinal 或 sealed 子类名作为长期协议。
+- ProGuard/R8 规则要按最小粒度编写：先判断保留类名、字段、方法、构造函数、枚举值还是注解成员；禁止为省事把 `entity`、`model`、`data`、`dto` 等宽泛包整包 keep。
+- 库模块对外暴露稳定模型、反射入口或序列化契约时，混淆规则优先放在该模块 consumer rules 或等价位置，不只依赖 app 模块兜底。
+- 枚举或 sealed class 参与数据库、JSON、Intent、JS、导航或跨模块协议时，优先定义稳定 code/type 字段或序列化 type name。
+- 涉及混淆规则、反射模型、序列化模型、通知/Intent/WebView JS/导航协议或 SDK 回调模型时，优先补充 release/R8 验证；无法运行时必须在方案文档和最终回复说明未验证项、风险和后续验证方向。
 
 ## 重构安全
 
