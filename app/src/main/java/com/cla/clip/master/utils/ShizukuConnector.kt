@@ -45,17 +45,23 @@ class ShizukuConnector @Inject constructor(
 
     companion object {
         private const val TAG = "ShizukuConnector"
+
+        /**
+         * shizuku的版本号，这个不要跟app的版本
+         * 否则只是更新了app，但shizuku服务没有发生变化的情况下，也会重启shizuku进程
+         */
+        private const val VERSION = 2
     }
 
     private var shizukuService: IClipboardShizukuService? = null
 
     private val userServiceArgs by lazy {
-        logD(TAG) { "args init: debug=${BuildConfig.DEBUG} version_code=${BuildConfig.VERSION_CODE} pid=${AppSetting.pid}" }
+        logD(TAG) { "args init: debug=${BuildConfig.DEBUG} version_code=${VERSION} pid=${AppSetting.pid}" }
         Shizuku.UserServiceArgs(ComponentName(BuildConfig.APPLICATION_ID, ClipboardShizukuService::class.java.name))
             .daemon(true) // 守护进程，确保服务在后台持续运行
-            .processNameSuffix("shizuku_${BuildConfig.VERSION_CODE}_${AppSetting.pid}")
+            .processNameSuffix("shizuku_${VERSION}_${AppSetting.pid}")
             .debuggable(BuildConfig.DEBUG)
-            .version(BuildConfig.VERSION_CODE)
+            .version(VERSION)
             .tag(AppSetting.pid) // tag和version决定是否需要替换shizuku进程，并且退出旧进程
     }
 
