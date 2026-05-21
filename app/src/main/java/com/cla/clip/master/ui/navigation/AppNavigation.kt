@@ -221,6 +221,7 @@ private fun BackupRestoreFlowRoute(
     }
     BackupRestoreFlowPage(
         state = restoreFlow,
+        mediaRelocation = state.mediaRelocation,
         onBack = {
             restoreVm.dismissRestoreFlow()
             appSharedViewModel.clearBackupRestoreRequest()
@@ -231,7 +232,10 @@ private fun BackupRestoreFlowRoute(
             appSharedViewModel.clearBackupRestoreRequest()
             onBack()
         },
-        onRestore = restoreVm::restoreSelectedBackup
+        onRestore = restoreVm::restoreSelectedBackup,
+        onEstimateMedia = restoreVm::estimateMediaRelocation,
+        onMediaPermissionResult = restoreVm::onMediaRelocationPermissionResult,
+        onStartMediaScan = restoreVm::startMediaRelocationScan
     )
 }
 

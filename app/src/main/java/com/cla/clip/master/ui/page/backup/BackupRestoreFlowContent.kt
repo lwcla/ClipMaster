@@ -39,6 +39,12 @@ import com.cla.clip.base.general.backup.BackupProgressCategory
 import com.cla.clip.base.general.backup.BackupProgressPhase
 import com.cla.clip.base.general.backup.BackupRestoreCategoryReport
 import com.cla.clip.base.general.backup.BackupSummary
+import com.cla.clip.master.media.MediaRelocationDurationLevel
+import com.cla.clip.master.media.MediaRelocationCategoryReport
+import com.cla.clip.master.media.MediaRelocationPreparation
+import com.cla.clip.master.media.MediaRelocationProgress
+import com.cla.clip.master.media.MediaRelocationReport
+import com.cla.clip.master.media.MediaRelocationStage
 
 /**
  * 备份恢复流程页内容区。
@@ -46,13 +52,16 @@ import com.cla.clip.base.general.backup.BackupSummary
  * 只负责把流程状态渲染为摘要、进度和报告，不启动文件、网络或数据库副作用。
  */
 @Composable
-internal fun BackupRestoreFlowContent(state: BackupRestoreFlowState) {
+internal fun BackupRestoreFlowContent(
+    state: BackupRestoreFlowState,
+    mediaRelocation: MediaRelocationUiState,
+) {
     FlowHeader(state = state)
     when (state) {
         is BackupRestoreFlowState.Reading -> ReadingContent(state)
         is BackupRestoreFlowState.Preview -> PreviewContent(state)
         is BackupRestoreFlowState.Restoring -> RestoringContent(state)
-        is BackupRestoreFlowState.Result -> ResultContent(state)
+        is BackupRestoreFlowState.Result -> ResultContent(state, mediaRelocation)
         is BackupRestoreFlowState.Error -> ErrorContent(state)
         BackupRestoreFlowState.Hidden -> Unit
     }
@@ -62,8 +71,12 @@ internal fun BackupRestoreFlowContent(state: BackupRestoreFlowState) {
 @Composable
 internal fun BackupRestoreFlowActions(
     state: BackupRestoreFlowState,
+    mediaRelocation: MediaRelocationUiState,
     onBack: () -> Unit,
     onRestore: () -> Unit,
+    onEstimateMedia: () -> Unit,
+    onRequestMediaPermission: (MediaRelocationPreparation) -> Unit,
+    onStartMediaScan: (MediaRelocationPreparation) -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -84,6 +97,13 @@ internal fun BackupRestoreFlowActions(
                 }
             }
             is BackupRestoreFlowState.Result -> {
+                MediaRelocationAction(
+                    state = mediaRelocation,
+                    onEstimateMedia = onEstimateMedia,
+                    onRequestMediaPermission = onRequestMediaPermission,
+                    onStartMediaScan = onStartMediaScan
+                )
+                Spacer(modifier = Modifier.size(8.dp))
                 Button(onClick = onBack) {
                     Text(stringResource(R.string.base_general_backup_flow_done))
                 }
@@ -205,7 +225,10 @@ private fun PreviewContent(state: BackupRestoreFlowState.Preview) {
 }
 
 @Composable
-private fun ResultContent(state: BackupRestoreFlowState.Result) {
+private fun ResultContent(
+    state: BackupRestoreFlowState.Result,
+    mediaRelocation: MediaRelocationUiState,
+) {
     val report = state.report
     FlowSection(title = stringResource(R.string.base_general_backup_section_info)) {
         state.preview?.let { preview ->
@@ -240,6 +263,7 @@ private fun ResultContent(state: BackupRestoreFlowState.Result) {
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
+    MediaRelocationContent(mediaRelocation)
 }
 
 @Composable
@@ -344,6 +368,159 @@ private fun BackupCountRow(label: String, value: String, muted: Boolean) {
 }
 
 @Composable
+private fun MediaRelocationContent(state: MediaRelocationUiState) {
+    FlowSection(title = stringResource(R.string.base_general_backup_media_relocation_title)) {
+        when (state) {
+            MediaRelocationUiState.Idle -> {
+                Text(
+                    text = stringResource(R.string.base_general_backup_media_relocation_intro),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            MediaRelocationUiState.Estimating -> ProgressRow(
+                text = stringResource(R.string.base_general_backup_media_relocation_estimating)
+            )
+            is MediaRelocationUiState.NoWork -> {
+                Text(
+                    text = stringResource(R.string.base_general_backup_media_relocation_no_work),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                MediaRelocationResultRows(
+                    report = MediaRelocationReport(
+                        video = MediaRelocationCategoryReport(
+                            existingReadable = state.preparation.existingReadableVideoCount
+                        ),
+                        image = MediaRelocationCategoryReport(
+                            existingReadable = state.preparation.existingReadableImageCount
+                        )
+                    )
+                )
+            }
+            is MediaRelocationUiState.ReadyToConfirm -> MediaRelocationEstimateRows(state.preparation)
+            is MediaRelocationUiState.PermissionRequired -> {
+                MediaRelocationEstimateRows(state.preparation)
+                Text(
+                    text = stringResource(R.string.base_general_backup_media_relocation_permission),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                state.report?.let { MediaRelocationResultRows(it) }
+            }
+            is MediaRelocationUiState.Running -> MediaRelocationProgressRows(state.progress)
+            is MediaRelocationUiState.Result -> MediaRelocationResultRows(state.report)
+            is MediaRelocationUiState.Error -> Text(
+                text = state.message.ifBlank { stringResource(R.string.base_general_backup_media_relocation_error) },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+    }
+}
+
+@Composable
+private fun MediaRelocationAction(
+    state: MediaRelocationUiState,
+    onEstimateMedia: () -> Unit,
+    onRequestMediaPermission: (MediaRelocationPreparation) -> Unit,
+    onStartMediaScan: (MediaRelocationPreparation) -> Unit,
+) {
+    when (state) {
+        MediaRelocationUiState.Idle,
+        is MediaRelocationUiState.NoWork -> TextButton(onClick = onEstimateMedia) {
+            Text(stringResource(R.string.base_general_backup_media_relocation_start))
+        }
+        is MediaRelocationUiState.Error,
+        is MediaRelocationUiState.Result -> TextButton(onClick = onEstimateMedia) {
+            Text(stringResource(R.string.base_general_backup_media_relocation_restart))
+        }
+        MediaRelocationUiState.Estimating,
+        is MediaRelocationUiState.Running -> Unit
+        is MediaRelocationUiState.PermissionRequired -> TextButton(
+            onClick = { onRequestMediaPermission(state.preparation) }
+        ) {
+            Text(stringResource(R.string.base_general_backup_media_relocation_request_permission))
+        }
+        is MediaRelocationUiState.ReadyToConfirm -> TextButton(
+            onClick = { onStartMediaScan(state.preparation) }
+        ) {
+            Text(stringResource(R.string.base_general_backup_media_relocation_confirm))
+        }
+    }
+}
+
+@Composable
+private fun MediaRelocationEstimateRows(preparation: MediaRelocationPreparation) {
+    val estimate = preparation.estimate
+    Text(
+        text = stringResource(
+            R.string.base_general_backup_media_relocation_estimate,
+            estimate.videoCount,
+            estimate.imageBatchCount,
+            estimate.imageItemCount,
+            estimate.durationLevel.labelText()
+        ),
+        style = MaterialTheme.typography.bodyMedium
+    )
+    Text(
+        text = stringResource(R.string.base_general_backup_media_relocation_estimate_hint),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+
+@Composable
+private fun MediaRelocationProgressRows(progress: MediaRelocationProgress) {
+    ProgressRow(text = stringResource(R.string.base_general_backup_media_relocation_running))
+    Text(
+        text = stringResource(
+            R.string.base_general_backup_media_relocation_progress,
+            progress.stage.labelText(),
+            progress.processedVideos,
+            progress.totalVideos,
+            progress.processedImageBatches,
+            progress.totalImageBatches,
+            progress.processedImageItems,
+            progress.totalImageItems,
+            progress.relocatedCount
+        ),
+        style = MaterialTheme.typography.bodyMedium
+    )
+}
+
+@Composable
+private fun MediaRelocationResultRows(report: MediaRelocationReport) {
+    Text(
+        text = stringResource(
+            R.string.base_general_backup_media_relocation_result_video,
+            report.video.existingReadable,
+            report.video.relocated,
+            report.video.noCandidate + report.video.folderMissing,
+            report.video.multipleCandidates,
+            report.video.metadataMismatch,
+            report.video.permissionDenied,
+            report.video.writeFailed
+        ),
+        style = MaterialTheme.typography.bodyMedium
+    )
+    Text(
+        text = stringResource(
+            R.string.base_general_backup_media_relocation_result_image,
+            report.image.existingReadable,
+            report.image.relocated,
+            report.imageFolderMissingBatches,
+            report.image.noCandidate + report.image.folderMissing,
+            report.image.multipleCandidates,
+            report.image.metadataMismatch,
+            report.image.permissionDenied,
+            report.image.writeFailed
+        ),
+        style = MaterialTheme.typography.bodyMedium
+    )
+}
+
+@Composable
 private fun BackupRestoreFlowState.statusText(): String {
     return when (this) {
         BackupRestoreFlowState.Hidden -> ""
@@ -442,6 +619,26 @@ private fun progressMessage(progress: BackupProgress?): String {
         BackupProgressPhase.Restoring -> stringResource(R.string.base_general_backup_progress_restoring)
         BackupProgressPhase.Verifying -> stringResource(R.string.base_general_backup_progress_verifying)
         else -> stringResource(R.string.base_general_backup_restoring_message)
+    }
+}
+
+@Composable
+private fun MediaRelocationDurationLevel.labelText(): String {
+    return when (this) {
+        MediaRelocationDurationLevel.None -> stringResource(R.string.base_general_backup_media_relocation_estimate_none)
+        MediaRelocationDurationLevel.Seconds -> stringResource(R.string.base_general_backup_media_relocation_estimate_seconds)
+        MediaRelocationDurationLevel.TensOfSeconds -> stringResource(R.string.base_general_backup_media_relocation_estimate_tens)
+        MediaRelocationDurationLevel.Minutes -> stringResource(R.string.base_general_backup_media_relocation_estimate_minutes)
+    }
+}
+
+@Composable
+private fun MediaRelocationStage.labelText(): String {
+    return when (this) {
+        MediaRelocationStage.VerifyingExisting -> stringResource(R.string.base_general_backup_media_stage_verify)
+        MediaRelocationStage.ScanningVideos -> stringResource(R.string.base_general_backup_media_stage_video)
+        MediaRelocationStage.ScanningImages -> stringResource(R.string.base_general_backup_media_stage_image)
+        MediaRelocationStage.Completed -> stringResource(R.string.base_general_backup_media_stage_done)
     }
 }
 

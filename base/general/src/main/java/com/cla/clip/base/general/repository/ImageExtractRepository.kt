@@ -6,6 +6,8 @@ import com.cla.clip.base.general.dao.ImageExtractBatchData
 import com.cla.clip.base.general.dao.ImageExtractDao
 import com.cla.clip.base.general.dao.ImageHistoryFileRef
 import com.cla.clip.base.general.dao.ImageExtractItemData
+import com.cla.clip.base.general.dao.ImageMediaReferenceUpdate
+import com.cla.clip.base.general.dao.ImageRelocationBatchSummary
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -142,6 +144,29 @@ class ImageExtractRepository @Inject constructor(
     suspend fun getBatchWithItems(batchId: Long): Pair<ImageExtractBatchData, List<ImageExtractItemData>>? {
         val batch = imageExtractDao.getBatch(batchId) ?: return null
         return batch to imageExtractDao.getItems(batchId)
+    }
+
+    /** 统计恢复后媒体重新定位需要检查的图片批次和成功图片项数量；只做数据库预估。 */
+    suspend fun countImagesForMediaRelocation(): Pair<Int, Int> {
+        return imageExtractDao.countBatchesForMediaRelocation() to imageExtractDao.countItemsForMediaRelocation()
+    }
+
+    /** 按批次分页读取恢复后媒体重新定位候选，避免一次性加载全部图片历史。 */
+    suspend fun loadImageBatchSummariesForMediaRelocation(lastBatchId: Long, limit: Int): List<ImageRelocationBatchSummary> {
+        return imageExtractDao.loadBatchSummariesForMediaRelocation(lastBatchId, limit)
+    }
+
+    /** 读取批次和成功图片项，供 app 层媒体定位器按文件夹和 finalName 精确匹配。 */
+    suspend fun getBatchWithSuccessfulItemsForMediaRelocation(batchId: Long): Pair<ImageExtractBatchData, List<ImageExtractItemData>>? {
+        val batch = imageExtractDao.getBatch(batchId) ?: return null
+        return batch to imageExtractDao.getSuccessfulItemsForMediaRelocation(batchId)
+    }
+
+    /** 按 chunk 写回高可信重新定位出的图片 URI；不修改图片项状态或批次状态。 */
+    suspend fun updateImageMediaReferencesForRelocation(updates: List<ImageMediaReferenceUpdate>) {
+        if (updates.isEmpty()) return
+        imageExtractDao.updateMediaReferencesForRelocation(updates)
+        AppSetting.markBackupDirty()
     }
 
     /** 读取图片下载历史页校验本地文件所需的轻量图片引用，避免列表分页映射完整加载每张图片实体。 */

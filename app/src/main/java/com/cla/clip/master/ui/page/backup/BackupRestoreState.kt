@@ -3,6 +3,10 @@ package com.cla.clip.master.ui.page.backup
 import com.cla.clip.base.general.backup.BackupPreview
 import com.cla.clip.base.general.backup.BackupProgress
 import com.cla.clip.base.general.backup.BackupRestoreReport
+import com.cla.clip.master.media.MediaRelocationEstimate
+import com.cla.clip.master.media.MediaRelocationPreparation
+import com.cla.clip.master.media.MediaRelocationProgress
+import com.cla.clip.master.media.MediaRelocationReport
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -125,3 +129,40 @@ fun Long.toBackupDisplayTime(): String {
     val formatter = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
     return formatter.format(Date(this))
 }
+
+/**
+ * 恢复完成后的下载媒体重新定位状态。
+ *
+ * 该状态只保存在当前恢复页内，不持久化为后台任务；重新进入 App 后必须由用户再次手动触发。
+ */
+sealed class MediaRelocationUiState {
+    /** 尚未开始检查。 */
+    data object Idle : MediaRelocationUiState()
+
+    /** 正在做数据库轻量预估。 */
+    data object Estimating : MediaRelocationUiState()
+
+    /** 预估为 0 或旧引用全部可读，不需要正式扫描。 */
+    data class NoWork(val preparation: MediaRelocationPreparation) : MediaRelocationUiState()
+
+    /** 已完成预估和旧引用验证，等待用户确认正式扫描。 */
+    data class ReadyToConfirm(val preparation: MediaRelocationPreparation) : MediaRelocationUiState()
+
+    /** 需要用户授予媒体读取权限后才能继续扫描，可携带上一次拒绝/部分授权后的低敏报告。 */
+    data class PermissionRequired(
+        val preparation: MediaRelocationPreparation,
+        val report: MediaRelocationReport? = null,
+    ) : MediaRelocationUiState()
+
+    /** 正在正式扫描和写回；页面内返回不应退出或取消。 */
+    data class Running(val progress: MediaRelocationProgress) : MediaRelocationUiState()
+
+    /** 扫描完成，展示当前页内结果。 */
+    data class Result(val estimate: MediaRelocationEstimate, val report: MediaRelocationReport) : MediaRelocationUiState()
+
+    /** 扫描或预估失败。 */
+    data class Error(val message: String) : MediaRelocationUiState()
+}
+
+val MediaRelocationUiState.isRunning: Boolean
+    get() = this is MediaRelocationUiState.Running

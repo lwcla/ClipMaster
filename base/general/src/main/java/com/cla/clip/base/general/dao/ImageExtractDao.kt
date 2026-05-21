@@ -220,6 +220,25 @@ data class ImageHistoryFileRef(
     val displayOrder: Int,
 )
 
+/** 恢复后媒体重新定位按图片批次处理时使用的统计投影。 */
+data class ImageRelocationBatchSummary(
+    /** 图片批次 id，用于后续分页读取批次和成功图片项。 */
+    @ColumnInfo(name = "batch_id")
+    val batchId: Long,
+
+    /** 当前批次成功图片项数量；预估和进度展示使用该值。 */
+    @ColumnInfo(name = "success_item_count")
+    val successItemCount: Int,
+)
+
+/** 恢复后媒体重新定位写回图片本地引用的最小更新模型。 */
+data class ImageMediaReferenceUpdate(
+    /** 图片项 id，只用于精确写回当前图片的媒体引用。 */
+    val itemId: Long,
+    /** 高可信重新定位得到的可读 URI。 */
+    val outputUri: String,
+)
+
 @Dao
 /**
  * 图片提取 DAO。
@@ -292,6 +311,53 @@ interface ImageExtractDao {
     @Query("SELECT * FROM image_extract_items WHERE id > :lastId AND id <= :maxId ORDER BY id ASC LIMIT :limit")
     suspend fun loadItemsPageForBackup(lastId: Long, maxId: Long, limit: Int): List<ImageExtractItemData>
 
+    /** 统计恢复后媒体重新定位需要检查的图片批次数量；只读 COUNT，不访问媒体库。 */
+    @Query(
+        """
+            SELECT COUNT(DISTINCT b.id)
+            FROM image_extract_batches AS b
+            INNER JOIN image_extract_items AS i ON i.batch_id = b.id
+            WHERE b.status IN (:statuses) AND i.status = :successStatus
+        """
+    )
+    suspend fun countBatchesForMediaRelocation(
+        statuses: List<String> = listOf(ImageExtractBatchData.STATUS_SUCCESS, ImageExtractBatchData.STATUS_PARTIAL_SUCCESS),
+        successStatus: String = ImageExtractItemData.STATUS_SUCCESS
+    ): Int
+
+    /** 统计恢复后媒体重新定位需要检查的成功图片项数量；只读 COUNT，不访问媒体库。 */
+    @Query(
+        """
+            SELECT COUNT(*)
+            FROM image_extract_batches AS b
+            INNER JOIN image_extract_items AS i ON i.batch_id = b.id
+            WHERE b.status IN (:statuses) AND i.status = :successStatus
+        """
+    )
+    suspend fun countItemsForMediaRelocation(
+        statuses: List<String> = listOf(ImageExtractBatchData.STATUS_SUCCESS, ImageExtractBatchData.STATUS_PARTIAL_SUCCESS),
+        successStatus: String = ImageExtractItemData.STATUS_SUCCESS
+    ): Int
+
+    /** 按批次 id 分页读取需要媒体重新定位的图片批次摘要，避免一次性加载全部图片项。 */
+    @Query(
+        """
+            SELECT b.id AS batch_id, COUNT(i.id) AS success_item_count
+            FROM image_extract_batches AS b
+            INNER JOIN image_extract_items AS i ON i.batch_id = b.id
+            WHERE b.status IN (:statuses) AND i.status = :successStatus AND b.id > :lastBatchId
+            GROUP BY b.id
+            ORDER BY b.id ASC
+            LIMIT :limit
+        """
+    )
+    suspend fun loadBatchSummariesForMediaRelocation(
+        lastBatchId: Long,
+        limit: Int,
+        statuses: List<String> = listOf(ImageExtractBatchData.STATUS_SUCCESS, ImageExtractBatchData.STATUS_PARTIAL_SUCCESS),
+        successStatus: String = ImageExtractItemData.STATUS_SUCCESS
+    ): List<ImageRelocationBatchSummary>
+
     /**
      * 备份恢复前按 id 批量读取已有图片批次。
      *
@@ -346,6 +412,19 @@ interface ImageExtractDao {
     /** 按网页顺序读取批次内全部图片项，Worker 下载前使用。 */
     @Query("SELECT * FROM image_extract_items WHERE batch_id = :batchId ORDER BY display_order ASC")
     suspend fun getItems(batchId: Long): List<ImageExtractItemData>
+
+    /** 读取某批次的成功图片项，供恢复后媒体重新定位按文件夹和 finalName 精确匹配。 */
+    @Query(
+        """
+            SELECT * FROM image_extract_items
+            WHERE batch_id = :batchId AND status = :successStatus
+            ORDER BY display_order ASC
+        """
+    )
+    suspend fun getSuccessfulItemsForMediaRelocation(
+        batchId: Long,
+        successStatus: String = ImageExtractItemData.STATUS_SUCCESS
+    ): List<ImageExtractItemData>
 
     /** 读取下载记录页存在性校验所需的成功图片轻量字段，避免历史列表加载完整图片项实体。 */
     @Query(
@@ -403,6 +482,18 @@ interface ImageExtractDao {
         finalName: String?,
         errorMsg: String?
     )
+
+    /** 只写回恢复后媒体重新定位得到的图片 URI，不修改状态、文件名或错误信息。 */
+    @Query("UPDATE image_extract_items SET output_uri = :outputUri WHERE id = :itemId")
+    suspend fun updateOutputUriForMediaRelocation(itemId: Long, outputUri: String)
+
+    /** 按 chunk 写回图片重新定位结果；单个 chunk 失败时调用方可以只标记这批失败。 */
+    @Transaction
+    suspend fun updateMediaReferencesForRelocation(updates: List<ImageMediaReferenceUpdate>) {
+        updates.forEach { update ->
+            updateOutputUriForMediaRelocation(update.itemId, update.outputUri)
+        }
+    }
 
     /** 删除某批次全部图片项，通常在批次重建或用户未选择任何图片时使用。 */
     @Query("DELETE FROM image_extract_items WHERE batch_id = :batchId")

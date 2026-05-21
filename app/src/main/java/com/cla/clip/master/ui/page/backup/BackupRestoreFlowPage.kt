@@ -1,6 +1,8 @@
 package com.cla.clip.master.ui.page.backup
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.cla.clip.base.general.R
+import com.cla.clip.master.media.MediaRelocationPreparation
 import com.cla.clip.master.ui.widget.TitleBar
 
 /**
@@ -30,15 +33,26 @@ import com.cla.clip.master.ui.widget.TitleBar
 @Composable
 internal fun BackupRestoreFlowPage(
     state: BackupRestoreFlowState,
+    mediaRelocation: MediaRelocationUiState,
     onBack: () -> Unit,
     onForceBack: () -> Unit,
     onRestore: () -> Unit,
+    onEstimateMedia: () -> Unit,
+    onMediaPermissionResult: (Map<String, Boolean>) -> Unit,
+    onStartMediaScan: (MediaRelocationPreparation) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var showExitConfirm by remember(state.logCode) { mutableStateOf(false) }
+    var showMediaRunningNotice by remember { mutableStateOf(false) }
+    val mediaPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+        onResult = onMediaPermissionResult
+    )
 
     fun requestBack() {
-        if (state.requiresExitConfirm) {
+        if (mediaRelocation.isRunning) {
+            showMediaRunningNotice = true
+        } else if (state.requiresExitConfirm) {
             showExitConfirm = true
         } else {
             onBack()
@@ -60,8 +74,14 @@ internal fun BackupRestoreFlowPage(
         bottomBar = {
             BackupRestoreFlowActions(
                 state = state,
-                onBack = onBack,
-                onRestore = onRestore
+                mediaRelocation = mediaRelocation,
+                onBack = { requestBack() },
+                onRestore = onRestore,
+                onEstimateMedia = onEstimateMedia,
+                onRequestMediaPermission = { preparation ->
+                    mediaPermissionLauncher.launch(preparation.requiredPermissions.toTypedArray())
+                },
+                onStartMediaScan = onStartMediaScan
             )
         }
     ) { paddingValues ->
@@ -73,7 +93,7 @@ internal fun BackupRestoreFlowPage(
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            BackupRestoreFlowContent(state = state)
+            BackupRestoreFlowContent(state = state, mediaRelocation = mediaRelocation)
         }
     }
 
@@ -103,6 +123,19 @@ internal fun BackupRestoreFlowPage(
             dismissButton = {
                 TextButton(onClick = { showExitConfirm = false }) {
                     Text(text = stringResource(R.string.base_general_cancel))
+                }
+            }
+        )
+    }
+
+    if (showMediaRunningNotice) {
+        AlertDialog(
+            onDismissRequest = { showMediaRunningNotice = false },
+            title = { Text(text = stringResource(R.string.base_general_backup_media_relocation_title)) },
+            text = { Text(text = stringResource(R.string.base_general_backup_media_relocation_running_back_hint)) },
+            confirmButton = {
+                TextButton(onClick = { showMediaRunningNotice = false }) {
+                    Text(text = stringResource(R.string.base_general_backup_media_relocation_known))
                 }
             }
         )

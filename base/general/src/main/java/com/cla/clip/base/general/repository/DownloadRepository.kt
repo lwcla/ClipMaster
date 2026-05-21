@@ -6,6 +6,7 @@ import com.cla.clip.base.general.R
 import com.cla.clip.base.general.config.AppSetting
 import com.cla.clip.base.general.dao.DownloadDao
 import com.cla.clip.base.general.dao.DownloadTaskData
+import com.cla.clip.base.general.dao.VideoMediaReferenceUpdate
 import com.cla.clip.base.general.dao.DownloadTaskData.Companion.STATUS_DOWNLOADING
 import com.cla.clip.base.general.dao.DownloadTaskData.Companion.STATUS_FAILED
 import com.cla.clip.base.general.dao.DownloadTaskData.Companion.STATUS_MERGING
@@ -143,6 +144,23 @@ class DownloadRepository @Inject constructor(
     /** 按 id 获取任务，Worker 启动时用来读取 URL、请求头和文件名。 */
     suspend fun getTask(taskId: Long): DownloadTaskData? {
         return downloadDao.getTask(taskId)
+    }
+
+    /** 统计恢复后媒体重新定位需要检查的成功视频数量；只做数据库预估，不访问媒体库。 */
+    suspend fun countVideosForMediaRelocation(): Int {
+        return downloadDao.countSuccessfulTasksForMediaRelocation()
+    }
+
+    /** 按 id 分页读取成功视频，供 app 层媒体定位器验证引用和扫描候选。 */
+    suspend fun loadVideosForMediaRelocation(lastId: Long, limit: Int): List<DownloadTaskData> {
+        return downloadDao.loadSuccessfulTasksForMediaRelocation(lastId, limit)
+    }
+
+    /** 按 chunk 写回高可信重新定位出的视频引用；不修改下载状态。 */
+    suspend fun updateVideoMediaReferencesForRelocation(updates: List<VideoMediaReferenceUpdate>) {
+        if (updates.isEmpty()) return
+        downloadDao.updateMediaReferencesForRelocation(updates)
+        AppSetting.markBackupDirty()
     }
 
     /** 删除任务记录；不会删除已经发布到媒体库的视频文件。 */

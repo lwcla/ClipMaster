@@ -105,6 +105,14 @@ data class DownloadTaskData(
     }
 }
 
+/** 恢复后媒体重新定位写回视频本地引用的最小更新模型。 */
+data class VideoMediaReferenceUpdate(
+    /** 视频任务 id，只用于精确写回当前任务的媒体引用。 */
+    val taskId: Long,
+    /** 高可信重新定位得到的可读 URI 或旧系统文件路径。 */
+    val savePath: String,
+)
+
 @Dao
 /**
  * 视频下载任务 DAO。
@@ -144,6 +152,27 @@ interface DownloadDao {
     /** 按 high-water mark 分页导出下载记录，避免大量历史任务导致内存峰值过高。 */
     @Query("SELECT * FROM download_tasks WHERE id > :lastId AND id <= :maxId ORDER BY id ASC LIMIT :limit")
     suspend fun loadTasksPageForBackup(lastId: Long, maxId: Long, limit: Int): List<DownloadTaskData>
+
+    /** 统计恢复后媒体重新定位需要检查的成功视频记录数量；只读 COUNT，不访问媒体库。 */
+    @Query("SELECT COUNT(*) FROM download_tasks WHERE status = :successStatus")
+    suspend fun countSuccessfulTasksForMediaRelocation(
+        successStatus: String = DownloadTaskData.STATUS_SUCCESS
+    ): Int
+
+    /** 按 id 分页读取成功视频记录，供媒体重新定位逐步验证和扫描，避免一次性读取全部历史。 */
+    @Query(
+        """
+            SELECT * FROM download_tasks
+            WHERE status = :successStatus AND id > :lastId
+            ORDER BY id ASC
+            LIMIT :limit
+        """
+    )
+    suspend fun loadSuccessfulTasksForMediaRelocation(
+        lastId: Long,
+        limit: Int,
+        successStatus: String = DownloadTaskData.STATUS_SUCCESS
+    ): List<DownloadTaskData>
 
     /**
      * 备份恢复前按 id 批量读取已有视频下载历史。
@@ -226,6 +255,18 @@ interface DownloadDao {
     /** 记录当前任务占用的输出位置，失败或异常恢复时依赖它删除半成品。 */
     @Query("UPDATE download_tasks SET pending_output_uri = :pendingOutputUri, save_path =:savePath WHERE id = :id")
     suspend fun updatePath(id: Long, pendingOutputUri: String?, savePath: String?)
+
+    /**
+     * 按 chunk 写回重新定位得到的视频引用。
+     *
+     * 只覆盖高可信匹配出的 `savePath` 并清空 pending 输出；不修改任务状态，保证下载历史语义稳定。
+     */
+    @androidx.room.Transaction
+    suspend fun updateMediaReferencesForRelocation(updates: List<VideoMediaReferenceUpdate>) {
+        updates.forEach { update ->
+            updatePath(update.taskId, pendingOutputUri = null, savePath = update.savePath)
+        }
+    }
 
     /** 删除指定下载任务记录；不会自动删除已经保存成功的媒体文件。 */
     @Query("DELETE FROM download_tasks WHERE id = :id")

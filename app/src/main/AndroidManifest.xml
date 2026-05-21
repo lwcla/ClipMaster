@@ -12,6 +12,33 @@
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
+
+
+    <!--
+    总体来说：这组声明是合理的，但 READ_MEDIA_VISUAL_USER_SELECTED 的定位要说清楚：它不是为了让“选择照片和视频”可用，而是为了在 Android 14+ 显式进入并识别部分媒体访问模型。
+    逐条看：
+    READ_EXTERNAL_STORAGE maxSdkVersion=32：合理。Android 12L 及以下读共享媒体仍走这个旧权限。
+    READ_MEDIA_IMAGES：合理。Android 13+ 扫描共享图片媒体库需要它。
+    READ_MEDIA_VIDEO：合理。Android 13+ 扫描共享视频媒体库需要它。
+    READ_MEDIA_VISUAL_USER_SELECTED：可以保留。Android 官方示例也是 READ_EXTERNAL_STORAGE maxSdkVersion=32 + READ_MEDIA_IMAGES + READ_MEDIA_VIDEO + Android 14+ 的 READ_MEDIA_VISUAL_USER_SELECTED 这一组，
+    用于处理 Selected Photos Access。官方说明见 Grant partial access to photos and videos。
+    关键点是：
+    READ_MEDIA_VISUAL_USER_SELECTED 不会去掉系统弹窗里的“选择照片和视频”选项，但它让 App 能更明确地处理“部分访问”状态。我们的业务规则是：部分访问不满足媒体重定位，所以权限返回后会重新探测，仍无法批量扫描就按权限不足结束。
+
+    如果不声明它，Android 14+ 仍可能进入系统兼容模式，用户依然能选择部分照片/视频，反而更容易出现“回调看起来授权了，但实际只能访问有限媒体”的混乱状态。官方也提到：如果不使用这个新权限，系统会以 compatibility mode 运行。
+
+    所以我建议：保留这四个声明。
+    真正要避免的是申请更重的 MANAGE_EXTERNAL_STORAGE，我们现在没有申请，这是对的。
+    -->
+
+    <!-- 恢复后媒体重新定位需要按系统版本读取本机媒体库，只在用户手动触发扫描时按需申请。 -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <!-- Android 14+ 可能授予“选择照片和视频”的部分访问；媒体重新定位需要完整媒体库读取能力，代码会把部分访问视为权限不足。 -->
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
     <!-- 开机广播需要 -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
