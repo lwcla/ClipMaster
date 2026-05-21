@@ -465,6 +465,7 @@ class BackupRestoreVm @Inject constructor(
             is BackupFailure.ChecksumMismatch -> R.string.base_general_backup_error_checksum
             is BackupFailure.AuthenticationFailed -> R.string.base_general_backup_error_auth
             is BackupFailure.StorageNotWritable -> R.string.base_general_backup_error_storage
+            is BackupFailure.RemoteFailed -> R.string.base_general_backup_error_remote
             is BackupFailure.FileTooLarge -> R.string.base_general_backup_error_file_too_large
             is BackupFailure.TempFileUnavailable -> R.string.base_general_backup_error_temp_file_unavailable
             is BackupFailure.InsufficientSpace -> R.string.base_general_backup_error_insufficient_space

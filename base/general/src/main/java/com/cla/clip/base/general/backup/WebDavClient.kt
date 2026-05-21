@@ -15,6 +15,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.w3c.dom.Element
 import java.io.ByteArrayInputStream
 import java.io.File
+import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
@@ -70,10 +71,12 @@ class WebDavClient @Inject constructor(
         val request = baseRequest(config, buildWebDavUrl(config, fileName))
             .put(text.toRequestBody(JsonMediaType))
             .build()
-        okHttpClient.newCall(request).execute().use { response ->
-            if (response.code == 401 || response.code == 403) throw BackupFailure.AuthenticationFailed()
-            if (!response.isSuccessful && response.code != 201 && response.code != 204) {
-                throw BackupFailure.StorageNotWritable()
+        executeWebDavCall("upload_text") {
+            okHttpClient.newCall(request).execute().use { response ->
+                if (response.code == 401 || response.code == 403) throw BackupFailure.AuthenticationFailed()
+                if (!response.isSuccessful && response.code != 201 && response.code != 204) {
+                    throw BackupFailure.StorageNotWritable()
+                }
             }
         }
     }
@@ -81,21 +84,25 @@ class WebDavClient @Inject constructor(
     /** 下载文本文件。 */
     suspend fun downloadText(config: WebDavConfig, fileName: String): String = withContext(Dispatchers.IO) {
         val request = baseRequest(config, buildWebDavUrl(config, fileName)).get().build()
-        okHttpClient.newCall(request).execute().use { response ->
-            if (response.code == 401 || response.code == 403) throw BackupFailure.AuthenticationFailed()
-            if (!response.isSuccessful) throw BackupFailure.RemoteFailed()
-            response.body.string()
+        executeWebDavCall("download_text") {
+            okHttpClient.newCall(request).execute().use { response ->
+                if (response.code == 401 || response.code == 403) throw BackupFailure.AuthenticationFailed()
+                if (!response.isSuccessful) throw BackupFailure.RemoteFailed()
+                response.body.string()
+            }
         }
     }
 
     /** 下载远端备份包到私有临时文件，避免大文件进入内存。 */
     suspend fun downloadFile(config: WebDavConfig, fileName: String, targetFile: File): File = withContext(Dispatchers.IO) {
         val request = baseRequest(config, buildWebDavUrl(config, fileName)).get().build()
-        okHttpClient.newCall(request).execute().use { response ->
-            if (response.code == 401 || response.code == 403) throw BackupFailure.AuthenticationFailed()
-            if (!response.isSuccessful) throw BackupFailure.RemoteFailed()
-            targetFile.outputStream().use { output ->
-                response.body.byteStream().use { input -> input.copyTo(output) }
+        executeWebDavCall("download_file") {
+            okHttpClient.newCall(request).execute().use { response ->
+                if (response.code == 401 || response.code == 403) throw BackupFailure.AuthenticationFailed()
+                if (!response.isSuccessful) throw BackupFailure.RemoteFailed()
+                targetFile.outputStream().use { output ->
+                    response.body.byteStream().use { input -> input.copyTo(output) }
+                }
             }
         }
         targetFile
@@ -106,10 +113,12 @@ class WebDavClient @Inject constructor(
         val request = baseRequest(config, buildWebDavUrl(config, fileName))
             .delete()
             .build()
-        okHttpClient.newCall(request).execute().use { response ->
-            if (response.code == 404) return@withContext
-            if (response.code == 401 || response.code == 403) throw BackupFailure.AuthenticationFailed()
-            if (!response.isSuccessful && response.code != 204) throw BackupFailure.RemoteFailed()
+        executeWebDavCall("delete_file") {
+            okHttpClient.newCall(request).execute().use { response ->
+                if (response.code == 404) return@executeWebDavCall
+                if (response.code == 401 || response.code == 403) throw BackupFailure.AuthenticationFailed()
+                if (!response.isSuccessful && response.code != 204) throw BackupFailure.RemoteFailed()
+            }
         }
     }
 
@@ -222,16 +231,40 @@ class WebDavClient @Inject constructor(
     /** 确保远端目录存在，按路径片段逐级创建以兼容只支持父目录已存在的 WebDAV 服务端。 */
     private suspend fun ensureDirectory(config: WebDavConfig) {
         validateWebDavEndpoint(config.endpoint, config.allowInsecureHttp)
-        val segments = normalizeWebDavRemoteDir(config.remoteDir).trim('/').split('/').filter { it.isNotBlank() }
+        val remoteDir = normalizeWebDavRemoteDir(config.remoteDir)
+        if (webDavDirectoryExists(config, buildWebDavUrl(config))) return
+        val segments = remoteDir.trim('/').split('/').filter { it.isNotBlank() }
         var partial = ""
         segments.forEach { segment ->
             partial += "/$segment/"
             val partialConfig = config.copy(remoteDir = partial)
             val url = buildWebDavUrl(partialConfig)
-            val exists = runCatching { propfind(config, url) }.isSuccess
-            if (!exists) {
+            if (!webDavDirectoryExists(config, url)) {
                 logD(TAG) { "WebDAV 目录不存在，开始创建 segmentLength=${segment.length} partialLength=${partial.length}" }
                 mkcol(config, url)
+            }
+        }
+    }
+
+    /**
+     * 检查目录是否存在。
+     *
+     * 只有服务端明确返回 404 时才认为目录缺失；TLS、认证、跳转失败或服务端错误都直接上抛，避免把连接问题误判为
+     * “目录不存在”并继续发起 MKCOL。
+     */
+    private fun webDavDirectoryExists(config: WebDavConfig, url: String): Boolean {
+        val request = propfindRequest(config, url, depth = "0")
+        return executeWebDavCall("directory_exists") {
+            okHttpClient.newCall(request).execute().use { response ->
+                when {
+                    response.code == 401 || response.code == 403 -> throw BackupFailure.AuthenticationFailed()
+                    response.code == 404 -> false
+                    response.isSuccessful || response.code == 207 -> true
+                    else -> {
+                        logW(TAG) { "WebDAV 目录检查失败 statusCode=${response.code} reasonCode=remote_failed" }
+                        throw BackupFailure.RemoteFailed()
+                    }
+                }
             }
         }
     }
@@ -241,17 +274,41 @@ class WebDavClient @Inject constructor(
         val request = baseRequest(config, url)
             .method("MKCOL", null)
             .build()
-        okHttpClient.newCall(request).execute().use { response ->
-            if (response.code == 401 || response.code == 403) throw BackupFailure.AuthenticationFailed()
-            if (!response.isSuccessful && response.code != 201 && response.code != 405) {
-                logW(TAG) { "WebDAV 目录创建失败 statusCode=${response.code} reasonCode=storage_not_writable" }
-                throw BackupFailure.StorageNotWritable()
+        executeWebDavCall("mkcol") {
+            okHttpClient.newCall(request).execute().use { response ->
+                if (response.code == 401 || response.code == 403) throw BackupFailure.AuthenticationFailed()
+                if (!response.isSuccessful && response.code != 201 && response.code != 405) {
+                    logW(TAG) { "WebDAV 目录创建失败 statusCode=${response.code} reasonCode=storage_not_writable" }
+                    throw BackupFailure.StorageNotWritable()
+                }
             }
         }
     }
 
     /** 执行 PROPFIND 并解析目录项。 */
     private fun propfind(config: WebDavConfig, url: String): List<WebDavEntry> {
+        val request = propfindRequest(config, url, depth = "1")
+        return executeWebDavCall("propfind") {
+            okHttpClient.newCall(request).execute().use { response ->
+                if (response.code == 401 || response.code == 403) throw BackupFailure.AuthenticationFailed()
+                if (!response.isSuccessful && response.code != 207) throw BackupFailure.RemoteFailed()
+                parsePropfind(response.body.string())
+            }
+        }
+    }
+
+    /** 将 OkHttp IO 异常收敛为 WebDAV 远端失败，避免 UI 只能看到 unexpected_error。 */
+    private inline fun <T> executeWebDavCall(operation: String, block: () -> T): T {
+        return try {
+            block()
+        } catch (throwable: IOException) {
+            logW(TAG) { "WebDAV 请求异常 operation=$operation reasonCode=remote_failed type=${throwable::class.simpleName}" }
+            throw BackupFailure.RemoteFailed(throwable)
+        }
+    }
+
+    /** 构造 PROPFIND 请求；每次新建请求体，避免复用已消费的 RequestBody。 */
+    private fun propfindRequest(config: WebDavConfig, url: String, depth: String): Request {
         val body = """
             <?xml version="1.0" encoding="utf-8" ?>
             <d:propfind xmlns:d="DAV:">
@@ -262,15 +319,10 @@ class WebDavClient @Inject constructor(
                 </d:prop>
             </d:propfind>
         """.trimIndent().toRequestBody(XmlMediaType)
-        val request = baseRequest(config, url)
+        return baseRequest(config, url)
             .method("PROPFIND", body)
-            .header("Depth", "1")
+            .header("Depth", depth)
             .build()
-        okHttpClient.newCall(request).execute().use { response ->
-            if (response.code == 401 || response.code == 403) throw BackupFailure.AuthenticationFailed()
-            if (!response.isSuccessful && response.code != 207) throw BackupFailure.RemoteFailed()
-            return parsePropfind(response.body.string())
-        }
     }
 
     /** 为 WebDAV 请求添加认证头。 */
@@ -287,10 +339,12 @@ class WebDavClient @Inject constructor(
         val request = baseRequest(config, buildWebDavUrl(config, fileName))
             .put(file.asRequestBody(ZipMediaType))
             .build()
-        okHttpClient.newCall(request).execute().use { response ->
-            if (response.code == 401 || response.code == 403) throw BackupFailure.AuthenticationFailed()
-            if (!response.isSuccessful && response.code != 201 && response.code != 204) {
-                throw BackupFailure.StorageNotWritable()
+        executeWebDavCall("upload_file") {
+            okHttpClient.newCall(request).execute().use { response ->
+                if (response.code == 401 || response.code == 403) throw BackupFailure.AuthenticationFailed()
+                if (!response.isSuccessful && response.code != 201 && response.code != 204) {
+                    throw BackupFailure.StorageNotWritable()
+                }
             }
         }
     }

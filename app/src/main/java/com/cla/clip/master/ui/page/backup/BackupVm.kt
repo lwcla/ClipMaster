@@ -297,8 +297,8 @@ class BackupVm @Inject constructor(
                             "手动 WebDAV 备份成功 taskId=$taskId fileName=${export.fileName} fileSize=${export.fileSize} " +
                                 "durationMs=${System.currentTimeMillis() - startedAt}"
                         }
-                        emitMessage(R.string.base_general_webdav_upload_success)
                         refreshRemoteBackupsInternal(taskId)
+                        emitMessage(R.string.base_general_webdav_upload_success)
                     } finally {
                         tempFileStore.cleanupTaskDir(export.taskDir, taskId)
                     }
@@ -477,6 +477,7 @@ class BackupVm @Inject constructor(
             is BackupFailure.ChecksumMismatch -> R.string.base_general_backup_error_checksum
             is BackupFailure.AuthenticationFailed -> R.string.base_general_backup_error_auth
             is BackupFailure.StorageNotWritable -> R.string.base_general_backup_error_storage
+            is BackupFailure.RemoteFailed -> R.string.base_general_backup_error_remote
             is BackupFailure.FileTooLarge -> R.string.base_general_backup_error_file_too_large
             is BackupFailure.TempFileUnavailable -> R.string.base_general_backup_error_temp_file_unavailable
             is BackupFailure.InsufficientSpace -> R.string.base_general_backup_error_insufficient_space
