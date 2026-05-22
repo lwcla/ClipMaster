@@ -2,11 +2,13 @@ package android.app;
 
 import android.content.Context;
 
+import androidx.annotation.Keep;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import dev.rikka.tools.refine.RefineAs;
 
+@Keep
 @RefineAs(AppOpsManager.class)
 public class AppOpsManagerHidden {
 
@@ -22,6 +24,7 @@ public class AppOpsManagerHidden {
         throw new RuntimeException("Stub!");
     }
 
+    @Keep
     public interface OnOpNotedListener {
         /**
          * Called when an app-op is noted.

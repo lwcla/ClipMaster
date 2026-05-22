@@ -10,7 +10,6 @@ import android.view.WindowManager
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.base.general.utils.ApplicationScope
-import com.cla.clip.base.general.utils.hasOverlayPermission
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
 import com.cla.clip.base.general.utils.logI
@@ -236,7 +235,8 @@ class ClipboardService : Service() {
     /**
      * 执行一次真实剪贴板读取。
      *
-     * 先检查悬浮窗权限，再添加一个 1x1 透明 View 触发系统剪贴板读取窗口；读取成功后交给 ClipHelper 入库。
+     * 直接添加一个 1x1 透明 View 触发系统剪贴板读取窗口，避免 Settings.canDrawOverlays 在跨 Shizuku 场景下误判；
+     * 读取成功后交给 ClipHelper 入库，添加 View 失败时按真实异常兜底提示。
      * 无论成功失败都会尝试移除 View 并减少 activeTasks，避免悬浮窗泄漏或前台服务常驻。
      */
     private fun magic(
@@ -246,14 +246,6 @@ class ClipboardService : Service() {
         iconColor: Int?,
         iconHash: String?,
     ) {
-        // 检查当前有没有悬浮窗权限
-        if (!appContext.get().hasOverlayPermission()) {
-            scope.get().launch { appContext.get().toast(R.string.base_general_without_the_floating_window_permission) }
-            logE(TAG) { "没有悬浮窗权限，无法读取剪贴板内容" }
-            killSelf(decrement = true)
-            return
-        }
-
         var view: View? = null
         runCatching {
             // 通过添加一个不可见的 View 来触发系统读取剪贴板内容，从而获取最新的剪贴板数据
@@ -287,6 +279,9 @@ class ClipboardService : Service() {
             }
         }.onFailure {
             logE(TAG, it) { "读取剪贴板内容出错" }
+            if (it is SecurityException || it is WindowManager.BadTokenException) {
+                scope.get().launch { appContext.get().toast(R.string.base_general_without_the_floating_window_permission) }
+            }
             // 确保移除 view，避免泄漏
             runCatching {
                 view?.let { windowManager.removeView(it) }

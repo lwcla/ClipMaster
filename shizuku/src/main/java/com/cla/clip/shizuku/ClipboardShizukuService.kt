@@ -5,8 +5,8 @@ import android.app.AppOpsManagerHidden
 import android.content.Context
 import android.graphics.Bitmap
 import android.os.Build
+import androidx.annotation.Keep
 import com.cla.clip.base.general.utils.exceptionHandler
-import com.cla.clip.base.general.utils.hasOverlayPermission
 import com.cla.clip.base.general.utils.iconBitmap
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
@@ -34,7 +34,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * 它通过隐藏 API 监听其他应用写剪贴板事件，采集来源应用信息后回调主进程；必要时会用 shell 命令预拉起主进程前台服务，
  * 以绕过部分系统对后台启动服务的限制。
  */
-class ClipboardShizukuService(private val context: Context) : IClipboardShizukuService.Stub() {
+class ClipboardShizukuService @Keep constructor(private val context: Context) : IClipboardShizukuService.Stub() {
 
     companion object {
         /** Shizuku 服务日志标签，用于排查隐藏 API、回调重连和 shell 启动命令。 */
@@ -136,16 +136,14 @@ class ClipboardShizukuService(private val context: Context) : IClipboardShizukuS
      * 先确保主进程具备悬浮窗权限，再防抖 100ms 后解析来源应用名、图标和图标哈希，最后回调主进程读取真实剪贴板内容。
      */
     fun handleOpNoted(clipPackageName: String?) {
-        if (!context.hasOverlayPermission()) {
-            // 开启悬浮窗权限
-            Refine.unsafeCast<AppOpsManagerHidden>(appOpsManager)
-                .setMode(
-                    AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW,
-                    packageManager.getPackageUid(packageName, 0),
-                    packageName,
-                    AppOpsManager.MODE_ALLOWED
-                )
-        }
+        // 开启悬浮窗权限
+        Refine.unsafeCast<AppOpsManagerHidden>(appOpsManager)
+            .setMode(
+                AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW,
+                packageManager.getPackageUid(packageName, 0),
+                packageName,
+                AppOpsManager.MODE_ALLOWED
+            )
 
         job?.cancel()
         job = serviceScope.launch {
