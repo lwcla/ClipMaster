@@ -65,6 +65,8 @@ class BackupVm @Inject constructor(
     private val localBackupDirectoryWriter: LocalBackupDirectoryWriter,
     /** 备份临时文件目录管理器，用于导入预览和导出完成后的清理。 */
     private val tempFileStore: BackupTempFileStore,
+    /** 备份恢复 feature 内部请求流，用于把用户选择的恢复目标交给恢复页。 */
+    private val restoreRequests: BackupRestoreRequests,
 ) : ViewModel() {
     companion object {
         /** 日志标签，只记录失败类型，不记录用户内容或密码。 */
@@ -95,6 +97,21 @@ class BackupVm @Inject constructor(
     fun suggestedBackupFileName(): String {
         val now = System.currentTimeMillis()
         return buildBackupFileName(buildBackupDeviceLabel(AppSetting.pid), now)
+    }
+
+    /** 打开系统文件选择器返回的备份文件，真实预检由恢复页 ViewModel 消费请求后执行。 */
+    fun requestRestoreFromUri(uri: Uri) {
+        restoreRequests.set(BackupRestoreRequest.LocalFile(uri))
+    }
+
+    /** 打开本地备份文件夹列表中的备份条目。 */
+    fun requestRestoreFromLocalBackup(file: LocalBackupFile) {
+        restoreRequests.set(BackupRestoreRequest.LocalDirectory(file))
+    }
+
+    /** 打开 WebDAV 远端备份列表中的备份条目。 */
+    fun requestRestoreFromRemoteBackup(file: RemoteBackupFile) {
+        restoreRequests.set(BackupRestoreRequest.WebDav(file))
     }
 
     /** 更新 WebDAV 服务地址。 */

@@ -298,6 +298,7 @@
     <string name="base_general_backup_media_relocation_title">恢复本地媒体关联</string>
     <string name="base_general_backup_media_relocation_intro">不会修改下载记录状态，也不会重新下载文件；只会尝试把记录重新关联到本机已有媒体。</string>
     <string name="base_general_backup_media_relocation_start">恢复本地媒体关联</string>
+    <string name="base_general_backup_media_relocation_continue">继续恢复关联</string>
     <string name="base_general_backup_media_relocation_restart">再次恢复关联</string>
     <string name="base_general_backup_media_relocation_estimating">正在预估需要恢复关联的下载媒体…</string>
     <string name="base_general_backup_media_relocation_no_work">暂无需要恢复关联的本地媒体。</string>
@@ -308,10 +309,12 @@
     <string name="base_general_backup_media_relocation_estimate_minutes">可能 1 分钟以上</string>
     <string name="base_general_backup_media_relocation_estimate_hint">实际耗时取决于系统媒体库响应速度。开始后请留在此页面等待完成。</string>
     <string name="base_general_backup_media_relocation_permission">已先尝试读取现有 URI 和当前应用可见媒体；仍有媒体需要授权后才能继续恢复关联。请允许访问所有照片和视频，选择单个、部分媒体或取消授权后可直接再次申请。</string>
+    <string name="base_general_backup_media_relocation_permission_checking">正在确认媒体权限…</string>
     <string name="base_general_backup_media_relocation_request_permission">申请权限</string>
     <string name="base_general_backup_media_relocation_confirm">开始恢复关联</string>
     <string name="base_general_backup_media_relocation_known">知道了</string>
     <string name="base_general_backup_media_relocation_running">正在恢复本地媒体关联，请稍候。</string>
+    <string name="base_general_backup_media_relocation_running_short">恢复关联中</string>
     <string name="base_general_backup_media_relocation_running_back_hint">正在恢复本地媒体关联，请稍候，完成后才能离开此页。</string>
     <string name="base_general_backup_media_relocation_progress">阶段：%1$s\n视频：%2$d/%3$d\n图片批次：%4$d/%5$d\n图片项：%6$d/%7$d\n已恢复关联：%8$d</string>
     <string name="base_general_backup_media_stage_verify">验证现有关联</string>
@@ -320,6 +323,11 @@
     <string name="base_general_backup_media_stage_done">已完成</string>
     <string name="base_general_backup_media_relocation_result_video">视频：已可用 %1$d，已恢复关联 %2$d，未找到 %3$d，多候选 %4$d，元数据不符 %5$d，权限不足 %6$d，写回失败 %7$d</string>
     <string name="base_general_backup_media_relocation_result_image">图片：已可用 %1$d，已恢复关联 %2$d，整批失效 %3$d，未找到 %4$d，多候选 %5$d，元数据不符 %6$d，权限不足 %7$d，写回失败 %8$d</string>
+    <string name="base_general_backup_media_relocation_summary_no_work">已可用 %1$d，已恢复关联 %2$d，未处理 %3$d；暂无需要恢复关联的本地媒体。</string>
+    <string name="base_general_backup_media_relocation_summary_completed">已可用 %1$d，已恢复关联 %2$d，未处理 %3$d。</string>
+    <string name="base_general_backup_media_relocation_summary_permission">已可用 %1$d，已恢复关联 %2$d，未处理 %3$d；仍需要完整媒体权限后才能继续。</string>
+    <string name="base_general_backup_media_relocation_summary_failed">已可用 %1$d，已恢复关联 %2$d，未处理 %3$d；本次恢复关联未完成。</string>
+    <string name="base_general_backup_media_relocation_summary_interrupted">已可用 %1$d，已恢复关联 %2$d，未处理 %3$d；本次恢复关联已中断，可再次进入重试。</string>
     <string name="base_general_backup_media_relocation_error">本地媒体关联恢复失败，请稍后重试。</string>
     <string name="base_general_backup_flow_retry_select">重新选择</string>
     <string name="base_general_backup_flow_close">关闭</string>

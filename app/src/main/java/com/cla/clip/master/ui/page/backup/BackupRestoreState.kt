@@ -131,9 +131,67 @@ fun Long.toBackupDisplayTime(): String {
 }
 
 /**
- * 恢复完成后的下载媒体重新定位状态。
+ * 恢复页媒体关联入口状态。
  *
- * 该状态只保存在当前恢复页内，不持久化为后台任务；重新进入 App 后必须由用户再次手动触发。
+ * 入口状态只表达恢复页按钮和“完成”按钮是否可用；终态数字单独放在 `MediaRelocationSummary`，
+ * 避免把独立媒体关联页的准备态、权限态和进度态耦合回恢复页。
+ */
+enum class MediaRelocationEntryState(val logCode: String) {
+    /** 当前恢复流程内尚未进入过媒体关联页。 */
+    NotStarted("not_started"),
+
+    /** 媒体关联页处于预估、权限或待确认阶段，可继续进入。 */
+    Incomplete("incomplete"),
+
+    /** 媒体关联页正在正式扫描，恢复页不允许完成退出。 */
+    Running("running"),
+
+    /** 媒体关联页已有完成、失败、权限不足或中断摘要。 */
+    Terminal("terminal"),
+}
+
+val MediaRelocationEntryState.isRunning: Boolean
+    get() = this == MediaRelocationEntryState.Running
+
+/**
+ * 恢复页和独立媒体关联页共享的结构化结果摘要。
+ *
+ * ViewModel 只保存类型和数字，UI 再用字符串资源生成展示文案，避免跨页面保存已本地化文本。
+ */
+data class MediaRelocationSummary(
+    val type: MediaRelocationSummaryType,
+    val report: MediaRelocationReport = MediaRelocationReport(),
+) {
+    val totalExistingReadable: Int = report.totalExistingReadable
+    val totalRelocated: Int = report.totalRelocated
+    val totalUnresolved: Int =
+        report.video.folderMissing +
+            report.video.noCandidate +
+            report.video.multipleCandidates +
+            report.video.metadataMismatch +
+            report.video.permissionDenied +
+            report.video.writeFailed +
+            report.image.folderMissing +
+            report.image.noCandidate +
+            report.image.multipleCandidates +
+            report.image.metadataMismatch +
+            report.image.permissionDenied +
+            report.image.writeFailed
+    val totalPermissionDenied: Int = report.video.permissionDenied + report.image.permissionDenied
+}
+
+enum class MediaRelocationSummaryType(val logCode: String) {
+    NoWork("no_work"),
+    Completed("completed"),
+    PermissionDenied("permission_denied"),
+    Failed("failed"),
+    Interrupted("interrupted"),
+}
+
+/**
+ * 独立媒体关联页的下载媒体重新定位状态。
+ *
+ * 该状态只保存在 `BackupMediaRelocationVm` 内，不持久化为后台任务；重新进入 App 后必须由用户再次手动触发。
  */
 sealed class MediaRelocationUiState {
     /** 尚未开始检查。 */
@@ -153,6 +211,9 @@ sealed class MediaRelocationUiState {
         val preparation: MediaRelocationPreparation,
         val report: MediaRelocationReport? = null,
     ) : MediaRelocationUiState()
+
+    /** 权限回调后正在复查可见媒体范围，用于避免按钮停在“申请权限”造成卡顿感。 */
+    data class PermissionChecking(val preparation: MediaRelocationPreparation) : MediaRelocationUiState()
 
     /** 正在正式扫描和写回；页面内返回不应退出或取消。 */
     data class Running(val progress: MediaRelocationProgress) : MediaRelocationUiState()

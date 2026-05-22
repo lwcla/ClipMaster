@@ -26,12 +26,6 @@ import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.logW
-import com.cla.clip.master.media.DownloadedMediaRelocator
-import com.cla.clip.master.media.MediaRelocationCategoryReport
-import com.cla.clip.master.media.MediaRelocationPreparation
-import com.cla.clip.master.media.MediaRelocationReason
-import com.cla.clip.master.media.MediaRelocationReport
-import com.cla.clip.master.ui.navigation.BackupRestoreRequest
 import com.cla.clip.master.work.BackupAutoScheduler
 import com.cla.clip.master.work.BackupTaskGate
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -50,7 +44,7 @@ import javax.inject.Inject
 /**
  * 独立恢复流程页 ViewModel。
  *
- * 只负责一次备份读取、预览和恢复流程；入口请求来自 Activity 级临时 ViewModel，页面关闭时会清理临时文件和引用。
+ * 只负责一次备份读取、预览和恢复流程；入口请求来自备份恢复 feature 内部请求流，页面关闭时会清理临时文件和引用。
  */
 @HiltViewModel
 class BackupRestoreVm @Inject constructor(
@@ -64,8 +58,10 @@ class BackupRestoreVm @Inject constructor(
     private val localBackupDirectoryWriter: LocalBackupDirectoryWriter,
     /** 备份临时文件目录管理器，恢复流程结束时必须清理。 */
     private val tempFileStore: BackupTempFileStore,
-    /** 恢复后的下载媒体重新定位协作者；依赖 Context/MediaStore，因此放在 app 层而不是备份恢复器。 */
-    private val mediaRelocator: DownloadedMediaRelocator,
+    /** 备份恢复 feature 内部请求流；恢复页创建后立即消费最近一次打开请求。 */
+    private val restoreRequests: BackupRestoreRequests,
+    /** 媒体关联独立页事件流；恢复页只接收入口状态和结构化终态摘要。 */
+    private val mediaRelocationEvents: BackupMediaRelocationEvents,
 ) : ViewModel() {
     companion object {
         /** 日志标签，只记录任务状态和 reasonCode，不输出用户内容或路径。 */
@@ -83,18 +79,18 @@ class BackupRestoreVm @Inject constructor(
     /** 当前读取或恢复任务，用于用户二次确认返回后取消并清理临时状态。 */
     private var restoreFlowJob: Job? = null
 
-    /** 当前媒体重新定位任务；正式扫描期间页面内不提供取消入口。 */
-    private var mediaRelocationJob: Job? = null
-
     /** 已接管的请求 id，避免页面重组重复启动读取。 */
     private var consumedRequestId: Long? = null
 
     init {
         tempFileStore.cleanupExpired()
+        consumeRestoreRequest(restoreRequests.requests.value)
+        collectRestoreRequests()
+        collectMediaRelocationEvents()
     }
 
     /** 接管备份页传来的恢复请求，并立即进入读取状态。 */
-    fun startFromRequest(request: BackupRestoreRequest) {
+    private fun startFromRequest(request: BackupRestoreRequest) {
         if (consumedRequestId == request.requestId) return
         consumedRequestId = request.requestId
         val sourceType = request.openSource
@@ -170,139 +166,9 @@ class BackupRestoreVm @Inject constructor(
         }
     }
 
-    /** 用户手动触发恢复后的下载媒体检查；重新进入 App 不会自动调用该方法。 */
-    fun estimateMediaRelocation() {
-        if (mediaRelocationJob?.isActive == true) return
-        mediaRelocationJob = viewModelScope.launch {
-            _uiState.update { it.copy(mediaRelocation = MediaRelocationUiState.Estimating) }
-            runCatching {
-                val estimate = mediaRelocator.estimate()
-                val preparation = mediaRelocator.prepare(estimate)
-                when {
-                    estimate.totalCount == 0 || !preparation.needsScan -> {
-                        logI(TAG) {
-                            "媒体重新定位无需扫描 totalCount=${estimate.totalCount} " +
-                                "existingVideo=${preparation.existingReadableVideoCount} existingImage=${preparation.existingReadableImageCount}"
-                        }
-                        _uiState.update { it.copy(mediaRelocation = MediaRelocationUiState.NoWork(preparation)) }
-                    }
-                    preparation.requiredPermissions.isNotEmpty() -> {
-                        logD(TAG) {
-                            "媒体重新定位需要权限 permissionCount=${preparation.requiredPermissions.size} " +
-                                "needsVideo=${preparation.needsVideoScan} needsImage=${preparation.needsImageScan}"
-                        }
-                        _uiState.update { it.copy(mediaRelocation = MediaRelocationUiState.PermissionRequired(preparation)) }
-                    }
-                    else -> {
-                        _uiState.update { it.copy(mediaRelocation = MediaRelocationUiState.ReadyToConfirm(preparation)) }
-                    }
-                }
-            }.onFailure { throwable ->
-                logE(TAG, throwable) { "媒体重新定位预估失败 reasonCode=${throwable.backupReasonCode()}" }
-                _uiState.update { it.copy(mediaRelocation = MediaRelocationUiState.Error(mapErrorMessage(throwable))) }
-            }
-        }
-    }
-
-    /** 权限请求返回后继续等待用户确认；权限拒绝时不进入正式扫描。 */
-    fun onMediaRelocationPermissionResult(grants: Map<String, Boolean>) {
-        val state = _uiState.value.mediaRelocation as? MediaRelocationUiState.PermissionRequired ?: return
-        val mediaPermissionDenied = state.preparation.requiredPermissions.any { permission ->
-            isRequiredFullMediaPermission(permission) && grants[permission] != true
-        }
-        if (!mediaPermissionDenied) {
-            verifyFullMediaPermissionAfterGrant(state.preparation)
-            return
-        }
-        showMediaRelocationPermissionRequired(state.preparation, withDeniedReport = true)
-    }
-
-    /**
-     * Android 14+ 用户可能只选择部分照片或视频，运行时权限回调仍可能包含媒体权限授予结果。
-     * 媒体重新定位需要按目录批量扫描，必须重新探测候选可见性；仍需要授权时视为权限不足，不进入扫描。
-     */
-    private fun verifyFullMediaPermissionAfterGrant(preparation: MediaRelocationPreparation) {
-        if (mediaRelocationJob?.isActive == true) return
-        mediaRelocationJob = viewModelScope.launch {
-            runCatching {
-                mediaRelocator.prepare(preparation.estimate)
-            }.onSuccess { refreshed ->
-                if (refreshed.requiredPermissions.isNotEmpty()) {
-                    logW(TAG) {
-                        "媒体重新定位权限不足，可能为部分媒体访问 reasonCode=${MediaRelocationReason.PERMISSION_DENIED} " +
-                            "permissionCount=${refreshed.requiredPermissions.size} " +
-                            "permissionRequiredVideo=${refreshed.permissionRequiredVideoCount} " +
-                            "permissionRequiredImageItems=${refreshed.permissionRequiredImageItemCount}"
-                    }
-                    showMediaRelocationPermissionRequired(refreshed, withDeniedReport = true)
-                } else {
-                    _uiState.update { it.copy(mediaRelocation = MediaRelocationUiState.ReadyToConfirm(refreshed)) }
-                }
-            }.onFailure { throwable ->
-                logE(TAG, throwable) { "媒体重新定位权限后复查失败 reasonCode=${throwable.backupReasonCode()}" }
-                _uiState.update { it.copy(mediaRelocation = MediaRelocationUiState.Error(mapErrorMessage(throwable))) }
-            }
-        }
-    }
-
-    private fun showMediaRelocationPermissionRequired(
-        preparation: MediaRelocationPreparation,
-        withDeniedReport: Boolean,
-    ) {
-        val report = MediaRelocationReport(
-            video = MediaRelocationCategoryReport(
-                existingReadable = preparation.existingReadableVideoCount,
-                permissionDenied = preparation.permissionRequiredVideoCount
-            ),
-            image = MediaRelocationCategoryReport(
-                existingReadable = preparation.existingReadableImageCount,
-                permissionDenied = preparation.permissionRequiredImageItemCount
-            )
-        )
-        logW(TAG) {
-            "媒体重新定位权限被拒绝 reasonCode=${MediaRelocationReason.PERMISSION_DENIED} " +
-                "needsVideoPermission=${preparation.needsVideoPermission} " +
-                "needsImagePermission=${preparation.needsImagePermission} " +
-                "permissionRequiredVideo=${preparation.permissionRequiredVideoCount} " +
-                "permissionRequiredImageItems=${preparation.permissionRequiredImageItemCount}"
-        }
-        _uiState.update {
-            it.copy(
-                mediaRelocation = MediaRelocationUiState.PermissionRequired(
-                    preparation = preparation,
-                    report = report.takeIf { withDeniedReport }
-                )
-            )
-        }
-    }
-
-    private fun isRequiredFullMediaPermission(permission: String): Boolean {
-        return permission != android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED
-    }
-
-    /** 用户确认预估后正式扫描；开始后页面内不可中断，返回只提示等待。 */
-    fun startMediaRelocationScan(preparation: MediaRelocationPreparation) {
-        if (mediaRelocationJob?.isActive == true) return
-        mediaRelocationJob = viewModelScope.launch {
-            runCatching {
-                mediaRelocator.relocate(preparation.estimate) { progress ->
-                    _uiState.update { it.copy(mediaRelocation = MediaRelocationUiState.Running(progress)) }
-                }
-            }.onSuccess { report ->
-                if (report.totalRelocated > 0) {
-                    BackupAutoScheduler.markDirtyAndSchedule(appContext)
-                }
-                _uiState.update { it.copy(mediaRelocation = MediaRelocationUiState.Result(preparation.estimate, report)) }
-            }.onFailure { throwable ->
-                logE(TAG, throwable) { "媒体重新定位扫描失败 reasonCode=${throwable.backupReasonCode()}" }
-                _uiState.update { it.copy(mediaRelocation = MediaRelocationUiState.Error(mapErrorMessage(throwable))) }
-            }
-        }
-    }
-
-    /** 用户关闭恢复流程页；预览、结果或失败关闭都会清理临时文件，避免 Activity 级状态残留。 */
+    /** 用户关闭恢复流程页；预览、结果或失败关闭都会清理临时文件，避免临时引用残留。 */
     fun dismissRestoreFlow() {
-        if (_uiState.value.mediaRelocation.isRunning) return
+        if (_uiState.value.mediaRelocationEntryState.isRunning) return
         when (uiState.value.restoreFlow) {
             is BackupRestoreFlowState.Reading,
             is BackupRestoreFlowState.Restoring -> return
@@ -313,8 +179,8 @@ class BackupRestoreVm @Inject constructor(
     /** 用户在读取或恢复中二次确认返回时，取消当前任务并清理临时状态。 */
     fun forceCloseRestoreFlow() {
         val state = uiState.value.restoreFlow
-        if (_uiState.value.mediaRelocation.isRunning) {
-            logW(TAG) { "媒体重新定位运行中，忽略页面内退出请求 state=${state.logCode}" }
+        if (_uiState.value.mediaRelocationEntryState.isRunning) {
+            logW(TAG) { "媒体关联运行中，忽略页面内退出请求 state=${state.logCode}" }
             return
         }
         if (state is BackupRestoreFlowState.Hidden) return
@@ -397,7 +263,8 @@ class BackupRestoreVm @Inject constructor(
                 backupProgress = null,
                 busyOperation = BackupBusyOperation.None,
                 restoreFlow = BackupRestoreFlowState.Hidden,
-                mediaRelocation = MediaRelocationUiState.Idle
+                mediaRelocationEntryState = MediaRelocationEntryState.NotStarted,
+                lastTerminalMediaRelocationSummary = null
             )
         }
         tempFileStore.cleanupTaskDir(oldRef?.taskDir ?: restoreFlowTaskDir)
@@ -423,7 +290,9 @@ class BackupRestoreVm @Inject constructor(
             it.copy(
                 selectedBackupRef = null,
                 selectedPreview = null,
-                restoreFlow = nextState
+                restoreFlow = nextState,
+                mediaRelocationEntryState = MediaRelocationEntryState.NotStarted,
+                lastTerminalMediaRelocationSummary = null
             )
         }
         tempFileStore.cleanupTaskDir(oldRef?.taskDir ?: oldTaskDir)
@@ -591,6 +460,74 @@ class BackupRestoreVm @Inject constructor(
         }
     }
 
+    private fun collectRestoreRequests() {
+        viewModelScope.launch {
+            restoreRequests.requests.collect { request ->
+                consumeRestoreRequest(request)
+            }
+        }
+    }
+
+    private fun consumeRestoreRequest(request: BackupRestoreRequest?) {
+        request ?: return
+        startFromRequest(request)
+        restoreRequests.clear(request.requestId)
+    }
+
+    private fun collectMediaRelocationEvents() {
+        viewModelScope.launch {
+            mediaRelocationEvents.events.collect { event ->
+                handleMediaRelocationEvent(event)
+            }
+        }
+    }
+
+    private fun handleMediaRelocationEvent(event: BackupMediaRelocationEvent) {
+        val currentTaskId = currentRestoreFlowTaskId()
+        val matched = currentTaskId == event.restoreTaskId
+        val summary = event.summary
+        if (!matched) {
+            logW(TAG) {
+                "媒体关联事件已忽略 restoreTaskId=${event.restoreTaskId} currentRestoreTaskId=$currentTaskId " +
+                    "eventType=${event.logCode} matched=false summaryType=${summary?.type?.logCode ?: "none"} " +
+                    "relocated=${summary?.totalRelocated ?: 0} reasonCode=restore_task_mismatch"
+            }
+            return
+        }
+        logD(TAG) {
+            "媒体关联事件已接收 restoreTaskId=${event.restoreTaskId} eventType=${event.logCode} matched=true " +
+                "summaryType=${summary?.type?.logCode ?: "none"} relocated=${summary?.totalRelocated ?: 0}"
+        }
+        when (event) {
+            is BackupMediaRelocationEvent.Incomplete -> {
+                _uiState.update { it.copy(mediaRelocationEntryState = MediaRelocationEntryState.Incomplete) }
+            }
+            is BackupMediaRelocationEvent.Running -> {
+                _uiState.update { it.copy(mediaRelocationEntryState = MediaRelocationEntryState.Running) }
+            }
+            is BackupMediaRelocationEvent.Terminal -> {
+                _uiState.update {
+                    it.copy(
+                        mediaRelocationEntryState = if (event.terminalSummary.type == MediaRelocationSummaryType.PermissionDenied) {
+                            MediaRelocationEntryState.Incomplete
+                        } else {
+                            MediaRelocationEntryState.Terminal
+                        },
+                        lastTerminalMediaRelocationSummary = event.terminalSummary
+                    )
+                }
+            }
+            is BackupMediaRelocationEvent.Interrupted -> {
+                _uiState.update {
+                    it.copy(
+                        mediaRelocationEntryState = MediaRelocationEntryState.Terminal,
+                        lastTerminalMediaRelocationSummary = event.interruptedSummary
+                    )
+                }
+            }
+        }
+    }
+
     /** 当前 WebDAV 配置快照；只读取本机配置，不输出 endpoint、账号或密码。 */
     private fun currentWebDavConfig(): WebDavConfig {
         return WebDavConfig(
@@ -650,7 +587,6 @@ class BackupRestoreVm @Inject constructor(
     override fun onCleared() {
         val taskId = currentRestoreFlowTaskId()
         restoreFlowJob?.cancel()
-        mediaRelocationJob?.cancel()
         tempFileStore.cleanupTaskDir(_uiState.value.selectedBackupRef?.taskDir ?: restoreFlowTaskDir, taskId)
         super.onCleared()
     }
@@ -668,8 +604,10 @@ data class BackupRestoreUiState(
     val selectedPreview: BackupPreview? = null,
     /** 备份恢复流程页状态。 */
     val restoreFlow: BackupRestoreFlowState = BackupRestoreFlowState.Hidden,
-    /** 恢复完成后媒体重新定位的页面内状态，不持久化、不自动续跑。 */
-    val mediaRelocation: MediaRelocationUiState = MediaRelocationUiState.Idle,
+    /** 恢复完成页媒体关联入口状态；真实扫描由独立媒体关联页承载。 */
+    val mediaRelocationEntryState: MediaRelocationEntryState = MediaRelocationEntryState.NotStarted,
+    /** 最近一次媒体关联终态结构化摘要；新一轮非终态不清空它。 */
+    val lastTerminalMediaRelocationSummary: MediaRelocationSummary? = null,
 )
 
 /** 恢复请求对应的打开来源，用于接管请求时先同步展示读取中状态。 */

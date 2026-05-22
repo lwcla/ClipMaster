@@ -48,8 +48,6 @@ import com.cla.clip.base.general.backup.BackupProgressPhase
 import com.cla.clip.base.general.backup.BackupTargetHealth
 import com.cla.clip.base.general.backup.BackupTaskStatus
 import com.cla.clip.base.general.backup.RemoteBackupFile
-import com.cla.clip.master.ui.navigation.AppSharedViewModel
-import com.cla.clip.master.ui.navigation.BackupRestoreRequest
 import com.cla.clip.master.ui.navigation.BackupRestoreRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.widget.ClipMasterCard
@@ -65,7 +63,6 @@ import com.cla.clip.master.ui.widget.TitleBar
 fun BackupPage(
     onBack: () -> Unit,
     onNavigate: (Route) -> Unit,
-    appSharedViewModel: AppSharedViewModel,
     backupVm: BackupVm = hiltViewModel(),
 ) {
     val state by backupVm.uiState.collectAsStateWithLifecycle()
@@ -83,7 +80,7 @@ fun BackupPage(
         contract = ActivityResultContracts.OpenDocument(),
         onResult = { uri ->
             uri?.let {
-                appSharedViewModel.setBackupRestoreRequest(BackupRestoreRequest.LocalFile(it))
+                backupVm.requestRestoreFromUri(it)
                 onNavigate(BackupRestoreRoute)
             }
         }
@@ -150,7 +147,7 @@ fun BackupPage(
                         file = file,
                         isBusy = !pageActionsEnabled,
                         onPreview = {
-                            appSharedViewModel.setBackupRestoreRequest(BackupRestoreRequest.LocalDirectory(file))
+                            backupVm.requestRestoreFromLocalBackup(file)
                             onNavigate(BackupRestoreRoute)
                         }
                     )
@@ -185,7 +182,7 @@ fun BackupPage(
                         file = file,
                         isBusy = !pageActionsEnabled,
                         onPreview = {
-                            appSharedViewModel.setBackupRestoreRequest(BackupRestoreRequest.WebDav(file))
+                            backupVm.requestRestoreFromRemoteBackup(file)
                             onNavigate(BackupRestoreRoute)
                         }
                     )

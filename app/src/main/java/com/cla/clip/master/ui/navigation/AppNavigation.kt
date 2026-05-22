@@ -9,20 +9,14 @@ import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
+import com.cla.clip.master.ui.page.backup.BackupMediaRelocationPage
 import com.cla.clip.master.ui.page.backup.BackupPage
 import com.cla.clip.master.ui.page.backup.BackupRestoreFlowPage
-import com.cla.clip.master.ui.page.backup.BackupRestoreFlowState
-import com.cla.clip.master.ui.page.backup.BackupRestoreVm
 import com.cla.clip.master.ui.page.detail.DetailPage
 import com.cla.clip.master.ui.page.download.DownloadHistoryPage
 import com.cla.clip.master.ui.page.image.ImageExtractPage
@@ -49,11 +43,11 @@ private const val NAV_PAGE_EXIT_DURATION_MS = 260
  */
 @Composable
 fun AppNavigation(navController: NavHostController) {
-    val appSharedViewModel = viewModel<AppSharedViewModel>()
-
     /** 子页面统一使用的跳转回调，保持所有页面都通过类型安全 Route 导航。 */
     val onNavigate = { route: Route ->
-        navController.navigate(route)
+        navController.navigate(route) {
+            launchSingleTop = route is BackupMediaRelocationRoute
+        }
     }
 
     /** 子页面统一返回回调，默认弹出当前目的地。 */
@@ -172,15 +166,23 @@ fun AppNavigation(navController: NavHostController) {
         composable<BackupRoute> {
             BackupPage(
                 onBack = onBack,
-                onNavigate = onNavigate,
-                appSharedViewModel = appSharedViewModel
+                onNavigate = onNavigate
             )
         }
 
         // 备份恢复流程页
         composable<BackupRestoreRoute> {
-            BackupRestoreFlowRoute(
-                appSharedViewModel = appSharedViewModel,
+            BackupRestoreFlowPage(
+                onBack = onBack,
+                onNavigate = onNavigate
+            )
+        }
+
+        // 恢复本地媒体关联页
+        composable<BackupMediaRelocationRoute> { backStackEntry ->
+            val route = backStackEntry.toRoute<BackupMediaRelocationRoute>()
+            BackupMediaRelocationPage(
+                restoreTaskId = route.restoreTaskId,
                 onBack = onBack
             )
         }
@@ -191,52 +193,6 @@ fun AppNavigation(navController: NavHostController) {
             )
         }
     }
-}
-
-/**
- * 备份恢复流程的真实导航页面。
- *
- * 备份页只把一次性打开请求写入 Activity 级临时 ViewModel；恢复页接管后立即清理请求，避免长期持有备份页状态。
- */
-@Composable
-private fun BackupRestoreFlowRoute(
-    appSharedViewModel: AppSharedViewModel,
-    onBack: () -> Unit,
-    restoreVm: BackupRestoreVm = hiltViewModel(),
-) {
-    val request by appSharedViewModel.backupRestoreRequest.collectAsStateWithLifecycle()
-    val state by restoreVm.uiState.collectAsStateWithLifecycle()
-    val restoreFlow = state.restoreFlow
-    LaunchedEffect(request?.requestId) {
-        request?.let {
-            restoreVm.startFromRequest(it)
-            appSharedViewModel.clearBackupRestoreRequest(it.requestId)
-        }
-    }
-    if (restoreFlow is BackupRestoreFlowState.Hidden) {
-        LaunchedEffect(request) {
-            if (request == null) onBack()
-        }
-        return
-    }
-    BackupRestoreFlowPage(
-        state = restoreFlow,
-        mediaRelocation = state.mediaRelocation,
-        onBack = {
-            restoreVm.dismissRestoreFlow()
-            appSharedViewModel.clearBackupRestoreRequest()
-            onBack()
-        },
-        onForceBack = {
-            restoreVm.forceCloseRestoreFlow()
-            appSharedViewModel.clearBackupRestoreRequest()
-            onBack()
-        },
-        onRestore = restoreVm::restoreSelectedBackup,
-        onEstimateMedia = restoreVm::estimateMediaRelocation,
-        onMediaPermissionResult = restoreVm::onMediaRelocationPermissionResult,
-        onStartMediaScan = restoreVm::startMediaRelocationScan
-    )
 }
 
 /**
