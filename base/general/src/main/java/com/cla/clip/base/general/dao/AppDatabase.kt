@@ -20,9 +20,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DownloadTaskData::class,
         ImageExtractBatchData::class,
         ImageExtractItemData::class,
-        SearchHistoryData::class
+        SearchHistoryData::class,
+        MagnetSearchHistoryData::class,
+        MagnetDownloadRecordData::class
     ],
-    version = 9, // 版本9：新增搜索历史表，普通搜索和折叠搜索历史按范围隔离。
+    version = 10, // 版本10：新增磁力搜索历史和磁力复制/打开记录两张用户数据表。
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
@@ -49,6 +51,9 @@ abstract class AppDatabase : RoomDatabase() {
 
     /** 提供搜索历史访问入口。 */
     abstract fun searchHistoryDao(): SearchHistoryDao
+
+    /** 提供磁力搜索历史和磁力复制/打开记录访问入口。 */
+    abstract fun magnetDao(): MagnetDao
 
     companion object {
         /**
@@ -130,6 +135,56 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_search_histories_is_folded_updated_at` ON `search_histories` (`is_folded`, `updated_at`)"
+                )
+            }
+        }
+
+        /**
+         * 版本 9 -> 10 手动迁移。
+         *
+         * 磁力搜索历史和磁力下载记录属于用户数据，需要进入主库并走正式迁移；Academic Torrents 源索引是可重建缓存，
+         * 不放入主库，也不参与此迁移。
+         */
+        val MIGRATION_9_10: Migration = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `magnet_search_histories` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `query` TEXT NOT NULL,
+                        `normalized_query` TEXT NOT NULL,
+                        `updated_at` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_magnet_search_histories_normalized_query` ON `magnet_search_histories` (`normalized_query`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_magnet_search_histories_updated_at` ON `magnet_search_histories` (`updated_at`)"
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `magnet_download_records` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `source_id` TEXT NOT NULL,
+                        `info_hash` TEXT NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `detail_url` TEXT,
+                        `size_bytes` INTEGER,
+                        `category` TEXT,
+                        `magnet_uri` TEXT NOT NULL,
+                        `last_source_query` TEXT,
+                        `first_used_at` INTEGER NOT NULL,
+                        `last_used_at` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_magnet_download_records_source_id_info_hash` ON `magnet_download_records` (`source_id`, `info_hash`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_magnet_download_records_last_used_at` ON `magnet_download_records` (`last_used_at`)"
                 )
             }
         }

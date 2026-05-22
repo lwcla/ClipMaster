@@ -30,6 +30,14 @@ data class SearchRoute(
     val scope: SearchScope = SearchScope.VisibleOnly
 ) : Route()
 
+/** 磁力搜索 */
+@Keep
+@Serializable
+data class MagnetSearchRoute(
+    /** 初始搜索词，通常来自详情页标题或剪贴内容；页面只在首帧应用一次。 */
+    val initialQuery: String = ""
+) : Route()
+
 /**
  * 搜索页路由层范围枚举。
  *

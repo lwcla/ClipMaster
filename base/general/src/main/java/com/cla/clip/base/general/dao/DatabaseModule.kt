@@ -37,12 +37,14 @@ object DatabaseModule {
             // 6->7 为剪贴记录补充回收站删除时间，旧记录默认保持正常可见。
             // 7->8 为折叠记录补充折叠时间，旧折叠记录用原剪贴时间回填以保持稳定顺序。
             // 8->9 新增搜索历史表；历史数据与剪贴记录解耦，升级时不需要回填旧搜索词。
+            // 9->10 新增磁力搜索历史和磁力复制/打开记录；源索引缓存不放入主库。
             .addMigrations(
                 AppDatabase.MIGRATION_4_5,
                 AppDatabase.MIGRATION_5_6,
                 AppDatabase.MIGRATION_6_7,
                 AppDatabase.MIGRATION_7_8,
-                AppDatabase.MIGRATION_8_9
+                AppDatabase.MIGRATION_8_9,
+                AppDatabase.MIGRATION_9_10
             )
             .build()
     }
@@ -104,5 +106,12 @@ object DatabaseModule {
     @Singleton
     fun provideSearchHistoryDao(appDatabase: AppDatabase): SearchHistoryDao {
         return appDatabase.searchHistoryDao()
+    }
+
+    /** 注入磁力 DAO，供磁力搜索历史、磁力下载记录和备份恢复访问。 */
+    @Provides
+    @Singleton
+    fun provideMagnetDao(appDatabase: AppDatabase): MagnetDao {
+        return appDatabase.magnetDao()
     }
 }

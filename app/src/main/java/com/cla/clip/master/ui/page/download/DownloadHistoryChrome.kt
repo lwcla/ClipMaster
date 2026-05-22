@@ -74,7 +74,8 @@ internal fun DownloadHistoryTabs(
 ) {
     val tabs = listOf(
         DownloadHistoryTab.VIDEO to stringResource(R.string.base_general_video),
-        DownloadHistoryTab.IMAGE to stringResource(R.string.base_general_image)
+        DownloadHistoryTab.IMAGE to stringResource(R.string.base_general_image),
+        DownloadHistoryTab.MAGNET to stringResource(R.string.base_general_magnet)
     )
     PrimaryTabRow(selectedTabIndex = tabs.indexOfFirst { it.first == selectedTab }.coerceAtLeast(0)) {
         tabs.forEach { (tab, title) ->
@@ -99,13 +100,17 @@ internal fun DownloadHistoryPager(
     state: DownloadHistoryUiState,
     videoPagingFlow: Flow<PagingData<DownloadHistoryVideoItem>>,
     imagePagingFlow: Flow<PagingData<DownloadHistoryImageBatch>>,
+    magnetPagingFlow: Flow<PagingData<DownloadHistoryMagnetItem>>,
     videoListState: LazyListState,
     imageListState: LazyListState,
+    magnetListState: LazyListState,
     onToggleSelected: (Long) -> Unit,
     onEnterSelection: (Long) -> Unit,
     onOpenVideo: (DownloadHistoryVideoItem) -> Unit,
     onRetryVideo: (Long) -> Unit,
     onRetryImage: (Long) -> Unit,
+    onCopyMagnet: (Long) -> Unit,
+    onOpenMagnet: (Long) -> Unit,
     onPreviewImage: (String) -> Unit,
 ) {
     HorizontalPager(
@@ -117,13 +122,17 @@ internal fun DownloadHistoryPager(
             state = state,
             videoPagingFlow = videoPagingFlow,
             imagePagingFlow = imagePagingFlow,
+            magnetPagingFlow = magnetPagingFlow,
             videoListState = videoListState,
             imageListState = imageListState,
+            magnetListState = magnetListState,
             onToggleSelected = onToggleSelected,
             onEnterSelection = onEnterSelection,
             onOpenVideo = onOpenVideo,
             onRetryVideo = onRetryVideo,
             onRetryImage = onRetryImage,
+            onCopyMagnet = onCopyMagnet,
+            onOpenMagnet = onOpenMagnet,
             onPreviewImage = onPreviewImage
         )
     }
@@ -134,6 +143,7 @@ internal val DownloadHistoryUiState.currentItemsCount: Int
     get() = when (selectedTab) {
         DownloadHistoryTab.VIDEO -> videoCount
         DownloadHistoryTab.IMAGE -> imageCount
+        DownloadHistoryTab.MAGNET -> magnetCount
     }
 
 /** 当前 Tab 是否包含进行中记录，用于清空确认文案。 */
@@ -141,4 +151,5 @@ internal val DownloadHistoryUiState.currentTabHasRunning: Boolean
     get() = when (selectedTab) {
         DownloadHistoryTab.VIDEO -> videoRunningCount > 0
         DownloadHistoryTab.IMAGE -> imageRunningCount > 0
+        DownloadHistoryTab.MAGNET -> false
     }

@@ -22,6 +22,7 @@ import com.cla.clip.master.ui.page.download.DownloadHistoryPage
 import com.cla.clip.master.ui.page.image.ImageExtractPage
 import com.cla.clip.master.ui.page.list.ClipListPage
 import com.cla.clip.master.ui.page.list.FoldedClipListPage
+import com.cla.clip.master.ui.page.magnet.MagnetSearchPage
 import com.cla.clip.master.ui.page.main.MainPage
 import com.cla.clip.master.ui.page.mine.MinePage
 import com.cla.clip.master.ui.page.recycle.RecycleBinPage
@@ -87,6 +88,15 @@ fun AppNavigation(navController: NavHostController) {
                 scope = route.scope,
                 onBack = onBack,
                 onNavigate = onNavigate
+            )
+        }
+
+        // 磁力搜索页
+        composable<MagnetSearchRoute> { backStackEntry ->
+            val route = backStackEntry.toRoute<MagnetSearchRoute>()
+            MagnetSearchPage(
+                initialQuery = route.initialQuery,
+                onBack = onBack
             )
         }
 

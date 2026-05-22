@@ -7,8 +7,8 @@ import kotlinx.serialization.Serializable
 /** 备份文件格式标识，用于恢复前快速判断用户选择的备份包是否属于本应用。 */
 const val BACKUP_FORMAT = "clip_master_backup"
 
-/** 当前备份协议版本；v2 将列表数据从 JSON 数组升级为 JSONL，降低大数据量导出和恢复的内存峰值。 */
-const val BACKUP_SCHEMA_VERSION = 2
+/** 当前备份协议版本；v3 在 JSONL 协议中加入磁力搜索历史和磁力复制/打开记录。 */
+const val BACKUP_SCHEMA_VERSION = 3
 
 /** 第一版备份不加密，但保留协议字段，后续可以平滑扩展到密码加密格式。 */
 const val BACKUP_ENCRYPTION_NONE = "none"
@@ -253,9 +253,17 @@ data class BackupSummary(
     @SerialName("search_history_count")
     val searchHistoryCount: Int = 0,
 
+    /** 磁力搜索历史数量。 */
+    @SerialName("magnet_search_history_count")
+    val magnetSearchHistoryCount: Int = 0,
+
     /** 视频下载记录数量。 */
     @SerialName("video_download_count")
     val videoDownloadCount: Int = 0,
+
+    /** 磁力复制/打开记录数量。 */
+    @SerialName("magnet_download_record_count")
+    val magnetDownloadRecordCount: Int = 0,
 
     /** 图片下载批次数量。 */
     @SerialName("image_batch_count")
@@ -290,6 +298,10 @@ data class BackupData(
     @SerialName("search_histories")
     val searchHistories: List<BackupSearchHistory> = emptyList(),
 
+    /** 磁力搜索历史备份。 */
+    @SerialName("magnet_search_histories")
+    val magnetSearchHistories: List<BackupMagnetSearchHistory> = emptyList(),
+
     /** 跨安装有意义的用户偏好。 */
     @SerialName("settings")
     val settings: BackupSettings = BackupSettings(),
@@ -297,6 +309,10 @@ data class BackupData(
     /** 视频下载记录元数据备份。 */
     @SerialName("video_downloads")
     val videoDownloads: List<BackupVideoDownload> = emptyList(),
+
+    /** 磁力复制/打开记录备份。 */
+    @SerialName("magnet_download_records")
+    val magnetDownloadRecords: List<BackupMagnetDownloadRecord> = emptyList(),
 
     /** 图片下载批次备份。 */
     @SerialName("image_batches")
@@ -355,6 +371,16 @@ data class BackupSearchHistory(
     @SerialName("updated_at") val updatedAt: Long,
 )
 
+/** 磁力搜索历史备份字段，以规范化关键词唯一索引恢复。 */
+@Keep
+@Serializable
+data class BackupMagnetSearchHistory(
+    @SerialName("id") val id: Long,
+    @SerialName("query") val query: String,
+    @SerialName("normalized_query") val normalizedQuery: String,
+    @SerialName("updated_at") val updatedAt: Long,
+)
+
 /** 跨安装有意义的用户设置；凭据、目录授权和健康状态不进入该模型。 */
 @Keep
 @Serializable
@@ -378,6 +404,23 @@ data class BackupVideoDownload(
     @SerialName("create_time") val createTime: Long,
     @SerialName("update_time") val updateTime: Long,
     @SerialName("file_name") val fileName: String,
+)
+
+/** 磁力复制/打开记录备份字段，以 sourceId + infoHash 唯一索引恢复。 */
+@Keep
+@Serializable
+data class BackupMagnetDownloadRecord(
+    @SerialName("id") val id: Long,
+    @SerialName("source_id") val sourceId: String,
+    @SerialName("info_hash") val infoHash: String,
+    @SerialName("title") val title: String,
+    @SerialName("detail_url") val detailUrl: String? = null,
+    @SerialName("size_bytes") val sizeBytes: Long? = null,
+    @SerialName("category") val category: String? = null,
+    @SerialName("magnet_uri") val magnetUri: String? = null,
+    @SerialName("last_source_query") val lastSourceQuery: String? = null,
+    @SerialName("first_used_at") val firstUsedAt: Long,
+    @SerialName("last_used_at") val lastUsedAt: Long,
 )
 
 /** 图片下载批次备份字段；输出目录只作为重新定位 hint。 */
@@ -574,10 +617,14 @@ enum class BackupProgressCategory {
     LinkPreviews,
     /** 搜索历史。 */
     SearchHistories,
+    /** 磁力搜索历史。 */
+    MagnetSearchHistories,
     /** 用户设置。 */
     Settings,
     /** 视频下载记录。 */
     VideoDownloads,
+    /** 磁力复制/打开记录。 */
+    MagnetDownloadRecords,
     /** 图片下载批次。 */
     ImageBatches,
     /** 图片下载项。 */

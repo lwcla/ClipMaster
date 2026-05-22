@@ -51,7 +51,8 @@ class BackupSnapshotExporter @Inject constructor(
         val highWater = readHighWaterMarks()
         logD(TAG) {
             "备份导出读取 highWater taskId=$taskId clipMaxId=${highWater.clipMaxId} " +
-                "searchHistoryMaxId=${highWater.searchHistoryMaxId} videoDownloadMaxId=${highWater.videoDownloadMaxId} " +
+                "searchHistoryMaxId=${highWater.searchHistoryMaxId} magnetSearchHistoryMaxId=${highWater.magnetSearchHistoryMaxId} " +
+                "videoDownloadMaxId=${highWater.videoDownloadMaxId} magnetDownloadRecordMaxId=${highWater.magnetDownloadRecordMaxId} " +
                 "imageBatchMaxId=${highWater.imageBatchMaxId} imageItemMaxId=${highWater.imageItemMaxId}"
         }
         val entryFiles = mutableListOf<BackupPackageFile>()
@@ -61,8 +62,10 @@ class BackupSnapshotExporter @Inject constructor(
             entryFiles += exportSourceAppLines(session, summaryBuilder)
             entryFiles += exportLinkPreviewLines(session, summaryBuilder)
             entryFiles += exportSearchHistoryLines(session, highWater.searchHistoryMaxId, summaryBuilder)
+            entryFiles += exportMagnetSearchHistoryLines(session, highWater.magnetSearchHistoryMaxId, summaryBuilder)
             entryFiles += session.writeJsonObject(SETTINGS_PATH, BackupJson.encodeSettings(AppSetting.toBackupSettings()))
             entryFiles += exportVideoDownloadLines(session, highWater.videoDownloadMaxId, summaryBuilder)
+            entryFiles += exportMagnetDownloadRecordLines(session, highWater.magnetDownloadRecordMaxId, summaryBuilder)
             entryFiles += exportImageBatchLines(session, highWater.imageBatchMaxId, summaryBuilder)
             entryFiles += exportImageItemLines(session, highWater.imageItemMaxId, summaryBuilder)
             val summary = summaryBuilder.toSummary()
@@ -112,8 +115,10 @@ class BackupSnapshotExporter @Inject constructor(
                 sourceApps = appDatabase.sourceAppDao().loadAllForBackup().map { it.toBackupSourceApp() },
                 linkPreviews = appDatabase.linkPreviewDao().loadAllForBackup().map { it.toBackupLinkPreview() },
                 searchHistories = appDatabase.searchHistoryDao().loadAllForBackup().map { it.toBackupSearchHistory() },
+                magnetSearchHistories = appDatabase.magnetDao().loadAllSearchHistoriesForBackup().map { it.toBackupMagnetSearchHistory() },
                 settings = AppSetting.toBackupSettings(),
                 videoDownloads = appDatabase.downloadDao().loadAllTasksForBackup().map { it.toBackupVideoDownload() },
+                magnetDownloadRecords = appDatabase.magnetDao().loadAllDownloadRecordsForBackup().map { it.toBackupMagnetDownloadRecord() },
                 imageBatches = appDatabase.imageExtractDao().loadAllBatchesForBackup().map { it.toBackupImageBatch() },
                 imageItems = appDatabase.imageExtractDao().loadAllItemsForBackup().map { it.toBackupImageItem() }
             )
@@ -138,7 +143,9 @@ class BackupSnapshotExporter @Inject constructor(
         return BackupHighWaterMarks(
             clipMaxId = appDatabase.clipDao().maxClipIdForBackup(),
             searchHistoryMaxId = appDatabase.searchHistoryDao().maxIdForBackup(),
+            magnetSearchHistoryMaxId = appDatabase.magnetDao().maxSearchHistoryIdForBackup(),
             videoDownloadMaxId = appDatabase.downloadDao().maxTaskIdForBackup(),
+            magnetDownloadRecordMaxId = appDatabase.magnetDao().maxDownloadRecordIdForBackup(),
             imageBatchMaxId = appDatabase.imageExtractDao().maxBatchIdForBackup(),
             imageItemMaxId = appDatabase.imageExtractDao().maxItemIdForBackup()
         )
@@ -282,6 +289,40 @@ class BackupSnapshotExporter @Inject constructor(
         }
     }
 
+    /** 分页导出磁力搜索历史为 JSONL。 */
+    private suspend fun exportMagnetSearchHistoryLines(
+        session: BackupPackageBuildSession,
+        maxId: Long,
+        summary: BackupSummaryBuilder,
+    ): BackupPackageFile {
+        var exportedCount = 0
+        return session.writeJsonLines(MAGNET_SEARCH_HISTORIES_JSONL_PATH, BackupMagnetSearchHistory.serializer()) { sink ->
+            var lastId = 0L
+            while (true) {
+                val page = appDatabase.magnetDao().loadSearchHistoriesPageForBackup(lastId, maxId, EXPORT_PAGE_SIZE)
+                if (page.isEmpty()) break
+                page.forEach { data ->
+                    sink.write(data.toBackupMagnetSearchHistory())
+                    summary.magnetSearchHistoryCount += 1
+                    exportedCount += 1
+                }
+                lastId = page.last().id
+            }
+            if (exportedCount == 0) {
+                val fallback = appDatabase.magnetDao().loadAllSearchHistoriesForBackup()
+                if (fallback.isNotEmpty()) {
+                    logW(TAG) {
+                        "磁力搜索历史分页导出为空，已使用全量查询兜底 reasonCode=paged_export_empty maxId=$maxId fallbackCount=${fallback.size}"
+                    }
+                    fallback.forEach { data ->
+                        sink.write(data.toBackupMagnetSearchHistory())
+                        summary.magnetSearchHistoryCount += 1
+                    }
+                }
+            }
+        }
+    }
+
     /** 分页导出视频下载记录为 JSONL。 */
     private suspend fun exportVideoDownloadLines(
         session: BackupPackageBuildSession,
@@ -311,6 +352,40 @@ class BackupSnapshotExporter @Inject constructor(
                     fallback.forEach { data ->
                         sink.write(data.toBackupVideoDownload())
                         summary.videoDownloadCount += 1
+                    }
+                }
+            }
+        }
+    }
+
+    /** 分页导出磁力复制/打开记录为 JSONL。 */
+    private suspend fun exportMagnetDownloadRecordLines(
+        session: BackupPackageBuildSession,
+        maxId: Long,
+        summary: BackupSummaryBuilder,
+    ): BackupPackageFile {
+        var exportedCount = 0
+        return session.writeJsonLines(MAGNET_DOWNLOAD_RECORDS_JSONL_PATH, BackupMagnetDownloadRecord.serializer()) { sink ->
+            var lastId = 0L
+            while (true) {
+                val page = appDatabase.magnetDao().loadDownloadRecordsPageForBackup(lastId, maxId, EXPORT_PAGE_SIZE)
+                if (page.isEmpty()) break
+                page.forEach { data ->
+                    sink.write(data.toBackupMagnetDownloadRecord())
+                    summary.magnetDownloadRecordCount += 1
+                    exportedCount += 1
+                }
+                lastId = page.last().id
+            }
+            if (exportedCount == 0) {
+                val fallback = appDatabase.magnetDao().loadAllDownloadRecordsForBackup()
+                if (fallback.isNotEmpty()) {
+                    logW(TAG) {
+                        "磁力下载记录分页导出为空，已使用全量查询兜底 reasonCode=paged_export_empty maxId=$maxId fallbackCount=${fallback.size}"
+                    }
+                    fallback.forEach { data ->
+                        sink.write(data.toBackupMagnetDownloadRecord())
+                        summary.magnetDownloadRecordCount += 1
                     }
                 }
             }

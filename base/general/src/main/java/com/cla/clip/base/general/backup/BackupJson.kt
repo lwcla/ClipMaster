@@ -52,6 +52,12 @@ object BackupJson {
     /** 解码搜索历史数据文件。 */
     fun decodeSearchHistories(text: String): List<BackupSearchHistory> = json.decodeFromString(text)
 
+    /** 编码磁力搜索历史数据文件。 */
+    fun encodeMagnetSearchHistories(values: List<BackupMagnetSearchHistory>): String = json.encodeToString(values)
+
+    /** 解码磁力搜索历史数据文件。 */
+    fun decodeMagnetSearchHistories(text: String): List<BackupMagnetSearchHistory> = json.decodeFromString(text)
+
     /** 编码设置数据文件。 */
     fun encodeSettings(value: BackupSettings): String = json.encodeToString(value)
 
@@ -63,6 +69,12 @@ object BackupJson {
 
     /** 解码视频下载元数据文件。 */
     fun decodeVideoDownloads(text: String): List<BackupVideoDownload> = json.decodeFromString(text)
+
+    /** 编码磁力复制/打开记录数据文件。 */
+    fun encodeMagnetDownloadRecords(values: List<BackupMagnetDownloadRecord>): String = json.encodeToString(values)
+
+    /** 解码磁力复制/打开记录数据文件。 */
+    fun decodeMagnetDownloadRecords(text: String): List<BackupMagnetDownloadRecord> = json.decodeFromString(text)
 
     /** 编码图片批次数据文件。 */
     fun encodeImageBatches(values: List<BackupImageBatch>): String = json.encodeToString(values)
@@ -232,6 +244,12 @@ const val SEARCH_HISTORIES_PATH = "data/search_histories.json"
 /** v2 zip 包内搜索历史 JSONL 数据路径。 */
 const val SEARCH_HISTORIES_JSONL_PATH = "data/search_histories.jsonl"
 
+/** zip 包内磁力搜索历史数据路径。 */
+const val MAGNET_SEARCH_HISTORIES_PATH = "data/magnet_search_histories.json"
+
+/** v2 zip 包内磁力搜索历史 JSONL 数据路径。 */
+const val MAGNET_SEARCH_HISTORIES_JSONL_PATH = "data/magnet_search_histories.jsonl"
+
 /** zip 包内设置数据路径。 */
 const val SETTINGS_PATH = "data/settings.json"
 
@@ -240,6 +258,12 @@ const val VIDEO_DOWNLOADS_PATH = "data/video_downloads.json"
 
 /** v2 zip 包内视频下载 JSONL 数据路径。 */
 const val VIDEO_DOWNLOADS_JSONL_PATH = "data/video_downloads.jsonl"
+
+/** zip 包内磁力复制/打开记录数据路径。 */
+const val MAGNET_DOWNLOAD_RECORDS_PATH = "data/magnet_download_records.json"
+
+/** v2 zip 包内磁力复制/打开记录 JSONL 数据路径。 */
+const val MAGNET_DOWNLOAD_RECORDS_JSONL_PATH = "data/magnet_download_records.jsonl"
 
 /** zip 包内图片批次数据路径。 */
 const val IMAGE_BATCHES_PATH = "data/image_batches.json"
@@ -259,8 +283,10 @@ private val RequiredDataPaths = listOf(
     SOURCE_APPS_PATH,
     LINK_PREVIEWS_PATH,
     SEARCH_HISTORIES_PATH,
+    MAGNET_SEARCH_HISTORIES_PATH,
     SETTINGS_PATH,
     VIDEO_DOWNLOADS_PATH,
+    MAGNET_DOWNLOAD_RECORDS_PATH,
     IMAGE_BATCHES_PATH,
     IMAGE_ITEMS_PATH
 )
@@ -271,8 +297,10 @@ val RequiredJsonlDataPaths = listOf(
     SOURCE_APPS_JSONL_PATH,
     LINK_PREVIEWS_JSONL_PATH,
     SEARCH_HISTORIES_JSONL_PATH,
+    MAGNET_SEARCH_HISTORIES_JSONL_PATH,
     SETTINGS_PATH,
     VIDEO_DOWNLOADS_JSONL_PATH,
+    MAGNET_DOWNLOAD_RECORDS_JSONL_PATH,
     IMAGE_BATCHES_JSONL_PATH,
     IMAGE_ITEMS_JSONL_PATH
 )
@@ -295,8 +323,10 @@ fun BackupData.dataFiles(): List<BackupPackageEntry> {
         BackupPackageEntry(SOURCE_APPS_PATH, BackupJson.encodeSourceApps(sourceApps)),
         BackupPackageEntry(LINK_PREVIEWS_PATH, BackupJson.encodeLinkPreviews(linkPreviews)),
         BackupPackageEntry(SEARCH_HISTORIES_PATH, BackupJson.encodeSearchHistories(searchHistories)),
+        BackupPackageEntry(MAGNET_SEARCH_HISTORIES_PATH, BackupJson.encodeMagnetSearchHistories(magnetSearchHistories)),
         BackupPackageEntry(SETTINGS_PATH, BackupJson.encodeSettings(settings)),
         BackupPackageEntry(VIDEO_DOWNLOADS_PATH, BackupJson.encodeVideoDownloads(videoDownloads)),
+        BackupPackageEntry(MAGNET_DOWNLOAD_RECORDS_PATH, BackupJson.encodeMagnetDownloadRecords(magnetDownloadRecords)),
         BackupPackageEntry(IMAGE_BATCHES_PATH, BackupJson.encodeImageBatches(imageBatches)),
         BackupPackageEntry(IMAGE_ITEMS_PATH, BackupJson.encodeImageItems(imageItems))
     )
@@ -441,8 +471,10 @@ fun ByteArray.decodeBackupPackage(): BackupSnapshot {
         sourceApps = entries.decodeRequired(SOURCE_APPS_PATH, BackupJson::decodeSourceApps),
         linkPreviews = entries.decodeRequired(LINK_PREVIEWS_PATH, BackupJson::decodeLinkPreviews),
         searchHistories = entries.decodeRequired(SEARCH_HISTORIES_PATH, BackupJson::decodeSearchHistories),
+        magnetSearchHistories = entries.decodeOptional(MAGNET_SEARCH_HISTORIES_PATH, BackupJson::decodeMagnetSearchHistories),
         settings = entries.decodeRequired(SETTINGS_PATH, BackupJson::decodeSettings),
         videoDownloads = entries.decodeRequired(VIDEO_DOWNLOADS_PATH, BackupJson::decodeVideoDownloads),
+        magnetDownloadRecords = entries.decodeOptional(MAGNET_DOWNLOAD_RECORDS_PATH, BackupJson::decodeMagnetDownloadRecords),
         imageBatches = entries.decodeRequired(IMAGE_BATCHES_PATH, BackupJson::decodeImageBatches),
         imageItems = entries.decodeRequired(IMAGE_ITEMS_PATH, BackupJson::decodeImageItems)
     )
@@ -462,7 +494,9 @@ fun ByteArray.decodeBackupPackage(): BackupSnapshot {
         summary = manifest.summary,
         data = data
     )
-    if (snapshot.data.calculateChecksum() != manifest.checksum) throw BackupFailure.ChecksumMismatch()
+    if (snapshot.data.dataFiles().filter { it.path in manifest.requiredPathsForFormat() }.calculatePackageChecksum() != manifest.checksum) {
+        throw BackupFailure.ChecksumMismatch()
+    }
     return snapshot
 }
 
@@ -499,24 +533,31 @@ fun BackupManifest.validatePackageMetadata() {
 
 /** 根据 manifest 兼容判断必需 entry 路径；v1 缺失 dataFormat 时按 JSON 数组路径处理。 */
 fun BackupManifest.requiredPathsForFormat(): List<String> {
-    return if (schemaVersion >= 2 || dataFormat == BACKUP_DATA_FORMAT_JSONL) {
-        RequiredJsonlDataPaths
-    } else {
-        RequiredDataPaths
+    return when {
+        schemaVersion >= 3 -> RequiredJsonlDataPaths
+        schemaVersion >= 2 || dataFormat == BACKUP_DATA_FORMAT_JSONL -> RequiredJsonlDataPaths - setOf(
+            MAGNET_SEARCH_HISTORIES_JSONL_PATH,
+            MAGNET_DOWNLOAD_RECORDS_JSONL_PATH
+        )
+        else -> RequiredDataPaths - setOf(
+            MAGNET_SEARCH_HISTORIES_PATH,
+            MAGNET_DOWNLOAD_RECORDS_PATH
+        )
     }
 }
 
 /** 根据 manifest 校验每个数据文件的存在性、大小和 checksum。 */
 private fun validatePackageFiles(manifest: BackupManifest, entries: Map<String, String>) {
     val files = manifest.files.associateBy { it.path }
-    if (!files.keys.containsAll(RequiredDataPaths)) throw BackupFailure.ChecksumMismatch()
-    RequiredDataPaths.forEach { path ->
+    val requiredPaths = manifest.requiredPathsForFormat()
+    if (!files.keys.containsAll(requiredPaths)) throw BackupFailure.ChecksumMismatch()
+    requiredPaths.forEach { path ->
         val expected = files[path] ?: throw BackupFailure.ChecksumMismatch()
         val text = entries[path] ?: throw BackupFailure.ChecksumMismatch()
         if (text.toByteArray(Charsets.UTF_8).size.toLong() != expected.size) throw BackupFailure.ChecksumMismatch()
         if (text.sha256Hex() != expected.checksum) throw BackupFailure.ChecksumMismatch()
     }
-    val actualPackageChecksum = RequiredDataPaths
+    val actualPackageChecksum = requiredPaths
         .sorted()
         .joinToString(separator = "\n") { path ->
             val file = files.getValue(path)
@@ -529,5 +570,11 @@ private fun validatePackageFiles(manifest: BackupManifest, entries: Map<String, 
 /** 解码必需数据文件，缺失或格式异常时转成统一可映射错误。 */
 private fun <T> Map<String, String>.decodeRequired(path: String, decoder: (String) -> T): T {
     val text = this[path] ?: throw BackupFailure.ChecksumMismatch()
+    return runCatching { decoder(text) }.getOrElse { throw BackupFailure.ParseFailed(it) }
+}
+
+/** 解码可选数据文件，旧协议缺失时返回空集合。 */
+private fun <T> Map<String, String>.decodeOptional(path: String, decoder: (String) -> List<T>): List<T> {
+    val text = this[path] ?: return emptyList()
     return runCatching { decoder(text) }.getOrElse { throw BackupFailure.ParseFailed(it) }
 }

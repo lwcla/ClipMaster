@@ -26,7 +26,9 @@ data class BackupExportResult(
 internal data class BackupHighWaterMarks(
     val clipMaxId: Long,
     val searchHistoryMaxId: Long,
+    val magnetSearchHistoryMaxId: Long,
     val videoDownloadMaxId: Long,
+    val magnetDownloadRecordMaxId: Long,
     val imageBatchMaxId: Long,
     val imageItemMaxId: Long,
 )
@@ -37,7 +39,9 @@ internal data class BackupSummaryBuilder(
     var sourceAppCount: Int = 0,
     var linkPreviewCount: Int = 0,
     var searchHistoryCount: Int = 0,
+    var magnetSearchHistoryCount: Int = 0,
     var videoDownloadCount: Int = 0,
+    var magnetDownloadRecordCount: Int = 0,
     var imageBatchCount: Int = 0,
     var imageItemCount: Int = 0,
 ) {
@@ -48,7 +52,9 @@ internal data class BackupSummaryBuilder(
             sourceAppCount = sourceAppCount,
             linkPreviewCount = linkPreviewCount,
             searchHistoryCount = searchHistoryCount,
+            magnetSearchHistoryCount = magnetSearchHistoryCount,
             videoDownloadCount = videoDownloadCount,
+            magnetDownloadRecordCount = magnetDownloadRecordCount,
             imageBatchCount = imageBatchCount,
             imageItemCount = imageItemCount
         )

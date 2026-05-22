@@ -49,7 +49,9 @@ fun BackupSource.logCode(): String {
 /** 将备份摘要转成脱敏数量字段；只包含数量，不包含剪贴内容、搜索词或下载 URL。 */
 fun BackupSummary.toLogFields(): String {
     return "clips=$clipCount sourceApps=$sourceAppCount linkPreviews=$linkPreviewCount " +
-        "searchHistories=$searchHistoryCount videos=$videoDownloadCount imageBatches=$imageBatchCount imageItems=$imageItemCount"
+        "searchHistories=$searchHistoryCount magnetSearchHistories=$magnetSearchHistoryCount " +
+        "videos=$videoDownloadCount magnetDownloadRecords=$magnetDownloadRecordCount " +
+        "imageBatches=$imageBatchCount imageItems=$imageItemCount"
 }
 
 /** 备份失败的稳定 reasonCode，用于日志、重试判断和排障搜索。 */

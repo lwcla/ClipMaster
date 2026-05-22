@@ -58,6 +58,7 @@ fun MinePage(
             contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp),
         ) {
             item { BackupEntry(onNavigate = onNavigate) }
+            item { MagnetSearchEntry(onNavigate = onNavigate) }
             item { DownloadHistoryEntry(onNavigate = onNavigate) }
             item { FoldedClipsEntry(foldedClipCount = foldedClipCount, onNavigate = onNavigate) }
             item { RecycleBinEntry(recycleBinCount = recycleBinCount, onNavigate = onNavigate) }

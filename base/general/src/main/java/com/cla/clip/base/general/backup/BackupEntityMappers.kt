@@ -6,8 +6,14 @@ import com.cla.clip.base.general.dao.DownloadTaskData
 import com.cla.clip.base.general.dao.ImageExtractBatchData
 import com.cla.clip.base.general.dao.ImageExtractItemData
 import com.cla.clip.base.general.dao.LinkPreviewData
+import com.cla.clip.base.general.dao.MagnetDownloadRecordData
+import com.cla.clip.base.general.dao.MagnetSearchHistoryData
 import com.cla.clip.base.general.dao.SearchHistoryData
 import com.cla.clip.base.general.dao.SourceAppData
+import com.cla.clip.base.general.magnet.MagnetInfoHashNormalizer
+import com.cla.clip.base.general.magnet.MagnetSourceProvider
+import com.cla.clip.base.general.magnet.MagnetTextNormalizer
+import com.cla.clip.base.general.magnet.MagnetUriBuilder
 
 /** 根据数据区生成数量摘要。 */
 internal fun BackupData.toSummary(): BackupSummary {
@@ -16,7 +22,9 @@ internal fun BackupData.toSummary(): BackupSummary {
         sourceAppCount = sourceApps.size,
         linkPreviewCount = linkPreviews.size,
         searchHistoryCount = searchHistories.size,
+        magnetSearchHistoryCount = magnetSearchHistories.size,
         videoDownloadCount = videoDownloads.size,
+        magnetDownloadRecordCount = magnetDownloadRecords.size,
         imageBatchCount = imageBatches.size,
         imageItemCount = imageItems.size
     )
@@ -166,6 +174,36 @@ internal fun SearchHistoryData.sameBackupContent(other: SearchHistoryData): Bool
         updatedAt == other.updatedAt
 }
 
+/** 磁力搜索历史实体转备份字段。 */
+internal fun MagnetSearchHistoryData.toBackupMagnetSearchHistory(): BackupMagnetSearchHistory {
+    return BackupMagnetSearchHistory(
+        id = id,
+        query = query,
+        normalizedQuery = normalizedQuery,
+        updatedAt = updatedAt
+    )
+}
+
+/** 磁力搜索历史备份字段转实体；超长文本按当前版本上限裁剪。 */
+internal fun BackupMagnetSearchHistory.toEntity(): MagnetSearchHistoryData? {
+    val displayQuery = MagnetTextNormalizer.normalizeDisplayQuery(query)
+    val normalized = MagnetTextNormalizer.normalizeKey(normalizedQuery.ifBlank { displayQuery })
+    if (displayQuery.isBlank() || normalized.isBlank()) return null
+    return MagnetSearchHistoryData(
+        id = id,
+        query = displayQuery,
+        normalizedQuery = normalized,
+        updatedAt = updatedAt
+    )
+}
+
+/** 磁力搜索历史备份字段是否与本地已有记录一致；自增 id 不参与业务幂等判断。 */
+internal fun MagnetSearchHistoryData.sameBackupContent(other: MagnetSearchHistoryData): Boolean {
+    return query == other.query &&
+        normalizedQuery == other.normalizedQuery &&
+        updatedAt == other.updatedAt
+}
+
 /** AppSetting 转备份设置白名单。 */
 internal fun AppSetting.toBackupSettings(): BackupSettings {
     return BackupSettings(
@@ -220,6 +258,63 @@ internal fun BackupVideoDownload.toEntity(): DownloadTaskData {
         updateTime = updateTime,
         fileName = fileName
     )
+}
+
+/** 磁力下载记录实体转备份字段。 */
+internal fun MagnetDownloadRecordData.toBackupMagnetDownloadRecord(): BackupMagnetDownloadRecord {
+    return BackupMagnetDownloadRecord(
+        id = id,
+        sourceId = sourceId,
+        infoHash = infoHash,
+        title = title,
+        detailUrl = detailUrl,
+        sizeBytes = sizeBytes,
+        category = category,
+        magnetUri = magnetUri,
+        lastSourceQuery = lastSourceQuery,
+        firstUsedAt = firstUsedAt,
+        lastUsedAt = lastUsedAt
+    )
+}
+
+/** 磁力下载记录备份字段转实体；未知来源、非法 infoHash 或无法重建 magnet 时跳过。 */
+internal fun BackupMagnetDownloadRecord.toEntity(): MagnetDownloadRecordData? {
+    if (!MagnetSourceProvider.isAllowed(sourceId)) return null
+    val normalizedHash = MagnetInfoHashNormalizer.normalize(infoHash) ?: return null
+    val safeTitle = title.trim().ifBlank { normalizedHash }
+    val safeMagnet = magnetUri
+        ?.takeIf { it.startsWith("magnet:", ignoreCase = true) }
+        ?: MagnetUriBuilder.build(normalizedHash, safeTitle)
+        ?: return null
+    return MagnetDownloadRecordData(
+        id = id,
+        sourceId = sourceId,
+        infoHash = normalizedHash,
+        title = safeTitle,
+        detailUrl = detailUrl?.trim()?.takeIf { it.isNotBlank() },
+        sizeBytes = sizeBytes?.takeIf { it >= 0L },
+        category = category?.trim()?.takeIf { it.isNotBlank() },
+        magnetUri = safeMagnet,
+        lastSourceQuery = lastSourceQuery
+            ?.let(MagnetTextNormalizer::normalizeDisplayQuery)
+            ?.takeIf { it.isNotBlank() },
+        firstUsedAt = firstUsedAt,
+        lastUsedAt = lastUsedAt
+    )
+}
+
+/** 磁力下载记录备份字段是否与本地已有记录一致；自增 id 不参与业务幂等判断。 */
+internal fun MagnetDownloadRecordData.sameBackupContent(other: MagnetDownloadRecordData): Boolean {
+    return sourceId == other.sourceId &&
+        infoHash == other.infoHash &&
+        title == other.title &&
+        detailUrl == other.detailUrl &&
+        sizeBytes == other.sizeBytes &&
+        category == other.category &&
+        magnetUri == other.magnetUri &&
+        lastSourceQuery == other.lastSourceQuery &&
+        firstUsedAt == other.firstUsedAt &&
+        lastUsedAt == other.lastUsedAt
 }
 
 /** 图片批次实体转备份字段。 */

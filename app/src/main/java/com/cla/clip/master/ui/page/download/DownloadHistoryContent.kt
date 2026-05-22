@@ -33,13 +33,17 @@ internal fun DownloadHistoryContent(
     state: DownloadHistoryUiState,
     videoPagingFlow: Flow<PagingData<DownloadHistoryVideoItem>>,
     imagePagingFlow: Flow<PagingData<DownloadHistoryImageBatch>>,
+    magnetPagingFlow: Flow<PagingData<DownloadHistoryMagnetItem>>,
     videoListState: LazyListState,
     imageListState: LazyListState,
+    magnetListState: LazyListState,
     onToggleSelected: (Long) -> Unit,
     onEnterSelection: (Long) -> Unit,
     onOpenVideo: (DownloadHistoryVideoItem) -> Unit,
     onRetryVideo: (Long) -> Unit,
     onRetryImage: (Long) -> Unit,
+    onCopyMagnet: (Long) -> Unit,
+    onOpenMagnet: (Long) -> Unit,
     onPreviewImage: (String) -> Unit,
 ) {
     when (tab) {
@@ -69,6 +73,21 @@ internal fun DownloadHistoryContent(
                     onEnterSelection = onEnterSelection,
                     onRetryImage = onRetryImage,
                     onPreviewImage = onPreviewImage
+                )
+            }
+        }
+
+        DownloadHistoryTab.MAGNET -> {
+            if (state.selectedTab == DownloadHistoryTab.MAGNET) {
+                val pagedMagnets = magnetPagingFlow.collectAsLazyPagingItems()
+                MagnetHistoryList(
+                    pagedMagnets = pagedMagnets,
+                    listState = magnetListState,
+                    state = state,
+                    onToggleSelected = onToggleSelected,
+                    onEnterSelection = onEnterSelection,
+                    onCopyMagnet = onCopyMagnet,
+                    onOpenMagnet = onOpenMagnet
                 )
             }
         }
@@ -187,6 +206,64 @@ internal fun ImageHistoryList(
                     loadState = pagedImages.loadState.append,
                     retryText = retryText,
                     onRetry = pagedImages::retry
+                )
+            }
+        }
+    }
+}
+
+/** 磁力记录分页列表；只读取主库元数据，不访问本地文件或启动下载任务。 */
+@Composable
+internal fun MagnetHistoryList(
+    pagedMagnets: LazyPagingItems<DownloadHistoryMagnetItem>,
+    listState: LazyListState,
+    state: DownloadHistoryUiState,
+    onToggleSelected: (Long) -> Unit,
+    onEnterSelection: (Long) -> Unit,
+    onCopyMagnet: (Long) -> Unit,
+    onOpenMagnet: (Long) -> Unit,
+) {
+    val retryText = stringResource(R.string.base_general_data_load_failed_retry)
+    when {
+        pagedMagnets.loadState.refresh is LoadState.Loading && pagedMagnets.itemCount == 0 -> PagingLoadingContent()
+        pagedMagnets.loadState.refresh is LoadState.NotLoading && pagedMagnets.itemCount == 0 -> {
+            PagingEmptyContent(text = stringResource(R.string.base_general_download_history_magnet_empty))
+        }
+
+        pagedMagnets.loadState.refresh is LoadState.Error && pagedMagnets.itemCount == 0 -> {
+            PagingErrorContent(
+                text = retryText,
+                onRetry = pagedMagnets::retry
+            )
+        }
+
+        else -> {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(
+                    count = pagedMagnets.itemCount,
+                    key = pagedMagnets.itemKey { it.id }
+                ) { index ->
+                    pagedMagnets[index]?.let { item ->
+                        MagnetHistoryCard(
+                            item = item,
+                            selected = item.id in state.selectedIds,
+                            selectionMode = state.selectionMode,
+                            onToggleSelected = { onToggleSelected(item.id) },
+                            onEnterSelection = { onEnterSelection(item.id) },
+                            onCopy = { onCopyMagnet(item.id) },
+                            onOpen = { onOpenMagnet(item.id) }
+                        )
+                    }
+                }
+                pagingAppendStateItem(
+                    loadState = pagedMagnets.loadState.append,
+                    retryText = retryText,
+                    onRetry = pagedMagnets::retry
                 )
             }
         }

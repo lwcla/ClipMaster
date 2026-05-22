@@ -330,7 +330,9 @@ private fun BackupCountRows(summary: BackupSummary) {
     BackupCountRow(stringResource(R.string.base_general_backup_count_source_apps), summary.sourceAppCount)
     BackupCountRow(stringResource(R.string.base_general_backup_count_link_previews), summary.linkPreviewCount)
     BackupCountRow(stringResource(R.string.base_general_backup_count_search_histories), summary.searchHistoryCount)
+    BackupCountRow(stringResource(R.string.base_general_backup_count_magnet_search_histories), summary.magnetSearchHistoryCount)
     BackupCountRow(stringResource(R.string.base_general_backup_count_video_downloads), summary.videoDownloadCount)
+    BackupCountRow(stringResource(R.string.base_general_backup_count_magnet_download_records), summary.magnetDownloadRecordCount)
     BackupCountRow(stringResource(R.string.base_general_backup_count_image_batches), summary.imageBatchCount)
     BackupCountRow(stringResource(R.string.base_general_backup_count_image_items), summary.imageItemCount)
 }
@@ -504,7 +506,9 @@ private fun BackupProgressCategory.labelText(): String {
         BackupProgressCategory.SourceApps -> stringResource(R.string.base_general_backup_count_source_apps)
         BackupProgressCategory.LinkPreviews -> stringResource(R.string.base_general_backup_count_link_previews)
         BackupProgressCategory.SearchHistories -> stringResource(R.string.base_general_backup_count_search_histories)
+        BackupProgressCategory.MagnetSearchHistories -> stringResource(R.string.base_general_backup_count_magnet_search_histories)
         BackupProgressCategory.VideoDownloads -> stringResource(R.string.base_general_backup_count_video_downloads)
+        BackupProgressCategory.MagnetDownloadRecords -> stringResource(R.string.base_general_backup_count_magnet_download_records)
         BackupProgressCategory.ImageBatches -> stringResource(R.string.base_general_backup_count_image_batches)
         BackupProgressCategory.ImageItems -> stringResource(R.string.base_general_backup_count_image_items)
         BackupProgressCategory.Settings,
@@ -537,7 +541,9 @@ private val restoreReportCategoryOrder = listOf(
     BackupProgressCategory.SourceApps,
     BackupProgressCategory.LinkPreviews,
     BackupProgressCategory.SearchHistories,
+    BackupProgressCategory.MagnetSearchHistories,
     BackupProgressCategory.VideoDownloads,
+    BackupProgressCategory.MagnetDownloadRecords,
     BackupProgressCategory.ImageBatches,
     BackupProgressCategory.ImageItems
 )

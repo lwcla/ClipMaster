@@ -21,8 +21,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Refresh
@@ -48,6 +51,8 @@ import com.cla.clip.base.general.R
 import com.cla.clip.base.general.dao.DownloadTaskData
 import com.cla.clip.base.general.dao.ImageExtractBatchData
 import com.cla.clip.base.general.utils.toRelativeTimeSpanString
+import com.cla.clip.master.ui.page.magnet.formatMagnetSize
+import com.cla.clip.master.ui.page.magnet.magnetSourceName
 import com.cla.clip.master.ui.widget.ClipMasterCard
 import com.cla.clip.master.ui.widget.ImageThumbnailTile
 import com.cla.clip.master.ui.widget.MediaUnavailablePlaceholder
@@ -212,6 +217,86 @@ internal fun ImageHistoryCard(
                     selectionMode = selectionMode,
                     onPreviewImage = onPreviewImage
                 )
+            }
+        }
+    }
+}
+
+/**
+ * 磁力记录卡片。
+ *
+ * 普通态点击整卡会复制并尝试打开外部下载器；多选态点击只切换选择，避免误触外部应用。
+ */
+@Composable
+internal fun MagnetHistoryCard(
+    item: DownloadHistoryMagnetItem,
+    selected: Boolean,
+    selectionMode: Boolean,
+    onToggleSelected: () -> Unit,
+    onEnterSelection: () -> Unit,
+    onCopy: () -> Unit,
+    onOpen: () -> Unit,
+) {
+    ClipMasterCard(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = {
+            if (selectionMode) {
+                onToggleSelected()
+            } else {
+                onOpen()
+            }
+        },
+        onLongClick = onEnterSelection,
+        contentPadding = PaddingValues(10.dp),
+    ) { _ ->
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = if (selectionMode && selected) Icons.Default.CheckCircle else Icons.Default.Link,
+                contentDescription = null,
+                tint = if (selectionMode && selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.width(10.dp))
+
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = item.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(6.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    HistoryChip(text = magnetSourceName(item.sourceId))
+                    HistoryChip(text = item.category?.takeIf { it.isNotBlank() } ?: stringResource(R.string.base_general_magnet_uncategorized))
+                    HistoryChip(text = formatMagnetSize(item.sizeBytes))
+                }
+                item.lastSourceQuery?.takeIf { it.isNotBlank() }?.let { query ->
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = stringResource(R.string.base_general_magnet_last_source_query, query),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = item.lastUsedAt.toRelativeTimeSpanString(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            if (!selectionMode) {
+                Column {
+                    IconButton(onClick = onCopy) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = stringResource(R.string.base_general_magnet_copy_only))
+                    }
+                    IconButton(onClick = onOpen) {
+                        Icon(Icons.Default.OpenInNew, contentDescription = stringResource(R.string.base_general_magnet_open_external))
+                    }
+                }
             }
         }
     }

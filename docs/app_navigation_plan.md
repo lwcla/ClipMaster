@@ -4,11 +4,11 @@
 
 ## 当前状态
 
-应用通过 `AppNavigation` 注册首页、搜索、详情、下载记录、折叠数据、回收站、视频/图片提取等路由，子页面统一通过 `onBack` 调用 `NavHostController.popBackStack()` 返回上一层，通过 `onNavigate` 跳转到目标路由。
+应用通过 `AppNavigation` 注册首页、剪贴搜索、磁力搜索、详情、下载记录、折叠数据、回收站、视频/图片提取等路由，子页面统一通过 `onBack` 调用 `NavHostController.popBackStack()` 返回上一层，通过 `onNavigate` 跳转到目标路由。
 
 本次只增加 Compose Navigation 官方页面级左进右出动画：前进时新页面从右侧进入、当前页向左退出；返回时上一层从左侧进入、当前页向右退出。页面转场只负责视觉效果，不额外处理点击穿透，不关闭退出页动画，也不在具体页面里增加为了动画服务的点击拦截逻辑。
 
-本次补充 release/R8 导航协议约束：`Routes.kt` 中所有类型安全路由和 `SearchScope` 都通过 `@Keep` 保留默认完整类名，避免 `composable<T>`、`toRoute<T>` 或返回栈恢复在混淆包中按默认 serialName 找不到路由参数类型。
+当前 release/R8 导航协议约束：`Routes.kt` 中所有类型安全路由和 `SearchScope` 都通过 `@Keep` 保留默认完整类名，避免 `composable<T>`、`toRoute<T>` 或返回栈恢复在混淆包中按默认 serialName 找不到路由参数类型。`MagnetSearchRoute(initialQuery)` 只保存磁力搜索页首帧需要的轻量字符串参数，页面进入后由 ViewModel 规整和截断，不在路由里传递磁力结果、数据库实体或剪贴板内容。
 
 ## 目标
 
@@ -27,6 +27,7 @@
 ## 用户体验
 
 - 从“我的”页进入回收站、折叠数据、下载记录等二级页时，新页面从右侧滑入，当前页面向左滑出。
+- 从“我的”页进入磁力搜索页，或从详情页带候选关键词进入磁力搜索页时，同样使用页面级左进右出转场。
 - 从二级页返回时，上一层从左侧滑入，当前二级页向右滑出。
 - 我的页入口只保留普通卡片点击反馈，不做导航前缩放或延迟。
 
@@ -42,6 +43,7 @@
 - `app/src/main/java/com/cla/clip/master/ui/navigation/AppNavigation.kt`
 - `app/src/main/java/com/cla/clip/master/ui/navigation/Routes.kt`
 - `docs/app_navigation_plan.md`
+- `app/src/main/java/com/cla/clip/master/ui/page/magnet/MagnetSearchPage.kt`
 
 ## 实现步骤
 
@@ -58,6 +60,7 @@
 - 点击“剪贴快捷操作”设置行应立即打开弹窗，不触发导航转场。
 - 运行 `./gradlew :app:compileDebugKotlin`。
 - release 混淆包进入普通搜索和折叠搜索时，`SearchRoute.scope` 应能正常解析，不再因 `SearchScope` 类名被混淆而崩溃。
+- release 混淆包进入磁力搜索页时，`MagnetSearchRoute.initialQuery` 应能正常解析；初始关键词不应因为导航恢复被重复覆盖用户正在编辑的输入。
 
 ## 已知取舍
 
@@ -70,6 +73,7 @@
 
 ## 变更记录
 
+- 2026-05-22：新增 `MagnetSearchRoute(initialQuery)` 并注册磁力搜索页导航；原因是磁力搜索第一版需要支持“我的”页空关键词进入和详情页带候选关键词进入，同时保持类型安全导航的 R8 稳定性。
 - 2026-05-17：新增应用导航交互方案并关闭 `NavHost` 默认淡入淡出过渡；原因是回收站退出后立即点击折叠数据时，旧页面可能仍在退出动画中拦截触摸，导致入口无响应或旧列表动作串到新页面。
 - 2026-05-17：将无动画方案调整为 220ms 横向位移动画；原因是完全无动画虽然规避了触摸命中问题，但页面流转过于生硬，横向滑动能保留层级感并减少旧页面原地覆盖。
 - 2026-05-17：将完整双页横向滑动调整为 180ms 短距离进入动画，退出页不再整页移动；原因是完整横向位移会让回收站、折叠列表等重页面在过渡期间双页重绘，导致页面切换有卡顿感。

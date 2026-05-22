@@ -5,6 +5,7 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -15,6 +16,7 @@ import com.cla.clip.base.general.config.ClipItemQuickAction
 import com.cla.clip.master.ui.navigation.BackupRoute
 import com.cla.clip.master.ui.navigation.DownloadHistoryRoute
 import com.cla.clip.master.ui.navigation.FoldedClipsRoute
+import com.cla.clip.master.ui.navigation.MagnetSearchRoute
 import com.cla.clip.master.ui.navigation.RecycleBinRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.widget.ListEntryCard
@@ -87,6 +89,29 @@ internal fun DownloadHistoryEntry(
         title = stringResource(R.string.base_general_download_history),
         description = stringResource(R.string.base_general_download_history_entry_desc),
         onClick = { onNavigate(DownloadHistoryRoute) }
+    )
+}
+
+/**
+ * 磁力搜索入口。
+ *
+ * 入口只负责导航，Academic Torrents 索引状态和分页搜索都在磁力搜索页按生命周期启动。
+ */
+@Composable
+internal fun MagnetSearchEntry(
+    onNavigate: (route: Route) -> Unit,
+) {
+    ListEntryCard(
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Search,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+        },
+        title = stringResource(R.string.base_general_magnet_search),
+        description = stringResource(R.string.base_general_magnet_search_entry_desc),
+        onClick = { onNavigate(MagnetSearchRoute()) }
     )
 }
 

@@ -43,9 +43,16 @@ internal fun DeleteModeDialog(
         text = {
             Column {
                 Text(
-                    text = when (request.kind) {
-                        DeleteRequestKind.Selected -> stringResource(R.string.base_general_download_history_delete_selected_message, request.count)
-                        DeleteRequestKind.ClearTab -> stringResource(R.string.base_general_download_history_clear_message, request.count)
+                    text = if (request.allowDeleteFiles) {
+                        when (request.kind) {
+                            DeleteRequestKind.Selected -> stringResource(R.string.base_general_download_history_delete_selected_message, request.count)
+                            DeleteRequestKind.ClearTab -> stringResource(R.string.base_general_download_history_clear_message, request.count)
+                        }
+                    } else {
+                        when (request.kind) {
+                            DeleteRequestKind.Selected -> stringResource(R.string.base_general_download_history_delete_selected_magnet_message, request.count)
+                            DeleteRequestKind.ClearTab -> stringResource(R.string.base_general_download_history_clear_magnet_message, request.count)
+                        }
                     }
                 )
                 if (request.hasRunning) {
@@ -59,14 +66,22 @@ internal fun DeleteModeDialog(
             }
         },
         confirmButton = {
-            Button(onClick = onDeleteRecordAndFiles) {
-                Text(stringResource(R.string.base_general_download_history_delete_records_and_files))
+            if (request.allowDeleteFiles) {
+                Button(onClick = onDeleteRecordAndFiles) {
+                    Text(stringResource(R.string.base_general_download_history_delete_records_and_files))
+                }
+            } else {
+                Button(onClick = onDeleteRecordOnly) {
+                    Text(stringResource(R.string.base_general_download_history_delete_records_only))
+                }
             }
         },
         dismissButton = {
             Row {
-                TextButton(onClick = onDeleteRecordOnly) {
-                    Text(stringResource(R.string.base_general_download_history_delete_records_only))
+                if (request.allowDeleteFiles) {
+                    TextButton(onClick = onDeleteRecordOnly) {
+                        Text(stringResource(R.string.base_general_download_history_delete_records_only))
+                    }
                 }
                 TextButton(onClick = onDismiss) {
                     Text(stringResource(R.string.base_general_cancel))
@@ -95,4 +110,7 @@ internal data class DeleteRequestUi(
 
     /** 是否包含正在下载的记录；包含时弹窗提示会先停止下载任务。 */
     val hasRunning: Boolean,
+
+    /** 是否提供删除本地文件选项；磁力记录没有本地文件关联，只允许删除记录。 */
+    val allowDeleteFiles: Boolean = true,
 )

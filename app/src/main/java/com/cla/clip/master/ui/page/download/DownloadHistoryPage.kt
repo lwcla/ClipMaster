@@ -65,8 +65,8 @@ fun DownloadHistoryPage(
     val snackbarHostState = remember { SnackbarHostState() }
     var pendingDelete by remember { mutableStateOf<DeleteRequestUi?>(null) }
     var previewImageUri by remember { mutableStateOf<String?>(null) }
-    // 下载记录只包含视频和图片两个一级分类，列表顺序需要同时驱动 Tab 指示器和横向 Pager 页码。
-    val historyTabs = remember { listOf(DownloadHistoryTab.VIDEO, DownloadHistoryTab.IMAGE) }
+    // 下载记录包含视频、图片和磁力三个一级分类，列表顺序需要同时驱动 Tab 指示器和横向 Pager 页码。
+    val historyTabs = remember { listOf(DownloadHistoryTab.VIDEO, DownloadHistoryTab.IMAGE, DownloadHistoryTab.MAGNET) }
     // Pager 状态放在页面层持有，避免 ViewModel 依赖 Compose 类型；初始页跟随 ViewModel 当前分类。
     val pagerState = rememberPagerState(
         initialPage = historyTabs.indexOf(state.selectedTab).coerceAtLeast(0),
@@ -79,9 +79,13 @@ fun DownloadHistoryPage(
     val imagePagingFlow = remember(viewModel.pagedImages, lifecycle) {
         viewModel.pagedImages.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
     }
+    val magnetPagingFlow = remember(viewModel.pagedMagnets, lifecycle) {
+        viewModel.pagedMagnets.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
+    }
     // 每个分类持有自己的可保存列表状态；切换 Tab、主题重组或 Activity 重建后都尽量回到原位置。
     val videoListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
     val imageListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+    val magnetListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
 
     BackHandler(enabled = state.selectionMode && pendingDelete == null && previewImageUri == null) {
         // 删除弹窗和图片预览存在时应优先响应自己的返回关闭逻辑；普通多选态返回只清空选择，不退出页面。
@@ -129,7 +133,8 @@ fun DownloadHistoryPage(
                     pendingDelete = DeleteRequestUi(
                         kind = DeleteRequestKind.ClearTab,
                         count = state.currentItemsCount,
-                        hasRunning = state.currentTabHasRunning
+                        hasRunning = state.currentTabHasRunning,
+                        allowDeleteFiles = state.selectedTab != DownloadHistoryTab.MAGNET
                     )
                 }
             )
@@ -151,8 +156,10 @@ fun DownloadHistoryPage(
                 state = state,
                 videoPagingFlow = videoPagingFlow,
                 imagePagingFlow = imagePagingFlow,
+                magnetPagingFlow = magnetPagingFlow,
                 videoListState = videoListState,
                 imageListState = imageListState,
+                magnetListState = magnetListState,
                 onToggleSelected = viewModel::toggleSelected,
                 onEnterSelection = viewModel::enterSelection,
                 onOpenVideo = { item ->
@@ -167,6 +174,8 @@ fun DownloadHistoryPage(
                 },
                 onRetryVideo = viewModel::retryVideo,
                 onRetryImage = viewModel::retryImageBatch,
+                onCopyMagnet = viewModel::copyMagnet,
+                onOpenMagnet = viewModel::copyAndOpenMagnet,
                 onPreviewImage = { previewImageUri = it }
             )
         }
@@ -186,7 +195,8 @@ fun DownloadHistoryPage(
                     pendingDelete = DeleteRequestUi(
                         kind = DeleteRequestKind.Selected,
                         count = selectedCount,
-                        hasRunning = state.selectedHasRunning
+                        hasRunning = state.selectedHasRunning,
+                        allowDeleteFiles = state.selectedTab != DownloadHistoryTab.MAGNET
                     )
                 },
             )

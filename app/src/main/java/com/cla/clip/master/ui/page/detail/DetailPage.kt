@@ -38,6 +38,7 @@ import com.cla.clip.base.general.R
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.master.ui.dialog.ClipDeleteChoiceDialog
 import com.cla.clip.master.ui.navigation.ImageExtractRoute
+import com.cla.clip.master.ui.navigation.MagnetSearchRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.navigation.VideoExtractRoute
 import com.cla.clip.master.ui.widget.ClipMasterCard
@@ -161,7 +162,8 @@ fun DetailPage(
 /**
  * 详情页底部操作区。
  *
- * 当剪贴内容识别出链接时额外展示图片/视频提取入口；删除和复制始终可用，保证普通文本记录也能操作。
+ * 当剪贴内容识别出链接时额外展示图片/视频提取入口；磁力搜索会用标题或正文作为初始关键词，不读取系统剪贴板。
+ * 删除和复制始终可用，保证普通文本记录也能操作。
  */
 @Composable
 private fun ButtonContainer(
@@ -227,6 +229,15 @@ private fun ButtonContainer(
         Row(
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
+            Button(
+                modifier = Modifier.weight(1f),
+                onClick = {
+                    onNavigate(MagnetSearchRoute(initialQuery = clip.linkTitle ?: clip.content))
+                }
+            ) {
+                Text(stringResource(R.string.base_general_magnet_search))
+            }
+
             Button(
                 modifier = Modifier.weight(1f),
                 onClick = { onDelete(clip) }

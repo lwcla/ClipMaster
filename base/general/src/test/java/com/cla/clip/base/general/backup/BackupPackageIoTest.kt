@@ -43,8 +43,10 @@ class BackupPackageIoTest {
                 session.writeJsonLines(SOURCE_APPS_JSONL_PATH, BackupSourceApp.serializer(), emptySequence()),
                 session.writeJsonLines(LINK_PREVIEWS_JSONL_PATH, BackupLinkPreview.serializer(), emptySequence()),
                 session.writeJsonLines(SEARCH_HISTORIES_JSONL_PATH, BackupSearchHistory.serializer(), emptySequence()),
+                session.writeJsonLines(MAGNET_SEARCH_HISTORIES_JSONL_PATH, BackupMagnetSearchHistory.serializer(), emptySequence()),
                 session.writeJsonObject(SETTINGS_PATH, BackupJson.encodeSettings(BackupSettings())),
                 session.writeJsonLines(VIDEO_DOWNLOADS_JSONL_PATH, BackupVideoDownload.serializer(), emptySequence()),
+                session.writeJsonLines(MAGNET_DOWNLOAD_RECORDS_JSONL_PATH, BackupMagnetDownloadRecord.serializer(), emptySequence()),
                 session.writeJsonLines(IMAGE_BATCHES_JSONL_PATH, BackupImageBatch.serializer(), emptySequence()),
                 session.writeJsonLines(IMAGE_ITEMS_JSONL_PATH, BackupImageItem.serializer(), emptySequence())
             )
