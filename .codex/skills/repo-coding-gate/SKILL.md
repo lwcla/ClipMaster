@@ -22,6 +22,7 @@ description: 当前仓库的代码修改门禁工作流。用于任何代码修�
    - 全仓兜底。
    优先使用 `rg` 或 `rg --files`，最终回复要说明复用或不复用原因。
 4. 按任务类型选择配套 skill：
+   - 任何新增、修改、修复、重构或生成代码的任务都必须使用 `$repo-unit-test-gate` 判断是否需要新增/更新单元测试，以及应运行哪些测试命令；
    - Compose/UI 改动使用 `$repo-compose-discipline`；
    - ViewModel、Repository、DAO、mapper、formatter、parser、validator、helper、工具类或数据流改动使用 `$repo-architecture-boundaries`；
    - 行为、架构、日志、诊断、生命周期或用户可见流程改动使用 `$repo-docs-logs`；
@@ -33,7 +34,7 @@ description: 当前仓库的代码修改门禁工作流。用于任何代码修�
    - 如果判断不需要 keep/R8 处理，最终回复要说明原因，例如只在编译期调用、仅页面 UI state、仅 Worker 内部边界或没有外部协议/反射依赖。
 6. 涉及行为、UI、架构、数据契约、日志、备份、生命周期、规则或反混淆契约变化时，先或同步更新文档。
 7. 实现时保持范围收敛。入口类只做流程编排，复用逻辑下沉到命名清晰的协作者。
-8. 运行最贴近的验证命令。Kotlin/Compose/Android 改动优先运行模块编译命令；涉及混淆规则、反射、序列化、导航协议、Intent/通知/WebView JS 或 SDK 回调时，优先补充 release/R8 验证，无法运行则在最终回复和方案文档说明风险；始终运行 `git diff --check`。
+8. 运行最贴近的验证命令。Kotlin/Compose/Android 改动优先运行模块编译命令；单元测试命令按 `$repo-unit-test-gate` 的判断执行；涉及混淆规则、反射、序列化、导航协议、Intent/通知/WebView JS 或 SDK 回调时，优先补充 release/R8 验证，无法运行则在最终回复和方案文档说明风险；始终运行 `git diff --check`。
 9. 最终回复前使用 `$repo-final-self-check`，并汇总本次实际触发并遵循的项目 skill，作为最终回复的“使用的 skill”项。
 
 ## Skill 语言规则
@@ -50,5 +51,6 @@ description: 当前仓库的代码修改门禁工作流。用于任何代码修�
 - 必须同步的文档缺失或过期；
 - 新逻辑会继续塞进已经过载的文件，且没有记录例外；
 - 日志、隐私或诊断边界不清晰；
+- 没有经过 `$repo-unit-test-gate` 判断是否需要补充或更新单元测试；
 - 外部协议、序列化、反射、导航或 SDK 回调模型的 keep/R8 契约不清晰；
 - 无法验证且没有说明风险。
