@@ -15,7 +15,21 @@ sealed class Route
 /** 首页容器 */
 @Keep
 @Serializable
-data object MainRoute : Route()
+data class MainRoute(
+    /** 进入首页后默认选中的底部 Tab，用于跨流程收栈后明确回到“我的”页。 */
+    val initialTab: MainInitialTab = MainInitialTab.List
+) : Route()
+
+/** 首页底部 Tab 的导航参数；类型安全路由会序列化枚举名，release R8 需要保留。 */
+@Keep
+@Serializable
+enum class MainInitialTab {
+    /** 剪贴列表 Tab。 */
+    List,
+
+    /** 我的 Tab。 */
+    Mine
+}
 
 /** 剪贴板列表 */
 @Keep

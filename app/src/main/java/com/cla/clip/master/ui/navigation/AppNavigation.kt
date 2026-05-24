@@ -10,10 +10,12 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
+import com.cla.clip.base.general.utils.logD
 import com.cla.clip.master.ui.page.backup.BackupMediaRelocationPage
 import com.cla.clip.master.ui.page.backup.BackupPage
 import com.cla.clip.master.ui.page.backup.BackupRestoreFlowPage
@@ -35,6 +37,8 @@ private const val NAV_PAGE_ENTER_DURATION_MS = 260
 
 /** Compose Navigation 页面切换退出动画时长，单位毫秒；与进入动画接近，保证左进右出效果完整。 */
 private const val NAV_PAGE_EXIT_DURATION_MS = 260
+
+private const val TAG = "AppNavigation"
 
 /**
  * 应用主导航图。
@@ -59,7 +63,7 @@ fun AppNavigation(navController: NavHostController) {
 
     NavHost(
         navController = navController,
-        startDestination = MainRoute,
+        startDestination = MainRoute(),
         // 使用 Compose Navigation 官方容器滑动转场：前进时右侧页面进入、当前页向左退出；返回时反向。
         // 这里只负责页面切换动画，不额外处理点击穿透或禁用退出页动画。
         enterTransition = { forwardEnterTransition() },
@@ -68,8 +72,10 @@ fun AppNavigation(navController: NavHostController) {
         popExitTransition = { backExitTransition() },
     ) {
         // 主页
-        composable<MainRoute> {
+        composable<MainRoute> { backStackEntry ->
+            val route = backStackEntry.toRoute<MainRoute>()
             MainPage(
+                initialTab = route.initialTab,
                 onNavigate = onNavigate
             )
         }
@@ -193,7 +199,8 @@ fun AppNavigation(navController: NavHostController) {
             val route = backStackEntry.toRoute<BackupMediaRelocationRoute>()
             BackupMediaRelocationPage(
                 restoreTaskId = route.restoreTaskId,
-                onBack = onBack
+                onBack = onBack,
+                onBackToMine = { navController.navigateToMineTabAfterMediaRelocation() }
             )
         }
 
@@ -203,6 +210,17 @@ fun AppNavigation(navController: NavHostController) {
             )
         }
     }
+}
+
+/** 媒体关联正向终态后关闭恢复链路，直接回到首页“我的”Tab。 */
+private fun NavHostController.navigateToMineTabAfterMediaRelocation() {
+    navigate(MainRoute(initialTab = MainInitialTab.Mine)) {
+        popUpTo(graph.findStartDestination().id) {
+            inclusive = true
+        }
+        launchSingleTop = true
+    }
+    logD(TAG) { "媒体关联成功终态返回我的页面 reasonCode=media_relocation_back_to_mine" }
 }
 
 /**

@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.cla.clip.base.general.R
+import com.cla.clip.master.ui.navigation.MainInitialTab
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.page.list.ClipListPage
 import com.cla.clip.master.ui.page.mine.MinePage
@@ -66,14 +67,20 @@ private sealed class TabPage {
 @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
 @Composable
 fun MainPage(
+    initialTab: MainInitialTab = MainInitialTab.List,
     onNavigate: (Route) -> Unit
 ) {
     val tabs = listOf(
         BottomTab(TabPage.List) { Icon(Icons.AutoMirrored.Filled.List, contentDescription = stringResource(R.string.base_general_list_tab)) },
         BottomTab(TabPage.Mine) { Icon(Icons.Default.PermIdentity, contentDescription = stringResource(R.string.base_general_mine_tab)) },
     )
+    val initialTabPage = initialTab.toTabPage()
+    val initialPage = tabs.indexOfFirst { it.page == initialTabPage }.takeIf { it >= 0 } ?: 0
 
-    val pagerState = rememberPagerState(pageCount = { tabs.size })
+    val pagerState = rememberPagerState(
+        initialPage = initialPage,
+        pageCount = { tabs.size }
+    )
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
@@ -131,5 +138,12 @@ fun MainPage(
                 TabPage.Mine -> MinePage(onNavigate = onNavigate)
             }
         }
+    }
+}
+
+private fun MainInitialTab.toTabPage(): TabPage {
+    return when (this) {
+        MainInitialTab.List -> TabPage.List
+        MainInitialTab.Mine -> TabPage.Mine
     }
 }

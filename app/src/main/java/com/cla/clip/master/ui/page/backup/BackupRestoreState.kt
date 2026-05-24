@@ -188,6 +188,9 @@ enum class MediaRelocationSummaryType(val logCode: String) {
     Interrupted("interrupted"),
 }
 
+val MediaRelocationSummaryType.shouldCloseRestoreFlowOnBack: Boolean
+    get() = this == MediaRelocationSummaryType.Completed || this == MediaRelocationSummaryType.NoWork
+
 /**
  * 独立媒体关联页的下载媒体重新定位状态。
  *
@@ -227,3 +230,19 @@ sealed class MediaRelocationUiState {
 
 val MediaRelocationUiState.isRunning: Boolean
     get() = this is MediaRelocationUiState.Running
+
+val MediaRelocationUiState.shouldReturnToMineAfterBack: Boolean
+    get() = this is MediaRelocationUiState.NoWork || this is MediaRelocationUiState.Result
+
+val MediaRelocationUiState.backLogCode: String
+    get() = when (this) {
+        MediaRelocationUiState.Idle -> "idle"
+        MediaRelocationUiState.Estimating -> "estimating"
+        is MediaRelocationUiState.NoWork -> "no_work"
+        is MediaRelocationUiState.ReadyToConfirm -> "ready_to_confirm"
+        is MediaRelocationUiState.PermissionRequired -> "permission_required"
+        is MediaRelocationUiState.PermissionChecking -> "permission_checking"
+        is MediaRelocationUiState.Running -> "running"
+        is MediaRelocationUiState.Result -> "result"
+        is MediaRelocationUiState.Error -> "error"
+    }

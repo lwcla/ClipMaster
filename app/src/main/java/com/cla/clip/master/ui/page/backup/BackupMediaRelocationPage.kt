@@ -36,8 +36,11 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cla.clip.base.general.R
+import com.cla.clip.base.general.utils.logD
 import com.cla.clip.master.media.MediaRelocationPreparation
 import com.cla.clip.master.ui.widget.TitleBar
+
+private const val TAG = "BackupMediaRelocationPage"
 
 /**
  * 恢复本地媒体关联独立页。
@@ -48,6 +51,7 @@ import com.cla.clip.master.ui.widget.TitleBar
 internal fun BackupMediaRelocationPage(
     restoreTaskId: String,
     onBack: () -> Unit,
+    onBackToMine: () -> Unit,
     modifier: Modifier = Modifier,
     relocationVm: BackupMediaRelocationVm = hiltViewModel(),
 ) {
@@ -63,8 +67,16 @@ internal fun BackupMediaRelocationPage(
     }
 
     fun requestBack() {
+        val uiStateLogCode = state.backLogCode
+        val shouldCloseRestoreFlow = relocationVm.shouldCloseRestoreFlowOnBack || state.shouldReturnToMineAfterBack
+        val backRequestLog = "媒体关联返回请求 restoreTaskId=$restoreTaskId uiState=$uiStateLogCode " +
+            "shouldCloseRestoreFlow=$shouldCloseRestoreFlow"
+        logD(TAG) { backRequestLog }
         if (state.isRunning) {
             showRunningNotice = true
+        } else if (shouldCloseRestoreFlow) {
+            logD(TAG) { "媒体关联成功终态关闭恢复链路 restoreTaskId=$restoreTaskId reasonCode=success_back_to_mine" }
+            onBackToMine()
         } else {
             onBack()
         }
@@ -224,7 +236,15 @@ private fun BackupMediaRelocationActions(
                 }
             }
             is MediaRelocationUiState.NoWork,
-            is MediaRelocationUiState.Result,
+            is MediaRelocationUiState.Result -> {
+                TextButton(onClick = onRestart) {
+                    Text(stringResource(R.string.base_general_backup_media_relocation_restart))
+                }
+                Spacer(modifier = Modifier.size(8.dp))
+                Button(onClick = onBack) {
+                    Text(stringResource(R.string.base_general_backup_flow_done))
+                }
+            }
             is MediaRelocationUiState.Error -> {
                 TextButton(onClick = onRestart) {
                     Text(stringResource(R.string.base_general_backup_media_relocation_restart))
