@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WebDAV本地自动备份恢复流程</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f6f7f9;
+      --surface: #ffffff;
+      --text: #17202a;
+      --muted: #5e6a75;
+      --border: #d8dee8;
+      --unit: #dff5e7;
+      --todo: #fff1cc;
+      --manual: #e8f1ff;
+      --compile: #efe8ff;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111418;
+        --surface: #1b2027;
+        --text: #edf1f7;
+        --muted: #aab4c0;
+        --border: #35404d;
+        --unit: #173d2a;
+        --todo: #4a3711;
+        --manual: #19314f;
+        --compile: #30244b;
+      }
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+      line-height: 1.6;
+    }
+    header, main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    header {
+      padding-top: 32px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+      letter-spacing: 0;
+    }
+    .source, .notice {
+      margin: 4px 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 14px 16px;
+      margin-top: 18px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 0 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 14px;
+      color: var(--text);
+    }
+    .unit { background: var(--unit); }
+    .todo { background: var(--todo); }
+    .manual { background: var(--manual); }
+    .compile { background: var(--compile); }
+    .diagram-card {
+      overflow: auto;
+      padding: 24px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+    .mermaid {
+      min-width: 720px;
+      margin: 0;
+    }
+  </style>
+  <script src="assets/mermaid.min.js"></script>
+  <script>
+    window.addEventListener("DOMContentLoaded", async () => {
+      mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: "strict",
+        theme: "default",
+        flowchart: { htmlLabels: true, curve: "basis" }
+      });
+      await mermaid.run({ querySelector: ".mermaid" });
+    });
+  </script>
+</head>
+<body>
+  <header>
+    <h1>WebDAV本地自动备份恢复流程</h1>
+    <p class="source">源文档：docs/webdav_backup_plan.md</p>
+    <p class="notice">此文件由脚本生成，请修改源 Markdown 后重新生成。</p>
+    <div class="legend" aria-label="测试覆盖图例">
+      <span class="badge unit">已单测：已有明确单元测试覆盖</span>
+      <span class="badge todo">待补测：适合后续补充单元测试</span>
+      <span class="badge manual">人工验证：依赖系统、权限、真实服务或视觉确认</span>
+      <span class="badge compile">编译验证：通过编译或既有验证保护</span>
+    </div>
+  </header>
+  <main>
+<h2>备份流程</h2>
+<section class="diagram-card"><pre class="mermaid">flowchart TD
+  subgraph BackupPage[&quot;备份与恢复页 BackupPage / BackupVm&quot;]
+    Entry[&quot;我的页进入备份与恢复&lt;br/&gt;人工验证&quot;]:::manual
+    Config[&quot;配置本地目录或 WebDAV&lt;br/&gt;人工验证&quot;]:::manual
+    BackupChoice{&quot;手动导出 / 手动上传 / 自动备份&lt;br/&gt;人工验证&quot;}:::manual
+  end
+
+  subgraph BuildSnapshot[&quot;备份包生成&quot;]
+    Snapshot[&quot;BackupSnapshotExporter 分页导出各表&lt;br/&gt;待补测&quot;]:::todo
+    Package[&quot;BackupPackageWriter 写 JSONL、manifest、zip&lt;br/&gt;已单测&quot;]:::unit
+    Verify[&quot;校验 manifest、entry、文件大小和 checksum&lt;br/&gt;已单测&quot;]:::unit
+  end
+
+  subgraph Targets[&quot;备份发布目标&quot;]
+    LocalFile[&quot;系统文件创建器导出的本地 zip&lt;br/&gt;恢复流程可用系统文件选择器读取&lt;br/&gt;人工验证&quot;]:::manual
+    LocalDir[&quot;本地备份目录条目 + manifest sidecar&lt;br/&gt;恢复流程可从本地列表选择&lt;br/&gt;人工验证&quot;]:::manual
+    WebDavRemote[&quot;WebDAV 远端 zip + manifest + latest.json&lt;br/&gt;恢复流程可从远端列表选择&lt;br/&gt;人工验证&quot;]:::manual
+    Retention[&quot;本地 / WebDAV 保留份数清理并刷新列表&lt;br/&gt;编译验证&quot;]:::compile
+  end
+
+  SharedArtifact[&quot;备份与恢复交互边界&lt;br/&gt;恢复流程只消费 zip 或列表条目&lt;br/&gt;不共享 BackupVm 长期恢复状态&lt;br/&gt;编译验证&quot;]:::compile
+  ExportFailure[&quot;导出、写入或上传失败&lt;br/&gt;展示可行动错误并保留旧备份&lt;br/&gt;人工验证&quot;]:::manual
+
+  Entry --&gt; Config
+  Config --&gt; BackupChoice
+  BackupChoice --&gt; Snapshot
+  Snapshot --&gt; Package
+  Package --&gt; Verify
+  Verify --&gt; LocalFile
+  Verify --&gt; LocalDir
+  Verify --&gt; WebDavRemote
+  LocalDir --&gt; Retention
+  WebDavRemote --&gt; Retention
+  LocalFile --&gt; SharedArtifact
+  LocalDir --&gt; SharedArtifact
+  WebDavRemote --&gt; SharedArtifact
+  Snapshot --&gt; ExportFailure
+  Package --&gt; ExportFailure
+  Verify --&gt; ExportFailure
+  LocalDir --&gt; ExportFailure
+  WebDavRemote --&gt; ExportFailure
+
+  classDef unit fill:#dff5e7,stroke:#26804b,color:#16351f;
+  classDef todo fill:#fff1cc,stroke:#b7791f,color:#3d2a05;
+  classDef manual fill:#e8f1ff,stroke:#2b6cb0,color:#17375e;
+  classDef compile fill:#efe8ff,stroke:#6b46c1,color:#2d1f53;</pre></section>
+<h2>恢复流程</h2>
+<section class="diagram-card"><pre class="mermaid">flowchart TD
+  subgraph RestoreSources[&quot;恢复来源来自备份流程输出&quot;]
+    SourceFile[&quot;本地 zip 文件&lt;br/&gt;来自系统文件创建器导出&lt;br/&gt;人工验证&quot;]:::manual
+    SourceLocal[&quot;本地备份目录条目&lt;br/&gt;来自本地备份列表&lt;br/&gt;人工验证&quot;]:::manual
+    SourceRemote[&quot;WebDAV 远端条目&lt;br/&gt;来自远端备份列表&lt;br/&gt;人工验证&quot;]:::manual
+  end
+
+  subgraph BackupPageRestore[&quot;备份页只负责发起恢复请求&quot;]
+    ChooseRestore{&quot;用户选择恢复来源&lt;br/&gt;人工验证&quot;}:::manual
+    RestoreRequest[&quot;写入 BackupRestoreRequests 单槽请求流&lt;br/&gt;编译验证&quot;]:::compile
+    NavRestore[&quot;导航到 BackupRestoreRoute 独立恢复页&lt;br/&gt;编译验证&quot;]:::compile
+  end
+
+  subgraph RestorePage[&quot;独立恢复页 BackupRestoreRoute / BackupRestoreVm&quot;]
+    ClaimRequest[&quot;接管 requestId 并清空请求流&lt;br/&gt;编译验证&quot;]:::compile
+    CopyTemp[&quot;复制本地 URI 或下载 WebDAV 备份到私有临时文件&lt;br/&gt;人工验证&quot;]:::manual
+    Preview[&quot;BackupPackageReader 校验 manifest、checksum、schemaVersion&lt;br/&gt;已单测&quot;]:::unit
+    PreviewUi[&quot;展示轻量预检摘要&lt;br/&gt;人工验证&quot;]:::manual
+    Confirm{&quot;用户确认恢复？&lt;br/&gt;人工验证&quot;}:::manual
+    BackGuard[&quot;读取中 / 恢复中返回二次确认&lt;br/&gt;人工验证&quot;]:::manual
+    Restore[&quot;BackupSnapshotRestorer 事务合并写库&lt;br/&gt;编译验证&quot;]:::compile
+    TimeNorm[&quot;剪贴时间轴归一化&lt;br/&gt;已单测&quot;]:::unit
+    Report[&quot;恢复结果页展示新增 / 更新 / 跳过报告&lt;br/&gt;编译验证&quot;]:::compile
+    RestoreFailure[&quot;读取或恢复失败&lt;br/&gt;取消协程并清理临时文件&lt;br/&gt;人工验证&quot;]:::manual
+  end
+
+  subgraph MediaBoundary[&quot;恢复页与本地媒体关联流程的交互边界&quot;]
+    MediaEntry[&quot;恢复结果页提供“恢复本地媒体关联”入口&lt;br/&gt;点击后进入本地媒体关联流程&lt;br/&gt;人工验证&quot;]:::manual
+    MediaResult[&quot;接收 BackupMediaRelocationEvents 回显&lt;br/&gt;校验 restoreTaskId 后更新入口状态和 summary&lt;br/&gt;编译验证&quot;]:::compile
+    EntryState[&quot;入口显示：恢复 / 继续 / 扫描中 / 再次恢复关联&lt;br/&gt;人工验证&quot;]:::manual
+  end
+
+  SourceFile --&gt; ChooseRestore
+  SourceLocal --&gt; ChooseRestore
+  SourceRemote --&gt; ChooseRestore
+  ChooseRestore --&gt; RestoreRequest
+  RestoreRequest --&gt; NavRestore
+  NavRestore --&gt; ClaimRequest
+  ClaimRequest --&gt; CopyTemp
+  CopyTemp --&gt; Preview
+  Preview --&gt; PreviewUi
+  Preview --&gt; RestoreFailure
+  PreviewUi --&gt; Confirm
+  PreviewUi --&gt; BackGuard
+  Confirm --&gt;|&quot;确认&quot;| Restore
+  Confirm --&gt;|&quot;取消&quot;| RestoreFailure
+  Restore --&gt; TimeNorm
+  TimeNorm --&gt; Report
+  Restore --&gt; RestoreFailure
+  Report --&gt; MediaEntry
+  MediaEntry --&gt;|&quot;打开独立媒体关联页&quot;| MediaResult
+  MediaResult --&gt; EntryState
+  EntryState --&gt; MediaEntry
+
+  classDef unit fill:#dff5e7,stroke:#26804b,color:#16351f;
+  classDef todo fill:#fff1cc,stroke:#b7791f,color:#3d2a05;
+  classDef manual fill:#e8f1ff,stroke:#2b6cb0,color:#17375e;
+  classDef compile fill:#efe8ff,stroke:#6b46c1,color:#2d1f53;</pre></section>
+<h2>本地媒体关联流程</h2>
+<section class="diagram-card"><pre class="mermaid">flowchart TD
+  subgraph RestoreBoundary[&quot;来自恢复流程的交互&quot;]
+    FromRestore[&quot;恢复结果页入口&lt;br/&gt;恢复流程传入 restoreTaskId&lt;br/&gt;人工验证&quot;]:::manual
+    BackToRestore[&quot;BackupMediaRelocationEvents 回显恢复页&lt;br/&gt;Incomplete / Running / Terminal / Interrupted&lt;br/&gt;编译验证&quot;]:::compile
+  end
+
+  subgraph MediaPage[&quot;独立媒体关联页 BackupMediaRelocationRoute / BackupMediaRelocationVm&quot;]
+    LaunchMedia[&quot;launchSingleTop 打开媒体关联独立页&lt;br/&gt;编译验证&quot;]:::compile
+    Estimate[&quot;数据库 COUNT 轻量预估待恢复媒体&lt;br/&gt;待补测&quot;]:::todo
+    NoNeed[&quot;预估为 0：不申请权限、不扫描&lt;br/&gt;编译验证&quot;]:::compile
+    OldRefCheck[&quot;验证旧 savePath / outputUri 与无权限可见候选&lt;br/&gt;待补测&quot;]:::todo
+    Permission{&quot;是否需要共享媒体库权限？&lt;br/&gt;人工验证&quot;}:::manual
+    PermissionRequest[&quot;按需申请图片或视频读取权限&lt;br/&gt;人工验证&quot;]:::manual
+    PermissionChecking[&quot;权限返回后复查候选可见性&lt;br/&gt;人工验证&quot;]:::manual
+    PermissionDenied[&quot;权限不足：展示摘要，可再次申请&lt;br/&gt;人工验证&quot;]:::manual
+    ScanConfirm{&quot;用户确认正式扫描？&lt;br/&gt;人工验证&quot;}:::manual
+    Running[&quot;正式扫描中不可返回、不可离开&lt;br/&gt;恢复页完成按钮禁用&lt;br/&gt;人工验证&quot;]:::manual
+    Scan[&quot;扫描 MediaStore / 公共目录候选&lt;br/&gt;人工验证&quot;]:::manual
+    Relink[&quot;高可信唯一匹配后分批写回引用&lt;br/&gt;待补测&quot;]:::todo
+    Terminal[&quot;完成 / 失败 / 权限不足 / 无需扫描&lt;br/&gt;生成结构化 summary&lt;br/&gt;编译验证&quot;]:::compile
+    Interrupted[&quot;onCleared 兜底 Interrupted&lt;br/&gt;避免恢复页永久 Running&lt;br/&gt;编译验证&quot;]:::compile
+  end
+
+  FromRestore --&gt; LaunchMedia
+  LaunchMedia --&gt; Estimate
+  Estimate --&gt;|&quot;无待恢复媒体&quot;| NoNeed
+  Estimate --&gt;|&quot;存在待恢复媒体&quot;| OldRefCheck
+  NoNeed --&gt; Terminal
+  OldRefCheck --&gt; Permission
+  Permission --&gt;|&quot;需要&quot;| PermissionRequest
+  Permission --&gt;|&quot;不需要&quot;| ScanConfirm
+  PermissionRequest --&gt; PermissionChecking
+  PermissionChecking --&gt;|&quot;候选仍不足&quot;| PermissionDenied
+  PermissionChecking --&gt;|&quot;候选已足够或权限完整&quot;| OldRefCheck
+  PermissionDenied --&gt; PermissionRequest
+  ScanConfirm --&gt; Running
+  Running --&gt; Scan
+  Scan --&gt; Relink
+  Relink --&gt; Terminal
+  Scan --&gt; Terminal
+  Running --&gt; Interrupted
+  Estimate --&gt; BackToRestore
+  Running --&gt; BackToRestore
+  Terminal --&gt; BackToRestore
+  Interrupted --&gt; BackToRestore
+
+  classDef unit fill:#dff5e7,stroke:#26804b,color:#16351f;
+  classDef todo fill:#fff1cc,stroke:#b7791f,color:#3d2a05;
+  classDef manual fill:#e8f1ff,stroke:#2b6cb0,color:#17375e;
+  classDef compile fill:#efe8ff,stroke:#6b46c1,color:#2d1f53;</pre></section>
+  </main>
+</body>
+</html>

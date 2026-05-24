@@ -2,6 +2,8 @@
 
 # WebDAV + 本地自动备份恢复方案
 
+<!-- flow-title: WebDAV本地自动备份恢复流程 -->
+
 ## 当前状态
 
 项目当前数据主要存放在 Room 数据库和 MMKV 中：剪贴数据、来源 App、链接预览、搜索历史、磁力搜索历史、视频下载记录、图片下载记录和磁力复制/打开记录由 Room 承载；剪贴快捷动作、回收站保留天数等轻量设置由 `AppSetting` 承载。当前已接入统一备份恢复能力，支持本地手动导出/导入预检恢复，以及 WebDAV 手动测试、上传、列表、预览和恢复；新导出使用 `schemaVersion = 3` 的 zip + JSONL 流式协议，schemaVersion 2 不包含磁力用户数据但继续兼容导入，旧 v1 JSON 数组 zip 只读兼容导入。
@@ -69,6 +71,180 @@
 - 最近自动备份状态 `BackupTaskStatus` 和 WebDAV 健康状态 `BackupTargetHealth` 只作为本机脱敏状态保存到 MMKV，不进入备份包；因为当前读写仍使用枚举名，枚举本身需要 `@Keep` 保留 release R8 名称契约。
 - 本地备份目录和 WebDAV 备份列表只展示普通手动/自动备份；历史版本可能留下的 `safety` 回滚文件会通过 manifest 或文件名识别并隐藏，避免用户误认为它是普通备份。
 - 本地镜像和 WebDAV 远端可能出现同名备份文件；备份列表 UI 的稳定 key 必须包含来源和真实路径/URI，不能只使用 `fileName`，避免同一 `LazyColumn` 内 key 冲突。
+
+## 流程图
+
+### 备份流程
+
+```mermaid
+%% title: 备份流程
+flowchart TD
+  subgraph BackupPage["备份与恢复页 BackupPage / BackupVm"]
+    Entry["我的页进入备份与恢复<br/>人工验证"]:::manual
+    Config["配置本地目录或 WebDAV<br/>人工验证"]:::manual
+    BackupChoice{"手动导出 / 手动上传 / 自动备份<br/>人工验证"}:::manual
+  end
+
+  subgraph BuildSnapshot["备份包生成"]
+    Snapshot["BackupSnapshotExporter 分页导出各表<br/>待补测"]:::todo
+    Package["BackupPackageWriter 写 JSONL、manifest、zip<br/>已单测"]:::unit
+    Verify["校验 manifest、entry、文件大小和 checksum<br/>已单测"]:::unit
+  end
+
+  subgraph Targets["备份发布目标"]
+    LocalFile["系统文件创建器导出的本地 zip<br/>恢复流程可用系统文件选择器读取<br/>人工验证"]:::manual
+    LocalDir["本地备份目录条目 + manifest sidecar<br/>恢复流程可从本地列表选择<br/>人工验证"]:::manual
+    WebDavRemote["WebDAV 远端 zip + manifest + latest.json<br/>恢复流程可从远端列表选择<br/>人工验证"]:::manual
+    Retention["本地 / WebDAV 保留份数清理并刷新列表<br/>编译验证"]:::compile
+  end
+
+  SharedArtifact["备份与恢复交互边界<br/>恢复流程只消费 zip 或列表条目<br/>不共享 BackupVm 长期恢复状态<br/>编译验证"]:::compile
+  ExportFailure["导出、写入或上传失败<br/>展示可行动错误并保留旧备份<br/>人工验证"]:::manual
+
+  Entry --> Config
+  Config --> BackupChoice
+  BackupChoice --> Snapshot
+  Snapshot --> Package
+  Package --> Verify
+  Verify --> LocalFile
+  Verify --> LocalDir
+  Verify --> WebDavRemote
+  LocalDir --> Retention
+  WebDavRemote --> Retention
+  LocalFile --> SharedArtifact
+  LocalDir --> SharedArtifact
+  WebDavRemote --> SharedArtifact
+  Snapshot --> ExportFailure
+  Package --> ExportFailure
+  Verify --> ExportFailure
+  LocalDir --> ExportFailure
+  WebDavRemote --> ExportFailure
+
+  classDef unit fill:#dff5e7,stroke:#26804b,color:#16351f;
+  classDef todo fill:#fff1cc,stroke:#b7791f,color:#3d2a05;
+  classDef manual fill:#e8f1ff,stroke:#2b6cb0,color:#17375e;
+  classDef compile fill:#efe8ff,stroke:#6b46c1,color:#2d1f53;
+```
+
+### 恢复流程
+
+```mermaid
+%% title: 恢复流程
+flowchart TD
+  subgraph RestoreSources["恢复来源来自备份流程输出"]
+    SourceFile["本地 zip 文件<br/>来自系统文件创建器导出<br/>人工验证"]:::manual
+    SourceLocal["本地备份目录条目<br/>来自本地备份列表<br/>人工验证"]:::manual
+    SourceRemote["WebDAV 远端条目<br/>来自远端备份列表<br/>人工验证"]:::manual
+  end
+
+  subgraph BackupPageRestore["备份页只负责发起恢复请求"]
+    ChooseRestore{"用户选择恢复来源<br/>人工验证"}:::manual
+    RestoreRequest["写入 BackupRestoreRequests 单槽请求流<br/>编译验证"]:::compile
+    NavRestore["导航到 BackupRestoreRoute 独立恢复页<br/>编译验证"]:::compile
+  end
+
+  subgraph RestorePage["独立恢复页 BackupRestoreRoute / BackupRestoreVm"]
+    ClaimRequest["接管 requestId 并清空请求流<br/>编译验证"]:::compile
+    CopyTemp["复制本地 URI 或下载 WebDAV 备份到私有临时文件<br/>人工验证"]:::manual
+    Preview["BackupPackageReader 校验 manifest、checksum、schemaVersion<br/>已单测"]:::unit
+    PreviewUi["展示轻量预检摘要<br/>人工验证"]:::manual
+    Confirm{"用户确认恢复？<br/>人工验证"}:::manual
+    BackGuard["读取中 / 恢复中返回二次确认<br/>人工验证"]:::manual
+    Restore["BackupSnapshotRestorer 事务合并写库<br/>编译验证"]:::compile
+    TimeNorm["剪贴时间轴归一化<br/>已单测"]:::unit
+    Report["恢复结果页展示新增 / 更新 / 跳过报告<br/>编译验证"]:::compile
+    RestoreFailure["读取或恢复失败<br/>取消协程并清理临时文件<br/>人工验证"]:::manual
+  end
+
+  subgraph MediaBoundary["恢复页与本地媒体关联流程的交互边界"]
+    MediaEntry["恢复结果页提供“恢复本地媒体关联”入口<br/>点击后进入本地媒体关联流程<br/>人工验证"]:::manual
+    MediaResult["接收 BackupMediaRelocationEvents 回显<br/>校验 restoreTaskId 后更新入口状态和 summary<br/>编译验证"]:::compile
+    EntryState["入口显示：恢复 / 继续 / 扫描中 / 再次恢复关联<br/>人工验证"]:::manual
+  end
+
+  SourceFile --> ChooseRestore
+  SourceLocal --> ChooseRestore
+  SourceRemote --> ChooseRestore
+  ChooseRestore --> RestoreRequest
+  RestoreRequest --> NavRestore
+  NavRestore --> ClaimRequest
+  ClaimRequest --> CopyTemp
+  CopyTemp --> Preview
+  Preview --> PreviewUi
+  Preview --> RestoreFailure
+  PreviewUi --> Confirm
+  PreviewUi --> BackGuard
+  Confirm -->|"确认"| Restore
+  Confirm -->|"取消"| RestoreFailure
+  Restore --> TimeNorm
+  TimeNorm --> Report
+  Restore --> RestoreFailure
+  Report --> MediaEntry
+  MediaEntry -->|"打开独立媒体关联页"| MediaResult
+  MediaResult --> EntryState
+  EntryState --> MediaEntry
+
+  classDef unit fill:#dff5e7,stroke:#26804b,color:#16351f;
+  classDef todo fill:#fff1cc,stroke:#b7791f,color:#3d2a05;
+  classDef manual fill:#e8f1ff,stroke:#2b6cb0,color:#17375e;
+  classDef compile fill:#efe8ff,stroke:#6b46c1,color:#2d1f53;
+```
+
+### 本地媒体关联流程
+
+```mermaid
+%% title: 本地媒体关联流程
+flowchart TD
+  subgraph RestoreBoundary["来自恢复流程的交互"]
+    FromRestore["恢复结果页入口<br/>恢复流程传入 restoreTaskId<br/>人工验证"]:::manual
+    BackToRestore["BackupMediaRelocationEvents 回显恢复页<br/>Incomplete / Running / Terminal / Interrupted<br/>编译验证"]:::compile
+  end
+
+  subgraph MediaPage["独立媒体关联页 BackupMediaRelocationRoute / BackupMediaRelocationVm"]
+    LaunchMedia["launchSingleTop 打开媒体关联独立页<br/>编译验证"]:::compile
+    Estimate["数据库 COUNT 轻量预估待恢复媒体<br/>待补测"]:::todo
+    NoNeed["预估为 0：不申请权限、不扫描<br/>编译验证"]:::compile
+    OldRefCheck["验证旧 savePath / outputUri 与无权限可见候选<br/>待补测"]:::todo
+    Permission{"是否需要共享媒体库权限？<br/>人工验证"}:::manual
+    PermissionRequest["按需申请图片或视频读取权限<br/>人工验证"]:::manual
+    PermissionChecking["权限返回后复查候选可见性<br/>人工验证"]:::manual
+    PermissionDenied["权限不足：展示摘要，可再次申请<br/>人工验证"]:::manual
+    ScanConfirm{"用户确认正式扫描？<br/>人工验证"}:::manual
+    Running["正式扫描中不可返回、不可离开<br/>恢复页完成按钮禁用<br/>人工验证"]:::manual
+    Scan["扫描 MediaStore / 公共目录候选<br/>人工验证"]:::manual
+    Relink["高可信唯一匹配后分批写回引用<br/>待补测"]:::todo
+    Terminal["完成 / 失败 / 权限不足 / 无需扫描<br/>生成结构化 summary<br/>编译验证"]:::compile
+    Interrupted["onCleared 兜底 Interrupted<br/>避免恢复页永久 Running<br/>编译验证"]:::compile
+  end
+
+  FromRestore --> LaunchMedia
+  LaunchMedia --> Estimate
+  Estimate -->|"无待恢复媒体"| NoNeed
+  Estimate -->|"存在待恢复媒体"| OldRefCheck
+  NoNeed --> Terminal
+  OldRefCheck --> Permission
+  Permission -->|"需要"| PermissionRequest
+  Permission -->|"不需要"| ScanConfirm
+  PermissionRequest --> PermissionChecking
+  PermissionChecking -->|"候选仍不足"| PermissionDenied
+  PermissionChecking -->|"候选已足够或权限完整"| OldRefCheck
+  PermissionDenied --> PermissionRequest
+  ScanConfirm --> Running
+  Running --> Scan
+  Scan --> Relink
+  Relink --> Terminal
+  Scan --> Terminal
+  Running --> Interrupted
+  Estimate --> BackToRestore
+  Running --> BackToRestore
+  Terminal --> BackToRestore
+  Interrupted --> BackToRestore
+
+  classDef unit fill:#dff5e7,stroke:#26804b,color:#16351f;
+  classDef todo fill:#fff1cc,stroke:#b7791f,color:#3d2a05;
+  classDef manual fill:#e8f1ff,stroke:#2b6cb0,color:#17375e;
+  classDef compile fill:#efe8ff,stroke:#6b46c1,color:#2d1f53;
+```
 
 ## 数据流
 
@@ -360,6 +536,12 @@ manifest 简化示例：
 
 ## 验证记录
 
+- 2026-05-24：已运行 `python -m unittest tools.test_render_doc_flow_html`，结果通过；确认方案文档 HTML 流程图生成脚本的 Mermaid 提取、中文命名、离线资源检查和漂移检测可用。
+- 2026-05-24：已运行 `python tools/render_doc_flow_html.py docs/webdav_backup_plan.md` 与 `python tools/render_doc_flow_html.py --check docs/webdav_backup_plan.md`，结果通过；确认 `docs/flows/WebDAV本地自动备份恢复流程.html` 已生成并与本方案 Markdown 同步。
+- 2026-05-24：根据流程图细节反馈，已运行 `python tools/render_doc_flow_html.py docs/webdav_backup_plan.md` 与 `python tools/render_doc_flow_html.py --check docs/webdav_backup_plan.md`，结果通过；确认细化后的页面边界流程图已重新生成并与本方案 Markdown 同步。
+- 2026-05-24：根据流程图可读性反馈，已运行 `python -m unittest tools.test_render_doc_flow_html`、`python tools/render_doc_flow_html.py docs/webdav_backup_plan.md` 与 `python tools/render_doc_flow_html.py --check docs/webdav_backup_plan.md`，结果通过；确认备份流程和恢复流程已拆成两个 HTML 内容块，并通过共同备份产物节点表达交互关系。
+- 2026-05-24：根据流程图结构反馈，已运行 `python tools/render_doc_flow_html.py docs/webdav_backup_plan.md` 与 `python tools/render_doc_flow_html.py --check docs/webdav_backup_plan.md`，结果通过；确认备份、恢复、本地媒体关联已拆成三个 HTML 内容块，并在恢复和媒体关联两块中分别表达入口和事件回显边界。
+- 2026-05-24：根据流程图可读性反馈，已运行 `python tools/render_doc_flow_html.py docs/webdav_backup_plan.md` 与 `python tools/render_doc_flow_html.py --check docs/webdav_backup_plan.md`，结果通过；确认三个流程图已改为自上而下方向，减少横向宽度导致的缩放压力。
 - 2026-05-19：已运行 `./gradlew :base:general:compileDebugKotlin`，结果通过；备份模型、DAO 导出/恢复接口、checksum、WebDAV 客户端和备份仓库在 base 模块编译通过。
 - 2026-05-19：已运行 `./gradlew :app:compileDebugKotlin`，结果通过；“我的”页入口、备份与恢复页、系统文件选择器、WebDAV 配置和导航接入编译通过。
 - 2026-05-19：反馈修复后再次运行 `./gradlew :base:general:compileDebugKotlin` 和 `./gradlew :app:compileDebugKotlin`，结果通过；恢复弹窗、WebDAV 列表提示、WebDAV 密码加密 MMKV 和方案文档更新编译通过。
@@ -402,6 +584,11 @@ manifest 简化示例：
 
 ## 变更记录
 
+- 2026-05-24：新增 `flow-title` 和 Mermaid 流程图，生成中文 HTML 试点时可展示备份、恢复、媒体关联主流程和测试覆盖状态；原因是 WebDAV 方案文档较长，需要通过可视化入口降低阅读成本，同时保持 Markdown 为事实来源。
+- 2026-05-24：细化 Mermaid 流程图，将备份页、独立恢复页、独立媒体关联页和 `BackupMediaRelocationEvents` 回显链路拆成独立分组；原因是“恢复本地媒体关联”属于单独页面、单独 ViewModel 和 feature 内部事件回传，不能只作为恢复流程里的普通节点展示。
+- 2026-05-24：将单张 Mermaid 大图拆成“备份流程”和“恢复流程”两个内容块，并通过本地 zip、本地备份目录条目和 WebDAV 远端条目说明交互边界；原因是单图细化后线条过密，不利于阅读，拆分后能同时看清备份产物和恢复入口关系。
+- 2026-05-24：将本地媒体关联从恢复流程内容块中拆出为第三个内容块；原因是媒体关联是恢复完成后的独立页面和独立 ViewModel，恢复流程只需要展示入口和回显边界，媒体关联内部预估、权限、扫描和写回应单独查看。
+- 2026-05-24：将三个 Mermaid 流程图方向从左到右改为自上而下；原因是左到右图在常见屏幕宽度下容易被横向压缩，导致节点字体过小、不利于查看。
 - 2026-05-22：备份协议升级到 schemaVersion 3，新增磁力搜索历史和磁力复制/打开记录 JSONL 导出、预览计数、恢复合并与恢复报告；原因是磁力搜索第一版将两类磁力用户数据纳入 WebDAV/本地备份，同时保持 Academic Torrents 源索引缓存不备份。
 - 2026-05-19：将大数据量备份导出/导入流式化提升为当前阶段，明确 schemaVersion 2、JSONL、文件引用、临时文件治理和 WebDAV 文件流上传；原因是当前 zip 包仍围绕整包 `ByteArray`，大量数据时存在 OOM 和半成品备份风险。
 - 2026-05-19：落地大数据量备份导出/导入流式化，新导出统一使用 schemaVersion 2 + JSONL，预览/恢复改为文件引用，WebDAV 和本地目录写入改为流式文件复制；原因是降低备份包在导出、上传、预览和恢复阶段的内存峰值，并减少半成品正式备份风险。

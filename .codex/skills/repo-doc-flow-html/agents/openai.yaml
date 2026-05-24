@@ -1,0 +1,4 @@
+interface:
+  display_name: "方案文档流程图"
+  short_description: "生成和维护 docs 方案文档的中文 HTML 流程图"
+  default_prompt: "生成或调整方案文档 HTML 流程图时使用 $repo-doc-flow-html。"
