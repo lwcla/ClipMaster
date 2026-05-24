@@ -287,6 +287,52 @@ WebDAV 备份新增：
 - WebDAV/本地备份协议升级到 `schemaVersion = 3`，新增 `data/magnet_search_histories.jsonl` 和 `data/magnet_download_records.jsonl`。旧 v1/v2 备份继续兼容读取，磁力文件对旧协议可缺省；恢复按白名单 `academic_torrents`、合法 infoHash 和 `sourceId + infoHash` 合并，重复恢复保持幂等。
 - 已新增字符串资源、备份预览/恢复计数、恢复分类报告和低敏日志。日志只记录来源、reasonCode、数量、阶段和 taskId，不记录完整搜索词、完整标题、完整 magnet URI、完整 infoHash 或 XML 内容。
 
+## 可选模块化调整
+
+当前需要临时屏蔽磁力搜索，但后续可能重新启用。后续改造目标是把磁力搜索改成编译期可选模块：`app` 固定依赖磁力轻量 API，通过 Gradle 属性控制是否依赖真实磁力实现模块。默认不启用磁力模块时，应用不显示、不统计、不报告任何磁力相关内容。
+
+模块边界：
+
+- 新增 `:feature:magnet-api`，只定义磁力功能接入接口和 Hilt 空集合声明，不包含 UI、数据库、搜索源、Repository 或业务实现。
+- 新增 `:feature:magnet`，依赖 `:feature:magnet-api`，承载磁力搜索页、我的页入口接入、详情页操作、下载记录磁力 Tab、独立数据库、Academic Torrents 同步/搜索、复制/打开动作和备份恢复参与逻辑。
+- `app` 固定依赖 `:feature:magnet-api`，通过 `-PenableMagnetFeature=true` 或等价 Gradle 属性添加 `implementation(project(":feature:magnet"))`；不再依赖手动注释代码来切换功能。
+- `app` 移除对磁力实现类、磁力 route、磁力 Repository、磁力 Tab 类型和磁力 action handler 的直接引用，统一通过磁力 API 暴露的空集合接入。
+- 当前不建设通用热插拔平台，只做磁力专用 API；未来其他可选模块优先各自设计小 API，等重复模式稳定后再考虑抽象成通用扩展机制。
+
+Hilt 接入：
+
+- `MagnetFeatureEntry` 提供磁力专用接入口，覆盖导航注册、我的页入口、详情页操作、下载记录 Tab 和备份参与者。
+- `app` 注入 `Set<@JvmSuppressWildcards MagnetFeatureEntry>`，不注入单个必需实现。
+- `:feature:magnet-api` 使用 `@Multibinds` 声明空集合，确保未依赖 `:feature:magnet` 时 Hilt 仍可编译通过。
+- `:feature:magnet` 使用 `@Binds @IntoSet` 注册真实实现；启用模块时集合里出现磁力实现，禁用时集合为空。
+- API 模块保持轻量，避免暴露磁力页面 state、Repository、DAO、Room 实体或搜索源类型；只允许必要的轻量 spec、callback 和少量 Composable slot。
+- 磁力导航 route 定义在 `:feature:magnet` 内部，并继续使用 `@Keep` / `@Serializable` 保障 R8 下导航稳定。
+
+数据库、资源与备份：
+
+- 当前处于开发阶段，后续可选模块化改造不迁移、不保留、不兼容旧磁力主库表、旧磁力备份字段和旧磁力数据。
+- `:feature:magnet` 自带独立数据库，例如 `magnet_feature_database`，包含磁力搜索历史、复制/打开记录等磁力用户数据。
+- `base:general` 不保留磁力 Room 表、DAO、Repository、迁移、备份字段或磁力搜索源缓存。
+- `:feature:magnet` 启用时通过 `MagnetFeatureEntry` 暴露小型备份参与者接口，仅覆盖导出、恢复、预览/统计和进度分类；不做未知模块暂存、跨版本插件协议或动态发现。
+- `app` 未依赖 `:feature:magnet` 时，备份恢复系统不会展示磁力分类、不会统计磁力数量、不会在报告中提示磁力被跳过；含磁力数据的备份静默忽略磁力文件。
+- 磁力文案、图标和页面资源尽量放入 `:feature:magnet`；`app` 和 `base:general` 只保留真正通用资源，禁用模块后磁力资源一并消失。
+
+实施重点：
+
+- 下载记录页是主要改造点，需要先抽成“内建视频/图片 Tab + 可选扩展 Tab”，再迁移磁力 Tab 到 `:feature:magnet`，避免 `app` 残留磁力类型引用。
+- 我的页、详情页、导航和备份恢复页面统一通过磁力 API 的空集合接入；集合为空时不展示磁力入口或报告项。
+- 禁用态作为一等构建目标维护，所有接口调整都需要验证无磁力模块的 `app` 编译。
+- 分两步落地：先建立 API/扩展点并保持现有行为，再搬迁磁力实现和数据库，降低回归风险。
+
+后续模块化验证命令：
+
+```bash
+./gradlew :app:compileDebugKotlin
+./gradlew :feature:magnet:compileDebugKotlin -PenableMagnetFeature=true
+./gradlew :app:compileDebugKotlin -PenableMagnetFeature=true
+git diff --check
+```
+
 ## 测试与验证
 
 单元测试：
@@ -368,6 +414,7 @@ git diff --check
 
 ## 后续计划
 
+- 后续优先按“可选模块化调整”拆出 `:feature:magnet-api` 和 `:feature:magnet`，让磁力搜索可以通过 Gradle 属性编译期启用或禁用。
 - 后续可增加“查看来源详情”动作，打开 Academic Torrents 详情页，用于追溯合法来源。
 - 后续如增加其他合法源，继续复用 `sourceId + infoHash` 去重和来源展示，不混淆旧记录。
 - 后续增加合法源必须走代码与文档评审，不通过远程下发或隐藏开关绕过第一版白名单。
@@ -381,5 +428,6 @@ git diff --check
 
 ## 变更记录
 
+- 2026-05-24：追加磁力搜索可选模块化调整方案；原因是开发阶段需要临时屏蔽磁力搜索，同时保留后续通过 `:feature:magnet` 重新启用的能力。
 - 2026-05-22：完成磁力搜索第一版实现并将状态更新为已完成；原因是合法源缓存、本地搜索、历史、磁力记录、下载记录 Tab、备份恢复和页面入口已经落地。
 - 2026-05-20：新增磁力搜索第一版方案文档；原因是需要把已确认的合法源、本地缓存、搜索历史、磁力下载记录、备份恢复、日志隐私和测试验证方案固化到本地文档，供后续实现使用。
