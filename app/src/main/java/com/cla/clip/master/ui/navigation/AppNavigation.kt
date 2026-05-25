@@ -16,6 +16,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
 import com.cla.clip.base.general.utils.logD
+import com.cla.clip.feature.magnet.api.MagnetFeatureEntry
 import com.cla.clip.master.ui.page.backup.BackupMediaRelocationPage
 import com.cla.clip.master.ui.page.backup.BackupPage
 import com.cla.clip.master.ui.page.backup.BackupRestoreFlowPage
@@ -24,7 +25,6 @@ import com.cla.clip.master.ui.page.download.DownloadHistoryPage
 import com.cla.clip.master.ui.page.image.ImageExtractPage
 import com.cla.clip.master.ui.page.list.ClipListPage
 import com.cla.clip.master.ui.page.list.FoldedClipListPage
-import com.cla.clip.master.ui.page.magnet.MagnetSearchPage
 import com.cla.clip.master.ui.page.main.MainPage
 import com.cla.clip.master.ui.page.mine.MinePage
 import com.cla.clip.master.ui.page.recycle.RecycleBinPage
@@ -47,7 +47,10 @@ private const val TAG = "AppNavigation"
  * 下载页返回时会特殊处理导航栈，避免用户从下载完成页返回到已经完成使命的视频提取页。
  */
 @Composable
-fun AppNavigation(navController: NavHostController) {
+fun AppNavigation(
+    navController: NavHostController,
+    magnetFeatures: Set<MagnetFeatureEntry>,
+) {
     /** 子页面统一使用的跳转回调，保持所有页面都通过类型安全 Route 导航。 */
     val onNavigate = { route: Route ->
         navController.navigate(route) {
@@ -76,7 +79,9 @@ fun AppNavigation(navController: NavHostController) {
             val route = backStackEntry.toRoute<MainRoute>()
             MainPage(
                 initialTab = route.initialTab,
-                onNavigate = onNavigate
+                onNavigate = onNavigate,
+                magnetFeatures = magnetFeatures,
+                onOpenMagnetSearch = { feature, query -> feature.openSearch(navController, query) }
             )
         }
 
@@ -97,22 +102,15 @@ fun AppNavigation(navController: NavHostController) {
             )
         }
 
-        // 磁力搜索页
-        composable<MagnetSearchRoute> { backStackEntry ->
-            val route = backStackEntry.toRoute<MagnetSearchRoute>()
-            MagnetSearchPage(
-                initialQuery = route.initialQuery,
-                onBack = onBack
-            )
-        }
-
         // 详情页
         composable<DetailRoute> { backStackEntry ->
             val route = backStackEntry.toRoute<DetailRoute>()
             DetailPage(
                 clipId = route.clipId,
                 onBack = onBack,
-                onNavigate = onNavigate
+                onNavigate = onNavigate,
+                magnetFeatures = magnetFeatures,
+                onOpenMagnetSearch = { feature, query -> feature.openSearch(navController, query) }
             )
         }
 
@@ -190,7 +188,8 @@ fun AppNavigation(navController: NavHostController) {
         composable<BackupRestoreRoute> {
             BackupRestoreFlowPage(
                 onBack = onBack,
-                onNavigate = onNavigate
+                onNavigate = onNavigate,
+                magnetFeatures = magnetFeatures
             )
         }
 
@@ -206,9 +205,17 @@ fun AppNavigation(navController: NavHostController) {
 
         composable<MineRoute> {
             MinePage(
-                onNavigate = onNavigate
+                onNavigate = onNavigate,
+                magnetFeatures = magnetFeatures,
+                onOpenMagnetSearch = { feature -> feature.openSearch(navController) }
             )
         }
+
+        magnetFeatures
+            .sortedBy { it.featureId }
+            .forEach { feature ->
+                feature.registerNavigation(this, onBack)
+            }
     }
 }
 

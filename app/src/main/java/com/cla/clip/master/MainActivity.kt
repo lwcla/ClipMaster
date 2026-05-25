@@ -17,6 +17,7 @@ import androidx.navigation.compose.rememberNavController
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.toast
+import com.cla.clip.feature.magnet.api.MagnetFeatureEntry
 import com.cla.clip.master.ui.navigation.AppNavigation
 import com.cla.clip.master.ui.navigation.DetailRoute
 import com.cla.clip.master.ui.navigation.VideoDownloadRoute
@@ -48,6 +49,10 @@ class MainActivity : ComponentActivity() {
     /** 剪贴板读取助手，使用 Lazy 避免 Activity 创建时立即触发较重的依赖初始化。 */
     @Inject
     lateinit var clipHelper: dagger.Lazy<ClipHelper>
+
+    /** 可选磁力功能入口；默认构建集合为空，启用 feature 模块时由 Hilt multibinding 注入。 */
+    @Inject
+    lateinit var magnetFeatures: Set<@JvmSuppressWildcards MagnetFeatureEntry>
 
     /** Activity 级 ViewModel，保存来自通知 intent 的一次性跳转目标。 */
     private val mainVm by viewModels<MainVm>()
@@ -110,7 +115,10 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
-                        AppNavigation(navController)
+                        AppNavigation(
+                            navController = navController,
+                            magnetFeatures = magnetFeatures
+                        )
                     }
                 }
             }

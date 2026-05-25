@@ -43,17 +43,7 @@ internal fun DeleteModeDialog(
         text = {
             Column {
                 Text(
-                    text = if (request.allowDeleteFiles) {
-                        when (request.kind) {
-                            DeleteRequestKind.Selected -> stringResource(R.string.base_general_download_history_delete_selected_message, request.count)
-                            DeleteRequestKind.ClearTab -> stringResource(R.string.base_general_download_history_clear_message, request.count)
-                        }
-                    } else {
-                        when (request.kind) {
-                            DeleteRequestKind.Selected -> stringResource(R.string.base_general_download_history_delete_selected_magnet_message, request.count)
-                            DeleteRequestKind.ClearTab -> stringResource(R.string.base_general_download_history_clear_magnet_message, request.count)
-                        }
-                    }
+                    text = request.message
                 )
                 if (request.hasRunning) {
                     Spacer(Modifier.height(8.dp))
@@ -113,4 +103,7 @@ internal data class DeleteRequestUi(
 
     /** 是否提供删除本地文件选项；磁力记录没有本地文件关联，只允许删除记录。 */
     val allowDeleteFiles: Boolean = true,
+
+    /** 当前 Tab 的确认文案；扩展 Tab 由扩展模块提供。 */
+    val message: String,
 )

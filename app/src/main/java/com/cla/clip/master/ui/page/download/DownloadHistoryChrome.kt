@@ -18,9 +18,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.paging.PagingData
 import com.cla.clip.base.general.R
+import com.cla.clip.feature.magnet.api.MagnetDownloadHistoryEntry
 import com.cla.clip.master.ui.widget.TitleBar
 import com.cla.clip.master.ui.widget.TitleBarText
 import kotlinx.coroutines.flow.Flow
+
+/** 下载记录页 Tab 展示配置。 */
+internal data class DownloadHistoryTabSpec(
+    val tab: DownloadHistoryTab,
+    val title: String,
+    val extensionEntry: MagnetDownloadHistoryEntry? = null,
+)
 
 /** 标题栏区域，复用通用插槽标题栏统一状态栏、安全高度和按钮垂直对齐规则。 */
 @Composable
@@ -69,20 +77,16 @@ internal fun DownloadHistoryTitleBar(
 /** 视频/图片顶部 Tab；这里仅展示文字，不配置图标，避免 Tab 过高挤占下方历史列表空间。 */
 @Composable
 internal fun DownloadHistoryTabs(
+    tabs: List<DownloadHistoryTabSpec>,
     selectedTab: DownloadHistoryTab,
     onSelected: (DownloadHistoryTab) -> Unit,
 ) {
-    val tabs = listOf(
-        DownloadHistoryTab.VIDEO to stringResource(R.string.base_general_video),
-        DownloadHistoryTab.IMAGE to stringResource(R.string.base_general_image),
-        DownloadHistoryTab.MAGNET to stringResource(R.string.base_general_magnet)
-    )
-    PrimaryTabRow(selectedTabIndex = tabs.indexOfFirst { it.first == selectedTab }.coerceAtLeast(0)) {
-        tabs.forEach { (tab, title) ->
+    PrimaryTabRow(selectedTabIndex = tabs.indexOfFirst { it.tab == selectedTab }.coerceAtLeast(0)) {
+        tabs.forEach { spec ->
             Tab(
-                selected = selectedTab == tab,
-                onClick = { onSelected(tab) },
-                text = { Text(title) }
+                selected = selectedTab == spec.tab,
+                onClick = { onSelected(spec.tab) },
+                text = { Text(spec.title) }
             )
         }
     }
@@ -95,22 +99,19 @@ internal fun DownloadHistoryTabs(
  */
 @Composable
 internal fun DownloadHistoryPager(
-    tabs: List<DownloadHistoryTab>,
+    tabs: List<DownloadHistoryTabSpec>,
     pagerState: PagerState,
     state: DownloadHistoryUiState,
     videoPagingFlow: Flow<PagingData<DownloadHistoryVideoItem>>,
     imagePagingFlow: Flow<PagingData<DownloadHistoryImageBatch>>,
-    magnetPagingFlow: Flow<PagingData<DownloadHistoryMagnetItem>>,
     videoListState: LazyListState,
     imageListState: LazyListState,
-    magnetListState: LazyListState,
     onToggleSelected: (Long) -> Unit,
     onEnterSelection: (Long) -> Unit,
     onOpenVideo: (DownloadHistoryVideoItem) -> Unit,
     onRetryVideo: (Long) -> Unit,
     onRetryImage: (Long) -> Unit,
-    onCopyMagnet: (Long) -> Unit,
-    onOpenMagnet: (Long) -> Unit,
+    onShowMessage: (String) -> Unit,
     onPreviewImage: (String) -> Unit,
 ) {
     HorizontalPager(
@@ -118,21 +119,20 @@ internal fun DownloadHistoryPager(
         modifier = Modifier.fillMaxSize()
     ) { page ->
         DownloadHistoryContent(
-            tab = tabs.getOrElse(page) { DownloadHistoryTab.VIDEO },
+            tabSpec = tabs.getOrElse(page) {
+                DownloadHistoryTabSpec(DownloadHistoryTab.Video, "")
+            },
             state = state,
             videoPagingFlow = videoPagingFlow,
             imagePagingFlow = imagePagingFlow,
-            magnetPagingFlow = magnetPagingFlow,
             videoListState = videoListState,
             imageListState = imageListState,
-            magnetListState = magnetListState,
             onToggleSelected = onToggleSelected,
             onEnterSelection = onEnterSelection,
             onOpenVideo = onOpenVideo,
             onRetryVideo = onRetryVideo,
             onRetryImage = onRetryImage,
-            onCopyMagnet = onCopyMagnet,
-            onOpenMagnet = onOpenMagnet,
+            onShowMessage = onShowMessage,
             onPreviewImage = onPreviewImage
         )
     }
@@ -141,15 +141,15 @@ internal fun DownloadHistoryPager(
 /** 当前 Tab 的记录总数，用于标题栏按钮可用性和清空弹窗数量。 */
 internal val DownloadHistoryUiState.currentItemsCount: Int
     get() = when (selectedTab) {
-        DownloadHistoryTab.VIDEO -> videoCount
-        DownloadHistoryTab.IMAGE -> imageCount
-        DownloadHistoryTab.MAGNET -> magnetCount
+        DownloadHistoryTab.Video -> videoCount
+        DownloadHistoryTab.Image -> imageCount
+        is DownloadHistoryTab.Extension -> extensionCounts[selectedTab.tabId] ?: 0
     }
 
 /** 当前 Tab 是否包含进行中记录，用于清空确认文案。 */
 internal val DownloadHistoryUiState.currentTabHasRunning: Boolean
     get() = when (selectedTab) {
-        DownloadHistoryTab.VIDEO -> videoRunningCount > 0
-        DownloadHistoryTab.IMAGE -> imageRunningCount > 0
-        DownloadHistoryTab.MAGNET -> false
+        DownloadHistoryTab.Video -> videoRunningCount > 0
+        DownloadHistoryTab.Image -> imageRunningCount > 0
+        is DownloadHistoryTab.Extension -> false
     }

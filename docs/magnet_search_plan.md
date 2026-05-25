@@ -277,19 +277,20 @@ WebDAV 备份新增：
 
 ## 最终实现
 
-- 第一版已按合法内置源 `academic_torrents` 落地，`AcademicTorrentsSource` 通过官方 `database.xml` 下载索引，支持 `ETag` / `Last-Modified` 条件请求和 XML pull parser 解析；缓存库位于 `cacheDir/magnet_source_cache/magnet_source_cache.db`，使用独立 Room 数据库和 FTS4 表，允许破坏性迁移，不进入主库和备份。
+- 第一版已按合法内置源 `academic_torrents` 落地，并在 2026-05-25 按“可选模块化调整”拆成 `:feature:magnet-api` 与 `:feature:magnet`。默认构建只依赖轻量 API，真实磁力实现需通过 `-PenableMagnetFeature=true` 编译进 app。
+- `AcademicTorrentsSource` 通过官方 `database.xml` 下载索引，支持 `ETag` / `Last-Modified` 条件请求和 XML pull parser 解析；缓存库位于 `cacheDir/magnet_source_cache/magnet_source_cache.db`，使用独立 Room 数据库和 FTS4 表，允许破坏性迁移，不进入主库和备份。
 - `MagnetSourceSyncCoordinator` 提供 single-flight 同步、5 分钟冷却、低敏进度、失败保留旧索引和临时文件清理。当前实现先把合法条目解析到内存列表，完整解析成功后在事务中替换旧索引；这样能确保失败不破坏旧索引，Academic Torrents 当前 XML 体量可接受。后续如源体量明显增长，再演进为临时表/临时库流式替换。
-- 搜索页为独立 `MagnetSearchRoute(initialQuery)` 和 `MagnetSearchPage`，不复用剪贴内容搜索页。查询输入 300ms 防抖，2 个字符以下只提示继续输入；结果从本地缓存库分页读取，标题和描述片段使用 `MagnetSearchHighlightFormatter` 做多词高亮。
-- “我的”页新增磁力搜索入口，只做导航，不在我的页同步或搜索索引；详情页新增磁力搜索按钮，通过路由传入 `clip.linkTitle ?: clip.content` 作为初始关键词，不写入系统剪贴板。
-- 磁力搜索历史落在主库 `magnet_search_histories`，只在用户提交合法搜索或点击历史项时写入；页面聚焦搜索框时展示磁力历史面板，支持单条删除和清空，清空历史不影响磁力记录。
-- 磁力复制/打开记录落在主库 `magnet_download_records`，以 `sourceId + infoHash` 唯一。`MagnetActionHandler` 统一处理搜索页和下载记录页的副作用：先写入/刷新记录并触发备份 dirty，再复制 magnet URI，最后用标准 `ACTION_VIEW` 尝试打开外部下载器；Clipboard label 固定为“磁力链接”，不使用标题、搜索词或完整 URI 做 label。
-- 下载记录页扩展为“视频 / 图片 / 磁力”三 Tab。磁力 Tab 复用既有 Pager、多选、分页空态和删除弹窗结构，按 `lastUsedAt` 倒序分页；删除或清空磁力记录只删除主库记录，不删除搜索历史、不请求 MediaStore 权限、不取消 WorkManager。
-- WebDAV/本地备份协议升级到 `schemaVersion = 3`，新增 `data/magnet_search_histories.jsonl` 和 `data/magnet_download_records.jsonl`。旧 v1/v2 备份继续兼容读取，磁力文件对旧协议可缺省；恢复按白名单 `academic_torrents`、合法 infoHash 和 `sourceId + infoHash` 合并，重复恢复保持幂等。
+- 搜索页为 `:feature:magnet` 内部私有的 `MagnetSearchRoute(initialQuery)` 和 `MagnetSearchPage`，不复用剪贴内容搜索页。查询输入 300ms 防抖，2 个字符以下只提示继续输入；结果从本地缓存库分页读取，标题和描述片段使用 `MagnetSearchHighlightFormatter` 做多词高亮。
+- “我的”页和详情页不再直接引用磁力页面、route 或 repository，只注入 `Set<MagnetFeatureEntry>` 并在集合非空时展示入口和详情页动作；禁用模块时集合为空，入口、按钮和导航目的地全部消失。
+- 磁力搜索历史落在 `:feature:magnet` 独立数据库 `magnet_feature_database.db` 的 `magnet_search_histories` 表，只在用户提交合法搜索或点击历史项时写入；页面聚焦搜索框时展示磁力历史面板，支持单条删除和清空，清空历史不影响磁力记录。
+- 磁力复制/打开记录落在 `:feature:magnet` 独立数据库 `magnet_feature_database.db` 的 `magnet_download_records` 表，以 `sourceId + infoHash` 唯一。`MagnetActionHandler` 统一处理搜索页和下载记录页的副作用：先写入/刷新记录并通知宿主安排备份，再复制 magnet URI，最后用标准 `ACTION_VIEW` 尝试打开外部下载器；Clipboard label 固定为“磁力链接”，不使用标题、搜索词或完整 URI 做 label。
+- 下载记录页重构为“内建视频/图片 Tab + 可选扩展 Tab”。磁力 Tab 由 `MagnetDownloadHistoryEntry` 提供内容、数量、选择删除和确认文案，宿主只负责 Pager、多选状态、Snackbar 和系统媒体删除边界；禁用模块时只显示视频/图片。
+- WebDAV/本地备份协议升级到 `schemaVersion = 4`，base 只导出内建数据和 `feature_counts`。`:feature:magnet` 启用时通过 `BackupFeatureContributor` 追加 `data/magnet_search_histories.jsonl` 和 `data/magnet_download_records.jsonl`，恢复按白名单 `academic_torrents`、合法 infoHash 和 `sourceId + infoHash` 合并，重复恢复保持幂等；禁用模块时磁力 entry 不展示、不统计、不恢复。
 - 已新增字符串资源、备份预览/恢复计数、恢复分类报告和低敏日志。日志只记录来源、reasonCode、数量、阶段和 taskId，不记录完整搜索词、完整标题、完整 magnet URI、完整 infoHash 或 XML 内容。
 
 ## 可选模块化调整
 
-当前需要临时屏蔽磁力搜索，但后续可能重新启用。后续改造目标是把磁力搜索改成编译期可选模块：`app` 固定依赖磁力轻量 API，通过 Gradle 属性控制是否依赖真实磁力实现模块。默认不启用磁力模块时，应用不显示、不统计、不报告任何磁力相关内容。
+当前已完成编译期可选模块化：`app` 固定依赖磁力轻量 API，通过 Gradle 属性控制是否依赖真实磁力实现模块。默认不启用磁力模块时，应用不显示、不统计、不报告任何磁力相关内容。
 
 模块边界：
 
@@ -414,7 +415,6 @@ git diff --check
 
 ## 后续计划
 
-- 后续优先按“可选模块化调整”拆出 `:feature:magnet-api` 和 `:feature:magnet`，让磁力搜索可以通过 Gradle 属性编译期启用或禁用。
 - 后续可增加“查看来源详情”动作，打开 Academic Torrents 详情页，用于追溯合法来源。
 - 后续如增加其他合法源，继续复用 `sourceId + infoHash` 去重和来源展示，不混淆旧记录。
 - 后续增加合法源必须走代码与文档评审，不通过远程下发或隐藏开关绕过第一版白名单。
@@ -428,6 +428,7 @@ git diff --check
 
 ## 变更记录
 
+- 2026-05-25：完成磁力搜索可选模块化实现；原因是需要默认禁用磁力功能，同时保留通过 `-PenableMagnetFeature=true` 编译启用的搜索、下载记录和备份恢复能力。
 - 2026-05-24：追加磁力搜索可选模块化调整方案；原因是开发阶段需要临时屏蔽磁力搜索，同时保留后续通过 `:feature:magnet` 重新启用的能力。
 - 2026-05-22：完成磁力搜索第一版实现并将状态更新为已完成；原因是合法源缓存、本地搜索、历史、磁力记录、下载记录 Tab、备份恢复和页面入口已经落地。
 - 2026-05-20：新增磁力搜索第一版方案文档；原因是需要把已确认的合法源、本地缓存、搜索历史、磁力下载记录、备份恢复、日志隐私和测试验证方案固化到本地文档，供后续实现使用。

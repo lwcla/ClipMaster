@@ -26,6 +26,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.utils.toPermissionSetting
+import com.cla.clip.feature.magnet.api.MagnetFeatureEntry
 import com.cla.clip.master.entity.SettingSwitchItemUi
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.widget.TopLevelTitleBar
@@ -40,7 +41,9 @@ import rikka.shizuku.Shizuku
 @Composable
 fun MinePage(
     mineVm: MineVm = hiltViewModel(),
-    onNavigate: (route: Route) -> Unit
+    onNavigate: (route: Route) -> Unit,
+    magnetFeatures: Set<MagnetFeatureEntry> = emptySet(),
+    onOpenMagnetSearch: (MagnetFeatureEntry) -> Unit = {},
 ) {
     val foldedClipCount by mineVm.foldedClipCount.collectAsStateWithLifecycle()
     val recycleBinCount by mineVm.recycleBinCount.collectAsStateWithLifecycle()
@@ -58,7 +61,11 @@ fun MinePage(
             contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp),
         ) {
             item { BackupEntry(onNavigate = onNavigate) }
-            item { MagnetSearchEntry(onNavigate = onNavigate) }
+            magnetFeatures.sortedBy { it.featureId }.forEach { feature ->
+                item(key = "magnet_feature_${feature.featureId}") {
+                    feature.MineEntry(onOpenSearch = { onOpenMagnetSearch(feature) })
+                }
+            }
             item { DownloadHistoryEntry(onNavigate = onNavigate) }
             item { FoldedClipsEntry(foldedClipCount = foldedClipCount, onNavigate = onNavigate) }
             item { RecycleBinEntry(recycleBinCount = recycleBinCount, onNavigate = onNavigate) }

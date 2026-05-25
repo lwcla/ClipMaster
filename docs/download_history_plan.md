@@ -6,11 +6,11 @@
 
 应用已经有视频下载任务表 `download_tasks`、图片提取批次表 `image_extract_batches` 和图片项表 `image_extract_items`。视频下载完成后，Android 10 及以上会通过 MediaStore 写入公共媒体库，并把 `ContentResolver.insert()` 返回的 `content://` URI 记录到任务的 `savePath`；Android 10 以下记录真实文件路径。图片批量下载完成后，批次记录保存 `outputDir`，每张成功图片项保存 `output_uri`。
 
-当前已新增独立下载记录页，入口位于“我的”页。页面用“视频 / 图片 / 磁力”顶部纯文字 Tab 统一浏览已下载、失败、进行中、部分完成的媒体记录以及用户复制/打开过的磁力记录，Tab 不配置图标以降低高度并减少对列表空间的占用；Tab 支持点击切换，也支持在内容区域左右滑动切换视频页、图片页和磁力页。视频、图片和磁力记录都使用 Paging 分页加载，页面进入 `STARTED` 生命周期且当前 Tab 可见时才收集对应分页流，避免 ViewModel 初始化或页面不可见时读取大量媒体元信息；图片 Tab 可见或页面从系统相册返回前台时会刷新当前分页，重新校验图片 URI 是否被外部删除或移入回收站；磁力 Tab 只读取主库用户记录，不读取本地文件、不请求 MediaStore 权限、不启动或取消下载 Worker。页面支持视频本地首帧/大小/时长展示、图片批次缩略图展示、磁力标题/来源/分类/大小/来源搜索词展示、重新下载、多选删除、清空当前分类以及媒体记录的本地文件授权流程。页面处于多选状态时，系统返回键优先退出多选状态，不直接退出下载记录页面。恢复备份后，恢复流程页可以由用户手动触发本地媒体重新定位；记录页本身继续复用现有“本地文件已删除/不可读”展示，不新增“未定位”数据库状态。
+当前已新增独立下载记录页，入口位于“我的”页。页面默认用“视频 / 图片”顶部纯文字 Tab 统一浏览已下载、失败、进行中、部分完成的媒体记录；当 `:feature:magnet` 通过 `-PenableMagnetFeature=true` 编译进应用时，页面通过 `MagnetDownloadHistoryEntry` 追加“磁力”扩展 Tab，完整磁力模块化规则以 `docs/magnet_search_plan.md` 为准。Tab 不配置图标以降低高度并减少对列表空间的占用；Tab 支持点击切换，也支持在内容区域左右滑动切换分类。视频、图片和可选扩展记录都使用 Paging 分页加载，页面进入 `STARTED` 生命周期且当前 Tab 可见时才收集对应分页流，避免 ViewModel 初始化或页面不可见时读取大量媒体元信息；图片 Tab 可见或页面从系统相册返回前台时会刷新当前分页，重新校验图片 URI 是否被外部删除或移入回收站；磁力扩展 Tab 只由磁力模块读取自己的独立数据库，不读取本地文件、不请求 MediaStore 权限、不启动或取消下载 Worker。页面支持视频本地首帧/大小/时长展示、图片批次缩略图展示、可选扩展内容、多选删除、清空当前分类以及媒体记录的本地文件授权流程。页面处于多选状态时，系统返回键优先退出多选状态，不直接退出下载记录页面。恢复备份后，恢复流程页可以由用户手动触发本地媒体重新定位；记录页本身继续复用现有“本地文件已删除/不可读”展示，不新增“未定位”数据库状态。
 
 ## 目标
 
-- 在“我的”页增加下载记录入口，进入后用“视频 / 图片 / 磁力”顶部 Tab 切换，并允许左右滑动切换三个分类页面。
+- 在“我的”页增加下载记录入口，进入后默认用“视频 / 图片”顶部 Tab 切换；启用磁力模块时追加“磁力”扩展 Tab，并允许左右滑动切换分类页面。
 - 视频记录展示标题、文件大小、视频时长、下载时间和本地首帧；本地文件已删除时展示已删除 UI，并提供重新下载按钮。
 - 图片记录展示标题、图片数量和横向可滑动缩略图；8 张以内单行展示，超过 8 张后改为双行横向网格，点击缩略图只预览当前图片，不支持左右切换。
 - 重新下载不删除旧公共文件；同名视频文件或图片文件夹必须生成序号后缀，避免覆盖旧内容。
@@ -29,7 +29,7 @@
 ## 用户体验
 
 1. 用户在“我的”页点击“下载记录”进入页面。
-2. 页面顶部提供“视频 / 图片 / 磁力”三个纯文字 Tab，默认展示视频记录；用户可以点击 Tab，也可以在列表内容区左右滑动切换分类。
+2. 页面顶部提供“视频 / 图片”纯文字 Tab，默认展示视频记录；启用磁力模块时追加“磁力”Tab。用户可以点击 Tab，也可以在列表内容区左右滑动切换分类。
 3. 普通状态下，用户可以点击视频记录播放本地视频，点击图片缩略图从底部打开单张大图预览；高图可以在预览区域内纵向滑动查看完整内容。
 4. 视频本地文件不存在时，首帧区域显示已删除状态；用户点击“重新下载”会创建新的下载记录并重新下载。
 5. 图片记录点击“重新下载”会复用旧批次的图片 URL 创建新批次，不覆盖旧批次和旧公共文件夹。
@@ -42,22 +42,22 @@
 ## 最终实现
 
 - 新增 `DownloadHistoryRoute` 和下载记录页面，入口放在 `MinePage`。
-- 下载记录页面使用顶部纯文字 Tab 和横向 Pager 区分视频、图片和磁力，点击 Tab 会滚动到对应页面，左右滑动页面会同步更新当前 Tab，并在分类切换时清空多选状态；Tab 不配置图标，避免顶部区域过高挤占列表浏览空间；媒体记录范围包含成功、部分成功、失败、已过滤和进行中，图片未确认下载的 `STATUS_EXTRACTED` 批次不展示；磁力记录只展示用户在 App 中复制或打开过的 magnet 元数据，不表示 App 内下载状态。
+- 下载记录页面使用顶部纯文字 Tab 和横向 Pager 区分视频、图片和可选扩展 Tab，点击 Tab 会滚动到对应页面，左右滑动页面会同步更新当前 Tab，并在分类切换时清空多选状态；Tab 不配置图标，避免顶部区域过高挤占列表浏览空间；媒体记录范围包含成功、部分成功、失败、已过滤和进行中，图片未确认下载的 `STATUS_EXTRACTED` 批次不展示；磁力记录由 `:feature:magnet` 扩展提供，只展示用户在 App 中复制或打开过的 magnet 元数据，不表示 App 内下载状态。
 - 下载记录页面在多选状态拦截系统返回键，优先调用 `exitSelection()` 清空选择并回到普通浏览态；删除确认弹窗或图片预览弹层显示时，返回键仍优先交给对应模态层处理；普通态和多选态顶部栏都使用一致的状态栏 padding 与 48dp 高度，确保标题、右侧按钮和多选操作在同一垂直位置。
 - 下载记录页参考剪贴列表页的分页模式，视频和图片分页 Flow 在 ViewModel 内保持稳定并通过 `cachedIn(viewModelScope)` 缓存，页面层通过 `flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)` 绑定前台生命周期；当前 Tab 的内容分支才调用 `collectAsLazyPagingItems()`，避免切换 Tab 时用空 Flow 覆盖已有分页数据。
 - 视频和图片列表分别持有独立的 `LazyListState`，并通过 `rememberSaveable` 保存首个可见项和偏移量；切换视频/图片 Tab、亮暗色主题重组或 Activity 重建后，已浏览过的分类应尽量保留原滚动位置。
 - 视频和图片都使用 PagingSource，每页 20 条、预取 5 条，避免一次性读取大量任务、批次、首帧和图片项。
 - 标题栏按钮、清空数量和“是否包含进行中任务”使用数据库 `COUNT` 与 id 查询，不依赖已分页加载的可见列表，避免分页只加载部分数据时全选、清空或删除提示统计不完整。
-- 磁力 Tab 使用 `magnet_download_records` 的 PagingSource 和 COUNT 查询，卡片展示标题、来源、分类、大小、最近来源搜索词和上次复制/打开时间；点击整卡或打开按钮会复制 magnet URI 并尝试打开外部下载器，复制按钮只复制 URI，两种动作都会刷新 `lastUsedAt` 并触发备份 dirty。
+- 磁力 Tab 不再由 app 直接依赖 `MagnetRepository` 或磁力实体；启用模块时，`MagnetDownloadHistoryEntry` 提供 Paging 内容、COUNT 查询、全选 id、删除和确认文案。宿主只传递选择态、Snackbar 回调和删除流程入口，磁力模块负责复制/打开动作和备份 dirty 通知。
 - 视频列表按下载记录更新时间倒序展示，使用数据库保存的媒体 URI/路径读取首帧、大小、时长和存在性；Android 10+ 严格以保存的 `content://` URI 为准。
 - 图片列表按批次更新时间倒序展示，缩略图读取每个成功图片项的可读引用：Android 10+ 使用 `output_uri`，Android 9 及以下用批次目录和 `finalName` 组合出的最终公开文件路径；8 张以内单行横向展示全部当前可读图片，超过 8 张后改为双行横向网格，`output_uri` 为空、文件不存在或 Android 11+ MediaStore 标记为已回收时会在批次标签中提示不可读取数量；图片卡片会独立多行展示批次输出文件夹名，避免长文件夹名被单行标签省略，方便相同标题的多次下载互相区分。
 - 备份恢复后的媒体重新定位只尝试恢复本地媒体引用，不修改下载状态、不重新下载、不备份媒体文件本体。若未找到媒体，成功/部分成功记录仍保留原状态，下载记录页继续通过现有可读性校验展示“本地文件已删除/不可读”并保留重新下载入口。
 - 媒体重新定位成功写回新的 `savePath` 或 `outputUri` 后，记录页无需新增状态字段即可在下一次分页刷新或页面恢复前台时读取新引用；旧失效 URI/路径在没有高可信新引用时不会被清空，以便后续规则增强继续使用 hint。
 - 图片大图预览接入共享 `SharedImagePreviewBottomSheet` 底部弹出层，图片按弹窗宽度完整排版，预览内容不再固定为 360dp 高度；当图片高度超出屏幕时，用户可以在图片区域纵向滑动查看完整图片。
-- 下载记录页面入口保留生命周期收集、Pager 同步、删除授权和导航等流程编排；标题/Tab/Pager 外壳、分页列表、历史卡片、删除弹窗和选择底栏拆分到同 package 的独立组件文件中；图片预览、普通缩略图和媒体不可读占位复用共享媒体 UI 组件，完整共享规则见 `docs/shared_media_ui_plan.md`。
+- 下载记录页面入口保留生命周期收集、Pager 同步、删除授权和导航等流程编排；标题/Tab/Pager 外壳、分页列表、历史卡片、删除弹窗和选择底栏拆分到同 package 的独立组件文件中；图片预览、普通缩略图和媒体不可读占位复用共享媒体 UI 组件，完整共享规则见 `docs/shared_media_ui_plan.md`。扩展 Tab 的具体卡片和空态由扩展模块提供，宿主不反向依赖 feature 实现。
 - 视频重新下载创建新的 `download_tasks` 记录，新记录指向新下载文件；旧公共文件和旧记录都保留。
 - 图片重新下载克隆旧批次候选为新批次并启动下载；旧批次状态、旧图片项和旧公共文件夹都保留。
-- 删除本地文件只删除记录精确关联的媒体项：视频删除对应任务的 `savePath` 或 pending 输出；图片在 Android 10+ 删除成功图片项的 `output_uri`，Android 9 及以下用批次目录和 `finalName` 定位最终公开文件，且只有确认目录内全是本批次文件时才安全删除整个批次目录；磁力记录没有本地文件关联，删除弹窗不展示“删除记录和本地文件”，也不会请求媒体授权或取消 Worker。
+- 删除本地文件只删除记录精确关联的媒体项：视频删除对应任务的 `savePath` 或 pending 输出；图片在 Android 10+ 删除成功图片项的 `output_uri`，Android 9 及以下用批次目录和 `finalName` 定位最终公开文件，且只有确认目录内全是本批次文件时才安全删除整个批次目录；扩展记录没有本地文件关联时，删除弹窗不展示“删除记录和本地文件”，也不会请求媒体授权或取消 Worker，当前磁力扩展遵循该规则。
 - Android 11+ 删除多个 `content://` 媒体项时，用 `MediaStore.createDeleteRequest` 合并 URI 后一次请求用户确认；Android 10 遇到 `RecoverableSecurityException` 时走系统授权流程，避免逐张图片连续弹窗。
 - 删除进行中记录必须先取消 WorkManager，再按用户选择清理 pending/已发布文件，最后删除对应表行，避免 Worker 迟到回写已删除记录。
 - 删除数据库数据必须精确到选中记录：视频只删 `download_tasks WHERE id IN (...)`；图片只删 `image_extract_batches WHERE id IN (...)`，图片项仅通过外键级联删除这些批次下的数据。
@@ -84,7 +84,7 @@
 
 ## 数据流
 
-- 下载记录页进入后，ViewModel 不在 `init` 中主动 collect 列表；ViewModel 只暴露稳定的 `pagedVideos` 与 `pagedImages` 分页 Flow，并使用 `cachedIn(viewModelScope)` 保留分页缓存。
+- 下载记录页进入后，ViewModel 不在 `init` 中主动 collect 列表；ViewModel 只暴露稳定的 `pagedVideos` 与 `pagedImages` 分页 Flow，并使用 `cachedIn(viewModelScope)` 保留分页缓存。可选扩展 Tab 的分页 Flow 由扩展内容在当前 Tab 可见时自行收集。
 - 页面层参考剪贴列表页做法，先用 `flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)` 将分页 Flow 绑定页面生命周期，再在当前 Tab 内容分支里调用 `collectAsLazyPagingItems()`；这样页面不可见时暂停收集，Tab 切换时也不会把旧分页结果清空。
 - `DownloadDao.pagingHistory()` 和 `ImageExtractDao.pagingHistory()` 返回 `PagingSource`，分页查询按 `update_time DESC, id DESC` 排序；`Pager` 每页读取 20 条并缓存到 ViewModel 生命周期。
 - 视频和图片分别持有独立 `LazyListState`，列表滚动位置不依赖当前 Tab 的组合生命周期；主题切换等重组场景不会主动回到顶部。
@@ -115,7 +115,8 @@
 - `app/src/main/java/com/cla/clip/master/ui/page/download/DownloadHistoryContent.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/download/DownloadHistoryCards.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/download/DownloadHistoryDialogs.kt`
-- `app/src/main/java/com/cla/clip/master/ui/page/magnet/MagnetActionHandler.kt`
+- `feature/magnet-api/src/main/java/com/cla/clip/feature/magnet/api/MagnetFeatureEntry.kt`
+- `feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetDownloadHistoryEntryImpl.kt`
 - `app/src/main/java/com/cla/clip/master/ui/widget/SharedImagePreview.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/download/DownloadHistoryVm.kt`
 - `base/general/src/main/java/com/cla/clip/base/general/dao/DownloadDao.kt`
@@ -124,7 +125,6 @@
 - `base/general/src/main/java/com/cla/clip/base/general/dao/ImageExtractDao.kt`
 - `base/general/src/main/java/com/cla/clip/base/general/repository/DownloadRepository.kt`
 - `base/general/src/main/java/com/cla/clip/base/general/repository/ImageExtractRepository.kt`
-- `base/general/src/main/java/com/cla/clip/base/general/repository/MagnetRepository.kt`
 - `base/general/src/main/java/com/cla/clip/base/general/utils/FileUtils.kt`
 - `base/general/src/main/res/values/strings.xml`
 - `app/src/main/java/com/cla/clip/master/work/DownloadVideoWorker.kt`
@@ -163,7 +163,7 @@
 - 全选当前 Tab、清空当前 Tab 和删除选中记录的运行中提示在分页只加载部分数据时仍然准确。
 - 在系统相册删除已下载图片后，重新打开下载记录或从相册返回图片 Tab，应刷新当前图片分页并把已删除或已回收的图片从缩略图中移除；如果批次没有任何可读成功图片，应展示“本地文件已删除”。
 - 删除进行中记录时先取消 WorkManager，再清理文件，最后删除对应表行。
-- 磁力 Tab 删除或清空时只删除 `magnet_download_records` 对应记录，不删除磁力搜索历史、不删除本地文件、不触发媒体授权、不取消 WorkManager。
+- 磁力 Tab 删除或清空时只删除磁力模块独立数据库里的 `magnet_download_records` 对应记录，不删除磁力搜索历史、不删除本地文件、不触发媒体授权、不取消 WorkManager。
 - 禁止删除整个 Room 数据库，剪贴板、搜索、来源 App、链接预览和未选中下载记录不受影响。
 
 ## 已知取舍
@@ -172,7 +172,7 @@
 - Android 10+ 删除公共媒体可能需要系统确认；为保证记录和文件一致，用户取消授权时保留记录。
 - 删除本地文件优先按数据库保存的 URI 执行；旧系统图片没有 `output_uri` 时，用批次 `outputDir` 提取目录名并结合 `finalName` 定位最终公开文件，不按同名全局搜索，避免误删其它目录里的同名图片。
 - 当前图片记录在 Android 10+ 以成功图片项的 `output_uri` 作为缩略图和删除身份；Android 9 及以下以批次目录和 `finalName` 作为最终文件定位兜底。
-- 磁力记录和视频/图片下载记录共用下载记录页的 Tab、Pager、选择态和空态骨架，但删除语义不同；磁力记录只代表复制/打开历史，不代表 App 内下载进度。
+- 磁力记录和视频/图片下载记录共用下载记录页的 Tab、Pager 与选择态骨架，但删除语义和卡片内容由磁力模块扩展提供；磁力记录只代表复制/打开历史，不代表 App 内下载进度。
 - 图片删除本地文件默认按图片项精确删除；Android 9 及以下只有在确认文件夹内全部文件都属于当前批次时才删除整个文件夹，避免误删用户后来放入的内容。
 - Android 9 及以下删除图片本地文件时可以做安全目录删除：如果目标文件夹里的文件全部属于当前批次记录，可直接删除整个文件夹；如果存在额外文件或子目录，只删除记录匹配的文件，最后仅在目录为空时删除空目录，避免误删用户后来手动放入的内容。
 - 批量删除的授权、取消和结果汇总会让实现复杂度高于单条删除，但能避免多次系统弹窗和状态不一致。
@@ -194,6 +194,7 @@
 
 ## 变更记录
 
+- 2026-05-25：下载记录页改为内建视频/图片 Tab + 可选扩展 Tab；原因是磁力搜索已独立为编译期可选模块，宿主不能再直接依赖磁力 repository、实体或卡片实现。
 - 2026-05-22：下载记录页新增磁力 Tab，接入磁力记录分页、数量、选择、删除、清空、复制和外部打开；原因是磁力搜索第一版需要把用户复制/打开过的 magnet 纳入下载记录页统一管理，同时保证磁力删除不触发本地文件和 Worker 副作用。
 - 2026-05-17：下载记录页视频记录卡片和图片批次卡片接入 `ClipMasterCard` 公共内容卡片外壳；原因是修复卡片触摸反馈呈方角的问题，并让主要内容卡片沿用我的页面卡片效果。缩略图、视频首帧框和删除占位块保持现状。
 - 2026-05-14：新增下载记录页面方案文档；原因是后续需要统一展示已下载视频和图片，并明确重新下载、同名副本、删除记录和本地文件删除的跨模块契约。

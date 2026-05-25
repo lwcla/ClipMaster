@@ -23,15 +23,13 @@ import com.cla.clip.base.general.dao.DownloadTaskData
 import com.cla.clip.base.general.dao.ImageExtractBatchData
 import com.cla.clip.base.general.dao.ImageHistoryFileRef
 import com.cla.clip.base.general.dao.ImageExtractItemData
-import com.cla.clip.base.general.dao.MagnetDownloadRecordData
 import com.cla.clip.base.general.repository.DownloadRepository
 import com.cla.clip.base.general.repository.ImageExtractRepository
-import com.cla.clip.base.general.repository.MagnetRepository
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
 import com.cla.clip.base.general.utils.normalizeImageOutputDir
-import com.cla.clip.master.ui.page.magnet.MagnetActionHandler
-import com.cla.clip.master.ui.page.magnet.messageRes
+import com.cla.clip.feature.magnet.api.MagnetDownloadHistoryEntry
+import com.cla.clip.feature.magnet.api.MagnetFeatureEntry
 import com.cla.clip.master.work.DownloadImagesWorker
 import com.cla.clip.master.work.DownloadVideoWorker
 import com.cla.clip.master.work.BackupAutoScheduler
@@ -43,6 +41,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -71,17 +70,17 @@ private const val LEGACY_IMAGE_PARENT_DIR = "clipMaster"
 /**
  * 下载记录页 Tab。
  *
- * 页面在视频、图片和磁力三类历史之间切换；选中状态只对当前 Tab 生效，切换时会清空选择，避免误删另一类记录。
+ * 页面在内置视频/图片和可选功能扩展历史之间切换；选中状态只对当前 Tab 生效，切换时会清空选择，避免误删另一类记录。
  */
-enum class DownloadHistoryTab {
+sealed class DownloadHistoryTab {
     /** 视频下载任务历史，对应 `download_tasks` 表。 */
-    VIDEO,
+    data object Video : DownloadHistoryTab()
 
     /** 图片批量下载历史，对应 `image_extract_batches` 和其级联图片项。 */
-    IMAGE,
+    data object Image : DownloadHistoryTab()
 
-    /** 磁力复制/打开记录，对应 `magnet_download_records` 表，不代表 App 内下载状态。 */
-    MAGNET,
+    /** 可选功能扩展历史；默认构建没有扩展 Tab。 */
+    data class Extension(val tabId: String) : DownloadHistoryTab()
 }
 
 /**
@@ -91,7 +90,7 @@ enum class DownloadHistoryTab {
  */
 data class DownloadHistoryUiState(
     /** 当前选中的分类 Tab。 */
-    val selectedTab: DownloadHistoryTab = DownloadHistoryTab.VIDEO,
+    val selectedTab: DownloadHistoryTab = DownloadHistoryTab.Video,
 
     /** 视频历史总数，只通过 COUNT 查询获得，用于标题栏动作和清空确认数量。 */
     val videoCount: Int = 0,
@@ -99,8 +98,8 @@ data class DownloadHistoryUiState(
     /** 图片批次历史总数，只通过 COUNT 查询获得，用于标题栏动作和清空确认数量。 */
     val imageCount: Int = 0,
 
-    /** 磁力记录总数，只通过 COUNT 查询获得，用于标题栏动作和清空确认数量。 */
-    val magnetCount: Int = 0,
+    /** 可选扩展记录总数，只通过扩展 COUNT 查询获得，用于标题栏动作和清空确认数量。 */
+    val extensionCounts: Map<String, Int> = emptyMap(),
 
     /** 仍在下载或合并的视频记录数量，用于清空确认时提示会停止后台任务。 */
     val videoRunningCount: Int = 0,
@@ -226,33 +225,6 @@ data class DownloadHistoryImageBatch(
                 (status == ImageExtractBatchData.STATUS_SUCCESS || status == ImageExtractBatchData.STATUS_PARTIAL_SUCCESS)
 }
 
-/** 磁力复制/打开历史展示模型，只展示用户在 App 内操作过的 magnet 元数据。 */
-data class DownloadHistoryMagnetItem(
-    /** 磁力记录 id，用于多选删除和刷新最近使用时间。 */
-    val id: Long,
-
-    /** 来源条目标题。 */
-    val title: String,
-
-    /** 稳定来源 id；第一版只有 Academic Torrents。 */
-    val sourceId: String,
-
-    /** 来源分类，未知时为空。 */
-    val category: String?,
-
-    /** 来源声明大小，单位字节，未知时为空。 */
-    val sizeBytes: Long?,
-
-    /** BTIH infoHash，已规范化为小写。 */
-    val infoHash: String,
-
-    /** 最近产生或刷新该记录的搜索词，可能为空。 */
-    val lastSourceQuery: String?,
-
-    /** 最近复制或打开时间，单位毫秒。 */
-    val lastUsedAt: Long,
-)
-
 /**
  * 下载记录页一次性动作。
  *
@@ -311,8 +283,8 @@ private data class DownloadHistoryCounts(
     /** 图片历史总数。 */
     val imageCount: Int,
 
-    /** 磁力记录总数。 */
-    val magnetCount: Int,
+    /** 扩展记录总数。 */
+    val extensionCounts: Map<String, Int>,
 
     /** 仍在下载或合并的视频任务数量。 */
     val videoRunningCount: Int,
@@ -325,7 +297,7 @@ private data class DownloadHistoryCounts(
 private data class DownloadHistoryRecordCounts(
     val videoCount: Int,
     val imageCount: Int,
-    val magnetCount: Int,
+    val extensionCounts: Map<String, Int>,
 )
 
 /** 仍在后台执行的下载数量；磁力记录没有 App 内下载任务，因此不在这里计数。 */
@@ -352,15 +324,16 @@ class DownloadHistoryVm @Inject constructor(
     /** 图片提取仓库，提供批次历史、批次克隆和精确删除接口。 */
     private val imageExtractRepository: ImageExtractRepository,
 
-    /** 磁力用户数据仓库，提供磁力记录分页、数量和删除接口。 */
-    private val magnetRepository: MagnetRepository,
-
-    /** 复用搜索页的磁力复制/打开副作用处理器。 */
-    private val magnetActionHandler: MagnetActionHandler,
+    /** 可选功能入口；默认构建集合为空。 */
+    private val magnetFeatures: Set<@JvmSuppressWildcards MagnetFeatureEntry>,
 ) : ViewModel() {
 
+    private val downloadExtensions: Map<String, MagnetDownloadHistoryEntry> = magnetFeatures
+        .mapNotNull { it.downloadHistoryEntry }
+        .associateBy { it.tabId }
+
     /** 当前选中的下载记录分类。 */
-    private val selectedTab = MutableStateFlow(DownloadHistoryTab.VIDEO)
+    private val selectedTab = MutableStateFlow<DownloadHistoryTab>(DownloadHistoryTab.Video)
 
     /** 当前 Tab 是否处于多选管理态。 */
     private val selectionMode = MutableStateFlow(false)
@@ -425,33 +398,29 @@ class DownloadHistoryVm @Inject constructor(
         }
     }.cachedIn(viewModelScope)
 
-    /**
-     * 磁力历史分页流。
-     *
-     * 只读取主库用户记录，不访问 Academic Torrents 缓存库；点击时再刷新最近使用时间并尝试打开外部下载器。
-     */
-    val pagedMagnets = Pager(
-        config = PagingConfig(
-            pageSize = HISTORY_PAGE_SIZE,
-            prefetchDistance = 5,
-            enablePlaceholders = false
-        )
-    ) {
-        magnetRepository.pagingDownloadRecords()
-    }.flow.map { pagingData: PagingData<MagnetDownloadRecordData> ->
-        pagingData.map { record -> record.toMagnetHistoryItem() }
-    }.cachedIn(viewModelScope)
+    /** 可选功能下载记录 Tab，由页面层渲染标签和内容。 */
+    val extensionEntries: List<MagnetDownloadHistoryEntry> = downloadExtensions.values.sortedBy { it.tabId }
+
+    private fun observeExtensionCounts() = if (extensionEntries.isEmpty()) {
+        flowOf(emptyMap<String, Int>())
+    } else {
+        combine(extensionEntries.map { entry ->
+            entry.observeCount().map { count -> entry.tabId to count }
+        }) { pairs ->
+            pairs.toMap()
+        }
+    }
 
     /** 历史总数和运行中数量；只做 COUNT 级查询，不加载完整记录。 */
     private val recordCounts = combine(
         downloadRepository.observeHistoryCount(),
         imageExtractRepository.observeHistoryCount(),
-        magnetRepository.observeDownloadRecordCount()
-    ) { videoCount, imageCount, magnetCount ->
+        observeExtensionCounts()
+    ) { videoCount, imageCount, extensionCounts ->
         DownloadHistoryRecordCounts(
             videoCount = videoCount,
             imageCount = imageCount,
-            magnetCount = magnetCount
+            extensionCounts = extensionCounts
         )
     }
 
@@ -471,7 +440,7 @@ class DownloadHistoryVm @Inject constructor(
         DownloadHistoryCounts(
             videoCount = records.videoCount,
             imageCount = records.imageCount,
-            magnetCount = records.magnetCount,
+            extensionCounts = records.extensionCounts,
             videoRunningCount = running.videoRunningCount,
             imageRunningCount = running.imageRunningCount
         )
@@ -485,9 +454,9 @@ class DownloadHistoryVm @Inject constructor(
             } else {
                 withContext(Dispatchers.IO) {
                     when (tab) {
-                        DownloadHistoryTab.VIDEO -> downloadRepository.countRunningTasks(ids) > 0
-                        DownloadHistoryTab.IMAGE -> imageExtractRepository.countRunningBatches(ids) > 0
-                        DownloadHistoryTab.MAGNET -> false
+                        DownloadHistoryTab.Video -> downloadRepository.countRunningTasks(ids) > 0
+                        DownloadHistoryTab.Image -> imageExtractRepository.countRunningBatches(ids) > 0
+                        is DownloadHistoryTab.Extension -> false
                     }
                 }
             }
@@ -505,7 +474,7 @@ class DownloadHistoryVm @Inject constructor(
             selectedTab = tab,
             videoCount = counts.videoCount,
             imageCount = counts.imageCount,
-            magnetCount = counts.magnetCount,
+            extensionCounts = counts.extensionCounts,
             videoRunningCount = counts.videoRunningCount,
             imageRunningCount = counts.imageRunningCount,
             selectionMode = inSelection,
@@ -563,9 +532,9 @@ class DownloadHistoryVm @Inject constructor(
         val tab = selectedTab.value
         viewModelScope.launch(Dispatchers.IO) {
             val ids = when (tab) {
-                DownloadHistoryTab.VIDEO -> downloadRepository.getHistoryIds()
-                DownloadHistoryTab.IMAGE -> imageExtractRepository.getHistoryIds()
-                DownloadHistoryTab.MAGNET -> magnetRepository.getDownloadRecordIds()
+                DownloadHistoryTab.Video -> downloadRepository.getHistoryIds()
+                DownloadHistoryTab.Image -> imageExtractRepository.getHistoryIds()
+                is DownloadHistoryTab.Extension -> downloadExtensions[tab.tabId]?.getRecordIds().orEmpty()
             }.toSet()
             if (selectedTab.value != tab) return@launch
             selectedIds.value = ids
@@ -610,22 +579,6 @@ class DownloadHistoryVm @Inject constructor(
         }
     }
 
-    /** 从磁力记录页复制并尝试打开外部下载器。 */
-    fun copyAndOpenMagnet(recordId: Long) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val result = magnetActionHandler.copyAndOpenRecord(recordId)
-            message.value = appContext.getString(result.messageRes)
-        }
-    }
-
-    /** 从磁力记录页只复制 magnet URI。 */
-    fun copyMagnet(recordId: Long) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val result = magnetActionHandler.copyRecord(recordId)
-            message.value = appContext.getString(result.messageRes)
-        }
-    }
-
     /** 删除当前选中的记录；deleteFiles 为 true 时会先删除记录精确关联的本地媒体。 */
     fun deleteSelected(deleteFiles: Boolean) {
         val ids = selectedIds.value
@@ -638,9 +591,9 @@ class DownloadHistoryVm @Inject constructor(
         val tab = selectedTab.value
         viewModelScope.launch(Dispatchers.IO) {
             val ids = when (tab) {
-                DownloadHistoryTab.VIDEO -> downloadRepository.getHistoryIds()
-                DownloadHistoryTab.IMAGE -> imageExtractRepository.getHistoryIds()
-                DownloadHistoryTab.MAGNET -> magnetRepository.getDownloadRecordIds()
+                DownloadHistoryTab.Video -> downloadRepository.getHistoryIds()
+                DownloadHistoryTab.Image -> imageExtractRepository.getHistoryIds()
+                is DownloadHistoryTab.Extension -> downloadExtensions[tab.tabId]?.getRecordIds().orEmpty()
             }.toSet()
             if (ids.isEmpty() || selectedTab.value != tab) return@launch
             deleteRecords(tab, ids, deleteFiles)
@@ -682,7 +635,7 @@ class DownloadHistoryVm @Inject constructor(
     private fun deleteRecords(tab: DownloadHistoryTab, ids: Set<Long>, deleteFiles: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
             busy.value = true
-            val shouldDeleteFiles = deleteFiles && tab != DownloadHistoryTab.MAGNET
+            val shouldDeleteFiles = deleteFiles && tab !is DownloadHistoryTab.Extension
             val mediaRefs = collectMediaRefsAndCancelRunning(tab, ids)
             if (!shouldDeleteFiles) {
                 finishDeleteRecords(tab, ids, failedFileCount = 0, deletedFiles = false)
@@ -715,7 +668,7 @@ class DownloadHistoryVm @Inject constructor(
     /** 收集记录精确关联的媒体 URI/路径，并取消正在进行的 Worker，保证后续删除不会被迟到回写覆盖。 */
     private suspend fun collectMediaRefsAndCancelRunning(tab: DownloadHistoryTab, ids: Set<Long>): List<HistoryMediaRef> {
         return when (tab) {
-            DownloadHistoryTab.VIDEO -> {
+            DownloadHistoryTab.Video -> {
                 downloadRepository.getTasks(ids).flatMap { task ->
                     if (task.status == DownloadTaskData.STATUS_DOWNLOADING || task.status == DownloadTaskData.STATUS_MERGING) {
                         DownloadVideoWorker.cancel(appContext, task.id)
@@ -727,7 +680,7 @@ class DownloadHistoryVm @Inject constructor(
                 }
             }
 
-            DownloadHistoryTab.IMAGE -> {
+            DownloadHistoryTab.Image -> {
                 imageExtractRepository.getBatchesWithItems(ids).flatMap { (batch, items) ->
                     if (batch.status == ImageExtractBatchData.STATUS_DOWNLOADING) {
                         DownloadImagesWorker.cancel(appContext, batch.id)
@@ -736,7 +689,7 @@ class DownloadHistoryVm @Inject constructor(
                 }
             }
 
-            DownloadHistoryTab.MAGNET -> emptyList()
+            is DownloadHistoryTab.Extension -> emptyList()
         }.distinct()
     }
 
@@ -790,9 +743,9 @@ class DownloadHistoryVm @Inject constructor(
         deletedFiles: Boolean = true,
     ) {
         when (tab) {
-            DownloadHistoryTab.VIDEO -> downloadRepository.deleteTasks(ids)
-            DownloadHistoryTab.IMAGE -> imageExtractRepository.deleteBatches(ids)
-            DownloadHistoryTab.MAGNET -> magnetRepository.deleteDownloadRecords(ids)
+            DownloadHistoryTab.Video -> downloadRepository.deleteTasks(ids)
+            DownloadHistoryTab.Image -> imageExtractRepository.deleteBatches(ids)
+            is DownloadHistoryTab.Extension -> downloadExtensions[tab.tabId]?.deleteRecords(ids) ?: 0
         }
         exitSelection()
         message.value = when {
@@ -849,20 +802,6 @@ class DownloadHistoryVm @Inject constructor(
             logD(TAG) { "deleteSingleMediaRef: 删除文件失败 path=$path" }
             MediaDeleteResult.Failed
         }
-    }
-
-    /** 将 Room 磁力记录映射为历史页模型，不向 UI 暴露完整 magnet URI。 */
-    private fun MagnetDownloadRecordData.toMagnetHistoryItem(): DownloadHistoryMagnetItem {
-        return DownloadHistoryMagnetItem(
-            id = id,
-            title = title,
-            sourceId = sourceId,
-            category = category,
-            sizeBytes = sizeBytes,
-            infoHash = infoHash,
-            lastSourceQuery = lastSourceQuery,
-            lastUsedAt = lastUsedAt
-        )
     }
 
     /** 将 Room 视频任务映射为历史页模型，并同步读取本地媒体元信息。 */

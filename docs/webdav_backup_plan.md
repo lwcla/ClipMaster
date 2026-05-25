@@ -6,13 +6,13 @@
 
 ## 当前状态
 
-项目当前数据主要存放在 Room 数据库和 MMKV 中：剪贴数据、来源 App、链接预览、搜索历史、磁力搜索历史、视频下载记录、图片下载记录和磁力复制/打开记录由 Room 承载；剪贴快捷动作、回收站保留天数等轻量设置由 `AppSetting` 承载。当前已接入统一备份恢复能力，支持本地手动导出/导入预检恢复，以及 WebDAV 手动测试、上传、列表、预览和恢复；新导出使用 `schemaVersion = 3` 的 zip + JSONL 流式协议，schemaVersion 2 不包含磁力用户数据但继续兼容导入，旧 v1 JSON 数组 zip 只读兼容导入。
+项目当前数据主要存放在 Room 数据库和 MMKV 中：剪贴数据、来源 App、链接预览、搜索历史、视频下载记录、图片下载记录由 base 主库承载；磁力搜索历史和磁力复制/打开记录在启用 `:feature:magnet` 时由磁力模块独立数据库承载；剪贴快捷动作、回收站保留天数等轻量设置由 `AppSetting` 承载。当前已接入统一备份恢复能力，支持本地手动导出/导入预检恢复，以及 WebDAV 手动测试、上传、列表、预览和恢复；新导出使用 `schemaVersion = 4` 的 zip + JSONL 流式协议，schemaVersion 3 曾把磁力 JSONL 作为必需 entry，schemaVersion 2 不包含磁力用户数据但继续兼容导入，旧 v1 JSON 数组 zip 只读兼容导入。
 
 本方案新增统一 `BackupSnapshot` 备份包，同一套导出、预检、恢复和报告逻辑同时服务本地文件备份与 WebDAV 备份。第一版定位是“备份/恢复”，不是多设备实时同步；多个设备可以共用同一 WebDAV 目录并看到彼此备份，但不保证自动双向同步或冲突同步。
 
 恢复剪贴记录时会对 `timestamp`、`pinned_time`、`folded_at`、`deleted_at` 做本机时间轴归一化：如果备份来自时钟偏快的设备，先按 manifest 创建时间和本机恢复时间的正向偏移整体平移，再把仍落在未来的字段限制到恢复开始时间以内；本地较新状态保护也使用归一化后的备份创建时间，避免远端数据长期显示“现在”并压过后续新复制内容。
 
-当前代码组织已将备份包 IO、导出、恢复和 mapper 拆到独立协作者：`BackupPackageWriter` / `BackupPackageReader` 负责 JSONL、zip、manifest 和 checksum，`BackupSnapshotExporter` 负责分页导出、high-water mark、设置白名单读取和 manifest 组装，`BackupSnapshotRestorer` 负责 v1/v2/v3 预检后的事务恢复、chunk 写库、幂等报告和本地较新保护，`BackupEntityMappers` 负责 Room 实体与备份协议模型转换，`BackupRepository` 聚焦对外 API、互斥和预检委托。整理过程不改变备份 UI 流程，只扩展磁力用户数据覆盖范围。
+当前代码组织已将备份包 IO、导出、恢复和 mapper 拆到独立协作者：`BackupPackageWriter` / `BackupPackageReader` 负责 JSONL、zip、manifest 和 checksum，`BackupSnapshotExporter` 负责分页导出、high-water mark、设置白名单读取、可选 `BackupFeatureContributor` 扩展和 manifest 组装，`BackupSnapshotRestorer` 负责 v1/v2/v3/v4 预检后的事务恢复、chunk 写库、幂等报告、本地较新保护和可选功能恢复参与者调用，`BackupEntityMappers` 负责 base Room 实体与备份协议模型转换，`BackupRepository` 聚焦对外 API、互斥和预检委托。整理过程不改变备份 UI 流程，只把可选磁力数据从 base 固定协议拆到磁力模块参与者。
 
 ## 目标
 
@@ -29,7 +29,7 @@
 - 来源 App 缓存，包括包名、名称、图标缓存路径、主色和图标哈希。
 - 链接预览缓存。
 - 搜索历史。
-- 磁力搜索历史和磁力复制/打开记录。
+- 启用 `:feature:magnet` 时，磁力搜索历史和磁力复制/打开记录由磁力模块作为可选功能数据参与备份。
 - 核心用户偏好，包括剪贴快捷动作和回收站保留天数。
 - 下载记录元数据，包括视频下载任务和图片提取/下载批次、图片项。
 
@@ -345,9 +345,9 @@ flowchart TD
 - `data/settings.json`：跨安装有意义的用户偏好。
 - `data/clips.json`、`data/source_apps.json`、`data/link_previews.json`、`data/search_histories.json`：核心剪贴与检索数据。
 - `data/video_downloads.json`、`data/image_batches.json`、`data/image_items.json`：下载记录元数据。
-- `schemaVersion = 3` 起新增 `data/magnet_search_histories.jsonl` 和 `data/magnet_download_records.jsonl`；v1/v2 备份缺少这两个文件时按空集合处理。
+- `schemaVersion = 4` 起 base 必需 JSONL entry 不再包含磁力文件；启用 `:feature:magnet` 时，磁力模块通过可选 `BackupFeatureContributor` 追加 `data/magnet_search_histories.jsonl` 和 `data/magnet_download_records.jsonl`。`schemaVersion = 3` 历史协议曾把这两个磁力 JSONL 作为必需 entry，继续兼容校验和恢复。
 
-当前新导出实际使用 JSONL 文件名：`data/clips.jsonl`、`data/source_apps.jsonl`、`data/link_previews.jsonl`、`data/search_histories.jsonl`、`data/video_downloads.jsonl`、`data/image_batches.jsonl`、`data/image_items.jsonl`、`data/magnet_search_histories.jsonl` 和 `data/magnet_download_records.jsonl`；v1 JSON 数组文件名仅用于旧包兼容导入。
+当前 base 新导出实际使用 JSONL 文件名：`data/clips.jsonl`、`data/source_apps.jsonl`、`data/link_previews.jsonl`、`data/search_histories.jsonl`、`data/video_downloads.jsonl`、`data/image_batches.jsonl` 和 `data/image_items.jsonl`；磁力模块启用时额外写入 `data/magnet_search_histories.jsonl` 和 `data/magnet_download_records.jsonl`；v1 JSON 数组文件名仅用于旧包兼容导入。
 
 manifest 简化示例：
 
@@ -355,7 +355,7 @@ manifest 简化示例：
 {
   "format": "clip_master_backup",
   "application_id": "com.cla.clip.master",
-  "schema_version": 1,
+  "schema_version": 4,
   "encryption": "none",
   "compression": "zip",
   "created_at": 1716000000000,
@@ -379,11 +379,13 @@ manifest 简化示例：
     "source_app_count": 3,
     "link_preview_count": 2,
     "search_history_count": 5,
-    "magnet_search_history_count": 1,
     "video_download_count": 1,
-    "magnet_download_record_count": 1,
     "image_batch_count": 1,
-    "image_item_count": 8
+    "image_item_count": 8,
+    "feature_counts": {
+      "magnet_search_history_count": 1,
+      "magnet_download_record_count": 1
+    }
   }
 }
 ```
@@ -402,7 +404,7 @@ manifest 简化示例：
 - 彻底删除的剪贴数据、已删除的下载记录不会进入新的备份；恢复旧备份可能带回旧数据。
 - 下载中/合并中的旧下载记录恢复后不恢复后台任务，统一转为已中断或失败状态。
 - 恢复剪贴数据时重新计算 `searchText` 等派生字段，不盲信旧备份中的派生值。
-- 恢复磁力搜索历史按规范化关键词去重；恢复磁力记录只接受 provider 白名单里的 `academic_torrents` 和合法 40 位 BTIH infoHash。若同一 `sourceId + infoHash` 本地和备份都存在，`firstUsedAt` 取更早值，`lastUsedAt` 更新者胜出，`lastSourceQuery` 跟随更新者；缺失或异常 magnet URI 会按 infoHash 和标题重建，仍无法重建则跳过并计入恢复报告。
+- 启用磁力模块时，恢复磁力搜索历史按规范化关键词去重；恢复磁力记录只接受 provider 白名单里的 `academic_torrents` 和合法 40 位 BTIH infoHash。若同一 `sourceId + infoHash` 本地和备份都存在，`firstUsedAt` 取更早值，`lastUsedAt` 更新者胜出，`lastSourceQuery` 跟随更新者；缺失或异常 magnet URI 会按 infoHash 和标题重建，仍无法重建则跳过并计入恢复报告。默认禁用磁力模块时，备份 UI 不展示磁力统计和恢复分类，也不会恢复磁力 entry。
 - checksum、格式标识或 `applicationId` 校验失败时禁止导入。
 
 ## 安全与隐私
@@ -417,7 +419,7 @@ manifest 简化示例：
 
 - 自动备份、手动本地备份、手动 WebDAV 备份、恢复、保留清理和 WebDAV 健康检查都生成短 `taskId`，同一次流程的开始、关键阶段、成功、失败、跳过和重试日志必须带同一个 `taskId`。
 - 备份相关日志正文、阶段描述、错误说明和人工可读提示必须统一使用简体中文；`taskId`、`reasonCode`、`backupKind`、`target`、字段名、TAG、枚举稳定值等结构化标识保留英文，便于搜索和聚合。
-- 磁力搜索历史和磁力记录备份/恢复日志只允许记录数量、provider、合法性跳过数量和 reasonCode；禁止记录完整搜索词、完整标题、完整 magnet URI、完整 infoHash、Academic Torrents XML 内容或完整 URL。
+- 启用磁力模块时，磁力搜索历史和磁力记录备份/恢复日志只允许记录数量、provider、合法性跳过数量和 reasonCode；禁止记录完整搜索词、完整标题、完整 magnet URI、完整 infoHash、Academic Torrents XML 内容或完整 URL。
 - 自动备份调度记录周期任务更新、dirty 标记、dirty 任务入队/跳过、立即入队和取消，字段只包含自动备份开关、dirty 延迟、网络约束和是否需要网络，不记录 WebDAV 地址或本地授权 URI。
 - 自动备份执行记录开始、跳过、快照生成、本地写入开始/成功/失败、WebDAV 上传开始/成功/失败、结束、重试已安排和失败；字段包括目标是否配置、保留份数、备份类型、文件名、文件大小、条目数量、清理数量、耗时和 reasonCode。
 - 手动本地备份记录开始、快照生成和成功；手动 WebDAV 备份记录开始、本地镜像写入、WebDAV 上传和成功；字段包括文件名、文件大小、条目数量、耗时和目标状态，不记录用户选择文件 URI、WebDAV endpoint、用户名或密码。
@@ -458,7 +460,7 @@ manifest 简化示例：
 
 - 对外仍保持单个 `.zip` 备份文件和 manifest sidecar，不改成本地目录包，不备份媒体文件本体。
 - 新导出使用 `schemaVersion = 2` 和 JSONL 数据文件；旧 `schemaVersion = 1` 的 JSON 数组 zip 只读兼容导入，不再新生成。
-- 磁力用户数据加入后，新导出升级为 `schemaVersion = 3`；旧 `schemaVersion = 2` JSONL 备份缺少磁力 JSONL 文件时兼容为空集合，不阻断恢复。
+- 磁力用户数据模块化后，新导出升级为 `schemaVersion = 4`；base 必需 JSONL entry 不再包含磁力文件，磁力模块启用时通过 `BackupFeatureContributor` 追加可选 entry 和 `feature_counts`。旧 `schemaVersion = 3` 磁力 JSONL 作为必需 entry 的备份仍兼容校验和恢复。
 - 导出不再生成整包 `ByteArray`：先分页写 JSONL 临时文件并计算 size/checksum，再生成 manifest，最后组装 zip。
 - 导出开始时记录可分页表的 high-water mark，本次只导出已存在记录；导出期间新增变化继续保留 dirty，由下一次自动备份补齐。
 - 导出流程由 `BackupSnapshotExporter` 承载，仓库入口只负责互斥和对外 API；新增备份表时优先扩展 exporter 的分页导出方法、`BackupSummaryBuilder` 和 mapper，不把导出细节继续塞回 `BackupRepository`。
@@ -586,6 +588,7 @@ manifest 简化示例：
 
 ## 变更记录
 
+- 2026-05-25：备份协议升级到 schemaVersion 4，并将磁力备份从 base 固定字段拆为可选 `BackupFeatureContributor`；原因是磁力搜索已独立为编译期可选模块，默认构建不能展示、统计或恢复磁力数据，启用模块时仍保留磁力 JSONL 导出恢复能力。
 - 2026-05-24：将媒体关联成功/无须处理后的返回判断补强为 ViewModel 终态标记；原因是日志显示返回时没有进入页面 `Result/NoWork` 分支，需要以发送终态 summary 时记录的闭环语义兜底，避免 UI state 收集时序导致普通返回。
 - 2026-05-24：收敛媒体关联成功终态返回实现的代码组织；原因是 `shouldReturnToMineAfterBack`、`backLogCode` 和 `shouldCloseRestoreFlowOnBack` 分别属于 `MediaRelocationUiState` / `MediaRelocationSummaryType` 派生语义，应与 `isRunning` 集中在状态模型文件，导航层复杂收栈细节也应封装到命名函数。
 - 2026-05-24：统一媒体关联页成功态底部“完成”和顶部/系统返回的处理入口；原因是复测发现 `BackupMediaRelocationPage` 返回日志 lambda 行未执行，成功态底部按钮此前会直接调用导航回调，现改为统一经过 `requestBack()`，并将日志字段提前到非惰性代码路径计算。

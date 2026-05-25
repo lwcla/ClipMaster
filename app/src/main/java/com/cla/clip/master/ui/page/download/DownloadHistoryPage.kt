@@ -30,6 +30,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
@@ -65,11 +66,22 @@ fun DownloadHistoryPage(
     val snackbarHostState = remember { SnackbarHostState() }
     var pendingDelete by remember { mutableStateOf<DeleteRequestUi?>(null) }
     var previewImageUri by remember { mutableStateOf<String?>(null) }
-    // 下载记录包含视频、图片和磁力三个一级分类，列表顺序需要同时驱动 Tab 指示器和横向 Pager 页码。
-    val historyTabs = remember { listOf(DownloadHistoryTab.VIDEO, DownloadHistoryTab.IMAGE, DownloadHistoryTab.MAGNET) }
+    val historyTabs = buildList {
+        add(DownloadHistoryTabSpec(DownloadHistoryTab.Video, stringResource(R.string.base_general_video)))
+        add(DownloadHistoryTabSpec(DownloadHistoryTab.Image, stringResource(R.string.base_general_image)))
+        viewModel.extensionEntries.forEach { entry ->
+            add(
+                DownloadHistoryTabSpec(
+                    tab = DownloadHistoryTab.Extension(entry.tabId),
+                    title = stringResource(entry.tabTitleRes),
+                    extensionEntry = entry
+                )
+            )
+        }
+    }
     // Pager 状态放在页面层持有，避免 ViewModel 依赖 Compose 类型；初始页跟随 ViewModel 当前分类。
     val pagerState = rememberPagerState(
-        initialPage = historyTabs.indexOf(state.selectedTab).coerceAtLeast(0),
+        initialPage = historyTabs.indexOfFirst { it.tab == state.selectedTab }.coerceAtLeast(0),
         pageCount = { historyTabs.size }
     )
     // 和剪贴列表页保持一致：分页 Flow 对象稳定，只跟随页面 STARTED 生命周期收集；具体是否收集由当前 Tab 的内容分支决定。
@@ -79,13 +91,9 @@ fun DownloadHistoryPage(
     val imagePagingFlow = remember(viewModel.pagedImages, lifecycle) {
         viewModel.pagedImages.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
     }
-    val magnetPagingFlow = remember(viewModel.pagedMagnets, lifecycle) {
-        viewModel.pagedMagnets.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
-    }
     // 每个分类持有自己的可保存列表状态；切换 Tab、主题重组或 Activity 重建后都尽量回到原位置。
     val videoListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
     val imageListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
-    val magnetListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
 
     BackHandler(enabled = state.selectionMode && pendingDelete == null && previewImageUri == null) {
         // 删除弹窗和图片预览存在时应优先响应自己的返回关闭逻辑；普通多选态返回只清空选择，不退出页面。
@@ -117,7 +125,7 @@ fun DownloadHistoryPage(
     LaunchedEffect(pagerState, historyTabs) {
         snapshotFlow { pagerState.settledPage }.collect { page ->
             // 只在滑动最终停稳后同步 ViewModel，避免拖拽过程中频繁清空多选状态或让标题栏数量抖动。
-            historyTabs.getOrNull(page)?.let(viewModel::selectTab)
+            historyTabs.getOrNull(page)?.tab?.let(viewModel::selectTab)
         }
     }
 
@@ -134,15 +142,22 @@ fun DownloadHistoryPage(
                         kind = DeleteRequestKind.ClearTab,
                         count = state.currentItemsCount,
                         hasRunning = state.currentTabHasRunning,
-                        allowDeleteFiles = state.selectedTab != DownloadHistoryTab.MAGNET
+                        allowDeleteFiles = state.selectedTab !is DownloadHistoryTab.Extension,
+                        message = state.deleteConfirmMessage(
+                            context = context,
+                            kind = DeleteRequestKind.ClearTab,
+                            count = state.currentItemsCount,
+                            tabs = historyTabs
+                        )
                     )
                 }
             )
 
             DownloadHistoryTabs(
+                tabs = historyTabs,
                 selectedTab = state.selectedTab,
                 onSelected = { tab ->
-                    val page = historyTabs.indexOf(tab)
+                    val page = historyTabs.indexOfFirst { it.tab == tab }
                     if (page < 0) return@DownloadHistoryTabs
                     // 点击 Tab 时立即更新分类状态以刷新标题栏动作，再平滑滚动内容页保持视觉联动。
                     viewModel.selectTab(tab)
@@ -156,10 +171,8 @@ fun DownloadHistoryPage(
                 state = state,
                 videoPagingFlow = videoPagingFlow,
                 imagePagingFlow = imagePagingFlow,
-                magnetPagingFlow = magnetPagingFlow,
                 videoListState = videoListState,
                 imageListState = imageListState,
-                magnetListState = magnetListState,
                 onToggleSelected = viewModel::toggleSelected,
                 onEnterSelection = viewModel::enterSelection,
                 onOpenVideo = { item ->
@@ -174,8 +187,9 @@ fun DownloadHistoryPage(
                 },
                 onRetryVideo = viewModel::retryVideo,
                 onRetryImage = viewModel::retryImageBatch,
-                onCopyMagnet = viewModel::copyMagnet,
-                onOpenMagnet = viewModel::copyAndOpenMagnet,
+                onShowMessage = { message ->
+                    scope.launch { snackbarHostState.showSnackbar(message) }
+                },
                 onPreviewImage = { previewImageUri = it }
             )
         }
@@ -196,7 +210,13 @@ fun DownloadHistoryPage(
                         kind = DeleteRequestKind.Selected,
                         count = selectedCount,
                         hasRunning = state.selectedHasRunning,
-                        allowDeleteFiles = state.selectedTab != DownloadHistoryTab.MAGNET
+                        allowDeleteFiles = state.selectedTab !is DownloadHistoryTab.Extension,
+                        message = state.deleteConfirmMessage(
+                            context = context,
+                            kind = DeleteRequestKind.Selected,
+                            count = selectedCount,
+                            tabs = historyTabs
+                        )
                     )
                 },
             )
@@ -240,5 +260,26 @@ fun DownloadHistoryPage(
             model = uri,
             onDismiss = { previewImageUri = null }
         )
+    }
+}
+
+private fun DownloadHistoryUiState.deleteConfirmMessage(
+    context: android.content.Context,
+    kind: DeleteRequestKind,
+    count: Int,
+    tabs: List<DownloadHistoryTabSpec>,
+): String {
+    val extensionEntry = (selectedTab as? DownloadHistoryTab.Extension)
+        ?.let { extensionTab -> tabs.firstOrNull { it.tab == extensionTab }?.extensionEntry }
+    return when {
+        extensionEntry != null -> {
+            val resId = when (kind) {
+                DeleteRequestKind.Selected -> extensionEntry.deleteSelectedMessageRes
+                DeleteRequestKind.ClearTab -> extensionEntry.clearTabMessageRes
+            }
+            context.getString(resId, count)
+        }
+        kind == DeleteRequestKind.Selected -> context.getString(R.string.base_general_download_history_delete_selected_message, count)
+        else -> context.getString(R.string.base_general_download_history_clear_message, count)
     }
 }

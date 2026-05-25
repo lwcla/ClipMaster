@@ -26,11 +26,10 @@ data class BackupExportResult(
 internal data class BackupHighWaterMarks(
     val clipMaxId: Long,
     val searchHistoryMaxId: Long,
-    val magnetSearchHistoryMaxId: Long,
     val videoDownloadMaxId: Long,
-    val magnetDownloadRecordMaxId: Long,
     val imageBatchMaxId: Long,
     val imageItemMaxId: Long,
+    val featureMarks: Map<String, Map<String, Long>> = emptyMap(),
 )
 
 /** 导出过程中累积的数量摘要，最终会写入 manifest。 */
@@ -39,11 +38,10 @@ internal data class BackupSummaryBuilder(
     var sourceAppCount: Int = 0,
     var linkPreviewCount: Int = 0,
     var searchHistoryCount: Int = 0,
-    var magnetSearchHistoryCount: Int = 0,
     var videoDownloadCount: Int = 0,
-    var magnetDownloadRecordCount: Int = 0,
     var imageBatchCount: Int = 0,
     var imageItemCount: Int = 0,
+    val featureCounts: MutableMap<String, Int> = linkedMapOf(),
 ) {
     /** 转为稳定外部协议中的摘要模型。 */
     fun toSummary(): BackupSummary {
@@ -52,11 +50,10 @@ internal data class BackupSummaryBuilder(
             sourceAppCount = sourceAppCount,
             linkPreviewCount = linkPreviewCount,
             searchHistoryCount = searchHistoryCount,
-            magnetSearchHistoryCount = magnetSearchHistoryCount,
             videoDownloadCount = videoDownloadCount,
-            magnetDownloadRecordCount = magnetDownloadRecordCount,
             imageBatchCount = imageBatchCount,
-            imageItemCount = imageItemCount
+            imageItemCount = imageItemCount,
+            featureCounts = featureCounts.toSortedMap()
         )
     }
 }

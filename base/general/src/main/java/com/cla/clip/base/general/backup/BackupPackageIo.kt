@@ -123,7 +123,7 @@ class BackupPackageWriter @Inject constructor() {
  *
  * 会话收集每个业务数据文件的临时文件、大小和 checksum；调用方先写完所有数据文件，再由这些结果生成 manifest 并组装 zip。
  */
-class BackupPackageBuildSession internal constructor(
+class BackupPackageBuildSession(
     /** 当前任务 id，仅用于日志和临时文件名。 */
     val taskId: String,
     /** 当前任务临时目录。 */
@@ -192,7 +192,7 @@ class BackupPackageBuildSession internal constructor(
 }
 
 /** JSONL 行写入 sink，封装统一编码规则和计数回调。 */
-class JsonLineSink<T> internal constructor(
+class JsonLineSink<T>(
     private val serializer: KSerializer<T>,
     private val writer: BufferedWriter,
     private val onWrite: () -> Unit,

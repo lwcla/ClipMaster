@@ -9,12 +9,9 @@ import com.cla.clip.base.general.dao.DownloadTaskData
 import com.cla.clip.base.general.dao.ImageExtractBatchData
 import com.cla.clip.base.general.dao.ImageExtractItemData
 import com.cla.clip.base.general.dao.LinkPreviewData
-import com.cla.clip.base.general.dao.MagnetDownloadRecordData
-import com.cla.clip.base.general.dao.MagnetSearchHistoryData
 import com.cla.clip.base.general.dao.SearchHistoryData
 import com.cla.clip.base.general.dao.SourceAppData
 import com.cla.clip.base.general.utils.logD
-import java.util.zip.ZipFile
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -30,6 +27,8 @@ class BackupSnapshotRestorer @Inject constructor(
     private val appDatabase: AppDatabase,
     /** 文件型备份包读取器，负责 JSONL entry 读取。 */
     private val packageReader: BackupPackageReader,
+    /** 可选功能恢复参与者；未编译对应模块时集合为空。 */
+    private val featureContributors: Set<@JvmSuppressWildcards BackupFeatureContributor>,
 ) {
     companion object {
         /** 日志标签，只记录恢复数量和时间归一化摘要，不输出备份内容。 */
@@ -89,22 +88,12 @@ class BackupSnapshotRestorer @Inject constructor(
         updated += historyRestore.updated
         skipped += historyRestore.skipped
 
-        val magnetHistoryRestore = restoreMagnetSearchHistoryEntities(snapshot.data.magnetSearchHistories.mapNotNull { it.toEntity() })
-        inserted += magnetHistoryRestore.inserted
-        updated += magnetHistoryRestore.updated
-        skipped += magnetHistoryRestore.skipped
-
         restoreSettings(snapshot.data.settings)
 
         val videoRestore = restoreVideoDownloads(snapshot)
         inserted += videoRestore.inserted
         updated += videoRestore.updated
         skipped += videoRestore.skipped
-
-        val magnetRecordRestore = restoreMagnetDownloadRecords(snapshot)
-        inserted += magnetRecordRestore.inserted
-        updated += magnetRecordRestore.updated
-        skipped += magnetRecordRestore.skipped
 
         val imageBatchRestore = restoreImageBatches(snapshot)
         inserted += imageBatchRestore.inserted
@@ -129,9 +118,7 @@ class BackupSnapshotRestorer @Inject constructor(
                 BackupRestoreCategoryReport(BackupProgressCategory.LinkPreviews, linkPreviewRestore.inserted, linkPreviewRestore.updated, linkPreviewRestore.skipped),
                 BackupRestoreCategoryReport(BackupProgressCategory.Clips, clipRestore.inserted, clipRestore.updated, clipRestore.skipped),
                 BackupRestoreCategoryReport(BackupProgressCategory.SearchHistories, historyRestore.inserted, historyRestore.updated, historyRestore.skipped),
-                BackupRestoreCategoryReport(BackupProgressCategory.MagnetSearchHistories, magnetHistoryRestore.inserted, magnetHistoryRestore.updated, magnetHistoryRestore.skipped),
                 BackupRestoreCategoryReport(BackupProgressCategory.VideoDownloads, videoRestore.inserted, videoRestore.updated, videoRestore.skipped),
-                BackupRestoreCategoryReport(BackupProgressCategory.MagnetDownloadRecords, magnetRecordRestore.inserted, magnetRecordRestore.updated, magnetRecordRestore.skipped),
                 BackupRestoreCategoryReport(BackupProgressCategory.ImageBatches, imageBatchRestore.inserted, imageBatchRestore.updated, imageBatchRestore.skipped),
                 BackupRestoreCategoryReport(BackupProgressCategory.ImageItems, imageItemRestore.inserted, imageItemRestore.updated, imageItemRestore.skipped)
             )
@@ -156,31 +143,22 @@ class BackupSnapshotRestorer @Inject constructor(
         val linkPreviewsByLink = linkPreviews.associateBy { it.link }
         val clipRestore = restoreJsonlClips(ref, manifest, sourceAppsByPackage, linkPreviewsByLink, timeNormalizer)
         val historyRestore = restoreJsonlSearchHistories(ref)
-        val magnetHistoryRestore = if (ref.hasEntry(MAGNET_SEARCH_HISTORIES_JSONL_PATH)) {
-            restoreJsonlMagnetSearchHistories(ref)
-        } else {
-            RestoreCounter()
-        }
         restoreSettings(BackupJson.decodeSettings(packageReader.readText(ref, SETTINGS_PATH)))
         val videoRestore = restoreJsonlVideoDownloads(ref, manifest)
-        val magnetRecordRestore = if (ref.hasEntry(MAGNET_DOWNLOAD_RECORDS_JSONL_PATH)) {
-            restoreJsonlMagnetDownloadRecords(ref)
-        } else {
-            RestoreCounter()
-        }
         val imageBatchRestore = restoreJsonlImageBatches(ref, manifest)
         val imageItemRestore = restoreJsonlImageItems(ref)
+        val featureReports = featureContributors
+            .sortedBy { it.contributorId }
+            .flatMap { contributor -> contributor.restoreJsonl(ref, manifest) }
         val reports = listOf(
             BackupRestoreCategoryReport(BackupProgressCategory.SourceApps, sourceAppRestore.inserted, sourceAppRestore.updated, sourceAppRestore.skipped),
             BackupRestoreCategoryReport(BackupProgressCategory.LinkPreviews, linkPreviewRestore.inserted, linkPreviewRestore.updated, linkPreviewRestore.skipped),
             BackupRestoreCategoryReport(BackupProgressCategory.Clips, clipRestore.inserted, clipRestore.updated, clipRestore.skipped),
             BackupRestoreCategoryReport(BackupProgressCategory.SearchHistories, historyRestore.inserted, historyRestore.updated, historyRestore.skipped),
-            BackupRestoreCategoryReport(BackupProgressCategory.MagnetSearchHistories, magnetHistoryRestore.inserted, magnetHistoryRestore.updated, magnetHistoryRestore.skipped),
             BackupRestoreCategoryReport(BackupProgressCategory.VideoDownloads, videoRestore.inserted, videoRestore.updated, videoRestore.skipped),
-            BackupRestoreCategoryReport(BackupProgressCategory.MagnetDownloadRecords, magnetRecordRestore.inserted, magnetRecordRestore.updated, magnetRecordRestore.skipped),
             BackupRestoreCategoryReport(BackupProgressCategory.ImageBatches, imageBatchRestore.inserted, imageBatchRestore.updated, imageBatchRestore.skipped),
             BackupRestoreCategoryReport(BackupProgressCategory.ImageItems, imageItemRestore.inserted, imageItemRestore.updated, imageItemRestore.skipped)
-        )
+        ) + featureReports
         val inserted = reports.sumOf { it.insertedCount }
         val updated = reports.sumOf { it.updatedCount }
         val skipped = reports.sumOf { it.skippedCount }
@@ -367,53 +345,6 @@ class BackupSnapshotRestorer @Inject constructor(
         return counter
     }
 
-    /** 从 JSONL 恢复磁力搜索历史，按规范化关键词生成幂等报告。 */
-    private suspend fun restoreJsonlMagnetSearchHistories(ref: BackupPackageRef): RestoreCounter {
-        var counter = RestoreCounter()
-        val chunk = mutableListOf<MagnetSearchHistoryData>()
-        packageReader.readJsonLines(ref, MAGNET_SEARCH_HISTORIES_JSONL_PATH, BackupMagnetSearchHistory.serializer()) { item ->
-            item.toEntity()?.let { chunk += it }
-            if (chunk.size >= WRITE_CHUNK_SIZE) {
-                counter += restoreMagnetSearchHistoryEntities(chunk.toList())
-                chunk.clear()
-            }
-        }
-        if (chunk.isNotEmpty()) counter += restoreMagnetSearchHistoryEntities(chunk.toList())
-        return counter
-    }
-
-    /** 恢复磁力搜索历史，业务主键是规范化关键词。 */
-    private suspend fun restoreMagnetSearchHistoryEntities(entities: List<MagnetSearchHistoryData>): RestoreCounter {
-        if (entities.isEmpty()) return RestoreCounter()
-        var counter = RestoreCounter()
-        entities.chunked(WRITE_CHUNK_SIZE).forEach { chunk ->
-            val existing = appDatabase.magnetDao()
-                .loadSearchHistoriesByQueriesForBackup(chunk.map { it.normalizedQuery })
-                .associateBy { it.normalizedQuery }
-            val toWrite = mutableListOf<MagnetSearchHistoryData>()
-            var inserted = 0
-            var updated = 0
-            var skipped = 0
-            chunk.forEach { entity ->
-                val local = existing[entity.normalizedQuery]
-                when {
-                    local == null -> {
-                        inserted++
-                        toWrite += entity.copy(id = 0)
-                    }
-                    local.sameBackupContent(entity) -> skipped++
-                    else -> {
-                        updated++
-                        toWrite += entity.copy(id = local.id)
-                    }
-                }
-            }
-            if (toWrite.isNotEmpty()) appDatabase.magnetDao().upsertSearchHistoriesForBackup(toWrite)
-            counter += RestoreCounter(inserted, updated, skipped)
-        }
-        return counter
-    }
-
     /** 从 JSONL 恢复视频下载记录，按 chunk 查询已有记录。 */
     private suspend fun restoreJsonlVideoDownloads(ref: BackupPackageRef, manifest: BackupManifest): RestoreCounter {
         var counter = RestoreCounter()
@@ -453,80 +384,6 @@ class BackupSnapshotRestorer @Inject constructor(
         }
         if (toWrite.isNotEmpty()) appDatabase.downloadDao().upsertTasksForBackup(toWrite)
         return RestoreCounter(inserted, updated, skipped)
-    }
-
-    /** 从 JSONL 恢复磁力下载记录，按 sourceId + infoHash 查询已有记录。 */
-    private suspend fun restoreJsonlMagnetDownloadRecords(ref: BackupPackageRef): RestoreCounter {
-        var counter = RestoreCounter()
-        val chunk = mutableListOf<MagnetDownloadRecordData>()
-        var skippedInvalid = 0
-        packageReader.readJsonLines(ref, MAGNET_DOWNLOAD_RECORDS_JSONL_PATH, BackupMagnetDownloadRecord.serializer()) { item ->
-            val entity = item.toEntity()
-            if (entity == null) {
-                skippedInvalid += 1
-            } else {
-                chunk += entity
-            }
-            if (chunk.size >= WRITE_CHUNK_SIZE) {
-                counter += restoreMagnetDownloadRecordEntities(chunk.toList())
-                chunk.clear()
-            }
-        }
-        if (chunk.isNotEmpty()) counter += restoreMagnetDownloadRecordEntities(chunk.toList())
-        return counter + RestoreCounter(skipped = skippedInvalid)
-    }
-
-    /** 恢复磁力下载记录；同一业务键本地和备份都存在时保留 lastUsedAt 更新的记录。 */
-    private suspend fun restoreMagnetDownloadRecordEntities(entities: List<MagnetDownloadRecordData>): RestoreCounter {
-        if (entities.isEmpty()) return RestoreCounter()
-        var counter = RestoreCounter()
-        entities.groupBy { it.sourceId }.forEach { (sourceId, scopedEntities) ->
-            scopedEntities.chunked(WRITE_CHUNK_SIZE).forEach { chunk ->
-                val existing = appDatabase.magnetDao()
-                    .loadDownloadRecordsBySourceAndHashesForBackup(sourceId, chunk.map { it.infoHash })
-                    .associateBy { it.infoHash }
-                val toWrite = mutableListOf<MagnetDownloadRecordData>()
-                var inserted = 0
-                var updated = 0
-                var skipped = 0
-                chunk.forEach { entity ->
-                    val local = existing[entity.infoHash]
-                    when {
-                        local == null -> {
-                            inserted++
-                            toWrite += entity.copy(id = 0)
-                        }
-                        local.sameBackupContent(entity) -> skipped++
-                        else -> {
-                            val merged = mergeMagnetDownloadRecord(local, entity)
-                            if (local.sameBackupContent(merged)) {
-                                skipped++
-                            } else {
-                                updated++
-                                toWrite += merged
-                            }
-                        }
-                    }
-                }
-                if (toWrite.isNotEmpty()) appDatabase.magnetDao().upsertDownloadRecordsForBackup(toWrite)
-                counter += RestoreCounter(inserted, updated, skipped)
-            }
-        }
-        return counter
-    }
-
-    /** 合并磁力下载记录冲突，保留更早 firstUsedAt，并让 lastSourceQuery 跟随较新的 lastUsedAt。 */
-    private fun mergeMagnetDownloadRecord(
-        local: MagnetDownloadRecordData,
-        backup: MagnetDownloadRecordData,
-    ): MagnetDownloadRecordData {
-        val newer = if (backup.lastUsedAt > local.lastUsedAt) backup else local
-        return newer.copy(
-            id = local.id,
-            firstUsedAt = minOf(local.firstUsedAt, backup.firstUsedAt),
-            lastUsedAt = maxOf(local.lastUsedAt, backup.lastUsedAt),
-            lastSourceQuery = newer.lastSourceQuery
-        )
     }
 
     /** 从 JSONL 恢复图片批次，按 chunk 查询已有记录。 */
@@ -692,12 +549,6 @@ class BackupSnapshotRestorer @Inject constructor(
         return RestoreCounter(inserted, updated, skipped)
     }
 
-    /** 恢复旧 v1 内存快照中的磁力下载记录。 */
-    private suspend fun restoreMagnetDownloadRecords(snapshot: BackupSnapshot): RestoreCounter {
-        val backups = snapshot.data.magnetDownloadRecords.mapNotNull { it.toEntity() }
-        return restoreMagnetDownloadRecordEntities(backups)
-    }
-
     /** 恢复图片批次；本地较新的批次状态会保留。 */
     private suspend fun restoreImageBatches(snapshot: BackupSnapshot): RestoreCounter {
         val backups = snapshot.data.imageBatches
@@ -771,8 +622,4 @@ class BackupSnapshotRestorer @Inject constructor(
         }
     }
 
-    /** 兼容旧协议：磁力数据文件从 v3 才开始出现，旧备份缺失时按空集合恢复。 */
-    private fun BackupPackageRef.hasEntry(path: String): Boolean {
-        return ZipFile(requireReadable()).use { zip -> zip.getEntry(path) != null }
-    }
 }

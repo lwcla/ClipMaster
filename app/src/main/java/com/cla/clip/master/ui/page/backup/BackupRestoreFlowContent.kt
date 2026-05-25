@@ -39,6 +39,8 @@ import com.cla.clip.base.general.backup.BackupProgressCategory
 import com.cla.clip.base.general.backup.BackupProgressPhase
 import com.cla.clip.base.general.backup.BackupRestoreCategoryReport
 import com.cla.clip.base.general.backup.BackupSummary
+import com.cla.clip.base.general.backup.reportCode
+import com.cla.clip.feature.magnet.api.MagnetFeatureEntry
 
 /**
  * 备份恢复流程页内容区。
@@ -50,16 +52,18 @@ internal fun BackupRestoreFlowContent(
     state: BackupRestoreFlowState,
     mediaRelocationEntryState: MediaRelocationEntryState,
     mediaRelocationSummary: MediaRelocationSummary?,
+    magnetFeatures: Set<MagnetFeatureEntry> = emptySet(),
 ) {
     FlowHeader(state = state)
     when (state) {
         is BackupRestoreFlowState.Reading -> ReadingContent(state)
-        is BackupRestoreFlowState.Preview -> PreviewContent(state)
+        is BackupRestoreFlowState.Preview -> PreviewContent(state, magnetFeatures)
         is BackupRestoreFlowState.Restoring -> RestoringContent(state)
         is BackupRestoreFlowState.Result -> ResultContent(
             state = state,
             mediaRelocationEntryState = mediaRelocationEntryState,
-            mediaRelocationSummary = mediaRelocationSummary
+            mediaRelocationSummary = mediaRelocationSummary,
+            magnetFeatures = magnetFeatures
         )
         is BackupRestoreFlowState.Error -> ErrorContent(state)
         BackupRestoreFlowState.Hidden -> Unit
@@ -190,7 +194,10 @@ private fun ProgressRow(text: String) {
 }
 
 @Composable
-private fun PreviewContent(state: BackupRestoreFlowState.Preview) {
+private fun PreviewContent(
+    state: BackupRestoreFlowState.Preview,
+    magnetFeatures: Set<MagnetFeatureEntry>,
+) {
     val preview = state.preview
     FlowSection(title = stringResource(R.string.base_general_backup_section_info)) {
         InfoRow(stringResource(R.string.base_general_backup_info_file_name), state.fileName, keepEnd = true)
@@ -211,7 +218,7 @@ private fun PreviewContent(state: BackupRestoreFlowState.Preview) {
         )
     }
     FlowSection(title = stringResource(R.string.base_general_backup_section_counts)) {
-        BackupCountRows(summary = preview.summary)
+        BackupCountRows(summary = preview.summary, magnetFeatures = magnetFeatures)
     }
     FlowSection(title = stringResource(R.string.base_general_backup_section_restore_note)) {
         Text(
@@ -227,6 +234,7 @@ private fun ResultContent(
     state: BackupRestoreFlowState.Result,
     mediaRelocationEntryState: MediaRelocationEntryState,
     mediaRelocationSummary: MediaRelocationSummary?,
+    magnetFeatures: Set<MagnetFeatureEntry>,
 ) {
     val report = state.report
     FlowSection(title = stringResource(R.string.base_general_backup_section_info)) {
@@ -250,7 +258,7 @@ private fun ResultContent(
         )
     }
     FlowSection(title = stringResource(R.string.base_general_backup_section_counts)) {
-        RestoreCategoryRows(report.categoryReports)
+        RestoreCategoryRows(report.categoryReports, magnetFeatures)
     }
     Text(
         text = stringResource(R.string.base_general_backup_restore_skip_hint),
@@ -325,25 +333,38 @@ private fun InfoRow(label: String, value: String, keepEnd: Boolean = false) {
 }
 
 @Composable
-private fun BackupCountRows(summary: BackupSummary) {
+private fun BackupCountRows(
+    summary: BackupSummary,
+    magnetFeatures: Set<MagnetFeatureEntry>,
+) {
     BackupCountRow(stringResource(R.string.base_general_backup_count_clips), summary.clipCount)
     BackupCountRow(stringResource(R.string.base_general_backup_count_source_apps), summary.sourceAppCount)
     BackupCountRow(stringResource(R.string.base_general_backup_count_link_previews), summary.linkPreviewCount)
     BackupCountRow(stringResource(R.string.base_general_backup_count_search_histories), summary.searchHistoryCount)
-    BackupCountRow(stringResource(R.string.base_general_backup_count_magnet_search_histories), summary.magnetSearchHistoryCount)
     BackupCountRow(stringResource(R.string.base_general_backup_count_video_downloads), summary.videoDownloadCount)
-    BackupCountRow(stringResource(R.string.base_general_backup_count_magnet_download_records), summary.magnetDownloadRecordCount)
     BackupCountRow(stringResource(R.string.base_general_backup_count_image_batches), summary.imageBatchCount)
     BackupCountRow(stringResource(R.string.base_general_backup_count_image_items), summary.imageItemCount)
+    magnetFeatures.sortedBy { it.featureId }.forEach { feature ->
+        feature.backupCountItems(summary.featureCounts).forEach { item ->
+            BackupCountRow(stringResource(item.labelRes), item.count)
+        }
+    }
 }
 
 @Composable
-private fun RestoreCategoryRows(reports: List<BackupRestoreCategoryReport>) {
+private fun RestoreCategoryRows(
+    reports: List<BackupRestoreCategoryReport>,
+    magnetFeatures: Set<MagnetFeatureEntry>,
+) {
     val byCategory = reports.associateBy { it.category }
-    restoreReportCategoryOrder.forEach { category ->
+    val featureCategoryCodes = magnetFeatures
+        .sortedBy { it.featureId }
+        .flatMap { it.restoreReportCategoryCodes }
+    val categoryCodes = restoreReportCategoryOrder + featureCategoryCodes
+    categoryCodes.forEach { category ->
         val report = byCategory[category]
         BackupCountRow(
-            label = category.labelText(),
+            label = restoreCategoryLabel(category, magnetFeatures),
             value = stringResource(
                 R.string.base_general_backup_restore_result_summary,
                 report?.insertedCount ?: 0,
@@ -506,9 +527,7 @@ private fun BackupProgressCategory.labelText(): String {
         BackupProgressCategory.SourceApps -> stringResource(R.string.base_general_backup_count_source_apps)
         BackupProgressCategory.LinkPreviews -> stringResource(R.string.base_general_backup_count_link_previews)
         BackupProgressCategory.SearchHistories -> stringResource(R.string.base_general_backup_count_search_histories)
-        BackupProgressCategory.MagnetSearchHistories -> stringResource(R.string.base_general_backup_count_magnet_search_histories)
         BackupProgressCategory.VideoDownloads -> stringResource(R.string.base_general_backup_count_video_downloads)
-        BackupProgressCategory.MagnetDownloadRecords -> stringResource(R.string.base_general_backup_count_magnet_download_records)
         BackupProgressCategory.ImageBatches -> stringResource(R.string.base_general_backup_count_image_batches)
         BackupProgressCategory.ImageItems -> stringResource(R.string.base_general_backup_count_image_items)
         BackupProgressCategory.Settings,
@@ -536,16 +555,26 @@ private fun BackupRestoreFlowState.previewOrNull(): BackupPreview? {
     }
 }
 
+@Composable
+private fun restoreCategoryLabel(
+    category: String,
+    magnetFeatures: Set<MagnetFeatureEntry>,
+): String {
+    val builtIn = BackupProgressCategory.entries.firstOrNull { it.reportCode() == category }
+    if (builtIn != null) return builtIn.labelText()
+    val featureLabelRes = magnetFeatures
+        .firstNotNullOfOrNull { feature -> feature.restoreCategoryLabelRes(category) }
+    return featureLabelRes?.let { stringResource(it) } ?: stringResource(R.string.base_general_unknow)
+}
+
 private val restoreReportCategoryOrder = listOf(
-    BackupProgressCategory.Clips,
-    BackupProgressCategory.SourceApps,
-    BackupProgressCategory.LinkPreviews,
-    BackupProgressCategory.SearchHistories,
-    BackupProgressCategory.MagnetSearchHistories,
-    BackupProgressCategory.VideoDownloads,
-    BackupProgressCategory.MagnetDownloadRecords,
-    BackupProgressCategory.ImageBatches,
-    BackupProgressCategory.ImageItems
+    BackupProgressCategory.Clips.reportCode(),
+    BackupProgressCategory.SourceApps.reportCode(),
+    BackupProgressCategory.LinkPreviews.reportCode(),
+    BackupProgressCategory.SearchHistories.reportCode(),
+    BackupProgressCategory.VideoDownloads.reportCode(),
+    BackupProgressCategory.ImageBatches.reportCode(),
+    BackupProgressCategory.ImageItems.reportCode()
 )
 
 private data class RestoreStatusVisual(

@@ -20,11 +20,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DownloadTaskData::class,
         ImageExtractBatchData::class,
         ImageExtractItemData::class,
-        SearchHistoryData::class,
-        MagnetSearchHistoryData::class,
-        MagnetDownloadRecordData::class
+        SearchHistoryData::class
     ],
-    version = 10, // 版本10：新增磁力搜索历史和磁力复制/打开记录两张用户数据表。
+    version = 11, // 版本11：磁力用户数据迁移到可选 feature 独立数据库，主库不再声明磁力表。
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
@@ -51,9 +49,6 @@ abstract class AppDatabase : RoomDatabase() {
 
     /** 提供搜索历史访问入口。 */
     abstract fun searchHistoryDao(): SearchHistoryDao
-
-    /** 提供磁力搜索历史和磁力复制/打开记录访问入口。 */
-    abstract fun magnetDao(): MagnetDao
 
     companion object {
         /**
@@ -139,12 +134,7 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        /**
-         * 版本 9 -> 10 手动迁移。
-         *
-         * 磁力搜索历史和磁力下载记录属于用户数据，需要进入主库并走正式迁移；Academic Torrents 源索引是可重建缓存，
-         * 不放入主库，也不参与此迁移。
-         */
+        /** 版本 9 -> 10 历史迁移曾新增磁力表；保留迁移链路，随后 10 -> 11 会移出主库。 */
         val MIGRATION_9_10: Migration = object : Migration(9, 10) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
@@ -186,6 +176,18 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_magnet_download_records_last_used_at` ON `magnet_download_records` (`last_used_at`)"
                 )
+            }
+        }
+
+        /**
+         * 版本 10 -> 11 手动迁移。
+         *
+         * 当前开发阶段按磁力独立模块方案移除主库内磁力表；旧主库磁力数据不做兼容迁移，启用 feature 后使用独立数据库重新积累。
+         */
+        val MIGRATION_10_11: Migration = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS `magnet_search_histories`")
+                db.execSQL("DROP TABLE IF EXISTS `magnet_download_records`")
             }
         }
     }

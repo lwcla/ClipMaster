@@ -43,12 +43,11 @@ class BackupPackageIoTest {
                 session.writeJsonLines(SOURCE_APPS_JSONL_PATH, BackupSourceApp.serializer(), emptySequence()),
                 session.writeJsonLines(LINK_PREVIEWS_JSONL_PATH, BackupLinkPreview.serializer(), emptySequence()),
                 session.writeJsonLines(SEARCH_HISTORIES_JSONL_PATH, BackupSearchHistory.serializer(), emptySequence()),
-                session.writeJsonLines(MAGNET_SEARCH_HISTORIES_JSONL_PATH, BackupMagnetSearchHistory.serializer(), emptySequence()),
                 session.writeJsonObject(SETTINGS_PATH, BackupJson.encodeSettings(BackupSettings())),
                 session.writeJsonLines(VIDEO_DOWNLOADS_JSONL_PATH, BackupVideoDownload.serializer(), emptySequence()),
-                session.writeJsonLines(MAGNET_DOWNLOAD_RECORDS_JSONL_PATH, BackupMagnetDownloadRecord.serializer(), emptySequence()),
                 session.writeJsonLines(IMAGE_BATCHES_JSONL_PATH, BackupImageBatch.serializer(), emptySequence()),
-                session.writeJsonLines(IMAGE_ITEMS_JSONL_PATH, BackupImageItem.serializer(), emptySequence())
+                session.writeJsonLines(IMAGE_ITEMS_JSONL_PATH, BackupImageItem.serializer(), emptySequence()),
+                session.writeJsonLines("data/unit_feature.jsonl", BackupSearchHistory.serializer(), emptySequence())
             )
             val manifest = BackupManifest(
                 applicationId = BuildConfig.APPLICATION_ID,
@@ -74,6 +73,7 @@ class BackupPackageIoTest {
             assertEquals(1, validated.summary.clipCount)
             assertEquals(result.packageFile.length(), validated.fileSize)
             assertTrue(validated.files.map { it.path }.containsAll(RequiredJsonlDataPaths))
+            assertTrue(validated.files.map { it.path }.contains("data/unit_feature.jsonl"))
         } finally {
             taskDir.deleteRecursively()
         }

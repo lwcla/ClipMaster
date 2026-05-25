@@ -4,11 +4,11 @@
 
 ## 当前状态
 
-应用通过 `AppNavigation` 注册首页、剪贴搜索、磁力搜索、详情、下载记录、折叠数据、回收站、视频/图片提取等路由，子页面统一通过 `onBack` 调用 `NavHostController.popBackStack()` 返回上一层，通过 `onNavigate` 跳转到目标路由。
+应用通过 `AppNavigation` 注册首页、剪贴搜索、详情、下载记录、折叠数据、回收站、视频/图片提取等内建路由，子页面统一通过 `onBack` 调用 `NavHostController.popBackStack()` 返回上一层，通过 `onNavigate` 跳转到目标路由。磁力搜索已改为编译期可选模块：`AppNavigation` 注入 `Set<MagnetFeatureEntry>`，集合非空时由 `:feature:magnet` 自行注册私有磁力 route，集合为空时不注册磁力目的地。
 
 本次只增加 Compose Navigation 官方页面级左进右出动画：前进时新页面从右侧进入、当前页向左退出；返回时上一层从左侧进入、当前页向右退出。页面转场只负责视觉效果，不额外处理点击穿透，不关闭退出页动画，也不在具体页面里增加为了动画服务的点击拦截逻辑。
 
-当前 release/R8 导航协议约束：`Routes.kt` 中所有类型安全路由、`SearchScope` 和 `MainInitialTab` 都通过 `@Keep` 保留默认完整类名，避免 `composable<T>`、`toRoute<T>` 或返回栈恢复在混淆包中按默认 serialName 找不到路由参数类型。`MagnetSearchRoute(initialQuery)` 只保存磁力搜索页首帧需要的轻量字符串参数，页面进入后由 ViewModel 规整和截断，不在路由里传递磁力结果、数据库实体或剪贴板内容。`MainRoute(initialTab)` 只保存首页初始底部 Tab，用于恢复后媒体关联成功闭环时收起恢复链路并明确回到“我的”页。
+当前 release/R8 导航协议约束：`Routes.kt` 中所有类型安全路由、`SearchScope` 和 `MainInitialTab` 都通过 `@Keep` 保留默认完整类名，避免 `composable<T>`、`toRoute<T>` 或返回栈恢复在混淆包中按默认 serialName 找不到路由参数类型。磁力模块内部的 `MagnetSearchRoute(initialQuery)` 只保存磁力搜索页首帧需要的轻量字符串参数，由 `:feature:magnet` 自行 `@Keep` / `@Serializable` 维护；app 不在 `Routes.kt` 暴露磁力 route，也不在路由里传递磁力结果、数据库实体或剪贴板内容。`MainRoute(initialTab)` 只保存首页初始底部 Tab，用于恢复后媒体关联成功闭环时收起恢复链路并明确回到“我的”页。
 
 ## 目标
 
@@ -27,7 +27,7 @@
 ## 用户体验
 
 - 从“我的”页进入回收站、折叠数据、下载记录等二级页时，新页面从右侧滑入，当前页面向左滑出。
-- 从“我的”页进入磁力搜索页，或从详情页带候选关键词进入磁力搜索页时，同样使用页面级左进右出转场。
+- 启用磁力模块后，从“我的”页进入磁力搜索页，或从详情页带候选关键词进入磁力搜索页时，同样使用页面级左进右出转场；默认禁用构建不展示这些入口，也不注册磁力目的地。
 - 从二级页返回时，上一层从左侧滑入，当前二级页向右滑出。
 - 我的页入口只保留普通卡片点击反馈，不做导航前缩放或延迟。
 
@@ -46,8 +46,9 @@
 - `app/src/main/java/com/cla/clip/master/ui/page/main/MainPage.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/backup/BackupMediaRelocationPage.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/backup/BackupRestoreState.kt`
+- `feature/magnet-api/src/main/java/com/cla/clip/feature/magnet/api/MagnetFeatureEntry.kt`
+- `feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetFeatureEntryImpl.kt`
 - `docs/app_navigation_plan.md`
-- `app/src/main/java/com/cla/clip/master/ui/page/magnet/MagnetSearchPage.kt`
 
 ## 实现步骤
 
@@ -68,7 +69,7 @@
 - 媒体关联完成或无须处理后点击顶部返回或底部“完成”，应直接回到带底部导航的“我的”页；失败、权限不足、预估、权限请求和待确认阶段返回仍回到恢复页。
 - release 混淆包进入普通搜索和折叠搜索时，`SearchRoute.scope` 应能正常解析，不再因 `SearchScope` 类名被混淆而崩溃。
 - release 混淆包通过媒体关联正向终态回首页时，`MainRoute.initialTab` 应能正常解析并选中“我的”Tab。
-- release 混淆包进入磁力搜索页时，`MagnetSearchRoute.initialQuery` 应能正常解析；初始关键词不应因为导航恢复被重复覆盖用户正在编辑的输入。
+- 启用磁力模块的 release 混淆包进入磁力搜索页时，模块内部 `MagnetSearchRoute.initialQuery` 应能正常解析；初始关键词不应因为导航恢复被重复覆盖用户正在编辑的输入。
 
 ## 已知取舍
 
@@ -81,6 +82,7 @@
 
 ## 变更记录
 
+- 2026-05-25：磁力搜索导航改为通过 `Set<MagnetFeatureEntry>` 注册可选目的地；原因是磁力搜索已独立为编译期可选模块，默认构建不能在 app 路由表中保留磁力 route 或页面实现引用。
 - 2026-05-24：媒体关联正向终态返回判断改为优先读取 ViewModel 终态标记；原因是页面返回时可能没有进入 `Result/NoWork` UI state 分支，导航层需要消费更稳定的业务终态语义。
 - 2026-05-24：收敛媒体关联正向终态返回代码组织；原因是页面 state 和 summary type 的扩展属性应与 `isRunning` 归属一致，导航层低层 `popUpTo` 细节也应封装为命名函数，避免 `AppNavigation` 主流程过于拥挤。
 - 2026-05-24：将媒体关联页底部“完成”改为复用 `requestBack()`，并把返回日志字段先在普通代码路径计算；原因是复测时定位到页面日志 lambda 行未执行，需要避免成功态按钮绕过同一返回入口，也避免 `logD` 惰性求值干扰断点判断。

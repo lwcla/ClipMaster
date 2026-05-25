@@ -73,7 +73,15 @@ android {
 
 dependencies {
     implementation(project(":base:general"))
+    implementation(project(":feature:magnet-api"))
     implementation(project(":shizuku"))
+
+    val enableMagnetFeature = providers.gradleProperty("enableMagnetFeature")
+        .map(String::toBoolean)
+        .getOrElse(false)
+    if (enableMagnetFeature) {
+        implementation(project(":feature:magnet"))
+    }
 
     val composeBom = platform(libs.androidx.compose.bom)
     implementation(composeBom)

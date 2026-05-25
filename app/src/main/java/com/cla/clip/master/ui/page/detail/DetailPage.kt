@@ -36,9 +36,9 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.entity.ClipShowEntity
+import com.cla.clip.feature.magnet.api.MagnetFeatureEntry
 import com.cla.clip.master.ui.dialog.ClipDeleteChoiceDialog
 import com.cla.clip.master.ui.navigation.ImageExtractRoute
-import com.cla.clip.master.ui.navigation.MagnetSearchRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.navigation.VideoExtractRoute
 import com.cla.clip.master.ui.widget.ClipMasterCard
@@ -58,6 +58,8 @@ fun DetailPage(
     clipId: Long,
     onBack: () -> Unit,
     onNavigate: (Route) -> Unit,  // 跳转页面
+    magnetFeatures: Set<MagnetFeatureEntry> = emptySet(),
+    onOpenMagnetSearch: (MagnetFeatureEntry, String) -> Unit = { _, _ -> },
 ) {
     var deleteClip by remember { mutableStateOf<ClipShowEntity?>(null) }
 
@@ -144,6 +146,8 @@ fun DetailPage(
                 ButtonContainer(
                     detailVm = detailVm,
                     onNavigate = onNavigate,
+                    magnetFeatures = magnetFeatures,
+                    onOpenMagnetSearch = onOpenMagnetSearch,
                     onDelete = { clip -> deleteClip = clip },
                     clip = clip
                 )
@@ -169,6 +173,8 @@ fun DetailPage(
 private fun ButtonContainer(
     detailVm: DetailViewModel,
     onNavigate: (Route) -> Unit,
+    magnetFeatures: Set<MagnetFeatureEntry>,
+    onOpenMagnetSearch: (MagnetFeatureEntry, String) -> Unit,
     onDelete: (ClipShowEntity) -> Unit,
     clip: ClipShowEntity
 ) {
@@ -229,13 +235,14 @@ private fun ButtonContainer(
         Row(
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Button(
-                modifier = Modifier.weight(1f),
-                onClick = {
-                    onNavigate(MagnetSearchRoute(initialQuery = clip.linkTitle ?: clip.content))
+            val magnetInitialQuery = clip.linkTitle ?: clip.content
+            magnetFeatures.sortedBy { it.featureId }.forEach { feature ->
+                with(feature) {
+                    DetailAction(
+                        initialQuery = magnetInitialQuery,
+                        onOpenSearch = { query -> onOpenMagnetSearch(feature, query) }
+                    )
                 }
-            ) {
-                Text(stringResource(R.string.base_general_magnet_search))
             }
 
             Button(

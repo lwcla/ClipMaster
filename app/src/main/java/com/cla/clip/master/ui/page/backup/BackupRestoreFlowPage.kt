@@ -25,6 +25,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.utils.logD
+import com.cla.clip.feature.magnet.api.MagnetFeatureEntry
 import com.cla.clip.master.ui.navigation.BackupMediaRelocationRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.widget.TitleBar
@@ -41,6 +42,7 @@ private const val TAG = "BackupRestoreFlowPage"
 internal fun BackupRestoreFlowPage(
     onBack: () -> Unit,
     onNavigate: (Route) -> Unit,
+    magnetFeatures: Set<MagnetFeatureEntry> = emptySet(),
     modifier: Modifier = Modifier,
     restoreVm: BackupRestoreVm = hiltViewModel(),
 ) {
@@ -79,6 +81,7 @@ internal fun BackupRestoreFlowPage(
             onNavigate(BackupMediaRelocationRoute(result.taskId))
             logD(TAG) { "打开媒体关联页 restoreTaskId=${result.taskId}" }
         },
+        magnetFeatures = magnetFeatures,
         modifier = modifier
     )
 }
@@ -92,6 +95,7 @@ private fun BackupRestoreFlowScaffold(
     onForceBack: () -> Unit,
     onRestore: () -> Unit,
     onOpenMediaRelocation: () -> Unit,
+    magnetFeatures: Set<MagnetFeatureEntry>,
     modifier: Modifier = Modifier,
 ) {
     var showExitConfirm by remember(state.logCode) { mutableStateOf(false) }
@@ -140,7 +144,8 @@ private fun BackupRestoreFlowScaffold(
             BackupRestoreFlowContent(
                 state = state,
                 mediaRelocationEntryState = mediaRelocationEntryState,
-                mediaRelocationSummary = mediaRelocationSummary
+                mediaRelocationSummary = mediaRelocationSummary,
+                magnetFeatures = magnetFeatures
             )
         }
     }

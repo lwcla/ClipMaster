@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.cla.clip.base.general.R
+import com.cla.clip.feature.magnet.api.MagnetFeatureEntry
 import com.cla.clip.master.ui.navigation.MainInitialTab
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.page.list.ClipListPage
@@ -68,7 +69,9 @@ private sealed class TabPage {
 @Composable
 fun MainPage(
     initialTab: MainInitialTab = MainInitialTab.List,
-    onNavigate: (Route) -> Unit
+    onNavigate: (Route) -> Unit,
+    magnetFeatures: Set<MagnetFeatureEntry> = emptySet(),
+    onOpenMagnetSearch: (MagnetFeatureEntry, String) -> Unit = { _, _ -> },
 ) {
     val tabs = listOf(
         BottomTab(TabPage.List) { Icon(Icons.AutoMirrored.Filled.List, contentDescription = stringResource(R.string.base_general_list_tab)) },
@@ -135,7 +138,11 @@ fun MainPage(
             val tab = tabs[index]
             when (tab.page) {
                 TabPage.List -> ClipListPage(listState = listState, onNavigate = onNavigate)
-                TabPage.Mine -> MinePage(onNavigate = onNavigate)
+                TabPage.Mine -> MinePage(
+                    onNavigate = onNavigate,
+                    magnetFeatures = magnetFeatures,
+                    onOpenMagnetSearch = { feature -> onOpenMagnetSearch(feature, "") }
+                )
             }
         }
     }

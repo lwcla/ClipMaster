@@ -1,7 +1,7 @@
 package com.cla.clip.base.general.backup
 
 /** 内部恢复计数器，用于组合各表恢复结果。 */
-internal data class RestoreCounter(
+data class RestoreCounter(
     val inserted: Int = 0,
     val updated: Int = 0,
     val skipped: Int = 0,
