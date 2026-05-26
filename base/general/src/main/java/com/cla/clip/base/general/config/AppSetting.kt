@@ -164,6 +164,19 @@ object AppSetting {
             markBackupDirty()
         }
 
+    /** App 自升级自动检查的 24 小时限频窗口。 */
+    const val APP_UPDATE_AUTO_CHECK_INTERVAL_MILLIS = 24L * 60L * 60L * 1000L
+
+    /** 上次 App 自升级检查时间 key；只用于本机限频，不进入备份包。 */
+    private const val KEY_APP_UPDATE_LAST_CHECK_AT = "app_update_last_check_at"
+
+    /** 上次 App 自升级轻量检查时间；卸载重装后重新检查即可，不触发备份 dirty。 */
+    var appUpdateLastCheckAt: Long
+        get() = mmkv.getLong(KEY_APP_UPDATE_LAST_CHECK_AT, 0L)
+        set(value) {
+            mmkv.putLong(KEY_APP_UPDATE_LAST_CHECK_AT, value.coerceAtLeast(0L))
+        }
+
     /** 回收站默认保留天数，单位天；默认 30 天，和产品默认自动清理策略保持一致。 */
     const val DEFAULT_RECYCLE_BIN_RETENTION_DAYS = 30
 
@@ -255,6 +268,7 @@ object AppSetting {
     var webDavEndpoint: String
         get() = mmkv.getString(KEY_WEBDAV_ENDPOINT, "") ?: ""
         set(value) {
+            /** 去掉首尾空白后的地址，避免用户粘贴时多出不可见空格。 */
             mmkv.putString(KEY_WEBDAV_ENDPOINT, value.trim())
         }
 
@@ -383,6 +397,7 @@ object AppSetting {
     /** 最近一次自动备份成功摘要；解析失败会清空并回退为空，避免坏配置持续影响页面。 */
     var lastBackupSuccessSummary: BackupSuccessSummary?
         get() {
+            /** MMKV 中保存的备份摘要 JSON；为空时表示当前没有最近成功摘要。 */
             val text = mmkv.getString(KEY_LAST_BACKUP_SUCCESS_SUMMARY, "")?.takeIf { it.isNotBlank() } ?: return null
             return runCatching { BackupJson.decodeSuccessSummary(text) }.getOrElse {
                 mmkv.removeValueForKey(KEY_LAST_BACKUP_SUCCESS_SUMMARY)

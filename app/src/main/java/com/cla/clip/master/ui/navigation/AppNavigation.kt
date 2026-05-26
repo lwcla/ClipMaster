@@ -76,6 +76,7 @@ fun AppNavigation(
     ) {
         // 主页
         composable<MainRoute> { backStackEntry ->
+            /** 首页路由参数；当前只用来决定初始 Tab。 */
             val route = backStackEntry.toRoute<MainRoute>()
             MainPage(
                 initialTab = route.initialTab,
@@ -94,6 +95,7 @@ fun AppNavigation(
 
         // 剪贴搜索页
         composable<SearchRoute> { backStackEntry ->
+            /** 搜索页路由参数；包含搜索范围。 */
             val route = backStackEntry.toRoute<SearchRoute>()
             SearchPage(
                 scope = route.scope,
@@ -104,6 +106,7 @@ fun AppNavigation(
 
         // 详情页
         composable<DetailRoute> { backStackEntry ->
+            /** 详情页路由参数；包含要打开的剪贴 id。 */
             val route = backStackEntry.toRoute<DetailRoute>()
             DetailPage(
                 clipId = route.clipId,
@@ -116,6 +119,7 @@ fun AppNavigation(
 
         // 视频提取页
         composable<VideoExtractRoute> { backStackEntry ->
+            /** 视频提取页路由参数；包含页面 URL 和标题。 */
             val route = backStackEntry.toRoute<VideoExtractRoute>()
             VideoExtractPage(
                 pageUrl = route.url,
@@ -127,6 +131,7 @@ fun AppNavigation(
 
         // 视频下载页
         composable<VideoDownloadRoute> { backStackEntry ->
+            /** 视频下载页路由参数；包含下载任务 id。 */
             val route = backStackEntry.toRoute<VideoDownloadRoute>()
             VideoDownloadPage(
                 taskId = route.taskId,
@@ -134,6 +139,7 @@ fun AppNavigation(
                     // inclusive = true → 连 VideoExtractRoute 自身也从栈里移除
                     // 等效于：返回时跳过 VideoExtractPage，直接回到它的上一级
                     // inclusive = true 的含义：弹出到 VideoExtractRoute 这一层，并且把它自身也一起弹出，最终停在 VideoExtractRoute 的上一个目标（即你从哪里进的视频提取页，就回哪里）
+                    /** 是否成功从导航栈中移除了视频提取链路。 */
                     val poppedExtract = navController.popBackStack<VideoExtractRoute>(inclusive = true)
                     // 在首页从通知栏打开视频下载结果页，这个时候返回操作会失效，需要在这里判断
                     if (!poppedExtract) {
@@ -145,6 +151,7 @@ fun AppNavigation(
 
         // 图片提取页
         composable<ImageExtractRoute> { backStackEntry ->
+            /** 图片提取页路由参数；包含原页面 URL 和标题。 */
             val route = backStackEntry.toRoute<ImageExtractRoute>()
             ImageExtractPage(
                 pageUrl = route.url,
@@ -195,6 +202,7 @@ fun AppNavigation(
 
         // 恢复本地媒体关联页
         composable<BackupMediaRelocationRoute> { backStackEntry ->
+            /** 媒体重定位页路由参数；包含恢复任务 id。 */
             val route = backStackEntry.toRoute<BackupMediaRelocationRoute>()
             BackupMediaRelocationPage(
                 restoreTaskId = route.restoreTaskId,
@@ -207,7 +215,8 @@ fun AppNavigation(
             MinePage(
                 onNavigate = onNavigate,
                 magnetFeatures = magnetFeatures,
-                onOpenMagnetSearch = { feature -> feature.openSearch(navController) }
+                onOpenMagnetSearch = { feature -> feature.openSearch(navController) },
+                visibleToUser = true,
             )
         }
 

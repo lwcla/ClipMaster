@@ -13,7 +13,13 @@ import com.cla.clip.base.general.utils.hasNotificationPermission
 import com.cla.clip.base.general.utils.hasNotificationRuntimePermission
 import com.cla.clip.base.general.utils.hasOverlayPermission
 import com.cla.clip.base.general.utils.logD
+import com.cla.clip.base.general.utils.logI
 import com.cla.clip.master.entity.SettingSwitchItemUi
+import com.cla.clip.master.update.AppUpdateCheckResult
+import com.cla.clip.master.update.AppUpdateCheckTrigger
+import com.cla.clip.master.update.AppUpdateChecker
+import com.cla.clip.master.update.AppUpdateConfigFactory
+import com.cla.clip.master.update.AppUpdateLink
 import com.cla.clip.master.work.BackupAutoScheduler
 import com.cla.clip.shizuku.ShizukuStatus
 import com.cla.clip.shizuku.ShizukuUtils
@@ -23,9 +29,14 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
 /**
@@ -41,6 +52,12 @@ class MineVm @Inject constructor(
 
     /** 剪贴数据仓库使用 Lazy，避免我的页只查看权限时提前创建数据库依赖。 */
     private val clipRepository: Lazy<ClipRepository>,
+
+    /** 更新检查器；负责远端抓取、解析、回退和失败兜底。 */
+    private val appUpdateChecker: AppUpdateChecker,
+
+    /** 更新配置工厂；按当前构建生成数据源、渠道和发布页配置。 */
+    private val appUpdateConfigFactory: AppUpdateConfigFactory,
 ) : ViewModel() {
 
     companion object {
@@ -76,6 +93,26 @@ class MineVm @Inject constructor(
 
     /** 页面订阅的权限动作流。 */
     val permissionActions = _permissionActions.asSharedFlow()
+
+    /** 延迟创建的更新检查配置；只有进入更新链路时才读取 BuildConfig 和发布页配置。 */
+    private val appUpdateConfig by lazy(appUpdateConfigFactory::create)
+
+    /** “我的”页更新入口展示状态；包含当前版本、检查中标记和结果弹窗状态。 */
+    private val _appUpdateUiState = MutableStateFlow(
+        AppUpdateUiState(
+            currentVersionName = appUpdateConfig.currentApp.versionName,
+            currentVersionCode = appUpdateConfig.currentApp.versionCode,
+        )
+    )
+
+    /** 页面订阅的更新入口 UI 状态流。 */
+    val appUpdateUiState = _appUpdateUiState.asStateFlow()
+
+    /** 更新链路产生的一次性外部动作，例如打开浏览器。 */
+    private val _appUpdateActions = MutableSharedFlow<AppUpdateAction>(extraBufferCapacity = 1)
+
+    /** 页面订阅的更新外部动作流。 */
+    val appUpdateActions = _appUpdateActions.asSharedFlow()
 
     /**
      * 折叠记录数量。
@@ -130,6 +167,99 @@ class MineVm @Inject constructor(
         BackupAutoScheduler.markDirtyAndSchedule(appContext)
     }
 
+    /** 用户手动点击“检查更新”时触发完整检查，并允许展示“已是最新”的正向提示。 */
+    fun checkUpdateManually() {
+        startUpdateCheck(trigger = AppUpdateCheckTrigger.Manual, forceCheck = true)
+    }
+
+    /** 页面可见后执行轻量自动检查；命中限频时静默返回。 */
+    fun checkUpdateAutomaticallyIfNeeded() {
+        startUpdateCheck(trigger = AppUpdateCheckTrigger.Auto, forceCheck = false)
+    }
+
+    /** 关闭当前更新结果弹窗。 */
+    fun dismissUpdateDialog() {
+        _appUpdateUiState.update { it.copy(dialog = null) }
+    }
+
+    /** 把下载源或发布页跳转成一次性外部动作，由页面层负责真正打开浏览器。 */
+    fun openUpdateLink(link: AppUpdateLink) {
+        logI(TAG) { "打开更新外部链接 linkType=${link.logType}" }
+        _appUpdateActions.tryEmit(AppUpdateAction.OpenExternalLink(link.url))
+    }
+
+    /**
+     * 启动一次更新检查。
+     *
+     * 先做“正在检查中”互斥，再做自动检查限频；只有真的进入网络检查时才切换 UI 状态。
+     */
+    private fun startUpdateCheck(trigger: AppUpdateCheckTrigger, forceCheck: Boolean) {
+        if (_appUpdateUiState.value.checking) {
+            logD(TAG) { "检查更新已在进行中 trigger=${trigger.code}" }
+            return
+        }
+
+        /** 本次检查开始时间；只用于自动检查限频判断。 */
+        val now = System.currentTimeMillis()
+        /** 自动检查是否命中 24 小时限频；手动检查永远绕过。 */
+        val throttleHit = !forceCheck && now - AppSetting.appUpdateLastCheckAt < AppSetting.APP_UPDATE_AUTO_CHECK_INTERVAL_MILLIS
+        if (throttleHit) {
+            logD(TAG) {
+                /** 距离下一次允许自动检查还剩的分钟数，日志中只用于排障。 */
+                val nextCheckAfterMinutes = TimeUnit.MILLISECONDS.toMinutes(
+                    AppSetting.APP_UPDATE_AUTO_CHECK_INTERVAL_MILLIS - (now - AppSetting.appUpdateLastCheckAt)
+                ).coerceAtLeast(0L)
+                "自动检查更新命中限频 trigger=${trigger.code} nextCheckAfterMinutes=$nextCheckAfterMinutes"
+            }
+            return
+        }
+
+        viewModelScope.launch {
+            _appUpdateUiState.update { it.copy(checking = true) }
+            /** 本次更新检查结果；成功、已最新和失败都会统一映射成对话框状态。 */
+            val result = appUpdateChecker.check(
+                config = appUpdateConfig,
+                trigger = trigger,
+                forceCheck = forceCheck,
+                throttleHit = false,
+            )
+            AppSetting.appUpdateLastCheckAt = System.currentTimeMillis()
+            _appUpdateUiState.update { state ->
+                state.copy(
+                    checking = false,
+                    dialog = result.toDialogState(showPositiveResult = forceCheck),
+                )
+            }
+        }
+    }
+
+    /**
+     * 把检查结果映射成页面弹窗状态。
+     *
+     * 自动检查默认静默：没有新版本时不弹“已是最新”，纯失败也不打扰用户；
+     * 但如果失败结果里带着 fallback 发布页，仍允许给用户一个手动查看入口。
+     */
+    private fun AppUpdateCheckResult.toDialogState(showPositiveResult: Boolean): AppUpdateDialogState? {
+        return when (this) {
+            is AppUpdateCheckResult.UpdateAvailable -> AppUpdateDialogState.UpdateAvailable(info)
+            is AppUpdateCheckResult.UpToDate -> {
+                if (showPositiveResult) {
+                    AppUpdateDialogState.UpToDate(versionName = versionName, versionCode = versionCode)
+                } else {
+                    null
+                }
+            }
+
+            is AppUpdateCheckResult.Failed -> {
+                if (showPositiveResult || fallbackReleasePage != null) {
+                    AppUpdateDialogState.CheckUnavailable(reason = reason, fallbackReleasePage = fallbackReleasePage)
+                } else {
+                    null
+                }
+            }
+        }
+    }
+
     /**
      * 刷新三类权限的真实状态。
      *
@@ -150,6 +280,7 @@ class MineVm @Inject constructor(
      * 如果当前权限尚未开启，就主动发起申请或跳转到对应授权页面。
      */
     fun onItemCheckedChange(id: SettingSwitchItemUi.Id, checked: Boolean) {
+        /** 这里忽略 checked 入参本身，只根据系统真实状态决定下一步动作，避免 UI 预设值误导逻辑。 */
         when (id) {
             SettingSwitchItemUi.Id.Permission.Shizuku -> handleShizukuClick()
             SettingSwitchItemUi.Id.Permission.Notice -> handleNotificationClick()
@@ -254,5 +385,11 @@ class MineVm @Inject constructor(
 
         /** 运行时权限可用，但系统通知总开关被关闭。 */
         SystemDisabled,
+    }
+
+    /** 更新入口需要页面执行的一次性外部动作。 */
+    sealed class AppUpdateAction {
+        /** 打开外部浏览器或其他能处理下载链接的应用。 */
+        data class OpenExternalLink(val url: String) : AppUpdateAction()
     }
 }

@@ -1,6 +1,8 @@
 package com.cla.clip.master.ui.page.mine
 
 import android.Manifest
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -14,6 +16,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -26,11 +29,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.utils.toPermissionSetting
+import com.cla.clip.base.general.utils.toast
 import com.cla.clip.feature.magnet.api.MagnetFeatureEntry
 import com.cla.clip.master.entity.SettingSwitchItemUi
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.widget.TopLevelTitleBar
 import com.cla.clip.shizuku.ShizukuUtils
+import kotlinx.coroutines.launch
 import rikka.shizuku.Shizuku
 
 /**
@@ -44,12 +49,55 @@ fun MinePage(
     onNavigate: (route: Route) -> Unit,
     magnetFeatures: Set<MagnetFeatureEntry> = emptySet(),
     onOpenMagnetSearch: (MagnetFeatureEntry) -> Unit = {},
+    visibleToUser: Boolean = true,
 ) {
+    /** 折叠数据入口展示的轻量数量。 */
     val foldedClipCount by mineVm.foldedClipCount.collectAsStateWithLifecycle()
+    /** 回收站入口展示的轻量数量。 */
     val recycleBinCount by mineVm.recycleBinCount.collectAsStateWithLifecycle()
+    /** 普通剪贴 item 快捷动作当前设置。 */
     val clipItemQuickAction by mineVm.clipItemQuickAction.collectAsStateWithLifecycle()
+    /** 更新入口当前展示状态。 */
+    val appUpdateUiState by mineVm.appUpdateUiState.collectAsStateWithLifecycle()
+    /** 当前页面 Context；只用于系统跳转和 toast。 */
+    val context = LocalContext.current
+    /** 页面级协程作用域；用于浏览器打开失败后的短时 toast。 */
+    val coroutineScope = rememberCoroutineScope()
     // 设置弹窗属于页面瞬时状态，配置值本身由 AppSetting/MMKV 持久化。
     var showClipItemActionDialog by remember { mutableStateOf(false) }
+
+    /**
+     * 页面可见时触发自动检查更新。
+     *
+     * 主页 Pager 下只有当前可见的“我的”页才应该工作，避免后台 Tab 也去命中限频或发请求。
+     */
+    LaunchedEffect(mineVm, visibleToUser) {
+        if (visibleToUser) {
+            mineVm.checkUpdateAutomaticallyIfNeeded()
+        }
+    }
+
+    /**
+     * 收集更新链路的一次性外部动作。
+     *
+     * 打开浏览器需要页面层 Context；如果系统找不到处理链接的应用，则回退成 toast 提示。
+     */
+    LaunchedEffect(mineVm, context) {
+        mineVm.appUpdateActions.collect { action ->
+            when (action) {
+                is MineVm.AppUpdateAction.OpenExternalLink -> {
+                    /** 外部浏览器打开更新链接的标准 Intent。 */
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(action.url))
+                    runCatching { context.startActivity(intent) }
+                        .onFailure {
+                            coroutineScope.launch {
+                                context.toast(R.string.base_general_app_update_no_browser)
+                            }
+                        }
+                }
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -61,6 +109,12 @@ fun MinePage(
             contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp),
         ) {
             item { BackupEntry(onNavigate = onNavigate) }
+            item {
+                AppUpdateEntry(
+                    state = appUpdateUiState,
+                    onClick = mineVm::checkUpdateManually,
+                )
+            }
             magnetFeatures.sortedBy { it.featureId }.forEach { feature ->
                 item(key = "magnet_feature_${feature.featureId}") {
                     feature.MineEntry(onOpenSearch = { onOpenMagnetSearch(feature) })
@@ -89,6 +143,15 @@ fun MinePage(
             onDismiss = { showClipItemActionDialog = false }
         )
     }
+
+    /** 更新对话框只在 ViewModel 明确给出状态时展示。 */
+    appUpdateUiState.dialog?.let { dialogState ->
+        AppUpdateDialog(
+            state = dialogState,
+            onOpenLink = mineVm::openUpdateLink,
+            onDismiss = mineVm::dismissUpdateDialog,
+        )
+    }
 }
 
 
@@ -101,8 +164,11 @@ fun MinePage(
 private fun Permission(
     mineVm: MineVm,
 ) {
+    /** 当前页面 Context；用于打开系统设置页和 Shizuku 应用。 */
     val context = LocalContext.current
+    /** 当前生命周期宿主；用于页面恢复时刷新权限状态。 */
     val owner = LocalLifecycleOwner.current
+    /** Android 13+ 通知运行时权限请求器。 */
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
         onResult = { mineVm.refreshPermissionStatus() }
@@ -138,6 +204,7 @@ private fun Permission(
         }
     }
 
+    /** 权限设置项展示列表；每次重组重建，确保文案和系统真实状态保持同步。 */
     val items = listOf(
         // 每次重组重新生成展示项，确保字符串资源、系统权限状态和开关状态保持同步。
         SettingSwitchItemUi(
@@ -160,7 +227,13 @@ private fun Permission(
         ),
     )
 
+    /**
+     * 监听页面恢复和 Shizuku 授权回调。
+     *
+     * 两条链路都可能在页面外部改变系统真实权限，因此回到页面后要立即重新刷新展示状态。
+     */
     DisposableEffect(owner) {
+        /** 页面回到前台时刷新系统权限状态的生命周期观察器。 */
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 // 从系统设置页或 Shizuku 应用返回后刷新状态，避免开关停留在旧值。
@@ -168,6 +241,7 @@ private fun Permission(
             }
         }
 
+        /** Shizuku SDK 返回授权结果时触发的监听器。 */
         val shizukuPermissionListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
             // Shizuku 授权结果由 SDK 回调，收到后立即刷新，避免等下一次 onResume。
             mineVm.refreshPermissionStatus()

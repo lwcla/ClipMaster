@@ -38,6 +38,7 @@
 - 视频/图片媒体文件本体。
 - Academic Torrents 源索引缓存、XML 临时文件、缓存元数据和本地 FTS 索引。
 - WebDAV 密码、本地目录授权 URI、健康状态、失败次数、运行中任务状态。
+- App 自更新上次检查时间 `appUpdateLastCheckAt`，该值只用于当前安装的 24 小时限频，卸载重装后重新检查即可。
 - 上述健康状态和运行中/最近任务状态仍属于设备绑定运行态，不纳入备份；本次只补充 R8 名称稳定性，不改变备份字段白名单。
 - `cookie`、`pendingOutputUri`、`tempPath`、未完成临时文件、可恢复登录态。
 
@@ -589,6 +590,7 @@ manifest 简化示例：
 ## 变更记录
 
 - 2026-05-25：备份协议升级到 schemaVersion 4，并将磁力备份从 base 固定字段拆为可选 `BackupFeatureContributor`；原因是磁力搜索已独立为编译期可选模块，默认构建不能展示、统计或恢复磁力数据，启用模块时仍保留磁力 JSONL 导出恢复能力。
+- 2026-05-25：补充 App 自更新上次检查时间不进入备份范围；原因是该值仅用于当前安装的自动检查限频，跨设备或卸载重装恢复没有用户价值，也不应触发备份 dirty。
 - 2026-05-24：将媒体关联成功/无须处理后的返回判断补强为 ViewModel 终态标记；原因是日志显示返回时没有进入页面 `Result/NoWork` 分支，需要以发送终态 summary 时记录的闭环语义兜底，避免 UI state 收集时序导致普通返回。
 - 2026-05-24：收敛媒体关联成功终态返回实现的代码组织；原因是 `shouldReturnToMineAfterBack`、`backLogCode` 和 `shouldCloseRestoreFlowOnBack` 分别属于 `MediaRelocationUiState` / `MediaRelocationSummaryType` 派生语义，应与 `isRunning` 集中在状态模型文件，导航层复杂收栈细节也应封装到命名函数。
 - 2026-05-24：统一媒体关联页成功态底部“完成”和顶部/系统返回的处理入口；原因是复测发现 `BackupMediaRelocationPage` 返回日志 lambda 行未执行，成功态底部按钮此前会直接调用导航回调，现改为统一经过 `requestBack()`，并将日志字段提前到非惰性代码路径计算。

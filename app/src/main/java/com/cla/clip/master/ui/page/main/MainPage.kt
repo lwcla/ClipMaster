@@ -73,18 +73,24 @@ fun MainPage(
     magnetFeatures: Set<MagnetFeatureEntry> = emptySet(),
     onOpenMagnetSearch: (MagnetFeatureEntry, String) -> Unit = { _, _ -> },
 ) {
+    /** 首页底部栏支持的 Tab 列表；顺序和 Pager 页码保持一致。 */
     val tabs = listOf(
         BottomTab(TabPage.List) { Icon(Icons.AutoMirrored.Filled.List, contentDescription = stringResource(R.string.base_general_list_tab)) },
         BottomTab(TabPage.Mine) { Icon(Icons.Default.PermIdentity, contentDescription = stringResource(R.string.base_general_mine_tab)) },
     )
+    /** 路由传入的初始 Tab 映射结果。 */
     val initialTabPage = initialTab.toTabPage()
+    /** 初始页码；映射不到时回退到列表页。 */
     val initialPage = tabs.indexOfFirst { it.page == initialTabPage }.takeIf { it >= 0 } ?: 0
 
+    /** 底部 Tab 和 HorizontalPager 共享的页码状态。 */
     val pagerState = rememberPagerState(
         initialPage = initialPage,
         pageCount = { tabs.size }
     )
+    /** 底部栏点击后驱动平滑滚动的页面级协程作用域。 */
     val scope = rememberCoroutineScope()
+    /** 列表页的滚动状态；重复点击列表 Tab 时用它回到顶部。 */
     val listState = rememberLazyListState()
 
     Scaffold(
@@ -109,7 +115,9 @@ fun MainPage(
                             onClick = {
                                 // 点击底部 tab 后平滑切换到对应页面，保持与 ViewPager 类似的交互体验。
                                 scope.launch {
+                                    /** 当前点击的是否正好是已选中的 Tab。 */
                                     val isCurrentTab = pagerState.currentPage == index
+                                    /** 当前点击的 Tab 是否对应列表页。 */
                                     val isListTab = tab.page == TabPage.List
                                     if (isCurrentTab && isListTab) {
                                         // 当前已经停留在列表页时，再次点击列表入口需要回到顶部，避免依赖页面下标判断列表身份。
@@ -135,19 +143,22 @@ fun MainPage(
                 .fillMaxSize()
                 .padding(bottom = paddingValues.calculateBottomPadding())
         ) { index ->
+            /** 当前 Pager 页对应的底部 Tab 配置。 */
             val tab = tabs[index]
             when (tab.page) {
                 TabPage.List -> ClipListPage(listState = listState, onNavigate = onNavigate)
                 TabPage.Mine -> MinePage(
                     onNavigate = onNavigate,
                     magnetFeatures = magnetFeatures,
-                    onOpenMagnetSearch = { feature -> onOpenMagnetSearch(feature, "") }
+                    onOpenMagnetSearch = { feature -> onOpenMagnetSearch(feature, "") },
+                    visibleToUser = pagerState.currentPage == index,
                 )
             }
         }
     }
 }
 
+/** 把路由层的初始 Tab 枚举映射成主页内部 Pager 页面类型。 */
 private fun MainInitialTab.toTabPage(): TabPage {
     return when (this) {
         MainInitialTab.List -> TabPage.List

@@ -1,5 +1,6 @@
 import java.io.FileInputStream
 import java.util.Properties
+import com.android.build.gradle.api.ApkVariantOutput
 
 plugins {
     alias(libs.plugins.android.application)
@@ -10,6 +11,12 @@ plugins {
     alias(libs.plugins.kotlin.serialization) // 新增Kotlin序列化插件，用于数据类的序列化和反序列化
     id("kotlin-parcelize")
 }
+
+/** 把原始字符串转成可安全写入 `buildConfigField` 的 Kotlin 字面量。 */
+fun String.asBuildConfigString(): String = "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
+
+/** 规范化 APK 文件名片段，只保留文件系统安全字符。 */
+fun String.asApkFileNamePart(): String = replace(Regex("[^A-Za-z0-9._-]"), "_")
 
 android {
     namespace = "com.cla.clip.master"
@@ -37,10 +44,50 @@ android {
         applicationId = "com.cla.clip.master"
         minSdk = 24
         targetSdk = 36
-        versionCode = 21
-        versionName = "0.4.0"
+        versionCode = 24
+        versionName = "0.4.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        /** GitHub 发布仓库 owner/repo；默认指向正式 release 仓库。 */
+        val appUpdateGithubRepo = providers.gradleProperty("appUpdateGithubRepo")
+            .getOrElse("clip-master-2/ClipMaster-Releases")
+        /** Gitee 发布仓库 owner/repo；默认指向国内镜像 release 仓库。 */
+        val appUpdateGiteeRepo = providers.gradleProperty("appUpdateGiteeRepo")
+            .getOrElse("clip-master-2/clip-master-releases")
+        buildConfigField(
+            "String",
+            "APP_UPDATE_GITHUB_MANIFEST_URL",
+            providers.gradleProperty("appUpdateGithubManifestUrl")
+                .getOrElse("https://github.com/$appUpdateGithubRepo/releases/latest/download/update.json")
+                .asBuildConfigString()
+        )
+        buildConfigField(
+            "String",
+            "APP_UPDATE_GITEE_RELEASE_API_URL",
+            providers.gradleProperty("appUpdateGiteeReleaseApiUrl")
+                .getOrElse("https://gitee.com/api/v5/repos/$appUpdateGiteeRepo/releases/latest")
+                .asBuildConfigString()
+        )
+        buildConfigField(
+            "String",
+            "APP_UPDATE_GITHUB_RELEASE_PAGE_URL",
+            providers.gradleProperty("appUpdateGithubReleasePageUrl")
+                .getOrElse("https://github.com/$appUpdateGithubRepo/releases")
+                .asBuildConfigString()
+        )
+        buildConfigField(
+            "String",
+            "APP_UPDATE_GITEE_RELEASE_PAGE_URL",
+            providers.gradleProperty("appUpdateGiteeReleasePageUrl")
+                .getOrElse("https://gitee.com/$appUpdateGiteeRepo/releases")
+                .asBuildConfigString()
+        )
+        buildConfigField(
+            "String",
+            "APP_UPDATE_CHANNEL",
+            providers.gradleProperty("appUpdateChannel").getOrElse("internal").asBuildConfigString()
+        )
     }
 
     buildTypes {
@@ -56,6 +103,19 @@ android {
 //            isShrinkResources = false       // 调试包不压缩资源
         }
     }
+
+    applicationVariants.all {
+        outputs.all {
+            /** 当前输出对象；需要转成 AGP 旧类型后才能覆写 APK 文件名。 */
+            val apkOutput = this as ApkVariantOutput
+            /** 参与文件名拼接的版本号片段。 */
+            val normalizedVersionName = versionName.asApkFileNamePart()
+            /** 非 release 变体追加后缀，避免多产物同名覆盖。 */
+            val variantNamePart = if (buildType.name == "release") "" else "-${name.asApkFileNamePart()}"
+            apkOutput.outputFileName = "ClipMaster-v$normalizedVersionName$variantNamePart.apk"
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
@@ -76,6 +136,7 @@ dependencies {
     implementation(project(":feature:magnet-api"))
     implementation(project(":shizuku"))
 
+    /** 是否按 Gradle 属性编译进磁力模块；默认关闭，避免宿主强依赖可选特性。 */
     val enableMagnetFeature = providers.gradleProperty("enableMagnetFeature")
         .map(String::toBoolean)
         .getOrElse(false)

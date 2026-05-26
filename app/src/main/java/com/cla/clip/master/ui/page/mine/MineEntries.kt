@@ -1,6 +1,7 @@
 package com.cla.clip.master.ui.page.mine
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.CloudSync
@@ -40,6 +41,38 @@ internal fun RecycleBinEntry(
         title = stringResource(R.string.base_general_recycle_bin),
         description = stringResource(R.string.base_general_recycle_bin_entry_desc, recycleBinCount),
         onClick = { onNavigate(RecycleBinRoute) }
+    )
+}
+
+/**
+ * App 自升级检查入口。
+ *
+ * 入口只展示当前版本和检查状态；版本判断、限频和下载链接打开事件由 MineVm 处理。
+ */
+@Composable
+internal fun AppUpdateEntry(
+    state: AppUpdateUiState,
+    onClick: () -> Unit,
+) {
+    ListEntryCard(
+        icon = {
+            Icon(
+                imageVector = Icons.Default.SystemUpdateAlt,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+        },
+        title = stringResource(R.string.base_general_app_update_check),
+        description = if (state.checking) {
+            stringResource(R.string.base_general_app_update_checking)
+        } else {
+            stringResource(
+                R.string.base_general_app_update_current_version,
+                state.currentVersionName,
+                state.currentVersionCode
+            )
+        },
+        onClick = onClick
     )
 }
 
