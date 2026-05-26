@@ -21,6 +21,15 @@
 
 不修改系统级 skill，不修改用户全局 skill，也不修改项目业务代码。
 
+## 代码注释门禁同步
+
+- `AGENTS.md` 是注释规则的总入口，后续规则变化必须同步到会被代码改动触发的项目 skill。
+- `$repo-coding-gate` 负责进入实现前检查方法和变量注释覆盖，新增或修改的方法、构造函数、扩展函数、Composable、回调、协程任务、Worker 入口、工具函数和变量声明都不能漏注释。
+- `$repo-architecture-boundaries` 负责类型、字段、方法、变量、失败契约、关键分支和非直观实现的注释细则，避免只在总规则里声明而执行时遗漏。
+- `$repo-compose-discipline` 负责 Compose 函数、UI state、局部状态、派生状态、Lazy key、副作用和交互回调的注释细则。
+- `$repo-final-self-check` 负责最终回复前兜底确认注释覆盖；如果存在未补注释，必须作为规则例外说明原因、风险和后续补齐边界。
+- 注释规则的执行口径是“新增或修改的每个方法和每个变量声明默认都要有简体中文注释”，但注释内容必须说明业务含义、边界、取值依据或修改风险，不能写成语法复述。
+
 ## 实现规则
 
 - `name` 字段和 skill 目录名继续使用原有英文 kebab-case，确保触发标识稳定。
@@ -49,5 +58,6 @@
 
 ## 变更记录
 
+- 2026-05-26：同步收紧 `$repo-coding-gate`、`$repo-architecture-boundaries`、`$repo-compose-discipline` 和 `$repo-final-self-check` 的注释门禁；原因是用户明确希望每个新增或修改的方法和变量都必须有简体中文注释，不能只依赖 `AGENTS.md` 或“必要时注释”的理解。
 - 2026-05-24：新增 `$repo-doc-flow-html` 项目 skill，并按简体中文规则编写 `SKILL.md` 与 `agents/openai.yaml`；原因是方案文档 HTML 流程图生成已经形成稳定工作流，需要沉淀为仓库专用 skill。
 - 2026-05-20：新增仓库专用 skill 语言规则方案，并将状态标记为已完成；原因是本次把项目内 skill 本地化为简体中文，同时需要固定后续新建 skill 的默认语言规则。
