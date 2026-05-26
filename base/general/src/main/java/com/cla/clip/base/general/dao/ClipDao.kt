@@ -210,7 +210,8 @@ interface ClipDao {
         -- 4. FTS 模糊匹配（包含某个字）
         ELSE 1
       END DESC,
-      c.timestamp DESC
+      c.timestamp DESC,
+      c.id DESC
     """
     )
     fun searchAllClips(
@@ -235,6 +236,7 @@ interface ClipDao {
      * 两个 UNION 分支都必须带折叠过滤，否则任一命中分支都会把另一范围的数据混入结果。
      *
      * 排序先保持置顶优先规则；普通搜索在命中质量后按置顶时间/剪贴时间排序，折叠搜索在命中质量后按折叠时间排序。
+     * 最后使用数据库主键倒序作为唯一兜底，避免相同时间戳数据在 Paging 分页边界重复出现。
      *
      * @param query 清洗后的 FTS 查询语句，外层 Repository 负责规避空查询和特殊字符导致的 MATCH 语法错误。
      * @param exactQuery 精确匹配用原始关键词。
@@ -294,7 +296,8 @@ interface ClipDao {
       END DESC,
       CASE WHEN :isFolded = 0 THEN c.pinned_time ELSE 0 END DESC,
       CASE WHEN :isFolded = 1 THEN c.folded_at ELSE c.timestamp END DESC,
-      c.timestamp DESC
+      c.timestamp DESC,
+      c.id DESC
     """
     )
     fun searchClipsByKeyword(
@@ -314,7 +317,7 @@ interface ClipDao {
      * 在没有关键词时按筛选条件分页加载剪贴记录。
      *
      * 关键词为空不能执行 FTS MATCH，否则 SQLite 会抛语法异常；因此搜索页清空输入时走这个查询，
-     * 只保留时间和来源 App 多选条件，并完全沿用列表页排序。
+     * 只保留时间和来源 App 多选条件，并完全沿用列表页排序；最终使用主键倒序作为 Paging 稳定兜底。
      *
      * @param isFolded 搜索范围过滤；普通搜索传 false，折叠搜索传 true。
      * @param sourceAppPackageCount 已选来源 App 数量；为 0 时不过滤来源，空字符串包名代表“未知来源”时也计入数量。
@@ -342,7 +345,8 @@ interface ClipDao {
           CASE WHEN pinned_time > 0 THEN 1 ELSE 0 END DESC,
           CASE WHEN :isFolded = 0 THEN pinned_time ELSE 0 END DESC,
           CASE WHEN :isFolded = 1 THEN folded_at ELSE timestamp END DESC,
-          timestamp DESC
+          timestamp DESC,
+          id DESC
     """
     )
     fun searchClipsByFilters(
@@ -359,6 +363,7 @@ interface ClipDao {
      *
      * 某些输入只包含标点或 FTS 特殊字符，直接拼进 MATCH 会失败；此处退回到普通 LIKE，
      * 牺牲一点性能换取搜索框对 URL、符号片段等输入的稳定响应，同时保留来源 App 多选过滤。
+     * 最终使用主键倒序作为 Paging 稳定兜底。
      *
      * @param isFolded 搜索范围过滤；普通搜索传 false，折叠搜索传 true。
      * @param sourceAppPackageCount 已选来源 App 数量；为 0 时不过滤来源，空字符串包名代表“未知来源”时也计入数量。
@@ -387,7 +392,8 @@ interface ClipDao {
           CASE WHEN pinned_time > 0 THEN 1 ELSE 0 END DESC,
           CASE WHEN :isFolded = 0 THEN pinned_time ELSE 0 END DESC,
           CASE WHEN :isFolded = 1 THEN folded_at ELSE timestamp END DESC,
-          timestamp DESC
+          timestamp DESC,
+          id DESC
     """
     )
     fun searchClipsByLike(
@@ -420,13 +426,13 @@ interface ClipDao {
     @Query("UPDATE clips SET deleted_at = 0 WHERE id IN (:ids) AND deleted_at > 0")
     suspend fun restoreClipsFromRecycleBin(ids: List<Long>): Int
 
-    /** 分页加载回收站数据，最近删除的记录优先展示，时间相同再按原剪贴时间倒序稳定排序。 */
+    /** 分页加载回收站数据，最近删除的记录优先展示，时间相同再按原剪贴时间和主键倒序稳定排序。 */
     @Transaction
     @Query(
         """
         SELECT * FROM clips
         WHERE deleted_at > 0
-        ORDER BY deleted_at DESC, timestamp DESC
+        ORDER BY deleted_at DESC, timestamp DESC, id DESC
     """
     )
     fun loadRecycleBinClips(): PagingSource<Int, ClipDetail>
@@ -460,7 +466,7 @@ interface ClipDao {
      * 排序规则：
      * 1. 普通列表按照是否置顶、置顶时间、剪贴时间排序。
      * 2. 折叠列表同样置顶优先，但置顶组和非置顶组内部按照 folded_at 倒序排列，避免重复复制刷新 timestamp 后改变折叠列表顺序。
-     * 3. timestamp 作为折叠时间相同或历史回填边界下的稳定兜底排序。
+     * 3. timestamp 和 id 作为折叠时间相同或历史回填边界下的稳定兜底排序，避免 Paging 分页边界重复返回同一行。
      *
      * @param isFolded 查询范围；false 为普通列表，true 为折叠列表。
      */
@@ -474,7 +480,8 @@ interface ClipDao {
           CASE WHEN pinned_time > 0 THEN 1 ELSE 0 END DESC, 
           CASE WHEN :isFolded = 0 THEN pinned_time ELSE 0 END DESC, 
           CASE WHEN :isFolded = 1 THEN folded_at ELSE timestamp END DESC,
-          timestamp DESC
+          timestamp DESC,
+          id DESC
     """
     )
     fun loadClipsByFoldState(isFolded: Boolean): PagingSource<Int, ClipDetail>

@@ -54,6 +54,7 @@
 - 分页结果在 ViewModel 生命周期内 `cachedIn(CoroutineScope(viewModelScope.coroutineContext + Dispatchers.IO))`，避免重组或生命周期恢复时重复创建分页查询。
 - `ClipListPage` 使用 `flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)` 包装分页流，再通过 `collectAsLazyPagingItems()` 收集。
 - 页面离开 STARTED 状态后，列表页收集会暂停；ViewModel 中缓存的 PagingData 仍保留，供重新进入页面时复用。
+- 普通列表 DAO 排序在置顶和剪贴时间之后追加 `id DESC` 作为唯一兜底，保证同毫秒数据跨 Paging 页加载时顺序稳定，不让共享列表收到重复 `clip.id` key。
 - `ClipResultList` 的 refresh 空态、append 状态和 item 测量策略见 `docs/clip_result_list_plan.md`。
 
 ## 页面结构
@@ -135,6 +136,7 @@
 
 ## 变更记录
 
+- 2026-05-26：补充普通列表分页查询的 `id DESC` 稳定排序契约；原因是同时间戳剪贴记录需要唯一顺序，避免 Paging 边界重复导致共享 LazyColumn key 冲突。
 - 2026-05-17：记录普通列表内容卡片经由 `ClipResultList` 接入公共内容卡片外壳；原因是列表页复用共享剪贴 item，主要内容卡片外壳需与我的页面卡片效果保持一致。
 - 2026-05-18：将 `ClipResultList` 引用更新为 `ui/widget/clip` 共享组件路径；原因是剪贴结果列表已跨列表、搜索、折叠和回收站复用，列表页文档只记录接入差异。
 - 2026-05-15：新增列表页设计文档；原因是列表页已有较多分页、生命周期、侧滑 item、滚动修正和搜索复用约束，需要独立文档指导后续开发。

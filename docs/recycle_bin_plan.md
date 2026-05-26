@@ -23,7 +23,7 @@
 - 普通/折叠分页、搜索、详情、折叠数量、最新记录和重复内容查询全部添加 `deleted_at = 0` 过滤。
 - 回收站记录不参与去重；删除后重新复制同样内容会创建新的正常记录。
 - Repository 明确拆分软删和硬删接口：`moveClipToRecycleBin`、`deleteClipPermanently`、`restoreClipFromRecycleBin`、`loadRecycleBinClips`、`observeRecycleBinCount`、`clearRecycleBinPermanently` 和 `cleanupExpiredRecycleBinClips`。
-- 批量软删/硬删使用事务并分块处理 id；同一批移入回收站使用同一个 `deleted_at = now`，保证回收站排序稳定。
+- 批量软删/硬删使用事务并分块处理 id；同一批移入回收站使用同一个 `deleted_at = now`，回收站分页最终按 `deleted_at DESC, timestamp DESC, id DESC` 排序，保证同批删除和同时间戳数据也有唯一稳定顺序。
 - 清空回收站和过期清理使用条件 SQL，不先读取全部 id；批量操作对已不存在 id 保持幂等。
 - 彻底删除只删除 `clips` 行，暂不清理 `SourceApp` 和 `LinkPreview` 孤儿缓存，避免误删仍被其他剪贴复用的缓存。
 
@@ -85,6 +85,7 @@
 
 ## 变更记录
 
+- 2026-05-26：补充回收站分页查询的 `id DESC` 最终排序键；原因是同批删除数据可能共享 `deleted_at` 和 `timestamp`，需要唯一顺序避免共享列表重复 key。
 - 2026-05-17：记录回收站列表经由 `ClipResultList` 接入公共内容卡片外壳；原因是回收站复用共享剪贴 item，需要统一主要内容卡片外壳，同时保留回收站特有的还原、多选和彻底删除语义。
 - 2026-05-18：回收站保留天数选项行接入 `SingleChoiceRow`；原因是单选行是跨页面通用 UI，完整保留天数弹层仍由回收站维护保存和清理副作用。
 - 2026-05-15：新增回收站功能方案并标记为实现中；原因是剪贴删除语义、数据库结构、回收站入口、分页页面和自动清理都将发生变化，需要主文档承载完整设计。
