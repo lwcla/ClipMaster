@@ -40,6 +40,9 @@ class ClipboardBridgeProvider : ContentProvider() {
     /** Provider 剪贴板读取协调器。 */
     private val readCoordinator: ClipboardBridgeReadCoordinator by lazy { entryPoint.clipboardBridgeReadCoordinator() }
 
+    /** Provider 图标预判协调器。 */
+    private val iconQueryCoordinator: ClipboardBridgeIconQueryCoordinator by lazy { entryPoint.clipboardBridgeIconQueryCoordinator() }
+
     /** Provider 图标提交协调器。 */
     private val iconCommitter: ClipboardBridgeIconCommitter by lazy { entryPoint.clipboardBridgeIconCommitter() }
 
@@ -55,7 +58,7 @@ class ClipboardBridgeProvider : ContentProvider() {
     /**
      * Provider 命令调用入口。
      *
-     * @param method 支持 read_clip 和 commit_icon。
+     * @param method 支持 read_clip、query_icon_state 和 commit_icon。
      * @param arg 当前未使用，保留给 Android ContentProvider call 签名。
      * @param extras `content call` 传入的小字段。
      */
@@ -80,6 +83,15 @@ class ClipboardBridgeProvider : ContentProvider() {
                 }
                 runBlocking {
                     readCoordinator.readAndSave(request).toBundle()
+                }
+            }
+            ClipboardBridgeContract.METHOD_QUERY_ICON_STATE -> {
+                logD(TAG) {
+                    "Provider 收到 query_icon_state eventId=${request.eventId} packageName=${request.packageName} " +
+                        "appName=${request.appName} hasIconHash=${!request.iconHash.isNullOrBlank()}"
+                }
+                runBlocking {
+                    iconQueryCoordinator.query(request).toBundle()
                 }
             }
             ClipboardBridgeContract.METHOD_COMMIT_ICON -> {

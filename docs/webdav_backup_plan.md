@@ -352,6 +352,8 @@ flowchart TD
 
 当前 base 新导出实际使用 JSONL 文件名：`data/clips.jsonl`、`data/source_apps.jsonl`、`data/link_previews.jsonl`、`data/search_histories.jsonl`、`data/video_downloads.jsonl`、`data/image_batches.jsonl` 和 `data/image_items.jsonl`；磁力模块启用时额外写入 `data/magnet_search_histories.jsonl` 和 `data/magnet_download_records.jsonl`；v1 JSON 数组文件名仅用于旧包兼容导入。
 
+当前 `source_apps` 的语义已经扩展为“来源展示缓存 + 图标预热缓存”：Shizuku Provider 双协程链路允许图标同步先独立写入 `source_apps`，即使当前还没有对应到一条现存剪贴记录。该行为不新增字段、不改变 JSONL 结构，但意味着备份和恢复后，来源筛选可能会看到仅由图标预热链路生成的来源缓存。这被视为可接受的缓存级可见性，而不是脏数据，不额外做过滤或清洗。
+
 manifest 简化示例：
 
 ```json

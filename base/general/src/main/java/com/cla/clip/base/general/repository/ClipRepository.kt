@@ -104,6 +104,9 @@ interface ClipRepository {
         iconHash: String,
     )
 
+    /** 清空来源 App 已失效的图标缓存，保留展示名称和主键。 */
+    suspend fun clearSourceAppIconCache(packageName: String)
+
     /** 加载所有来源 App，供搜索筛选器展示。 */
     fun loadAllSourceApps(): Flow<List<SourceAppData>>
 

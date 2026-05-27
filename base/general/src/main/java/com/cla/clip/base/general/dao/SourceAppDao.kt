@@ -95,6 +95,22 @@ interface SourceAppDao {
     suspend fun loadByPackageName(packageName: String): SourceAppData?
 
     /**
+     * 清空指定来源 App 的图标缓存字段。
+     *
+     * 仅在发现本地图标文件失效时调用，保留名称和包名，避免来源筛选列表抖动消失。
+     */
+    @Query(
+        """
+        UPDATE source_apps
+        SET icon_path = NULL,
+            primary_color = NULL,
+            icon_hash = NULL
+        WHERE package_name = :packageName
+        """
+    )
+    suspend fun clearIconCache(packageName: String): Int
+
+    /**
      * 加载所有已经记录过的来源 App，供搜索页构建来源筛选器。
      *
      * 返回 Flow 是为了让新复制内容写入来源表后，筛选器能自动刷新；排序同时使用应用名和包名，

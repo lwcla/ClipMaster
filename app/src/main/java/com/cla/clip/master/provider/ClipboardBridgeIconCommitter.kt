@@ -26,6 +26,8 @@ class ClipboardBridgeIconCommitter @Inject constructor(
     private val iconStore: ClipboardBridgeIconStore,
     /** 剪贴仓库，用于更新来源 App 图标缓存并触发 Room 观察刷新。 */
     private val clipRepository: Lazy<ClipRepository>,
+    /** 图标同步规则决策器，用于统一 commit_icon 的缓存命中语义。 */
+    private val iconSyncDecider: ClipboardBridgeIconSyncDecider,
 ) {
     companion object {
         /** 图标提交日志标签，用于定位 commit_icon 阶段耗时和失败原因。 */
@@ -74,9 +76,14 @@ class ClipboardBridgeIconCommitter @Inject constructor(
         val iconHash = request.iconHash
             ?: return ClipboardBridgeResult.of(ClipboardBridgeContract.CODE_INVALID_ARGS)
 
-        /** 已有同 hash 来源 App 缓存可直接复用，避免重复 decode 和覆盖图标文件。 */
+        /** 已有来源 App 缓存；只有 hash 命中且文件真实存在时才允许直接复用。 */
         val cachedSourceApp = clipRepository.get().loadSourceApp(packageName)
-        if (cachedSourceApp?.iconHash == iconHash && !cachedSourceApp.iconPath.isNullOrBlank()) {
+        /** 当前 commit_icon 阶段的图标同步决策。 */
+        val decision = iconSyncDecider.decide(
+            sourceAppData = cachedSourceApp,
+            requestIconHash = iconHash
+        )
+        if (!decision.shouldSyncIcon && decision.reasonCode == ClipboardBridgeContract.ICON_REASON_CACHE_HIT) {
             logI(TAG) { "Provider 图标提交复用缓存 eventId=${request.eventId} packageName=$packageName iconHash=$iconHash" }
             return ClipboardBridgeResult.of(
                 resultCode = ClipboardBridgeContract.CODE_OK,

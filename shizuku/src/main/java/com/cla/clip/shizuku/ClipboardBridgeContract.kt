@@ -12,6 +12,9 @@ object ClipboardBridgeContract {
     /** Provider `call` 方法名：读取剪贴板并保存一条剪贴记录。 */
     const val METHOD_READ_CLIP = "read_clip"
 
+    /** Provider `call` 方法名：判断来源图标是否需要同步。 */
+    const val METHOD_QUERY_ICON_STATE = "query_icon_state"
+
     /** Provider `call` 方法名：提交已写入的图标并更新来源 App 图标缓存。 */
     const val METHOD_COMMIT_ICON = "commit_icon"
 
@@ -45,8 +48,11 @@ object ClipboardBridgeContract {
     /** Provider 返回字段：图标传输是否被使用，缺失或失败时用于诊断降级原因。 */
     const val RESULT_ICON_STATUS = "iconStatus"
 
-    /** Provider 返回字段：本次 read_clip 是否有图标需要异步补齐。 */
-    const val RESULT_ICON_DEFERRED = "iconDeferred"
+    /** Provider 返回字段：本次来源图标是否需要继续同步。 */
+    const val RESULT_SHOULD_SYNC_ICON = "shouldSyncIcon"
+
+    /** Provider 返回字段：本次图标同步决策原因。 */
+    const val RESULT_ICON_DECISION_REASON = "iconDecisionReason"
 
     /** Provider 结果码：读取剪贴板并完成入库。 */
     const val CODE_OK = "ok"
@@ -80,6 +86,21 @@ object ClipboardBridgeContract {
 
     /** 图标状态：本次没有可用图标，使用占位/空图标继续。 */
     const val ICON_STATUS_PLACEHOLDER = "placeholder"
+
+    /** 图标决策：数据库图标 hash 命中且文件仍存在。 */
+    const val ICON_REASON_CACHE_HIT = "cache_hit"
+
+    /** 图标决策：数据库图标 hash 命中但本地文件缺失。 */
+    const val ICON_REASON_STALE_FILE_MISSING = "stale_file_missing"
+
+    /** 图标决策：数据库没有任何来源图标缓存。 */
+    const val ICON_REASON_NO_CACHED_ICON = "no_cached_icon"
+
+    /** 图标决策：数据库图标 hash 与当前来源图标 hash 不同。 */
+    const val ICON_REASON_HASH_CHANGED = "hash_changed"
+
+    /** 图标决策：当前事件没有可用图标参数，不需要继续同步。 */
+    const val ICON_REASON_NO_ICON_AVAILABLE = "no_icon_available"
 
     /**
      * 拼出 Provider authority。
@@ -125,6 +146,12 @@ object ClipboardBridgeCommandResultParser {
     /** Provider iconStatus 字段的文本正则，兼容 Bundle 字段顺序变化。 */
     private val iconStatusRegex = Regex("""iconStatus=([^,\]\}\s]+)""")
 
+    /** Provider shouldSyncIcon 字段的文本正则，兼容 Bundle 字段顺序变化。 */
+    private val shouldSyncIconRegex = Regex("""shouldSyncIcon=([^,\]\}\s]+)""")
+
+    /** Provider iconDecisionReason 字段的文本正则，兼容 Bundle 字段顺序变化。 */
+    private val iconDecisionReasonRegex = Regex("""iconDecisionReason=([^,\]\}\s]+)""")
+
     /**
      * 判断 Provider 命令是否真实完成读取入库。
      *
@@ -154,6 +181,25 @@ object ClipboardBridgeCommandResultParser {
      */
     fun isReadClipSuccessful(exitCode: Int, output: String): Boolean {
         return isSuccessful(exitCode, output)
+    }
+
+    /**
+     * 判断 `query_icon_state` 是否成功返回图标同步决策。
+     *
+     * @param exitCode `content call` 进程退出码。
+     * @param output `content call` 标准输出和错误输出合并后的文本。
+     */
+    fun isQueryIconStateSuccessful(exitCode: Int, output: String): Boolean {
+        /** 命令层必须成功，否则 Provider 可能根本没有被调用。 */
+        val commandSucceeded = exitCode == 0 && !output.contains("Error", ignoreCase = true)
+        if (!commandSucceeded) {
+            return false
+        }
+
+        /** Provider 必须明确返回 ok，才能把后续 shouldSyncIcon 当作有效决策。 */
+        return parseResultCode(output) == ClipboardBridgeContract.CODE_OK &&
+            parseShouldSyncIcon(output) != null &&
+            !parseIconDecisionReason(output).isNullOrBlank()
     }
 
     /**
@@ -203,5 +249,23 @@ object ClipboardBridgeCommandResultParser {
      */
     fun parseIconStatus(output: String): String? {
         return iconStatusRegex.find(output)?.groupValues?.getOrNull(1)
+    }
+
+    /**
+     * 从 `content call` 输出中提取 shouldSyncIcon 布尔值。
+     *
+     * @param output `content call` 打印出的 Bundle 文本。
+     */
+    fun parseShouldSyncIcon(output: String): Boolean? {
+        return shouldSyncIconRegex.find(output)?.groupValues?.getOrNull(1)?.toBooleanStrictOrNull()
+    }
+
+    /**
+     * 从 `content call` 输出中提取图标同步决策原因。
+     *
+     * @param output `content call` 打印出的 Bundle 文本。
+     */
+    fun parseIconDecisionReason(output: String): String? {
+        return iconDecisionReasonRegex.find(output)?.groupValues?.getOrNull(1)
     }
 }

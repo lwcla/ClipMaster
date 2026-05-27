@@ -90,6 +90,36 @@ class ClipRepositorySourceAppMergeTest {
     }
 
     @Test
+    /** 坏路径被 query_icon_state 清空后，后续轻量 read_clip 不应再把旧坏路径重新写回。 */
+    fun buildSourceAppForClipKeepsClearedIconCacheEmpty() {
+        /** query_icon_state 已清空旧图标字段后的来源缓存。 */
+        val existingSourceApp = SourceAppData(
+            packageName = "com.example",
+            appName = "旧名称",
+            iconPath = null,
+            primaryColor = null,
+            iconHash = null
+        )
+
+        /** 不携带新图标字段的轻量 read_clip 捕获数据。 */
+        val captureEntity = captureEntity(
+            sourcePackage = "com.example",
+            sourceAppName = "新名称",
+            iconPath = null,
+            iconHash = null,
+            primaryColor = null
+        )
+
+        /** 合并后的来源 App 缓存。 */
+        val sourceApp = buildSourceAppForClip(captureEntity, existingSourceApp)
+
+        assertEquals("新名称", sourceApp.appName)
+        assertNull(sourceApp.iconPath)
+        assertNull(sourceApp.primaryColor)
+        assertNull(sourceApp.iconHash)
+    }
+
+    @Test
     /** commit_icon 的 appName 为空时，应保留旧名称并只更新图标字段。 */
     fun buildSourceAppIconUpdateKeepsExistingNameWhenNewNameBlank() {
         /** 数据库中已有的来源 App 缓存。 */

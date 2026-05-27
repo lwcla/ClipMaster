@@ -15,6 +15,9 @@ interface ClipboardBridgeEntryPoint {
     /** Provider 剪贴板读取协调器。 */
     fun clipboardBridgeReadCoordinator(): ClipboardBridgeReadCoordinator
 
+    /** Provider 图标预判协调器。 */
+    fun clipboardBridgeIconQueryCoordinator(): ClipboardBridgeIconQueryCoordinator
+
     /** Provider 图标异步提交协调器。 */
     fun clipboardBridgeIconCommitter(): ClipboardBridgeIconCommitter
 

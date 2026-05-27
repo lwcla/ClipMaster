@@ -19,6 +19,7 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import javax.inject.Inject
+import java.io.File
 
 /**
  * Provider 剪贴板读取协调器。
@@ -76,14 +77,20 @@ class ClipboardBridgeReadCoordinator @Inject constructor(
         val sourceAppData = request.packageName
             ?.let { packageName -> clipRepository.get().loadSourceApp(packageName) }
 
-        /** Provider 入库使用的图标路径；read_clip 不等待新图标，只复用已有缓存。 */
-        val iconPath = sourceAppData?.iconPath
+        /** 旧来源图标文件是否真实存在；失效路径不能再被轻量 read_clip 回写进来源缓存。 */
+        val hasReadableCachedIcon = sourceAppData?.iconPath
+            ?.takeIf { it.isNotBlank() }
+            ?.let { iconPath -> File(iconPath).exists() }
+            ?: false
 
-        /** Provider 入库使用的图标主色；read_clip 不做新图标取色，避免阻塞剪贴保存。 */
-        val iconColor = sourceAppData?.primaryColor
+        /** Provider 入库使用的图标路径；仅当旧缓存路径真实存在时才复用，避免坏路径被重新写回。 */
+        val iconPath = sourceAppData?.iconPath?.takeIf { hasReadableCachedIcon }
 
-        /** Provider 入库使用的图标 hash；只有已有缓存可用时才写入，避免未保存新图标污染缓存语义。 */
-        val cachedIconHash = sourceAppData?.iconHash
+        /** Provider 入库使用的图标主色；只和可读旧图标一起复用。 */
+        val iconColor = sourceAppData?.primaryColor?.takeIf { hasReadableCachedIcon }
+
+        /** Provider 入库使用的图标 hash；只有可读旧图标可用时才写入，避免坏缓存语义重新落库。 */
+        val cachedIconHash = sourceAppData?.iconHash?.takeIf { hasReadableCachedIcon }
 
         /** Provider 读取剪贴板的可见窗口结果，必须先添加窗口再读剪贴板。 */
         val windowResult = addOverlayAndReadClip()
@@ -91,8 +98,7 @@ class ClipboardBridgeReadCoordinator @Inject constructor(
             return ClipboardBridgeResult.of(
                 resultCode = ClipboardBridgeContract.CODE_OVERLAY_FAILED,
                 overlayAdded = false,
-                iconStatus = ClipboardBridgeContract.ICON_STATUS_PLACEHOLDER,
-                iconDeferred = !request.iconHash.isNullOrBlank()
+                iconStatus = ClipboardBridgeContract.ICON_STATUS_PLACEHOLDER
             )
         }
 
@@ -102,8 +108,7 @@ class ClipboardBridgeReadCoordinator @Inject constructor(
                 resultCode = ClipboardBridgeContract.CODE_NO_CLIP,
                 readClip = false,
                 overlayAdded = true,
-                iconStatus = ClipboardBridgeContract.ICON_STATUS_PLACEHOLDER,
-                iconDeferred = !request.iconHash.isNullOrBlank()
+                iconStatus = ClipboardBridgeContract.ICON_STATUS_PLACEHOLDER
             )
 
         clipHelper.get().processClip(
@@ -117,7 +122,7 @@ class ClipboardBridgeReadCoordinator @Inject constructor(
 
         logI(TAG) {
             "Provider 读取入库成功 eventId=${request.eventId} packageName=${request.packageName} " +
-                "appName=${request.appName} hasCachedIcon=${!iconPath.isNullOrBlank()} iconDeferred=${!request.iconHash.isNullOrBlank()}"
+                "appName=${request.appName} hasCachedIcon=${!iconPath.isNullOrBlank()}"
         }
         return ClipboardBridgeResult.of(
             resultCode = ClipboardBridgeContract.CODE_OK,
@@ -128,8 +133,7 @@ class ClipboardBridgeReadCoordinator @Inject constructor(
                 ClipboardBridgeContract.ICON_STATUS_REUSED
             } else {
                 ClipboardBridgeContract.ICON_STATUS_PLACEHOLDER
-            },
-            iconDeferred = !request.iconHash.isNullOrBlank()
+            }
         )
     }
 

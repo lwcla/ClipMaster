@@ -58,6 +58,29 @@ class ClipboardBridgeCommandResultParserTest {
     }
 
     @Test
+    /** query_icon_state 只有明确返回 ok、shouldSyncIcon 和 reasonCode 时才算预判成功。 */
+    fun isQueryIconStateSuccessfulAcceptsValidDecision() {
+        /** 模拟 Provider 返回“需要继续同步图标”的图标预判结果。 */
+        val output = "Result: Bundle[{resultCode=ok, shouldSyncIcon=true, iconDecisionReason=hash_changed}]"
+
+        assertTrue(ClipboardBridgeCommandResultParser.isQueryIconStateSuccessful(0, output))
+        assertEquals(true, ClipboardBridgeCommandResultParser.parseShouldSyncIcon(output))
+        assertEquals(ClipboardBridgeContract.ICON_REASON_HASH_CHANGED, ClipboardBridgeCommandResultParser.parseIconDecisionReason(output))
+    }
+
+    @Test
+    /** query_icon_state 缺少 shouldSyncIcon 或 reasonCode 时必须判定失败。 */
+    fun isQueryIconStateSuccessfulRejectsIncompleteDecision() {
+        /** 缺少 shouldSyncIcon 的预判输出。 */
+        val missingShouldSyncOutput = "Result: Bundle[{resultCode=ok, iconDecisionReason=cache_hit}]"
+        /** 缺少 reasonCode 的预判输出。 */
+        val missingReasonOutput = "Result: Bundle[{resultCode=ok, shouldSyncIcon=false}]"
+
+        assertFalse(ClipboardBridgeCommandResultParser.isQueryIconStateSuccessful(0, missingShouldSyncOutput))
+        assertFalse(ClipboardBridgeCommandResultParser.isQueryIconStateSuccessful(0, missingReasonOutput))
+    }
+
+    @Test
     /** 缺少字段时解析结果返回 null，调用方再按失败处理。 */
     fun parserReturnsNullWhenFieldsMissing() {
         /** 模拟空 Bundle 输出。 */

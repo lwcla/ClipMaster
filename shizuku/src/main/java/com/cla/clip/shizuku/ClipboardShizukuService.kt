@@ -18,6 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -31,6 +32,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.lsposed.hiddenapibypass.HiddenApiBypass
 import java.io.OutputStream
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -75,6 +77,9 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
 
     /** 最近一次剪贴板事件处理任务，用于防抖；新事件到来会取消旧任务。 */
     private var job: Job? = null
+
+    /** 正在执行的图标同步 key 集合，避免同一来源图标重复上传。 */
+    private val inflightIconSyncKeys = ConcurrentHashMap.newKeySet<String>()
 
     /** AIDL 健康检查入口；主进程用它确认 Shizuku 进程是否仍持有 callback。 */
     override fun isAlive(): Boolean {
@@ -144,7 +149,7 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
     /**
      * 处理剪贴板写入事件。
      *
-     * 先确保主进程具备悬浮窗权限，再防抖 100ms 后解析来源应用名、图标和图标哈希，最后回调主进程读取真实剪贴板内容。
+     * 先确保主进程具备悬浮窗权限，再防抖 100ms 后解析来源应用名、图标和图标哈希，最后分叉为“快速读取剪贴板”和“独立图标同步预判”两条协程。
      */
     fun handleOpNoted(clipPackageName: String?) {
         // 开启悬浮窗权限
@@ -279,36 +284,46 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
      *
      * Provider 模式下不自动 fallback AIDL，避免掩盖本次冷启动验证通道的真实可靠性。
      */
-    private fun sendByContentProvider(clipPackageName: String?, appName: String, bitmap: Bitmap?, iconHash: String?): Boolean {
-        /** 本次 Provider 事件 ID，既用于日志串联，也用于关联 content write 写入的图标文件。 */
+    private suspend fun sendByContentProvider(
+        clipPackageName: String?,
+        appName: String,
+        bitmap: Bitmap?,
+        iconHash: String?,
+    ): Boolean {
+        /** 本次来源事件的追踪 ID；读剪贴链路和图标链路共享同一个 eventId 便于日志串联。 */
         val eventId = UUID.randomUUID().toString()
 
-        /** Provider 触发读取的命令执行结果。 */
-        val callResult = callProviderReadClip(
-            eventId = eventId,
-            clipPackageName = clipPackageName,
-            appName = appName,
-            iconHash = iconHash
-        )
-
-        /** Provider 明确返回 ok + saved=true 才算真实成功。 */
-        val providerSaved = ClipboardBridgeCommandResultParser.isReadClipSuccessful(callResult.exitCode, callResult.output)
-        if (providerSaved) {
-            logD(TAG) {
-                "Provider 通道保存成功 eventId=$eventId packageName=$clipPackageName appName=$appName hasIcon=${bitmap != null}"
+        /** read_clip 读取协程；只负责尽快触发主进程冷启动和剪贴板入库。 */
+        val readJob = serviceScope.async {
+            val callResult = callProviderReadClip(
+                eventId = eventId,
+                clipPackageName = clipPackageName,
+                appName = appName,
+                iconHash = iconHash
+            )
+            val providerSaved = ClipboardBridgeCommandResultParser.isReadClipSuccessful(callResult.exitCode, callResult.output)
+            if (providerSaved) {
+                logD(TAG) {
+                    "Provider 通道保存成功 eventId=$eventId packageName=$clipPackageName appName=$appName hasIcon=${bitmap != null}"
+                }
+            } else {
+                logW(TAG) {
+                    "Provider 通道未确认成功 eventId=$eventId packageName=$clipPackageName appName=$appName " +
+                        "exit=${callResult.exitCode} resultCode=${ClipboardBridgeCommandResultParser.parseResultCode(callResult.output)}"
+                }
             }
-            launchProviderIconUpload(eventId, clipPackageName, appName, bitmap, iconHash)
-        } else {
-            logW(TAG) {
-                "Provider 通道未确认成功 eventId=$eventId packageName=$clipPackageName appName=$appName " +
-                    "exit=${callResult.exitCode} resultCode=${ClipboardBridgeCommandResultParser.parseResultCode(callResult.output)}"
-            }
+            providerSaved
         }
-        return providerSaved
+
+        /** 图标链路协程；独立预判当前来源图标是否需要同步，不等待 read_clip 完成。 */
+        launchProviderIconQuery(eventId, clipPackageName, appName, bitmap, iconHash)
+
+        /** 返回值仍以 read_clip 是否最终成功入库为准。 */
+        return readJob.await()
     }
 
     /**
-     * 启动 Provider 图标异步补全任务。
+     * 启动 Provider 图标独立预判任务。
      *
      * @param eventId 当前剪贴事件 ID。
      * @param clipPackageName 来源应用包名。
@@ -316,7 +331,7 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
      * @param bitmap Shizuku 侧解析出的来源图标。
      * @param iconHash 来源图标 Bitmap.toStableHash()。
      */
-    private fun launchProviderIconUpload(
+    private fun launchProviderIconQuery(
         eventId: String,
         clipPackageName: String?,
         appName: String?,
@@ -324,17 +339,28 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
         iconHash: String?,
     ) {
         if (clipPackageName.isNullOrBlank() || bitmap == null || iconHash.isNullOrBlank()) {
-            logD(TAG) { "Provider 图标异步补全跳过 eventId=$eventId packageName=$clipPackageName reasonCode=missing_icon_args" }
+            logD(TAG) { "Provider 图标预判跳过 eventId=$eventId packageName=$clipPackageName reasonCode=missing_icon_args" }
+            return
+        }
+
+        /** 同一来源图标的内存去重 key，避免多个 AppOps 回调重复上传同一份图标。 */
+        val iconSyncKey = buildIconSyncKey(clipPackageName, iconHash)
+        if (!inflightIconSyncKeys.add(iconSyncKey)) {
+            logD(TAG) { "Provider 图标预判跳过重复任务 eventId=$eventId iconSyncKey=$iconSyncKey" }
             return
         }
 
         serviceScope.launch {
-            runProviderIconUpload(eventId, clipPackageName, appName, bitmap, iconHash)
+            try {
+                runProviderIconQuery(eventId, clipPackageName, appName, bitmap, iconHash, iconSyncKey)
+            } finally {
+                inflightIconSyncKeys.remove(iconSyncKey)
+            }
         }
     }
 
     /**
-     * 执行 Provider 图标异步补全。
+     * 执行 Provider 图标独立预判与补图链路。
      *
      * @param eventId 当前剪贴事件 ID。
      * @param clipPackageName 来源应用包名。
@@ -342,17 +368,41 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
      * @param bitmap Shizuku 侧解析出的来源图标。
      * @param iconHash 来源图标 Bitmap.toStableHash()。
      */
-    private suspend fun runProviderIconUpload(
+    private suspend fun runProviderIconQuery(
         eventId: String,
         clipPackageName: String,
         appName: String?,
         bitmap: Bitmap,
         iconHash: String,
+        iconSyncKey: String,
     ) {
+        /** query_icon_state 命令结果；只在 Provider 明确要求同步时才继续上传 PNG。 */
+        val queryResult = callProviderQueryIconState(eventId, clipPackageName, appName, iconHash)
+        val queryOk = ClipboardBridgeCommandResultParser.isQueryIconStateSuccessful(queryResult.exitCode, queryResult.output)
+        if (!queryOk) {
+            logW(TAG) {
+                "Provider 图标预判失败 eventId=$eventId iconSyncKey=$iconSyncKey exit=${queryResult.exitCode} " +
+                    "resultCode=${ClipboardBridgeCommandResultParser.parseResultCode(queryResult.output)} " +
+                    "reasonCode=${ClipboardBridgeCommandResultParser.parseIconDecisionReason(queryResult.output)}"
+            }
+            return
+        }
+
+        /** Provider 返回的图标同步布尔决策。 */
+        val shouldSyncIcon = ClipboardBridgeCommandResultParser.parseShouldSyncIcon(queryResult.output)
+        /** Provider 返回的图标同步原因。 */
+        val reasonCode = ClipboardBridgeCommandResultParser.parseIconDecisionReason(queryResult.output)
+        if (shouldSyncIcon != true) {
+            logD(TAG) {
+                "Provider 图标预判命中无需同步 eventId=$eventId iconSyncKey=$iconSyncKey reasonCode=$reasonCode"
+            }
+            return
+        }
+
         /** content write 写图标是否成功；失败时等待下一次事件自然重试。 */
         val iconWriteOk = writeIconToProvider(eventId, bitmap)
         if (!iconWriteOk) {
-            logW(TAG) { "Provider 图标异步写入失败 eventId=$eventId packageName=$clipPackageName" }
+            logW(TAG) { "Provider 图标写入失败 eventId=$eventId iconSyncKey=$iconSyncKey reasonCode=$reasonCode" }
             return
         }
 
@@ -360,14 +410,75 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
         val commitResult = callProviderCommitIcon(eventId, clipPackageName, appName, iconHash)
         val commitOk = ClipboardBridgeCommandResultParser.isCommitIconSuccessful(commitResult.exitCode, commitResult.output)
         if (commitOk) {
-            logD(TAG) { "Provider 图标异步补全成功 eventId=$eventId packageName=$clipPackageName iconHash=$iconHash" }
+            logD(TAG) { "Provider 图标补全成功 eventId=$eventId iconSyncKey=$iconSyncKey iconHash=$iconHash" }
         } else {
             logW(TAG) {
-                "Provider 图标异步补全失败 eventId=$eventId packageName=$clipPackageName exit=${commitResult.exitCode} " +
+                "Provider 图标补全失败 eventId=$eventId iconSyncKey=$iconSyncKey exit=${commitResult.exitCode} " +
                     "resultCode=${ClipboardBridgeCommandResultParser.parseResultCode(commitResult.output)} " +
                     "iconStatus=${ClipboardBridgeCommandResultParser.parseIconStatus(commitResult.output)}"
             }
         }
+    }
+
+    /**
+     * 调用 Provider 预判当前来源图标是否需要同步。
+     *
+     * @param eventId 当前剪贴事件 ID。
+     * @param clipPackageName 来源应用包名。
+     * @param appName 来源应用名称。
+     * @param iconHash 来源图标 Bitmap.toStableHash()。
+     */
+    private fun callProviderQueryIconState(
+        eventId: String,
+        clipPackageName: String?,
+        appName: String?,
+        iconHash: String?,
+    ): ProviderCommandResult {
+        /** content call 命令参数，只传递图标预判所需的小字段。 */
+        val args = mutableListOf(
+            "content",
+            "call",
+            "--uri",
+            ClipboardBridgeContract.callUri(packageName),
+            "--method",
+            ClipboardBridgeContract.METHOD_QUERY_ICON_STATE,
+            "--extra",
+            "${ClipboardBridgeContract.EXTRA_EVENT_ID}:s:${eventId}"
+        )
+
+        clipPackageName?.takeIf { it.isNotBlank() }?.let { sourcePackage ->
+            args += "--extra"
+            args += "${ClipboardBridgeContract.EXTRA_PACKAGE_NAME}:s:${escapeContentArg(sourcePackage)}"
+        }
+        appName?.takeIf { it.isNotBlank() }?.let { sourceAppName ->
+            args += "--extra"
+            args += "${ClipboardBridgeContract.EXTRA_APP_NAME}:s:${escapeContentArg(sourceAppName)}"
+        }
+        iconHash?.takeIf { it.isNotBlank() }?.let { sourceIconHash ->
+            args += "--extra"
+            args += "${ClipboardBridgeContract.EXTRA_ICON_HASH}:s:${escapeContentArg(sourceIconHash)}"
+        }
+
+        /** content call 命令进程；错误流合并后统一解析输出。 */
+        val process = ProcessBuilder(args).redirectErrorStream(true).start()
+
+        /** content call 命令退出码。 */
+        val exitCode = process.waitFor()
+
+        /** content call 命令输出，包含 Provider 返回的 Bundle 文本。 */
+        val output = process.inputStream.bufferedReader().use { it.readText() }
+        logD(TAG) { "Provider query_icon_state eventId=$eventId exit=$exitCode output=$output" }
+        return ProviderCommandResult(exitCode = exitCode, output = output)
+    }
+
+    /**
+     * 构造来源图标同步的内存去重 key。
+     *
+     * @param packageName 来源应用包名。
+     * @param iconHash 来源图标 hash。
+     */
+    private fun buildIconSyncKey(packageName: String, iconHash: String): String {
+        return "$packageName#$iconHash"
     }
 
     /**

@@ -19,8 +19,10 @@ data class ClipboardBridgeResult(
     val overlayAdded: Boolean,
     /** 图标处理状态，取值来自 ClipboardBridgeContract 的 ICON_STATUS_*。 */
     val iconStatus: String,
-    /** read_clip 是否有图标待异步补齐；commit_icon 固定为 false。 */
-    val iconDeferred: Boolean,
+    /** query_icon_state 是否要求调用方继续同步来源图标。 */
+    val shouldSyncIcon: Boolean?,
+    /** 图标同步决策原因；仅 query_icon_state 必填。 */
+    val iconDecisionReason: String?,
 ) {
     companion object {
         /**
@@ -31,7 +33,8 @@ data class ClipboardBridgeResult(
          * @param readClip 是否读取到剪贴板内容。
          * @param overlayAdded 是否成功添加悬浮窗。
          * @param iconStatus 图标处理状态。
-         * @param iconDeferred read_clip 是否有图标待异步补齐。
+         * @param shouldSyncIcon query_icon_state 是否要求继续同步来源图标。
+         * @param iconDecisionReason 本次图标决策原因。
          */
         fun of(
             resultCode: String,
@@ -39,7 +42,8 @@ data class ClipboardBridgeResult(
             readClip: Boolean = false,
             overlayAdded: Boolean = false,
             iconStatus: String = ClipboardBridgeContract.ICON_STATUS_PLACEHOLDER,
-            iconDeferred: Boolean = false,
+            shouldSyncIcon: Boolean? = null,
+            iconDecisionReason: String? = null,
         ): ClipboardBridgeResult {
             return ClipboardBridgeResult(
                 resultCode = resultCode,
@@ -47,7 +51,8 @@ data class ClipboardBridgeResult(
                 readClip = readClip,
                 overlayAdded = overlayAdded,
                 iconStatus = iconStatus,
-                iconDeferred = iconDeferred
+                shouldSyncIcon = shouldSyncIcon,
+                iconDecisionReason = iconDecisionReason
             )
         }
     }
@@ -60,7 +65,8 @@ data class ClipboardBridgeResult(
             putBoolean(ClipboardBridgeContract.RESULT_READ_CLIP, readClip)
             putBoolean(ClipboardBridgeContract.RESULT_OVERLAY_ADDED, overlayAdded)
             putString(ClipboardBridgeContract.RESULT_ICON_STATUS, iconStatus)
-            putBoolean(ClipboardBridgeContract.RESULT_ICON_DEFERRED, iconDeferred)
+            shouldSyncIcon?.let { putBoolean(ClipboardBridgeContract.RESULT_SHOULD_SYNC_ICON, it) }
+            iconDecisionReason?.let { putString(ClipboardBridgeContract.RESULT_ICON_DECISION_REASON, it) }
         }
     }
 }

@@ -385,6 +385,14 @@ class ClipRepositoryImpl @Inject constructor(
         AppSetting.markBackupDirty()
     }
 
+    override suspend fun clearSourceAppIconCache(packageName: String) = withContext(Dispatchers.IO) {
+        /** 只有数据库里已存在对应来源缓存时才需要清理并标记备份 dirty。 */
+        val clearedRows = sourceAppDao.clearIconCache(packageName)
+        if (clearedRows > 0) {
+            AppSetting.markBackupDirty()
+        }
+    }
+
     override fun loadAllSourceApps(): Flow<List<SourceAppData>> {
         return sourceAppDao.loadAllSourceApps()
     }
