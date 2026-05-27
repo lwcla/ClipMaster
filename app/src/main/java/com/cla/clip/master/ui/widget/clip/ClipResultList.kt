@@ -748,6 +748,7 @@ private fun ClipCardPreview() {
         formattedTime = "刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚刚",
         appName = "飞书飞书飞书飞书",
         appIconPath = "https://img2.baidu.com/it/u=3546907450,5411894&fm=253&fmt=auto&app=120&f=JPEG?w=500&h=500",
+        appIconHash = "preview_icon_hash",
         appColor = MaterialTheme.colorScheme.error,
         isPinned = false,
         isFolded = false,

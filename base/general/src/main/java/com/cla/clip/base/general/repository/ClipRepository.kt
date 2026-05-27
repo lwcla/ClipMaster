@@ -91,6 +91,19 @@ interface ClipRepository {
     /** 根据包名和剪贴板内容获取来源app信息 */
     suspend fun loadSourceApp(packageName: String): SourceAppData?
 
+    /**
+     * 更新来源 App 图标缓存。
+     *
+     * 图标异步补全成功后调用；实现层需要只更新同包名来源 App，并标记备份 dirty。
+     */
+    suspend fun updateSourceAppIcon(
+        packageName: String,
+        appName: String?,
+        iconPath: String,
+        primaryColor: Int?,
+        iconHash: String,
+    )
+
     /** 加载所有来源 App，供搜索筛选器展示。 */
     fun loadAllSourceApps(): Flow<List<SourceAppData>>
 

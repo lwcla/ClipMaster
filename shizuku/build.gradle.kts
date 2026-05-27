@@ -65,6 +65,13 @@ android {
         aidl = true
         compose = true
     }
+
+    testOptions {
+        unitTests {
+            // 纯 JVM 单元测试不运行真实 Android Framework；允许日志和轻量系统常量走默认值，避免协议解析测试被 Android stub 阻断。
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 dependencies {

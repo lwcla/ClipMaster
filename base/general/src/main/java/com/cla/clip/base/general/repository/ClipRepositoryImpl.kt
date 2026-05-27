@@ -219,13 +219,11 @@ class ClipRepositoryImpl @Inject constructor(
             linkPreviewDao.upsert(linkPreviewData)
         }
 
-        val sourceApp = SourceAppData(
-            packageName = captureEntity.sourcePackage,
-            appName = captureEntity.sourceAppName,
-            iconPath = captureEntity.sourceAppIconPath,
-            primaryColor = captureEntity.sourcePrimaryColor,
-            iconHash = captureEntity.sourceAppIconHash
-        )
+        /** 已存在的来源 App 缓存；本次没有新图标时需要保留旧图标，避免异步补图结果被空值覆盖。 */
+        val existingSourceApp = sourceAppDao.loadByPackageName(captureEntity.sourcePackage)
+
+        /** 本次写入数据库的来源 App；图标字段会合并旧缓存，避免异步补图被空值覆盖。 */
+        val sourceApp = buildSourceAppForClip(captureEntity, existingSourceApp)
 
         sourceAppDao.upsert(sourceApp)
 
@@ -364,6 +362,29 @@ class ClipRepositoryImpl @Inject constructor(
         sourceAppDao.loadByPackageName(packageName)
     }
 
+    override suspend fun updateSourceAppIcon(
+        packageName: String,
+        appName: String?,
+        iconPath: String,
+        primaryColor: Int?,
+        iconHash: String,
+    ) = withContext(Dispatchers.IO) {
+        /** 已存在的来源 App 缓存；补图只更新图标字段，名称为空时保留旧名称。 */
+        val existingSourceApp = sourceAppDao.loadByPackageName(packageName)
+
+        /** 图标补全后的来源 App 缓存；packageName 是唯一业务身份。 */
+        val sourceApp = buildSourceAppIconUpdate(
+            packageName = packageName,
+            appName = appName,
+            iconPath = iconPath,
+            primaryColor = primaryColor,
+            iconHash = iconHash,
+            existingSourceApp = existingSourceApp
+        )
+        sourceAppDao.upsert(sourceApp)
+        AppSetting.markBackupDirty()
+    }
+
     override fun loadAllSourceApps(): Flow<List<SourceAppData>> {
         return sourceAppDao.loadAllSourceApps()
     }
@@ -413,4 +434,55 @@ class ClipRepositoryImpl @Inject constructor(
     override suspend fun loadLastClip() = withContext(Dispatchers.IO) {
         clipDao.loadLastClip()
     }
+}
+
+/**
+ * 构建剪贴入库时的来源 App 缓存。
+ *
+ * @param captureEntity 本次剪贴捕获实体，Provider 异步模式下图标字段可能为空。
+ * @param existingSourceApp 数据库中已有的同包名来源 App，用于保留已补齐的图标字段。
+ */
+internal fun buildSourceAppForClip(
+    captureEntity: ClipCaptureEntity,
+    existingSourceApp: SourceAppData?,
+): SourceAppData {
+    return SourceAppData(
+        packageName = captureEntity.sourcePackage,
+        appName = captureEntity.sourceAppName,
+        iconPath = captureEntity.sourceAppIconPath ?: existingSourceApp?.iconPath,
+        primaryColor = captureEntity.sourcePrimaryColor ?: existingSourceApp?.primaryColor,
+        iconHash = captureEntity.sourceAppIconHash ?: existingSourceApp?.iconHash
+    )
+}
+
+/**
+ * 构建图标补全时的来源 App 更新数据。
+ *
+ * @param packageName 来源应用包名。
+ * @param appName 来源应用名称；为空时保留旧名称，旧名称也不存在时回退到包名。
+ * @param iconPath 已保存成功的来源图标路径。
+ * @param primaryColor 已保存图标提取出的主色，可能为空。
+ * @param iconHash 已保存图标的 Bitmap.toStableHash()，代表数据库语义上的图标签名。
+ * @param existingSourceApp 数据库中已有的同包名来源 App。
+ */
+internal fun buildSourceAppIconUpdate(
+    packageName: String,
+    appName: String?,
+    iconPath: String,
+    primaryColor: Int?,
+    iconHash: String,
+    existingSourceApp: SourceAppData?,
+): SourceAppData {
+    /** 写入来源 App 的展示名；优先使用本次名称，避免空名称覆盖历史可读名称。 */
+    val mergedAppName = appName?.takeIf { it.isNotBlank() }
+        ?: existingSourceApp?.appName
+        ?: packageName
+
+    return SourceAppData(
+        packageName = packageName,
+        appName = mergedAppName,
+        iconPath = iconPath,
+        primaryColor = primaryColor,
+        iconHash = iconHash
+    )
 }

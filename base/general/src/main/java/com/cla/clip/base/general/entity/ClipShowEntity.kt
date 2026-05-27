@@ -30,6 +30,8 @@ data class ClipShowEntity(
     val appName: String?,
     /** 来源 App 图标缓存路径，可能为空；为空时 UI 使用兜底图标。 */
     val appIconPath: String?,
+    /** 来源 App 图标内容 hash，作为同一路径图标覆盖后的 UI 刷新 key。 */
+    val appIconHash: String?,
     /** 来源 App 主色，可能为空；为空时 UI 使用主题轮廓色。 */
     val appColor: Color?,
     /** 是否置顶；普通范围和折叠范围都可维护该状态，具体排序优先级由各范围查询决定。 */
@@ -46,13 +48,22 @@ data class ClipShowEntity(
 
 /** 将数据库关系实体转换为 UI 展示实体，集中处理来源 App、链接预览和时间字段的空值边界。 */
 fun ClipDetail.toUi(): ClipShowEntity {
+    // 普通剪贴时间是默认展示时间；折叠/回收站页面会在共享组件中按 foldedAt/deletedAt 重新格式化。
+    val timeStr = clip.timestamp.toRelativeTimeSpanString()
+    return toUiWithFormattedTime(timeStr)
+}
+
+/**
+ * 将数据库关系实体转换为 UI 展示实体，并允许调用方传入已格式化时间。
+ *
+ * @param formattedTime 剪贴时间的预格式化文案；单元测试用它避开 Android DateUtils 的 JVM stub。
+ */
+internal fun ClipDetail.toUiWithFormattedTime(formattedTime: String): ClipShowEntity {
     // 来源应用和链接预览是可选关系，先取局部变量，避免后续字段拼装时重复解包。
     val app = this.sourceApp
     val linkPreview = this.linkPreview
     val clip = this.clip
     val appColor = app?.primaryColor?.takeIf { it != -1 }
-    // 普通剪贴时间是默认展示时间；折叠/回收站页面会在共享组件中按 foldedAt/deletedAt 重新格式化。
-    val timeStr = clip.timestamp.toRelativeTimeSpanString()
 
     return ClipShowEntity(
         id = clip.id,
@@ -60,10 +71,11 @@ fun ClipDetail.toUi(): ClipShowEntity {
         timestamp = clip.timestamp,
         foldedAt = clip.foldedAt,
         deletedAt = clip.deletedAt,
-        formattedTime = timeStr,
+        formattedTime = formattedTime,
         // 来源 App 可能已经无法关联或名称为空，UI 层会用统一未知来源文案兜底。
         appName = app?.appName?.takeIf { it.isNotBlank() },
         appIconPath = app?.iconPath,
+        appIconHash = app?.iconHash,
         appColor = appColor?.let { Color(it.red, it.green, it.blue) },
         isPinned = clip.pinnedTime != 0L,
         isFolded = clip.isFolded,

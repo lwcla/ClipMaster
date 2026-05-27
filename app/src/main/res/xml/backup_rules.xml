@@ -11,6 +11,10 @@
     <exclude
         domain="file"
         path="mmkv/" />
+    <!-- Shizuku Provider 图标传输目录只保存 content write 的临时 PNG，不具备跨安装恢复意义。 -->
+    <exclude
+        domain="file"
+        path="clipboard_bridge_icons/" />
     <!--
    <include domain="sharedpref" path="."/>
    <exclude domain="sharedpref" path="device.xml"/>

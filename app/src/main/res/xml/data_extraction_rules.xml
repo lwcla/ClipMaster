@@ -10,6 +10,10 @@
         <exclude
             domain="file"
             path="mmkv/" />
+        <!-- Shizuku Provider 图标传输目录只保存临时 PNG，恢复后无法复用且会被下一次调用清理。 -->
+        <exclude
+            domain="file"
+            path="clipboard_bridge_icons/" />
         <!--
         <include .../>
         <exclude .../>

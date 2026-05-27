@@ -34,7 +34,10 @@ import rikka.shizuku.Shizuku
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** 连接shizuku进程 */
+/**
+ * 连接shizuku进程
+ * adb shell ps | grep com.cla.clip.master
+ */
 @Singleton
 class ShizukuConnector @Inject constructor(
     @param:ApplicationScope private val scope: CoroutineScope,
@@ -50,7 +53,7 @@ class ShizukuConnector @Inject constructor(
          * shizuku的版本号，这个不要跟app的版本
          * 否则只是更新了app，但shizuku服务没有发生变化的情况下，也会重启shizuku进程
          */
-        private const val VERSION = 3
+        private const val VERSION = 6
     }
 
     private var shizukuService: IClipboardShizukuService? = null

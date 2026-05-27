@@ -129,6 +129,13 @@ android {
         buildConfig = true
         compose = true
     }
+
+    testOptions {
+        unitTests {
+            // 纯 JVM 单元测试不运行真实 Android Framework；允许 Process/Bundle 等轻量平台调用返回默认值，避免协议测试被日志桩阻断。
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 dependencies {
