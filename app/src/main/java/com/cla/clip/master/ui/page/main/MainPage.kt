@@ -4,24 +4,28 @@ import android.annotation.SuppressLint
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.PermIdentity
-import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarDefaults
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.cla.clip.base.general.R
 import com.cla.clip.feature.magnet.api.MagnetFeatureEntry
 import com.cla.clip.master.ui.navigation.MainInitialTab
@@ -104,7 +108,7 @@ fun MainPage(
         // 首页内容自身不需要再吃系统栏 inset；顶部由一级标题栏处理，底部由 NavigationBar 自己处理。
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
-            // 底部栏自己消费系统导航区 inset，这样背景可以贴到底部手势区，不会再像悬浮卡片一样上浮。
+            // 保留标准 NavigationBar 结构，只通过更轻的图标、文字和容器配色降低视觉厚重感。
             NavigationBar(
                 modifier = Modifier.fillMaxWidth(),
                 windowInsets = NavigationBarDefaults.windowInsets,
@@ -131,15 +135,14 @@ fun MainPage(
                             }
                         },
                         icon = tab.icon,
-                        label = { Text(tab.title) },
+                        label = {
+                            Text(
+                                text = tab.title,
+                                fontSize = 10.sp,
+                                lineHeight = 12.sp,
+                            )
+                        },
                         alwaysShowLabel = true,
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = androidx.compose.material3.MaterialTheme.colorScheme.onPrimaryContainer,
-                            selectedTextColor = androidx.compose.material3.MaterialTheme.colorScheme.primary,
-                            indicatorColor = androidx.compose.material3.MaterialTheme.colorScheme.primaryContainer,
-                            unselectedIconColor = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
                     )
                 }
             }
