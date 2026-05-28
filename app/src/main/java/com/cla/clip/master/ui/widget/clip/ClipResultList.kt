@@ -163,20 +163,27 @@ fun ClipResultList(
 
         else -> {
             val retryText = stringResource(com.cla.clip.base.general.R.string.base_general_data_load_failed_retry)
+            // 共享列表只基于当前已加载快照生成唯一渲染索引，避免 Paging 切代重排瞬间把同一 clip.id 交给 LazyColumn 两次。
+            val renderEntries = remember(pagedClips.itemSnapshotList) {
+                buildUniqueClipPagingRenderEntries(pagedClips.itemSnapshotList)
+            }
             LazyColumn(
                 state = listState,
                 modifier = modifier.fillMaxSize(),
                 contentPadding = contentPadding,
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                if (pagedClips.itemCount > 0) {
+                if (renderEntries.isNotEmpty()) {
                     items(
-                        count = pagedClips.itemCount,
-                        // Paging key 使用数据库主键，保证置顶、删除、搜索条件变化和侧滑状态保存时 Compose 复用稳定。
-                        key = pagedClips.itemKey { it.id },
-                        contentType = pagedClips.itemContentType { "ClipCard" }
+                        count = renderEntries.size,
+                        // 当前快照里即使短暂出现重复记录，也只允许首个 clip.id 进入组合树，直接拦住 LazyColumn 重复 key 崩溃。
+                        key = { index -> renderEntries[index].clipId },
+                        contentType = { "ClipCard" }
                     ) { index ->
-                        val clip = pagedClips[index]
+                        /** 当前要渲染的唯一条目；内部保留原 Paging 索引，避免破坏预取和回调定位。 */
+                        val renderEntry = renderEntries[index]
+                        /** 使用真实 Paging 索引读取条目；这里用 peek 避免组合阶段因为防御性去重反向触发额外加载。 */
+                        val clip = pagedClips.peek(renderEntry.sourceIndex)
                         if (clip != null) {
                             ClipCard(
                                 clip = clip,
