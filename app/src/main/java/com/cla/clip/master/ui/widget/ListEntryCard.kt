@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -13,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.cla.clip.master.ui.theme.ClipMasterThemeTokens
 
 /**
  * 通用入口卡片。
@@ -28,18 +30,25 @@ internal fun ListEntryCard(
     modifier: Modifier = Modifier,
     icon: @Composable () -> Unit,
 ) {
+    /** 入口卡片间距 token，保证我的页、磁力入口和设置项使用同一节奏。 */
+    val spacing = ClipMasterThemeTokens.tokens.spacing
     ClipMasterCard(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = spacing.large, vertical = spacing.small),
         onClick = onClick,
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            icon()
-            Spacer(Modifier.width(12.dp))
+            Row(
+                modifier = Modifier.size(32.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                icon()
+            }
+            Spacer(Modifier.width(spacing.medium))
             Column(Modifier.weight(1f)) {
                 Text(
                     text = title,

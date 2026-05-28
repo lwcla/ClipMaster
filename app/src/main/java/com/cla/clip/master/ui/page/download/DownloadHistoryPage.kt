@@ -9,13 +9,13 @@ import androidx.activity.result.ActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
@@ -129,10 +129,11 @@ fun DownloadHistoryPage(
         }
     }
 
-    Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize()) {
-            DownloadHistoryTitleBar(
+    Scaffold(
+        topBar = {
+            DownloadHistoryTopBar(
                 state = state,
+                tabs = historyTabs,
                 onBack = onBack,
                 onExitSelection = viewModel::exitSelection,
                 onEnterSelection = { viewModel.enterSelection() },
@@ -150,21 +151,48 @@ fun DownloadHistoryPage(
                             tabs = historyTabs
                         )
                     )
-                }
-            )
-
-            DownloadHistoryTabs(
-                tabs = historyTabs,
-                selectedTab = state.selectedTab,
+                },
                 onSelected = { tab ->
                     val page = historyTabs.indexOfFirst { it.tab == tab }
-                    if (page < 0) return@DownloadHistoryTabs
+                    if (page < 0) return@DownloadHistoryTopBar
                     // 点击 Tab 时立即更新分类状态以刷新标题栏动作，再平滑滚动内容页保持视觉联动。
                     viewModel.selectTab(tab)
                     scope.launch { pagerState.animateScrollToPage(page) }
                 }
             )
-
+        },
+        bottomBar = {
+            /** 当前多选态下的选中数量；为 0 时不展示底部删除条。 */
+            val selectedCount = state.selectedIds.size
+            if (state.selectionMode && selectedCount > 0) {
+                SelectionActionBar(
+                    selectedCount = selectedCount,
+                    onDelete = {
+                        pendingDelete = DeleteRequestUi(
+                            kind = DeleteRequestKind.Selected,
+                            count = selectedCount,
+                            hasRunning = state.selectedHasRunning,
+                            allowDeleteFiles = state.selectedTab !is DownloadHistoryTab.Extension,
+                            message = state.deleteConfirmMessage(
+                                context = context,
+                                kind = DeleteRequestKind.Selected,
+                                count = selectedCount,
+                                tabs = historyTabs
+                            )
+                        )
+                    },
+                )
+            }
+        },
+        snackbarHost = {
+            SnackbarHost(hostState = snackbarHostState)
+        }
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
             DownloadHistoryPager(
                 tabs = historyTabs,
                 pagerState = pagerState,
@@ -192,44 +220,16 @@ fun DownloadHistoryPage(
                 },
                 onPreviewImage = { previewImageUri = it }
             )
-        }
 
-        SnackbarHost(
-            hostState = snackbarHostState,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(16.dp)
-        )
-
-        val selectedCount = state.selectedIds.size
-        if (state.selectionMode && selectedCount > 0) {
-            SelectionActionBar(
-                selectedCount = selectedCount,
-                onDelete = {
-                    pendingDelete = DeleteRequestUi(
-                        kind = DeleteRequestKind.Selected,
-                        count = selectedCount,
-                        hasRunning = state.selectedHasRunning,
-                        allowDeleteFiles = state.selectedTab !is DownloadHistoryTab.Extension,
-                        message = state.deleteConfirmMessage(
-                            context = context,
-                            kind = DeleteRequestKind.Selected,
-                            count = selectedCount,
-                            tabs = historyTabs
-                        )
-                    )
-                },
-            )
-        }
-
-        if (state.busy) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.18f)),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator()
+            if (state.busy) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
             }
         }
     }

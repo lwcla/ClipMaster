@@ -1,23 +1,20 @@
 package com.cla.clip.master.ui.page.list
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -32,7 +29,7 @@ import com.cla.clip.master.ui.navigation.DetailRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.navigation.SearchRoute
 import com.cla.clip.master.ui.navigation.SearchScope
-import com.cla.clip.master.ui.widget.TitleBar
+import com.cla.clip.master.ui.widget.SecondaryPageScaffold
 import com.cla.clip.master.ui.widget.clip.ClipCardTimeMode
 import com.cla.clip.master.ui.widget.clip.ClipResultList
 
@@ -56,22 +53,29 @@ fun FoldedClipListPage(
     val listState = rememberLazyListState()
     var deleteClip by remember { mutableStateOf<ClipShowEntity?>(null) }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        TitleBar(
-            title = stringResource(com.cla.clip.base.general.R.string.base_general_folded_clips),
-            onBack = onBack
-        )
-
+    SecondaryPageScaffold(
+        title = stringResource(com.cla.clip.base.general.R.string.base_general_folded_clips),
+        onBack = onBack,
+        actions = {
+            IconButton(onClick = { onNavigate(SearchRoute(SearchScope.FoldedOnly)) }) {
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = stringResource(com.cla.clip.base.general.R.string.base_general_search_folded_clips)
+                )
+            }
+        }
+    ) { paddingValues ->
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
+                .fillMaxSize()
+                .padding(paddingValues)
         ) {
             ClipResultList(
                 listState = listState,
                 pagedClips = pagedClips,
                 emptyText = stringResource(com.cla.clip.base.general.R.string.base_general_folded_clip_list_empty),
-                contentPadding = PaddingValues(start = 10.dp, top = 10.dp, end = 10.dp, bottom = 96.dp),
+                // 折叠列表和首页普通列表保持一致，在底部导航或系统手势区上方保留统一的轻量留白。
+                contentPadding = PaddingValues(start = 10.dp, top = 10.dp, end = 10.dp, bottom = 12.dp),
                 // 折叠范围保留置顶操作能力，DAO 会先排置顶数据，再在分组内按 foldedAt 倒序。
                 onPinToggle = { viewModel.updatePinStatus(it, !it.isPinned) },
                 onDelete = { clip -> deleteClip = clip },
@@ -82,18 +86,6 @@ fun FoldedClipListPage(
                 onClick = { onNavigate(DetailRoute(it.id)) },
                 onLongClick = {},
             )
-
-            FloatingActionButton(
-                onClick = { onNavigate(SearchRoute(SearchScope.FoldedOnly)) },
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(24.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = stringResource(com.cla.clip.base.general.R.string.base_general_search_folded_clips)
-                )
-            }
 
             ClipDeleteChoiceDialog(
                 clip = deleteClip,

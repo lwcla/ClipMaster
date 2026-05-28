@@ -1,5 +1,6 @@
 package com.cla.clip.master.ui.page.download
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.pager.HorizontalPager
@@ -134,6 +135,40 @@ internal fun DownloadHistoryPager(
             onRetryImage = onRetryImage,
             onShowMessage = onShowMessage,
             onPreviewImage = onPreviewImage
+        )
+    }
+}
+
+/**
+ * 下载记录页顶部区域。
+ *
+ * 标题栏和纯文字 Tab 必须按垂直顺序组合；如果直接在 `Scaffold.topBar` 里并列发射两个根节点，
+ * Compose 会把它们放进同一个 topBar slot，视觉上就会出现标题和 Tab 重叠。
+ */
+@Composable
+internal fun DownloadHistoryTopBar(
+    state: DownloadHistoryUiState,
+    tabs: List<DownloadHistoryTabSpec>,
+    onBack: () -> Unit,
+    onExitSelection: () -> Unit,
+    onEnterSelection: () -> Unit,
+    onSelectAll: () -> Unit,
+    onClearTab: () -> Unit,
+    onSelected: (DownloadHistoryTab) -> Unit,
+) {
+    Column {
+        DownloadHistoryTitleBar(
+            state = state,
+            onBack = onBack,
+            onExitSelection = onExitSelection,
+            onEnterSelection = onEnterSelection,
+            onSelectAll = onSelectAll,
+            onClearTab = onClearTab,
+        )
+        DownloadHistoryTabs(
+            tabs = tabs,
+            selectedTab = state.selectedTab,
+            onSelected = onSelected,
         )
     }
 }

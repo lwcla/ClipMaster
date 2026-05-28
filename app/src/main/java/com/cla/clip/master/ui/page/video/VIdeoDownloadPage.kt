@@ -34,7 +34,8 @@ import com.cla.clip.base.general.R
 import com.cla.clip.base.general.utils.toast
 import com.cla.clip.master.entity.VideoDownloadState
 import com.cla.clip.master.ui.theme.ClipMaterTheme
-import com.cla.clip.master.ui.widget.TitleBar
+import com.cla.clip.master.ui.widget.PageBackground
+import com.cla.clip.master.ui.widget.SecondaryPageScaffold
 import kotlinx.coroutines.launch
 
 /**
@@ -61,43 +62,48 @@ fun VideoDownloadPage(
         downloadVm.startDownload(downloadVm.sessionId, taskId)
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        TitleBar(title = stringResource(R.string.base_general_video_download), onBack = onBack)
+    SecondaryPageScaffold(
+        title = stringResource(R.string.base_general_video_download),
+        onBack = onBack,
+    ) { paddingValues ->
+        PageBackground(contentPadding = paddingValues) {
+            /** 下载状态主体区域，保持原有状态机，只接入统一二级页背景。 */
+            val contentModifier = Modifier.fillMaxSize()
+            Column(
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = contentModifier
+            ) {
+                when (state) {
+                    is VideoDownloadState.Idle -> {
+                        Text(
+                            text = stringResource(R.string.base_general_preparing_download),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
 
-        Column(
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.fillMaxSize()
-        ) {
-            when (state) {
-                is VideoDownloadState.Idle -> {
-                    Text(
-                        text = stringResource(R.string.base_general_preparing_download),
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(12.dp)
-                    )
-                }
+                    is VideoDownloadState.Downloading -> {
+                        Downloading(state)
+                    }
 
-                is VideoDownloadState.Downloading -> {
-                    Downloading(state)
-                }
+                    is VideoDownloadState.Merging -> {
+                        Merging(state)
+                    }
 
-                is VideoDownloadState.Merging -> {
-                    Merging(state)
-                }
+                    is VideoDownloadState.Success -> {
+                        Success(state)
+                    }
 
-                is VideoDownloadState.Success -> {
-                    Success(state)
-                }
-
-                is VideoDownloadState.Failed -> {
-                    Failed(
-                        state,
-                        retry = {
-                            // 通过改变 sessionId 触发 ViewModel 开启新一轮下载。
-                            downloadVm.sessionId++
-                        }
-                    )
+                    is VideoDownloadState.Failed -> {
+                        Failed(
+                            state,
+                            retry = {
+                                // 通过改变 sessionId 触发 ViewModel 开启新一轮下载。
+                                downloadVm.sessionId++
+                            }
+                        )
+                    }
                 }
             }
         }

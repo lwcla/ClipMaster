@@ -24,6 +24,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.cla.clip.master.ui.theme.cardCornerShape
+import com.cla.clip.master.ui.theme.clipMasterCardElevation
 
 /**
  * ClipMaster 主要内容卡片的默认外壳参数。
@@ -44,7 +45,7 @@ object ClipMasterCardDefaults {
     val BorderWidth: Dp = 1.dp
 
     /** 默认内容内边距，对应我的页面入口卡片的内容节奏。 */
-    val ContentPadding: PaddingValues = PaddingValues(horizontal = 12.dp, vertical = 14.dp)
+    val ContentPadding: PaddingValues = PaddingValues(horizontal = 14.dp, vertical = 14.dp)
 
     /** 无内容内边距，用于 `ClipCard` 这类内部已经自行管理 Canvas、侧滑和内容布局的复杂卡片。 */
     val ZeroContentPadding: PaddingValues = PaddingValues(0.dp)
@@ -55,7 +56,7 @@ object ClipMasterCardDefaults {
      * 使用 Material3 的 `CardElevation`，让普通卡片和自定义手势卡片共享同一套阴影规则。
      */
     @Composable
-    fun elevation(): CardElevation = CardDefaults.cardElevation(defaultElevation = 10.dp)
+    fun elevation(): CardElevation = clipMasterCardElevation()
 
     /**
      * 默认边框色。
@@ -86,6 +87,7 @@ fun ClipMasterCard(
     contentPadding: PaddingValues = ClipMasterCardDefaults.ContentPadding,
     content: @Composable BoxScope.(shape: Shape) -> Unit,
 ) {
+    /** 卡片点击层仅在调用方传入点击或长按时启用，避免无交互卡片暴露错误语义。 */
     val interactionModifier = if (onClick != null || onLongClick != null) {
         Modifier.combinedClickable(
             enabled = enabled,
@@ -152,9 +154,12 @@ private fun ClipMasterCardShell(
     interactionModifier: Modifier,
     content: @Composable BoxScope.(shape: Shape) -> Unit,
 ) {
+    /** 主要内容卡片背景色，统一使用 surface，减少页面各自维护 ElevatedCard 容器色。 */
+    val containerColor = MaterialTheme.colorScheme.surface
     ElevatedCard(
         shape = shape,
         elevation = elevation,
+        colors = CardDefaults.elevatedCardColors(containerColor = containerColor),
         modifier = modifier,
     ) {
         Box(

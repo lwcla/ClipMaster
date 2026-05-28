@@ -13,10 +13,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -42,7 +45,8 @@ import com.cla.clip.master.ui.navigation.ImageExtractRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.navigation.VideoExtractRoute
 import com.cla.clip.master.ui.widget.ClipMasterCard
-import com.cla.clip.master.ui.widget.TitleBar
+import com.cla.clip.master.ui.widget.SecondaryPageScaffold
+import com.cla.clip.master.ui.theme.ClipMasterThemeTokens
 import kotlinx.coroutines.flow.collectLatest
 
 /**
@@ -74,15 +78,17 @@ fun DetailPage(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        TitleBar(stringResource(R.string.base_general_clip_detail), onBack)
-
+    SecondaryPageScaffold(
+        title = stringResource(R.string.base_general_clip_detail),
+        onBack = onBack
+    ) { paddingValues ->
         when (uiState) {
             is DetailUiState.Loading -> {
                 ClipMasterCard(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(12.dp, top = 0.dp, end = 12.dp, bottom = 12.dp)
+                        .padding(paddingValues)
+                        .padding(12.dp)
                 ) {
                     Text(
                         text = stringResource(R.string.base_general_loading),
@@ -98,7 +104,8 @@ fun DetailPage(
                 ClipMasterCard(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(12.dp, top = 0.dp, end = 12.dp, bottom = 12.dp)
+                        .padding(paddingValues)
+                        .padding(12.dp)
                 ) {
                     Row {
                         Icon(
@@ -123,34 +130,41 @@ fun DetailPage(
 
             is DetailUiState.Success -> {
                 val clip = uiState.clip
-                Box(
+                Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                    .padding(12.dp, top = 0.dp, end = 12.dp, bottom = 12.dp)
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // 正文可能非常长，Card 内部滚动可以保留顶部标题和底部操作按钮的稳定位置。
-                    ClipMasterCard(
-                        modifier = Modifier.fillMaxWidth()
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
                     ) {
-                        Text(
-                            text = clip.content,
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .verticalScroll(rememberScrollState())
-                        )
+                        // 正文可能非常长，Card 内部滚动可以保留顶部标题和底部操作按钮的稳定位置。
+                        ClipMasterCard(
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = clip.content,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .verticalScroll(rememberScrollState())
+                            )
+                        }
                     }
-                }
 
-                ButtonContainer(
-                    detailVm = detailVm,
-                    onNavigate = onNavigate,
-                    magnetFeatures = magnetFeatures,
-                    onOpenMagnetSearch = onOpenMagnetSearch,
-                    onDelete = { clip -> deleteClip = clip },
-                    clip = clip
-                )
+                    DetailActionSections(
+                        detailVm = detailVm,
+                        onNavigate = onNavigate,
+                        magnetFeatures = magnetFeatures,
+                        onOpenMagnetSearch = onOpenMagnetSearch,
+                        onDelete = { clip -> deleteClip = clip },
+                        clip = clip
+                    )
+                }
             }
         }
     }
@@ -164,13 +178,13 @@ fun DetailPage(
 }
 
 /**
- * 详情页底部操作区。
+ * 详情页操作分区。
  *
  * 当剪贴内容识别出链接时额外展示图片/视频提取入口；磁力搜索会用标题或正文作为初始关键词，不读取系统剪贴板。
- * 删除和复制始终可用，保证普通文本记录也能操作。
+ * 复制作为普通主操作保留，删除放入危险操作区，降低误触风险。
  */
 @Composable
-private fun ButtonContainer(
+private fun DetailActionSections(
     detailVm: DetailViewModel,
     onNavigate: (Route) -> Unit,
     magnetFeatures: Set<MagnetFeatureEntry>,
@@ -178,9 +192,10 @@ private fun ButtonContainer(
     onDelete: (ClipShowEntity) -> Unit,
     clip: ClipShowEntity
 ) {
+    /** 详情页操作区间距 token，确保正文、能力和危险操作区节奏一致。 */
+    val spacing = ClipMasterThemeTokens.tokens.spacing
     Column(
-        modifier = Modifier.padding(start = 12.dp, top = 0.dp, end = 12.dp, bottom = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        verticalArrangement = Arrangement.spacedBy(spacing.small)
     ) {
         val link = clip.link
         if (link.isNullOrBlank().not()) {
@@ -204,13 +219,14 @@ private fun ButtonContainer(
             }
             Text(
                 text = tipText,
-                style = MaterialTheme.typography.bodySmall
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalArrangement = Arrangement.spacedBy(spacing.small)
             ) {
-                Button(
+                OutlinedButton(
                     modifier = Modifier.weight(1f),
                     onClick = {
                         // 视频提取页需要原始页面 URL 和一个可读名称，名称用于后续生成下载任务文件名。
@@ -220,7 +236,7 @@ private fun ButtonContainer(
                     Text(stringResource(R.string.base_general_video_extract))
                 }
 
-                Button(
+                OutlinedButton(
                     modifier = Modifier.weight(1f),
                     onClick = {
                         // 图片提取已有独立页面，进入后会先提取并落库，再由用户确认批量下载。
@@ -233,7 +249,7 @@ private fun ButtonContainer(
         }
 
         Row(
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+            horizontalArrangement = Arrangement.spacedBy(spacing.small)
         ) {
             val magnetInitialQuery = clip.linkTitle ?: clip.content
             magnetFeatures.sortedBy { it.featureId }.forEach { feature ->
@@ -247,19 +263,20 @@ private fun ButtonContainer(
 
             Button(
                 modifier = Modifier.weight(1f),
-                onClick = { onDelete(clip) }
-            ) {
-                Text(stringResource(R.string.base_general_delete))
-            }
-
-            Button(
-                modifier = Modifier.weight(1f),
                 onClick = {
                     detailVm.copyToClipboard(clip)
                 }
             ) {
                 Text(stringResource(R.string.base_general_copy))
             }
+        }
+
+        TextButton(
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            onClick = { onDelete(clip) }
+        ) {
+            Text(stringResource(R.string.base_general_delete))
         }
     }
 }

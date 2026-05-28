@@ -23,7 +23,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
@@ -152,10 +151,13 @@ fun HandleNotificationPermission(
         )
     }
 
+    /** 通知权限提示错误色，跟随主题 error，避免硬编码红色影响深色模式对比度。 */
+    val warningColor = MaterialTheme.colorScheme.error
+
     Text(
         text = buildAnnotatedString {
             // 第一段：红色
-            withStyle(style = SpanStyle(color = Color.Red, fontWeight = FontWeight.Bold)) {
+            withStyle(style = SpanStyle(color = warningColor, fontWeight = FontWeight.Bold)) {
                 append(stringResource(R.string.host_notification_permission_tip))
             }
 
@@ -172,7 +174,7 @@ fun HandleNotificationPermission(
             // 1. 添加圆角边框 (例如: 宽度 1dp, 红色, 8dp 圆角)
             .border(
                 width = 1.dp,
-                color = Color.Red, // 或者使用 MaterialTheme.colorScheme.error
+                color = warningColor,
                 shape = RoundedCornerShape(10.dp)
             )
             // 2. 如果希望背景点击效果也遵循圆角，需要 clip

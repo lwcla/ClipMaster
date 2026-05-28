@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.paging.LoadState
+import com.cla.clip.master.ui.theme.ClipMasterThemeTokens
 
 /**
  * 通用分页首次加载状态。
@@ -49,6 +50,8 @@ internal fun PagingEmptyContent(
     modifier: Modifier = Modifier,
     icon: ImageVector = Icons.Default.History,
 ) {
+    /** 空态内容间距 token，统一分页页图标和文案的距离。 */
+    val spacing = ClipMasterThemeTokens.tokens.spacing
     Column(
         modifier = modifier.fillMaxSize(),
         verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
@@ -60,7 +63,7 @@ internal fun PagingEmptyContent(
             modifier = Modifier.size(42.dp),
             tint = MaterialTheme.colorScheme.outline
         )
-        androidx.compose.foundation.layout.Spacer(Modifier.size(10.dp))
+        androidx.compose.foundation.layout.Spacer(Modifier.size(spacing.small))
         Text(text = text, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

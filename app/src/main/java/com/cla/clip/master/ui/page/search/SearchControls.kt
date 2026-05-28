@@ -1,6 +1,5 @@
 package com.cla.clip.master.ui.page.search
 
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -11,75 +10,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import com.cla.clip.master.ui.widget.FilterChipOption
 import com.cla.clip.master.ui.widget.HorizontalFilterChips
 import com.cla.clip.master.ui.widget.SearchInputField
-import kotlin.math.roundToInt
-
-/**
- * 搜索框和筛选区的 AppBarLayout 式折叠容器。
- *
- * 容器先在保持父级宽度约束的前提下放宽高度，测量完整内容；再用自身可见高度和裁剪表现折叠进度。
- * 这样搜索框和筛选区即使已经折叠到 0，也仍能保留完整高度基准，避免列表滚动反向污染顶部控件测量。
- */
-@Composable
-internal fun CollapsibleSearchControls(
-    collapseOffsetPx: Float,
-    expandedHeightPx: Int,
-    onExpandedHeightChange: (Int) -> Unit,
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
-) {
-    Layout(
-        modifier = modifier
-            .fillMaxWidth()
-            .clipToBounds(),
-        content = {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    // 子节点按完整高度测量后再回写给父层折叠状态；这是顶部控件高度变化时的唯一事实来源。
-                    .onSizeChanged { size ->
-                        if (size.height > 0 && size.height != expandedHeightPx) {
-                            onExpandedHeightChange(size.height)
-                        }
-                    }
-            ) {
-                content()
-            }
-        }
-    ) { measurables, constraints ->
-        val measurable = measurables.firstOrNull()
-        val placeable = measurable?.measure(
-            constraints.copy(
-                minHeight = 0,
-                // 只放宽高度，宽度仍沿用父级约束，避免搜索框在无界宽度下失去 fillMaxWidth 行为。
-                maxHeight = Constraints.Infinity
-            )
-        )
-        val contentHeightPx = placeable?.height ?: 0
-        val collapseBaseHeightPx = if (expandedHeightPx > 0) expandedHeightPx else contentHeightPx
-        val normalizedCollapsePx = if (collapseBaseHeightPx > 0) {
-            collapseOffsetPx.coerceIn(0f, collapseBaseHeightPx.toFloat())
-        } else {
-            0f
-        }
-        val visibleHeightPx = (collapseBaseHeightPx - normalizedCollapsePx.roundToInt()).coerceAtLeast(0)
-        val layoutWidth = (placeable?.width ?: constraints.minWidth).coerceIn(constraints.minWidth, constraints.maxWidth)
-        val layoutHeight = visibleHeightPx.coerceIn(constraints.minHeight, constraints.maxHeight)
-
-        layout(layoutWidth, layoutHeight) {
-            placeable?.placeRelative(x = 0, y = -normalizedCollapsePx.roundToInt())
-        }
-    }
-}
 
 /**
  * 搜索输入框。

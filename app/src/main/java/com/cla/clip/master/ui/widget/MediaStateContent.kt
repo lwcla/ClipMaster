@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import com.cla.clip.master.ui.theme.ClipMasterThemeTokens
 
 /**
  * 居中放置加载、失败、成功等轻量状态内容。
@@ -49,12 +50,14 @@ internal fun InlineLoadingState(
     text: String,
     modifier: Modifier = Modifier,
 ) {
+    /** 加载状态内边距 token，让图片和视频提取页的行内状态保持一致。 */
+    val spacing = ClipMasterThemeTokens.tokens.spacing
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
     ) {
         CircularProgressIndicator(modifier = Modifier.size(25.dp))
-        Text(text = text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(12.dp))
+        Text(text = text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(spacing.medium))
     }
 }
 
@@ -113,6 +116,8 @@ private fun InlineIconState(
     modifier: Modifier,
     onClick: (() -> Unit)?,
 ) {
+    /** 行内状态统一间距 token，用于图标和文字的可点击热区。 */
+    val spacing = ClipMasterThemeTokens.tokens.spacing
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier.then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
@@ -122,14 +127,14 @@ private fun InlineIconState(
             contentDescription = null,
             tint = tint,
             modifier = Modifier
-                .padding(12.dp)
+                .padding(spacing.medium)
                 .size(24.dp)
         )
         Text(
             text = text,
             color = tint,
             style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(start = 0.dp, top = 12.dp, end = 12.dp, bottom = 12.dp)
+            modifier = Modifier.padding(start = 0.dp, top = spacing.medium, end = spacing.medium, bottom = spacing.medium)
         )
     }
 }

@@ -124,7 +124,13 @@ internal fun VideoHistoryList(
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(12.dp),
+                // 下载记录视频列表普通态保留统一轻量留白；多选态为底部删除条额外预留空间，避免最后几项被挡住。
+                contentPadding = PaddingValues(
+                    start = 12.dp,
+                    top = 12.dp,
+                    end = 12.dp,
+                    bottom = if (state.selectionMode) 96.dp else 12.dp
+                ),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(
@@ -184,7 +190,13 @@ internal fun ImageHistoryList(
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(12.dp),
+                // 下载记录图片列表底部留白与视频列表保持一致；多选态同样为底部删除条预留空间。
+                contentPadding = PaddingValues(
+                    start = 12.dp,
+                    top = 12.dp,
+                    end = 12.dp,
+                    bottom = if (state.selectionMode) 96.dp else 12.dp
+                ),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(

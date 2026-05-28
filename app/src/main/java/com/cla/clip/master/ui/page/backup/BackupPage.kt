@@ -25,8 +25,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -51,7 +49,7 @@ import com.cla.clip.base.general.backup.RemoteBackupFile
 import com.cla.clip.master.ui.navigation.BackupRestoreRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.widget.ClipMasterCard
-import com.cla.clip.master.ui.widget.TitleBar
+import com.cla.clip.master.ui.widget.SecondaryPageScaffold
 
 /**
  * 备份与恢复页面。
@@ -102,14 +100,10 @@ fun BackupPage(
         }
     }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        topBar = {
-            TitleBar(
-                title = androidx.compose.ui.res.stringResource(R.string.base_general_backup_restore),
-                onBack = onBack
-            )
-        }
+    SecondaryPageScaffold(
+        title = androidx.compose.ui.res.stringResource(R.string.base_general_backup_restore),
+        onBack = onBack,
+        snackbarHostState = snackbarHostState,
     ) { paddingValues ->
         LazyColumn(
             modifier = Modifier

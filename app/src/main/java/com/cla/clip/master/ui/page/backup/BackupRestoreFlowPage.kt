@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -28,7 +27,7 @@ import com.cla.clip.base.general.utils.logD
 import com.cla.clip.feature.magnet.api.MagnetFeatureEntry
 import com.cla.clip.master.ui.navigation.BackupMediaRelocationRoute
 import com.cla.clip.master.ui.navigation.Route
-import com.cla.clip.master.ui.widget.TitleBar
+import com.cla.clip.master.ui.widget.SecondaryPageScaffold
 
 private const val MEDIA_RELOCATION_NAV_DEBOUNCE_MS = 600L
 private const val TAG = "BackupRestoreFlowPage"
@@ -115,14 +114,10 @@ private fun BackupRestoreFlowScaffold(
         requestBack()
     }
 
-    Scaffold(
+    SecondaryPageScaffold(
         modifier = modifier.fillMaxSize(),
-        topBar = {
-            TitleBar(
-                title = stringResource(R.string.base_general_backup_restore_flow_title),
-                onBack = { requestBack() }
-            )
-        },
+        title = stringResource(R.string.base_general_backup_restore_flow_title),
+        onBack = { requestBack() },
         bottomBar = {
             BackupRestoreFlowActions(
                 state = state,

@@ -343,7 +343,8 @@ internal fun SelectionActionBar(
     enabled: Boolean = true,
 ) {
     Box(
-        modifier = modifier.fillMaxSize(),
+        // 作为 Scaffold.bottomBar 使用时不能再占满全高，否则会把主内容区全部挤没。
+        modifier = modifier.fillMaxWidth(),
         contentAlignment = Alignment.BottomCenter
     ) {
         Surface(

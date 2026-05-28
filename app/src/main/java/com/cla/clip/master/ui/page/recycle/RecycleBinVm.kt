@@ -95,11 +95,6 @@ class RecycleBinVm @Inject constructor(
         _selectedIds.value = emptySet()
     }
 
-    /** 根据当前分页快照清理已经不存在或已离开回收站的选中 id；即使清空选择，也保留多选模式等待用户主动退出。 */
-    fun pruneSelection(existingIds: Set<Long>) {
-        _selectedIds.update { ids -> ids.intersect(existingIds) }
-    }
-
     /** 还原单条回收站记录；只清空 deletedAt，不改变原折叠、折叠时间、置顶和剪贴时间。 */
     fun restoreClip(clip: ClipShowEntity) {
         viewModelScope.launch(Dispatchers.IO) {

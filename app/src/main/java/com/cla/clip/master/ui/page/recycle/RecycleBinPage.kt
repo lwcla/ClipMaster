@@ -24,7 +24,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -47,8 +46,8 @@ import androidx.lifecycle.flowWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
 import com.cla.clip.base.general.config.AppSetting
 import com.cla.clip.base.general.entity.ClipShowEntity
+import com.cla.clip.master.ui.widget.SecondaryPageScaffold
 import com.cla.clip.master.ui.widget.SingleChoiceRow
-import com.cla.clip.master.ui.widget.TitleBar
 import com.cla.clip.master.ui.widget.clip.ClipCardTimeMode
 import com.cla.clip.master.ui.widget.clip.ClipResultList
 
@@ -76,46 +75,38 @@ fun RecycleBinPage(
     var showDeleteSelectedConfirm by remember { mutableStateOf(false) }
     var showSettingSheet by remember { mutableStateOf(false) }
 
-    LaunchedEffect(pagedClips.itemSnapshotList.items, selectedIds) {
-        viewModel.pruneSelection(pagedClips.itemSnapshotList.items.mapTo(mutableSetOf()) { it.id })
-    }
-
     BackHandler(enabled = selectionMode) {
         viewModel.clearSelection()
     }
 
-    Scaffold(
-        topBar = {
-            TitleBar(
-                title = if (!selectionMode) {
-                    stringResource(com.cla.clip.base.general.R.string.base_general_recycle_bin)
-                } else {
-                    stringResource(com.cla.clip.base.general.R.string.base_general_selected_count, selectedIds.size)
-                },
-                onBack = {
-                    if (selectionMode) {
-                        viewModel.clearSelection()
-                    } else {
-                        onBack()
-                    }
-                },
-                actions = {
-                    if (!selectionMode) {
-                        IconButton(onClick = { showClearConfirm = true }) {
-                            Icon(
-                                imageVector = Icons.Default.DeleteForever,
-                                contentDescription = stringResource(com.cla.clip.base.general.R.string.base_general_clear_recycle_bin)
-                            )
-                        }
-                        IconButton(onClick = { showSettingSheet = true }) {
-                            Icon(
-                                imageVector = Icons.Default.Settings,
-                                contentDescription = stringResource(com.cla.clip.base.general.R.string.base_general_recycle_bin_settings)
-                            )
-                        }
-                    }
+    SecondaryPageScaffold(
+        title = if (!selectionMode) {
+            stringResource(com.cla.clip.base.general.R.string.base_general_recycle_bin)
+        } else {
+            stringResource(com.cla.clip.base.general.R.string.base_general_selected_count, selectedIds.size)
+        },
+        onBack = {
+            if (selectionMode) {
+                viewModel.clearSelection()
+            } else {
+                onBack()
+            }
+        },
+        actions = {
+            if (!selectionMode) {
+                IconButton(onClick = { showClearConfirm = true }) {
+                    Icon(
+                        imageVector = Icons.Default.DeleteForever,
+                        contentDescription = stringResource(com.cla.clip.base.general.R.string.base_general_clear_recycle_bin)
+                    )
                 }
-            )
+                IconButton(onClick = { showSettingSheet = true }) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = stringResource(com.cla.clip.base.general.R.string.base_general_recycle_bin_settings)
+                    )
+                }
+            }
         },
         bottomBar = {
             if (selectionMode) {
@@ -135,7 +126,8 @@ fun RecycleBinPage(
                 listState = listState,
                 pagedClips = pagedClips,
                 emptyText = stringResource(com.cla.clip.base.general.R.string.base_general_recycle_bin_empty),
-                contentPadding = PaddingValues(start = 10.dp, top = 10.dp, end = 10.dp, bottom = if (!selectionMode) 24.dp else 96.dp),
+                // 回收站普通态与其他结果列表统一轻量底部留白；多选态继续为底部危险操作栏预留更大空间。
+                contentPadding = PaddingValues(start = 10.dp, top = 10.dp, end = 10.dp, bottom = 12.dp),
                 onPinToggle = null,
                 onDelete = null,
                 onCopy = null,

@@ -207,6 +207,9 @@
     <string name="base_general_custom_retention_days_hint">输入保留天数（1-3650）</string>
     <string name="base_general_recycle_bin_retention_warning">保存后会立即清理超过该天数的数据。</string>
     <string name="base_general_permission_description">权限说明</string>
+    <string name="base_general_mine_data_management_section">数据管理</string>
+    <string name="base_general_mine_feature_section">功能入口</string>
+    <string name="base_general_mine_settings_section">设置与权限</string>
     <string name="base_general_notice">通知</string>
     <string name="base_general_suspended_window">悬浮窗</string>
     <string name="base_general_clip_item_quick_action_setting">剪贴快捷操作</string>

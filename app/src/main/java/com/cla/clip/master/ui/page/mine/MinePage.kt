@@ -9,7 +9,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -33,7 +36,8 @@ import com.cla.clip.base.general.utils.toast
 import com.cla.clip.feature.magnet.api.MagnetFeatureEntry
 import com.cla.clip.master.entity.SettingSwitchItemUi
 import com.cla.clip.master.ui.navigation.Route
-import com.cla.clip.master.ui.widget.TopLevelTitleBar
+import com.cla.clip.master.ui.theme.ClipMasterThemeTokens
+import com.cla.clip.master.ui.widget.TopLevelPageScaffold
 import com.cla.clip.shizuku.ShizukuUtils
 import kotlinx.coroutines.launch
 import rikka.shizuku.Shizuku
@@ -99,16 +103,22 @@ fun MinePage(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-    ) {
-        TopLevelTitleBar(title = stringResource(R.string.base_general_mine))
+    TopLevelPageScaffold(title = stringResource(R.string.base_general_mine)) { paddingValues ->
+        /** 我的页分组列表的页面间距，来源于统一主题 token。 */
+        val spacing = ClipMasterThemeTokens.tokens.spacing
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues),
+            contentPadding = PaddingValues(top = spacing.small, bottom = spacing.large),
         ) {
+            item { MineSectionHeader(title = stringResource(R.string.base_general_mine_data_management_section)) }
             item { BackupEntry(onNavigate = onNavigate) }
+            item { DownloadHistoryEntry(onNavigate = onNavigate) }
+            item { FoldedClipsEntry(foldedClipCount = foldedClipCount, onNavigate = onNavigate) }
+            item { RecycleBinEntry(recycleBinCount = recycleBinCount, onNavigate = onNavigate) }
+
+            item { MineSectionHeader(title = stringResource(R.string.base_general_mine_feature_section)) }
             item {
                 AppUpdateEntry(
                     state = appUpdateUiState,
@@ -120,9 +130,8 @@ fun MinePage(
                     feature.MineEntry(onOpenSearch = { onOpenMagnetSearch(feature) })
                 }
             }
-            item { DownloadHistoryEntry(onNavigate = onNavigate) }
-            item { FoldedClipsEntry(foldedClipCount = foldedClipCount, onNavigate = onNavigate) }
-            item { RecycleBinEntry(recycleBinCount = recycleBinCount, onNavigate = onNavigate) }
+
+            item { MineSectionHeader(title = stringResource(R.string.base_general_mine_settings_section)) }
             item {
                 ClipItemActionSettingEntry(
                     action = clipItemQuickAction,
@@ -152,6 +161,19 @@ fun MinePage(
             onDismiss = mineVm::dismissUpdateDialog,
         )
     }
+}
+
+/** 我的页分组标题，用短标签降低入口列表的平铺感。 */
+@Composable
+private fun MineSectionHeader(title: String) {
+    /** 分组标题间距，保证标题和入口卡片形成稳定节奏。 */
+    val spacing = ClipMasterThemeTokens.tokens.spacing
+    Text(
+        text = title,
+        modifier = Modifier.padding(start = spacing.large, top = spacing.medium, end = spacing.large, bottom = spacing.tiny),
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary
+    )
 }
 
 
