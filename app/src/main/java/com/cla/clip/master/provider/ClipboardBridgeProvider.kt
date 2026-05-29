@@ -54,6 +54,11 @@ class ClipboardBridgeProvider : ContentProvider() {
     /** Provider 图标提交协调器。 */
     private val iconCommitter: ClipboardBridgeIconCommitter by lazy { entryPoint.clipboardBridgeIconCommitter() }
 
+    /** Provider Shizuku 进程身份查询协调器。 */
+    private val shizukuProcessCoordinator: ClipboardBridgeShizukuProcessCoordinator by lazy {
+        entryPoint.clipboardBridgeShizukuProcessCoordinator()
+    }
+
     /**
      * Provider 创建入口。
      *
@@ -66,7 +71,7 @@ class ClipboardBridgeProvider : ContentProvider() {
     /**
      * Provider 命令调用入口。
      *
-     * @param method 支持 read_clip、commit_clip、query_icon_state 和 commit_icon。
+     * @param method 支持 read_clip、commit_clip、query_icon_state、commit_icon 和 query_shizuku_process。
      * @param arg 当前未使用，保留给 Android ContentProvider call 签名。
      * @param extras `content call` 传入的小字段。
      */
@@ -82,12 +87,12 @@ class ClipboardBridgeProvider : ContentProvider() {
         val request = ClipboardBridgeRequest.fromExtras(extras)
             ?: return ClipboardBridgeResult.of(ClipboardBridgeContract.CODE_INVALID_ARGS).toBundle()
 
-        /** 应用 Context；Provider 每个入口都需要它定位私有临时目录。 */
-        val appContext = requireNotNull(context).applicationContext
-        iconStore.cleanupExpired(appContext)
-        clipPayloadStore.cleanupExpired(appContext)
         return when (method) {
             ClipboardBridgeContract.METHOD_READ_CLIP -> {
+                /** 应用 Context；读取旧 overlay 路径前清理 Provider 临时目录。 */
+                val appContext = requireNotNull(context).applicationContext
+                iconStore.cleanupExpired(appContext)
+                clipPayloadStore.cleanupExpired(appContext)
                 logD(TAG) {
                     "Provider 收到 read_clip eventId=${request.eventId} packageName=${request.packageName} " +
                         "appName=${request.appName} hasIconHash=${!request.iconHash.isNullOrBlank()}"
@@ -97,6 +102,10 @@ class ClipboardBridgeProvider : ContentProvider() {
                 }
             }
             ClipboardBridgeContract.METHOD_COMMIT_CLIP -> {
+                /** 应用 Context；提交剪贴 payload 前清理过期临时文件。 */
+                val appContext = requireNotNull(context).applicationContext
+                iconStore.cleanupExpired(appContext)
+                clipPayloadStore.cleanupExpired(appContext)
                 logD(TAG) {
                     "Provider 收到 commit_clip eventId=${request.eventId} packageName=${request.packageName} " +
                         "appName=${request.appName} hasIconHash=${!request.iconHash.isNullOrBlank()}"
@@ -106,6 +115,10 @@ class ClipboardBridgeProvider : ContentProvider() {
                 }
             }
             ClipboardBridgeContract.METHOD_QUERY_ICON_STATE -> {
+                /** 应用 Context；图标预判前清理过期图标半文件，避免旧 eventId 干扰。 */
+                val appContext = requireNotNull(context).applicationContext
+                iconStore.cleanupExpired(appContext)
+                clipPayloadStore.cleanupExpired(appContext)
                 logD(TAG) {
                     "Provider 收到 query_icon_state eventId=${request.eventId} packageName=${request.packageName} " +
                         "appName=${request.appName} hasIconHash=${!request.iconHash.isNullOrBlank()}"
@@ -115,6 +128,10 @@ class ClipboardBridgeProvider : ContentProvider() {
                 }
             }
             ClipboardBridgeContract.METHOD_COMMIT_ICON -> {
+                /** 应用 Context；提交图标前清理过期图标半文件。 */
+                val appContext = requireNotNull(context).applicationContext
+                iconStore.cleanupExpired(appContext)
+                clipPayloadStore.cleanupExpired(appContext)
                 logD(TAG) {
                     "Provider 收到 commit_icon eventId=${request.eventId} packageName=${request.packageName} " +
                         "appName=${request.appName} hasIconHash=${!request.iconHash.isNullOrBlank()}"
@@ -122,6 +139,10 @@ class ClipboardBridgeProvider : ContentProvider() {
                 runBlocking {
                     iconCommitter.commit(request).toBundle()
                 }
+            }
+            ClipboardBridgeContract.METHOD_QUERY_SHIZUKU_PROCESS -> {
+                logD(TAG) { "Provider 收到 query_shizuku_process eventId=${request.eventId}" }
+                shizukuProcessCoordinator.query(request).toBundle()
             }
             else -> {
                 logW(TAG) { "Provider 不支持 method=$method callingUid=$callingUid" }

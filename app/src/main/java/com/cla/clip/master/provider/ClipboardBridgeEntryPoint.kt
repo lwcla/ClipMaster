@@ -29,4 +29,7 @@ interface ClipboardBridgeEntryPoint {
 
     /** Provider 剪贴 payload 临时传输目录管理器。 */
     fun clipboardBridgeClipPayloadStore(): ClipboardBridgeClipPayloadStore
+
+    /** Provider Shizuku 进程身份查询协调器。 */
+    fun clipboardBridgeShizukuProcessCoordinator(): ClipboardBridgeShizukuProcessCoordinator
 }

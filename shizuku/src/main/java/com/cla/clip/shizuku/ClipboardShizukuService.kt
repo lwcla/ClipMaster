@@ -73,6 +73,9 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
     /** Shizuku 进程内剪贴板读取适配器，只负责 shell 身份选择和 payload 映射。 */
     private val clipboardReader = ShizukuClipboardReader()
 
+    /** Shizuku 进程身份校验协作者，用于覆盖安装后识别并退出旧进程。 */
+    private val processIdentity = ShizukuProcessIdentity(providerQuery = ::callProviderQueryShizukuProcess)
+
     /** Shizuku 进程内协程作用域，使用 SupervisorJob 避免单次回调失败终止整个监听服务。 */
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob() + exceptionHandler)
 
@@ -203,6 +206,36 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
         )
         logShizukuClipboardReadResult(eventId, clipData, clipPayload)
 
+        /** 进程身份判断结果；必须在剪贴板读取之后、payload 和图标写入 Provider 之前执行。 */
+        val identityDecision = processIdentity.verify(eventId)
+        logShizukuProcessIdentityDecision(eventId, identityDecision)
+        when (identityDecision) {
+            is ShizukuProcessIdentityDecision.Matched -> Unit
+            is ShizukuProcessIdentityDecision.Mismatched -> {
+                logW(TAG) {
+                    "Shizuku 旧进程确认退出 eventId=$eventId " +
+                        "currentProcessName=${identityDecision.currentProcessName} " +
+                        "expectedProcessName=${identityDecision.expectedProcessName} " +
+                        "resultCode=${identityDecision.resultCode} reasonCode=${identityDecision.reasonCode} " +
+                        "connectRequested=${identityDecision.connectRequested} " +
+                        "connectSkipReason=${identityDecision.connectSkipReason}"
+                }
+                destroy()
+                return
+            }
+            is ShizukuProcessIdentityDecision.Unknown -> {
+                logW(TAG) {
+                    "Shizuku 身份不确定，跳过本次提交 eventId=$eventId " +
+                        "currentProcessName=${identityDecision.currentProcessName} " +
+                        "expectedProcessName=${identityDecision.expectedProcessName} " +
+                        "resultCode=${identityDecision.resultCode} reasonCode=${identityDecision.reasonCode} " +
+                        "connectRequested=${identityDecision.connectRequested} " +
+                        "connectSkipReason=${identityDecision.connectSkipReason}"
+                }
+                return
+            }
+        }
+
         /** 来源应用包信息；读取剪贴板快照之后再解析，避免图标加载拖慢剪贴数据捕获。 */
         val packageInfo = clipPackageName?.let { packageManager.getPackageInfo(it, 0) }
         /** 来源应用展示名；为空时使用 Unknown，保持旧链路展示语义。 */
@@ -265,6 +298,28 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
             "Shizuku 进程直读剪贴板 eventId=$eventId clipNull=${clipData == null} " +
                 "payloadNull=${payload == null} itemCount=${clipData?.itemCount ?: 0} mimeTypes=${payload?.mimeTypes.orEmpty()} " +
                 "textLength=$textLength htmlLength=$htmlLength hasUri=$hasUri hasIntent=$hasIntent"
+        }
+    }
+
+    /**
+     * 输出 Shizuku 进程身份判断结果。
+     *
+     * @param eventId 当前剪贴事件 ID。
+     * @param decision 当前进程与 Provider 期望进程名的完整字符串比较结果。
+     */
+    private fun logShizukuProcessIdentityDecision(
+        eventId: String,
+        decision: ShizukuProcessIdentityDecision,
+    ) {
+        /** 当前进程和期望进程是否已经完整匹配；不确定时固定为 false。 */
+        val matched = decision is ShizukuProcessIdentityDecision.Matched
+        logD(TAG) {
+            "Shizuku 进程身份校验 eventId=$eventId " +
+                "currentProcessName=${decision.currentProcessName} " +
+                "expectedProcessName=${decision.expectedProcessName} matched=$matched " +
+                "resultCode=${decision.resultCode} reasonCode=${decision.reasonCode} " +
+                "connectRequested=${decision.connectRequested} " +
+                "connectSkipReason=${decision.connectSkipReason}"
         }
     }
 
@@ -640,6 +695,40 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
     }
 
     /**
+     * 调用 Provider 查询当前 app 期望的最新 Shizuku 完整进程名。
+     *
+     * @param eventId 当前剪贴事件 ID，用于串联身份查询和剪贴提交日志。
+     */
+    private fun callProviderQueryShizukuProcess(eventId: String): ProviderCommandResult {
+        /** content call 命令参数；身份查询只传 eventId，不携带剪贴板正文或来源 URI。 */
+        val args = mutableListOf(
+            "content",
+            "call",
+            "--uri",
+            ClipboardBridgeContract.callUri(packageName),
+            "--method",
+            ClipboardBridgeContract.METHOD_QUERY_SHIZUKU_PROCESS,
+            "--extra",
+            "${ClipboardBridgeContract.EXTRA_EVENT_ID}:s:${eventId}"
+        )
+
+        /** content call 命令进程；错误流合并后统一解析输出。 */
+        val process = ProcessBuilder(args).redirectErrorStream(true).start()
+
+        /** content call 命令退出码；超时代表身份不确定。 */
+        val exitCode = waitForProcess(process, PROVIDER_CLIP_COMMAND_TIMEOUT_MS) ?: run {
+            destroyTimedOutProcess(process)
+            logW(TAG) { "Provider query_shizuku_process 超时 eventId=$eventId" }
+            return ProviderCommandResult(exitCode = -1, output = "timeout")
+        }
+
+        /** content call 命令输出，包含 Provider 返回的低敏身份字段。 */
+        val output = process.inputStream.bufferedReader().use { it.readText() }
+        logD(TAG) { "Provider query_shizuku_process eventId=$eventId exit=$exitCode output=$output" }
+        return ProviderCommandResult(exitCode = exitCode, output = output)
+    }
+
+    /**
      * 构造来源图标同步的内存去重 key。
      *
      * @param packageName 来源应用包名。
@@ -987,7 +1076,7 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
  * @param exitCode 命令进程退出码。
  * @param output 标准输出和错误输出合并后的文本。
  */
-private data class ProviderCommandResult(
+internal data class ProviderCommandResult(
     val exitCode: Int,
     val output: String,
 )

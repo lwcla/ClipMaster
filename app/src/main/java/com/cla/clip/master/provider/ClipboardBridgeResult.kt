@@ -33,6 +33,14 @@ data class ClipboardBridgeResult(
     val shouldSyncIcon: Boolean?,
     /** 图标同步决策原因；仅 query_icon_state 必填。 */
     val iconDecisionReason: String?,
+    /** 当前期望的 Shizuku 完整进程名；仅 query_shizuku_process 使用。 */
+    val shizukuProcessName: String?,
+    /** Provider 是否提交了异步连接最新 Shizuku 的请求；仅 query_shizuku_process 使用。 */
+    val connectRequested: Boolean?,
+    /** 连接请求未提交或跳过的原因；为空表示没有跳过。 */
+    val connectSkipReason: String?,
+    /** 当前阶段低敏原因码；用于身份查询和错误诊断。 */
+    val reasonCode: String?,
 ) {
     companion object {
         /**
@@ -50,6 +58,10 @@ data class ClipboardBridgeResult(
          * @param iconStatus 图标处理状态。
          * @param shouldSyncIcon query_icon_state 是否要求继续同步来源图标。
          * @param iconDecisionReason 本次图标决策原因。
+         * @param shizukuProcessName 当前期望的 Shizuku 完整进程名。
+         * @param connectRequested 是否已提交异步连接请求。
+         * @param connectSkipReason 连接请求跳过原因。
+         * @param reasonCode 当前阶段低敏原因码。
          */
         fun of(
             resultCode: String,
@@ -64,6 +76,10 @@ data class ClipboardBridgeResult(
             iconStatus: String = ClipboardBridgeContract.ICON_STATUS_PLACEHOLDER,
             shouldSyncIcon: Boolean? = null,
             iconDecisionReason: String? = null,
+            shizukuProcessName: String? = null,
+            connectRequested: Boolean? = null,
+            connectSkipReason: String? = null,
+            reasonCode: String? = null,
         ): ClipboardBridgeResult {
             return ClipboardBridgeResult(
                 resultCode = resultCode,
@@ -77,7 +93,11 @@ data class ClipboardBridgeResult(
                 overlayAdded = overlayAdded,
                 iconStatus = iconStatus,
                 shouldSyncIcon = shouldSyncIcon,
-                iconDecisionReason = iconDecisionReason
+                iconDecisionReason = iconDecisionReason,
+                shizukuProcessName = shizukuProcessName,
+                connectRequested = connectRequested,
+                connectSkipReason = connectSkipReason,
+                reasonCode = reasonCode
             )
         }
     }
@@ -99,6 +119,10 @@ data class ClipboardBridgeResult(
             putString(ClipboardBridgeContract.RESULT_ICON_STATUS, iconStatus)
             shouldSyncIcon?.let { putBoolean(ClipboardBridgeContract.RESULT_SHOULD_SYNC_ICON, it) }
             iconDecisionReason?.let { putString(ClipboardBridgeContract.RESULT_ICON_DECISION_REASON, it) }
+            shizukuProcessName?.let { putString(ClipboardBridgeContract.RESULT_SHIZUKU_PROCESS_NAME, it) }
+            connectRequested?.let { putBoolean(ClipboardBridgeContract.RESULT_CONNECT_REQUESTED, it) }
+            connectSkipReason?.let { putString(ClipboardBridgeContract.RESULT_CONNECT_SKIP_REASON, it) }
+            reasonCode?.let { putString(ClipboardBridgeContract.RESULT_REASON_CODE, it) }
         }
     }
 }

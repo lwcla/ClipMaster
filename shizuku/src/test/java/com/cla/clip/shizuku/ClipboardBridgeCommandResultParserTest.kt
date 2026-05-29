@@ -152,4 +152,51 @@ class ClipboardBridgeCommandResultParserTest {
         assertFalse(ClipboardBridgeCommandResultParser.isCommitClipSuccessful(0, unsupportedOutput))
         assertFalse(ClipboardBridgeCommandResultParser.isCommitClipSuccessful(0, commandErrorOutput))
     }
+
+    @Test
+    /** query_shizuku_process 只有返回 ok 且进程名非空时才算身份查询成功。 */
+    fun isQueryShizukuProcessSuccessfulAcceptsProcessName() {
+        /** 模拟 Provider 返回最新 Shizuku 完整进程名和连接请求状态。 */
+        val output = "Result: Bundle[{resultCode=ok, shizukuProcessName=com.cla.clip.master:shizuku_9_001234, connectRequested=true, reasonCode=identity_query}]"
+
+        assertTrue(ClipboardBridgeCommandResultParser.isQueryShizukuProcessSuccessful(0, output))
+        assertEquals("com.cla.clip.master:shizuku_9_001234", ClipboardBridgeCommandResultParser.parseShizukuProcessName(output))
+        assertEquals(true, ClipboardBridgeCommandResultParser.parseConnectRequested(output))
+        assertEquals(ClipboardBridgeContract.REASON_IDENTITY_QUERY, ClipboardBridgeCommandResultParser.parseReasonCode(output))
+    }
+
+    @Test
+    /** query_shizuku_process 缺少进程名、连接状态、原因码、非 ok 或命令错误时必须判定身份不确定。 */
+    fun isQueryShizukuProcessSuccessfulRejectsIncompleteOutput() {
+        /** 缺少进程名的身份查询输出。 */
+        val missingProcessNameOutput = "Result: Bundle[{resultCode=ok, connectRequested=true, reasonCode=identity_query}]"
+        /** 缺少连接请求状态的身份查询输出。 */
+        val missingConnectRequestedOutput = "Result: Bundle[{resultCode=ok, shizukuProcessName=com.cla.clip.master:shizuku_9_001234, reasonCode=identity_query}]"
+        /** 缺少原因码的身份查询输出。 */
+        val missingReasonOutput = "Result: Bundle[{resultCode=ok, shizukuProcessName=com.cla.clip.master:shizuku_9_001234, connectRequested=true}]"
+        /** Provider 明确返回进程名缺失的身份查询输出。 */
+        val missingExpectedOutput = "Result: Bundle[{resultCode=shizuku_process_missing, reasonCode=missing_expected_process_name}]"
+        /** 命令层报错但夹带旧成功字段的输出。 */
+        val commandErrorOutput = "Error while accessing provider\nResult: Bundle[{resultCode=ok, shizukuProcessName=com.cla.clip.master:shizuku_9_001234, connectRequested=true, reasonCode=identity_query}]"
+
+        assertFalse(ClipboardBridgeCommandResultParser.isQueryShizukuProcessSuccessful(0, missingProcessNameOutput))
+        assertFalse(ClipboardBridgeCommandResultParser.isQueryShizukuProcessSuccessful(0, missingConnectRequestedOutput))
+        assertFalse(ClipboardBridgeCommandResultParser.isQueryShizukuProcessSuccessful(0, missingReasonOutput))
+        assertFalse(ClipboardBridgeCommandResultParser.isQueryShizukuProcessSuccessful(0, missingExpectedOutput))
+        assertFalse(ClipboardBridgeCommandResultParser.isQueryShizukuProcessSuccessful(0, commandErrorOutput))
+        assertEquals(
+            ClipboardBridgeContract.REASON_MISSING_EXPECTED_PROCESS_NAME,
+            ClipboardBridgeCommandResultParser.parseReasonCode(missingExpectedOutput)
+        )
+    }
+
+    @Test
+    /** 身份查询解析器应独立解析连接跳过原因，不混入剪贴保存成功语义。 */
+    fun parserExtractsShizukuProcessConnectSkipReason() {
+        /** 模拟 Provider 判断当前 binder 已经是最新进程而跳过重复 bind 的输出。 */
+        val output = "Result: Bundle[{connectSkipReason=alive_same_process, resultCode=ok, shizukuProcessName=com.cla.clip.master:shizuku_9_001234, connectRequested=true, reasonCode=identity_query}]"
+
+        assertEquals("alive_same_process", ClipboardBridgeCommandResultParser.parseConnectSkipReason(output))
+        assertEquals(null, ClipboardBridgeCommandResultParser.parseSaved(output))
+    }
 }

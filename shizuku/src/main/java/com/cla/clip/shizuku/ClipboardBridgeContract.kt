@@ -21,6 +21,9 @@ object ClipboardBridgeContract {
     /** Provider `call` 方法名：提交已写入的图标并更新来源 App 图标缓存。 */
     const val METHOD_COMMIT_ICON = "commit_icon"
 
+    /** Provider `call` 方法名：查询当前期望的 Shizuku 完整进程名并异步触发最新绑定。 */
+    const val METHOD_QUERY_SHIZUKU_PROCESS = "query_shizuku_process"
+
     /** Provider 图标写入路径首段：`content://authority/icon/<eventId>`。 */
     const val PATH_ICON = "icon"
 
@@ -78,6 +81,18 @@ object ClipboardBridgeContract {
     /** Provider 返回字段：本次图标同步决策原因。 */
     const val RESULT_ICON_DECISION_REASON = "iconDecisionReason"
 
+    /** Provider 返回字段：当前期望的 Shizuku 完整进程名。 */
+    const val RESULT_SHIZUKU_PROCESS_NAME = "shizukuProcessName"
+
+    /** Provider 返回字段：是否已提交异步连接最新 Shizuku 的请求。 */
+    const val RESULT_CONNECT_REQUESTED = "connectRequested"
+
+    /** Provider 返回字段：连接请求未提交或跳过的原因；为空表示没有跳过。 */
+    const val RESULT_CONNECT_SKIP_REASON = "connectSkipReason"
+
+    /** Provider 返回字段：当前阶段的低敏原因码，用于身份查询和错误诊断。 */
+    const val RESULT_REASON_CODE = "reasonCode"
+
     /** Provider 结果码：读取剪贴板并完成入库。 */
     const val CODE_OK = "ok"
 
@@ -113,6 +128,30 @@ object ClipboardBridgeContract {
 
     /** Provider 结果码：Provider 等待入库完成超时，后台任务可能仍在继续。 */
     const val CODE_TIMEOUT = "timeout"
+
+    /** Provider 结果码：当前期望 Shizuku 进程名缺失，无法给旧进程提供可信身份。 */
+    const val CODE_SHIZUKU_PROCESS_MISSING = "shizuku_process_missing"
+
+    /** 身份查询原因：旧或当前 Shizuku 进程正在查询最新进程名。 */
+    const val REASON_IDENTITY_QUERY = "identity_query"
+
+    /** 身份查询原因：app 侧没有可返回的期望进程名。 */
+    const val REASON_MISSING_EXPECTED_PROCESS_NAME = "missing_expected_process_name"
+
+    /** 身份查询原因：Provider 提交连接请求时出现异常。 */
+    const val REASON_CONNECT_REQUEST_FAILED = "connect_request_failed"
+
+    /** 身份判断原因：当前 Shizuku 进程名读取失败。 */
+    const val REASON_CURRENT_PROCESS_NAME_MISSING = "missing_current_process_name"
+
+    /** 身份判断原因：Provider 查询命令失败或输出无法信任。 */
+    const val REASON_PROVIDER_QUERY_FAILED = "provider_query_failed"
+
+    /** 身份判断原因：当前进程与 app 侧期望进程名一致。 */
+    const val REASON_PROCESS_MATCHED = "process_matched"
+
+    /** 身份判断原因：当前进程与 app 侧期望进程名明确不一致。 */
+    const val REASON_PROCESS_MISMATCHED = "process_mismatched"
 
     /** 剪贴 payload 状态：本次文本已经保存或更新到数据库。 */
     const val CLIP_STATUS_SAVED = "saved"
@@ -225,6 +264,18 @@ object ClipboardBridgeCommandResultParser {
     /** Provider iconDecisionReason 字段的文本正则，兼容 Bundle 字段顺序变化。 */
     private val iconDecisionReasonRegex = Regex("""iconDecisionReason=([^,\]\}\s]+)""")
 
+    /** Provider shizukuProcessName 字段的文本正则，兼容 Bundle 字段顺序变化。 */
+    private val shizukuProcessNameRegex = Regex("""shizukuProcessName=([^,\]\}\s]+)""")
+
+    /** Provider connectRequested 字段的文本正则，兼容 Bundle 字段顺序变化。 */
+    private val connectRequestedRegex = Regex("""connectRequested=([^,\]\}\s]+)""")
+
+    /** Provider connectSkipReason 字段的文本正则，兼容 Bundle 字段顺序变化。 */
+    private val connectSkipReasonRegex = Regex("""connectSkipReason=([^,\]\}\s]+)""")
+
+    /** Provider reasonCode 字段的文本正则，兼容 Bundle 字段顺序变化。 */
+    private val reasonCodeRegex = Regex("""reasonCode=([^,\]\}\s]+)""")
+
     /**
      * 判断 Provider 命令是否真实完成读取入库。
      *
@@ -321,6 +372,26 @@ object ClipboardBridgeCommandResultParser {
     }
 
     /**
+     * 判断 `query_shizuku_process` 是否成功返回可信进程名。
+     *
+     * @param exitCode `content call` 进程退出码。
+     * @param output `content call` 标准输出和错误输出合并后的文本。
+     */
+    fun isQueryShizukuProcessSuccessful(exitCode: Int, output: String): Boolean {
+        /** 命令层必须成功，否则 Provider 可能根本没有被调用。 */
+        val commandSucceeded = exitCode == 0 && !output.contains("Error", ignoreCase = true)
+        if (!commandSucceeded) {
+            return false
+        }
+
+        /** Provider 必须明确返回 ok、非空完整进程名、连接请求状态和原因码，才能作为身份判断依据。 */
+        return parseResultCode(output) == ClipboardBridgeContract.CODE_OK &&
+            !parseShizukuProcessName(output).isNullOrBlank() &&
+            parseConnectRequested(output) != null &&
+            !parseReasonCode(output).isNullOrBlank()
+    }
+
+    /**
      * 从 `content call` 输出中提取 Provider resultCode。
      *
      * @param output `content call` 打印出的 Bundle 文本。
@@ -381,5 +452,41 @@ object ClipboardBridgeCommandResultParser {
      */
     fun parseIconDecisionReason(output: String): String? {
         return iconDecisionReasonRegex.find(output)?.groupValues?.getOrNull(1)
+    }
+
+    /**
+     * 从 `content call` 输出中提取期望 Shizuku 完整进程名。
+     *
+     * @param output `content call` 打印出的 Bundle 文本。
+     */
+    fun parseShizukuProcessName(output: String): String? {
+        return shizukuProcessNameRegex.find(output)?.groupValues?.getOrNull(1)
+    }
+
+    /**
+     * 从 `content call` 输出中提取 connectRequested 布尔值。
+     *
+     * @param output `content call` 打印出的 Bundle 文本。
+     */
+    fun parseConnectRequested(output: String): Boolean? {
+        return connectRequestedRegex.find(output)?.groupValues?.getOrNull(1)?.toBooleanStrictOrNull()
+    }
+
+    /**
+     * 从 `content call` 输出中提取连接跳过原因。
+     *
+     * @param output `content call` 打印出的 Bundle 文本。
+     */
+    fun parseConnectSkipReason(output: String): String? {
+        return connectSkipReasonRegex.find(output)?.groupValues?.getOrNull(1)
+    }
+
+    /**
+     * 从 `content call` 输出中提取通用 reasonCode。
+     *
+     * @param output `content call` 打印出的 Bundle 文本。
+     */
+    fun parseReasonCode(output: String): String? {
+        return reasonCodeRegex.find(output)?.groupValues?.getOrNull(1)
     }
 }

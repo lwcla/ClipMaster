@@ -9,7 +9,6 @@ import com.tencent.mmkv.MMKV
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import java.util.UUID
 
 /**
  * 普通剪贴列表 item 快捷动作区点击动作。
@@ -91,41 +90,45 @@ object AppSetting {
         }
 
     /**
-     * app安装之后生成的一个唯一值，只要app不被卸载，这个值就不会变化
-     * 但app卸载之后重新安装，这个值会变化
-     * 这个值可以用来区分不同的安装，或者在app被卸载之后重新安装时，识别出这是一个新的安装
-     * 这个值不包含任何个人隐私信息，也不会被用来追踪用户，只是一个随机生成的UUID
+     * app 安装之后生成的本机随机标识，只要 app 不被卸载就不会变化。
+     *
+     * 该值只用于本机安装身份、Shizuku 进程名和备份设备标签；当前开发阶段不兼容旧 UUID 格式，后续上线前如需迁移再补方案。
      */
     private const val KEY_PID = "pid"
 
-    /** 当前安装实例的随机 UUID，不包含用户身份信息；卸载重装后会变化。 */
+    /** 当前安装实例的纯数字随机 ID，不包含用户身份信息；卸载重装后会变化。 */
     val pid: String
         get() {
-            var value = mmkv.getString(KEY_PID, null)
-            if (value.isNullOrBlank()) {
-                logE(TAG) { "创建pid" }
-                val uuid = UUID.randomUUID().toString()
-                mmkv.putString(KEY_PID, uuid)
-                value = uuid
+            /** 持久化的安装 ID；旧 UUID 或异常值会在开发阶段直接重建。 */
+            val storedValue = mmkv.getString(KEY_PID, null)
+            if (!NumericInstallIdGenerator.isValid(storedValue)) {
+                logE(TAG) { "创建纯数字 pid" }
+                /** 新安装级 ID；保持 String 形式，避免前导 0 丢失。 */
+                val numericId = NumericInstallIdGenerator.generate()
+                mmkv.putString(KEY_PID, numericId)
+                return numericId
             }
 
-            return value
+            /** 已校验通过的安装 ID；`isValid` 保证这里不会为空。 */
+            return storedValue.orEmpty()
         }
 
 
     /**
-     * shizuku进程名
-     * 用来在shizuku进程启动之后，检查当前是否为最新的shizuku进程，清理掉旧的shizuku进程
+     * Shizuku 进程完整名称。
+     *
+     * 用来在 Shizuku 进程启动之后，检查当前是否为最新 Shizuku 进程，清理掉旧 Shizuku 进程。
      */
     private const val KEY_SHIZUKU_SUFFIX = "current_suffix"
 
-    /** 当前有效的 Shizuku 进程后缀，不包含冒号；用于识别和清理旧 Shizuku 进程。 */
+    /** 当前有效的 Shizuku 完整进程名；只由 app 侧刷新，Shizuku 侧通过 Provider 只读查询。 */
     var shizukuSuffix: String
-        get() = mmkv.getString(KEY_SHIZUKU_SUFFIX, null)?.removePrefix(":")?.takeIf { it.isNotBlank() } ?: ""
+        get() = mmkv.getString(KEY_SHIZUKU_SUFFIX, null)?.takeIf { it.isNotBlank() } ?: ""
         set(value) {
-            // current suffix 只由 App 进程写入。Shizuku 进程只能通过 Provider/callback
-            // 读取，不能反写，避免旧 Shizuku 进程把新 suffix 覆盖回旧值。
-            mmkv.putString(KEY_SHIZUKU_SUFFIX, value.removePrefix(":"))
+            /** 待保存的完整进程名；空白值只用于清理异常状态，正常路径应传入 applicationId:suffix。 */
+            val normalizedProcessName = value.trim()
+            // current suffix 只由 App 进程写入。Shizuku 进程只能通过 Provider/callback 读取，不能反写，避免旧 Shizuku 进程把新值覆盖回旧值。
+            mmkv.putString(KEY_SHIZUKU_SUFFIX, normalizedProcessName)
         }
 
     /** 权限说明是否已经展开，保存用户在“我的”页的折叠偏好。 */
