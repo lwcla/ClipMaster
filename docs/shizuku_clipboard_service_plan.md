@@ -4,11 +4,11 @@
 
 ## 当前状态
 
-Shizuku 模块通过 `ClipboardShizukuService` 在 Shizuku 进程中注册 AppOps 隐藏 API 监听器，用于感知其他应用写入剪贴板后回调主进程。隐藏 API 壳类型位于 `base/hidden-api`，其中 `AppOpsManagerHidden` 和 `AppOpsManagerHidden.OnOpNotedListener` 需要在 release/R8 构建中保持类名、方法签名和接口签名稳定；实际监听实现 `ClipboardListener` 使用具名类并通过 `@Keep` 保留，避免 R8 将隐藏 API 回调改写成不兼容形态。
+Shizuku 模块通过 `ClipboardShizukuService` 在 Shizuku 进程中注册 AppOps 隐藏 API 监听器，用于感知其他应用写入剪贴板后回调主进程。隐藏 API 壳类型、HiddenApiBypass 调用封装和系统剪贴板隐藏 API 读取器位于 `base/hidden-api`，其中 `AppOpsManagerHidden` 和 `AppOpsManagerHidden.OnOpNotedListener` 需要在 release/R8 构建中保持类名、方法签名和接口签名稳定，`HiddenApiExemptions` 统一处理 Android P/API 28 版本门控和第三方 `HiddenApiBypass` 调用，`SystemClipboardHiddenReader` 统一处理 `ServiceManager`、`IClipboard.Stub` 与 `IClipboard#getPrimaryClip` 的签名差异；实际监听实现 `ClipboardListener` 使用具名类并通过 `@Keep` 保留，避免 R8 将隐藏 API 回调改写成不兼容形态。
 
 当前 Provider 通道已经从“主进程 overlay 读取剪贴板”升级为“Shizuku 进程直读剪贴板 + app Provider 提交入库”的正式链路：
 
-- Shizuku 回调入口立即生成独立 `eventId`，记录 `capturedAtMillis`，并用 `ShizukuClipboardReader` 通过 `IClipboard.getPrimaryClip` 读取当前 `ClipData` 快照。
+- Shizuku 回调入口立即生成独立 `eventId`，记录 `capturedAtMillis`，并用 `ShizukuClipboardReader` 以 `com.android.shell` 身份委托 `SystemClipboardHiddenReader` 通过 `IClipboard.getPrimaryClip` 读取当前 `ClipData` 快照。
 - 剪贴内容链路把 v1 JSON payload 通过 `content write content://<authority>/clip/<eventId>` 写入 app 私有临时目录，再调用 Provider `commit_clip` 解析和入库。
 - 图标链路继续沿用既有 `query_icon_state`、`content write /icon/<eventId>`、`commit_icon` 方案，不改变 hash、decode、保存、来源缓存或去重规则。
 - 剪贴内容链路和图标链路使用同一个 `eventId` 串联日志，但分别走不同 Provider path、不同临时目录和不同协程，任一链路失败都不取消另一条链路。
@@ -24,6 +24,8 @@ Shizuku 模块通过 `ClipboardShizukuService` 在 Shizuku 进程中注册 AppOp
 
 ## 范围
 
+- `base/hidden-api/src/main/java/com/cla/clip/base/hidden/api/HiddenApiExemptions.kt`
+- `base/hidden-api/src/main/java/com/cla/clip/base/hidden/api/SystemClipboardHiddenReader.kt`
 - `shizuku/src/main/java/com/cla/clip/shizuku/ClipboardShizukuService.kt`
 - `shizuku/src/main/java/com/cla/clip/shizuku/ShizukuClipboardReader.kt`
 - `shizuku/src/main/java/com/cla/clip/shizuku/ClipboardBridgeClipPayload.kt`
@@ -58,10 +60,10 @@ Shizuku 模块通过 `ClipboardShizukuService` 在 Shizuku 进程中注册 AppOp
 ## 数据流
 
 1. 主进程连接 Shizuku 并实例化 `ClipboardShizukuService(Context)`。
-2. `ClipboardShizukuService.start()` 通过 `HiddenApiBypass` 和 `Refine.unsafeCast<AppOpsManagerHidden>` 注册 `ClipboardListener` 到 `startWatchingNoted(intArrayOf(30), listener)`。
+2. `ClipboardShizukuService.start()` 通过 `HiddenApiExemptions.addIfNeeded("Landroid/app")` 添加 Android P/API 28 及以上的 `android.app` 豁免，并通过 `Refine.unsafeCast<AppOpsManagerHidden>` 注册 `ClipboardListener` 到 `startWatchingNoted(intArrayOf(30), listener)`；Android 8.1/API 27 及以下没有隐藏 API 限制，由 `base:hidden-api` 封装统一跳过 `HiddenApiBypass.addHiddenApiExemptions` 以兼容 minSdk 24。
 3. `ClipboardListener` 收到字符串 op 或数字 code 回调后过滤自身包名，再调用 `owner.handleOpNoted(clipPackageName)`。
 4. `handleOpNoted()` 每次回调立即生成独立 `eventId`，记录 `capturedAtMillis`，并在 Shizuku 进程内用 `ShizukuClipboardReader.readPrimaryClip()` 读取 `ClipData` 快照。
-5. `ShizukuClipboardReader` 固定以 `com.android.shell` 作为 `IClipboard.getPrimaryClip` 的 calling package，AppOps 回调里的来源包名只作为来源 App package，主包名只作为 host package，三者禁止混用。
+5. `ShizukuClipboardReader` 固定以 `com.android.shell` 作为 `IClipboard.getPrimaryClip` 的 calling package，并委托 `base:hidden-api` 的 `SystemClipboardHiddenReader` 读取系统剪贴板；`SystemClipboardHiddenReader` 通过 `HiddenApiExemptions.addIfNeeded(...)` 在 Android P/API 28 及以上先豁免 `ServiceManager` 和 `IClipboard` 隐藏 API，Android 8.1/API 27 及以下跳过豁免但保留同一反射读取流程。AppOps 回调里的来源包名只作为来源 App package，主包名只作为 host package，三者禁止混用。
 6. Shizuku 只读取第一个 `ClipData.Item`，提取 `text`、`htmlText`、MIME、URI/Intent 是否存在等低敏摘要；日志只记录长度和布尔值，不输出正文。
 7. `ClipboardShizukuService` 解析来源应用名、图标 bitmap 和 `Bitmap.toStableHash()`，然后通过 `supervisorScope` 并行启动两条协程。
 8. `clipPayloadJob` 把 payload 序列化为 UTF-8 JSON，通过进程 stdin 写给 `content write --uri content://<authority>/clip/<eventId>`；只有 exitCode 为 0 后，才调用 `content call --method commit_clip`。
@@ -242,6 +244,9 @@ Shizuku 模块通过 `ClipboardShizukuService` 在 Shizuku 进程中注册 AppOp
 
 ## 变更记录
 
+- 2026-05-29：将 `ServiceManager`、`IClipboard.Stub` 和 `IClipboard#getPrimaryClip` 反射读取逻辑下沉到 `base:hidden-api` 的 `SystemClipboardHiddenReader`，`ShizukuClipboardReader` 只保留 shell calling package 选择和 payload 映射；原因是系统剪贴板隐藏 API 签名适配属于底层隐藏 API 能力，Shizuku 模块不应直接承载 Binder/反射细节。
+- 2026-05-29：将 `HiddenApiBypass.addHiddenApiExemptions` 直接调用收敛到 `base:hidden-api` 的 `HiddenApiExemptions`，并把第三方依赖从 `shizuku` 迁移到底层隐藏 API 模块；原因是 API 28 版本门控属于隐藏 API 基础设施能力，Shizuku 只应表达需要豁免的业务签名。
+- 2026-05-29：为 `ShizukuClipboardReader.readPrimaryClip()` 的 `HiddenApiBypass.addHiddenApiExemptions` 增加 Android P/API 28 版本门控；原因是当前 minSdk 为 24，隐藏 API 豁免方法本身要求 API 28，低版本无需豁免且直接调用会触发编译/静态检查错误。
 - 2026-05-29：将 Shizuku 进程 `IClipboard` 直读从探针升级为正式 payload 主链路；原因是实测 Shizuku 进程可读到剪贴板，而普通 app overlay 即使取得窗口焦点仍可能读到空，正式链路需要绕开 overlay 焦点不稳定性，并通过 `/clip/<eventId>`、`commit_clip`、`capturedAtMillis` 和脱敏 result bundle 固化协议。
 - 2026-05-28：新增 Shizuku 进程内 `IClipboard` 直读探针；原因是实测主进程 Provider + overlay 即使取得 View 焦点也可能读到空剪贴板，需要先验证 shell/Shizuku 进程是否能直接读取系统剪贴板，再决定是否重构正式读取链路。
 - 2026-05-27：将 Provider 通道改为“双协程彻底解耦”方案；原因是 `read_clip` 不应再承担图标同步判断，图标链路独立后可以更早进入当前剪贴板读取，并让 `query_icon_state` 与 `commit_icon` 在 app 侧闭环判断来源图标是否需要同步。

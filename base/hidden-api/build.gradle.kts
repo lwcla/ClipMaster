@@ -51,4 +51,5 @@ dependencies {
 
     annotationProcessor(libs.refine.annotation.processor)
     compileOnly(libs.refine.annotation)
+    implementation(libs.hideen.api.bypass)
 }

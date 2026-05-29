@@ -89,7 +89,6 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
 
     implementation(libs.refine.runtime)
-    implementation(libs.hideen.api.bypass)
 
     // Hilt依赖注入，用于解耦代码，方便管理对象实例
     implementation(libs.hilt.android)

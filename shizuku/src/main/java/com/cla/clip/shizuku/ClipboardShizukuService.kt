@@ -6,6 +6,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.os.Build
 import androidx.annotation.Keep
+import com.cla.clip.base.hidden.api.HiddenApiExemptions
 import com.cla.clip.base.general.utils.exceptionHandler
 import com.cla.clip.base.general.utils.iconBitmap
 import com.cla.clip.base.general.utils.logD
@@ -30,7 +31,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withTimeoutOrNull
-import org.lsposed.hiddenapibypass.HiddenApiBypass
 import java.io.OutputStream
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -70,7 +70,7 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
     /** 当前应用包名，既用于过滤自身事件，也用于 shell 命令启动主进程服务。 */
     private val packageName by lazy { context.packageName }
 
-    /** Shizuku 进程内系统剪贴板读取器，封装隐藏 IClipboard 签名差异。 */
+    /** Shizuku 进程内剪贴板读取适配器，只负责 shell 身份选择和 payload 映射。 */
     private val clipboardReader = ShizukuClipboardReader()
 
     /** Shizuku 进程内协程作用域，使用 SupervisorJob 避免单次回调失败终止整个监听服务。 */
@@ -118,7 +118,7 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
     /**
      * 启动剪贴板 AppOps 监听。
      *
-     * 会先确保悬浮窗权限被授予，再注册隐藏 API 监听器；Android P+ 需要先添加 HiddenApiBypass 豁免。
+     * 会先确保悬浮窗权限被授予，再注册隐藏 API 监听器；Android P+ 通过 base:hidden-api 统一封装添加豁免。
      */
     override fun start() {
         logD(TAG) { "start" }
@@ -129,9 +129,7 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
         isRunning.set(true)
 
         removeListener()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            HiddenApiBypass.addHiddenApiExemptions("Landroid/app")
-        }
+        HiddenApiExemptions.addIfNeeded("Landroid/app")
 
         // 先去授予悬浮窗权限，之后添加监听，否则剪贴板回调之后，发现还没有悬浮窗权限，就没办法读取剪贴板数据
         // 开启悬浮窗权限
