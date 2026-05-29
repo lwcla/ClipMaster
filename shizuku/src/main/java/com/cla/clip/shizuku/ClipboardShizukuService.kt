@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withTimeoutOrNull
 import org.lsposed.hiddenapibypass.HiddenApiBypass
 import java.io.OutputStream
@@ -52,6 +53,12 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
 
         /** Provider 图标写入和提交命令超时时间，避免 Shizuku 图标任务长期挂起。 */
         private const val PROVIDER_ICON_COMMAND_TIMEOUT_MS = 3_000L
+
+        /** Provider 剪贴 payload 写入和提交命令超时时间，避免 Shizuku 读取任务长期挂起。 */
+        private const val PROVIDER_CLIP_COMMAND_TIMEOUT_MS = 3_000L
+
+        /** 旧 Provider overlay 读取调试回退开关，默认关闭，避免掩盖 Shizuku 直读链路问题。 */
+        private const val ENABLE_PROVIDER_OVERLAY_DEBUG_FALLBACK = false
     }
 
     /** AppOpsManager 隐藏 API 入口，用于监听剪贴板写入 op 和授予悬浮窗模式。 */
@@ -62,6 +69,9 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
 
     /** 当前应用包名，既用于过滤自身事件，也用于 shell 命令启动主进程服务。 */
     private val packageName by lazy { context.packageName }
+
+    /** Shizuku 进程内系统剪贴板读取器，封装隐藏 IClipboard 签名差异。 */
+    private val clipboardReader = ShizukuClipboardReader()
 
     /** Shizuku 进程内协程作用域，使用 SupervisorJob 避免单次回调失败终止整个监听服务。 */
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob() + exceptionHandler)
@@ -161,19 +171,102 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
                 AppOpsManager.MODE_ALLOWED
             )
 
+        if (USE_PROVIDER_BRIDGE) {
+            serviceScope.launch {
+                handleProviderBridgeOpNoted(clipPackageName)
+            }
+            return
+        }
+
         job?.cancel()
         job = serviceScope.launch {
             delay(100) // 防抖
-            val packageInfo = clipPackageName?.let { packageManager.getPackageInfo(it, 0) }
-            val name = packageInfo?.applicationInfo?.loadLabel(packageManager)?.toString().takeUnless { it.isNullOrBlank() } ?: "Unknown"
-            // 获取图标 Drawable
-            // Android 的 Bitmap 类实现了 Parcelable，并且针对 Binder 传输做了特殊优化（会将大图片数据放在 Ashmem 匿名共享内存中，而不是 Binder 缓冲区，只传递文件描述符）
+            handleLegacyCallbackOpNoted(clipPackageName)
+        }
+    }
 
-            val bitmap = packageInfo?.applicationInfo?.loadIcon(packageManager).iconBitmap()
-            val iconHash = bitmap?.toStableHash()
+    /**
+     * 处理 Provider 直读链路的剪贴事件。
+     *
+     * @param clipPackageName AppOps 回调给出的来源应用包名，可能为空。
+     */
+    private suspend fun handleProviderBridgeOpNoted(clipPackageName: String?) {
+        /** 本次来源事件的追踪 ID；剪贴 payload 链路和图标链路共享它来串联日志。 */
+        val eventId = UUID.randomUUID().toString()
+        /** Shizuku 收到回调后立即记录的捕获时间，用于避免并发提交顺序影响列表排序。 */
+        val capturedAtMillis = System.currentTimeMillis()
+        /** 系统剪贴板快照；必须尽可能靠近回调入口读取，避免后续复制覆盖当前值。 */
+        val clipData = clipboardReader.readPrimaryClip()
+        /** 正式传给 Provider 的 payload；为空表示系统剪贴板读取失败，可按调试开关决定是否走旧 overlay。 */
+        val clipPayload = clipboardReader.toPayload(
+            clipData = clipData,
+            eventId = eventId,
+            capturedAtMillis = capturedAtMillis
+        )
+        logShizukuClipboardReadResult(eventId, clipData, clipPayload)
 
-            logD(TAG) { "OnOpNotedListener packageName=${clipPackageName} name=$name bitmap=${bitmap?.width} x ${bitmap?.height} iconHash=$iconHash" }
-            insert(clipPackageName, name, bitmap, iconHash)
+        /** 来源应用包信息；读取剪贴板快照之后再解析，避免图标加载拖慢剪贴数据捕获。 */
+        val packageInfo = clipPackageName?.let { packageManager.getPackageInfo(it, 0) }
+        /** 来源应用展示名；为空时使用 Unknown，保持旧链路展示语义。 */
+        val name = packageInfo?.applicationInfo?.loadLabel(packageManager)?.toString().takeUnless { it.isNullOrBlank() } ?: "Unknown"
+        /** 来源应用图标 Bitmap；只用于独立图标链路，不能拖慢剪贴 payload 入库。 */
+        val bitmap = packageInfo?.applicationInfo?.loadIcon(packageManager).iconBitmap()
+        /** 来源图标稳定 hash；为空表示本次没有可同步图标。 */
+        val iconHash = bitmap?.toStableHash()
+
+        logD(TAG) {
+            "OnOpNotedListener eventId=$eventId packageName=$clipPackageName name=$name " +
+                "bitmap=${bitmap?.width} x ${bitmap?.height} iconHash=$iconHash"
+        }
+        insert(clipPackageName, name, bitmap, iconHash, eventId, clipPayload)
+    }
+
+    /**
+     * 处理旧 AIDL callback 链路的剪贴事件。
+     *
+     * @param clipPackageName AppOps 回调给出的来源应用包名，可能为空。
+     */
+    private suspend fun handleLegacyCallbackOpNoted(clipPackageName: String?) {
+        /** 来源应用包信息；旧链路仍沿用 100ms 防抖后的来源解析时机。 */
+        val packageInfo = clipPackageName?.let { packageManager.getPackageInfo(it, 0) }
+        /** 来源应用展示名；为空时使用 Unknown，保持旧链路展示语义。 */
+        val name = packageInfo?.applicationInfo?.loadLabel(packageManager)?.toString().takeUnless { it.isNullOrBlank() } ?: "Unknown"
+        /** 来源应用图标 Bitmap；旧 AIDL 会通过 Binder 回调传给主进程。 */
+        val bitmap = packageInfo?.applicationInfo?.loadIcon(packageManager).iconBitmap()
+        /** 来源图标稳定 hash；主进程用它判断来源图标是否需要更新。 */
+        val iconHash = bitmap?.toStableHash()
+
+        logD(TAG) { "OnOpNotedListener packageName=${clipPackageName} name=$name bitmap=${bitmap?.width} x ${bitmap?.height} iconHash=$iconHash" }
+        insert(clipPackageName, name, bitmap, iconHash)
+    }
+
+    /**
+     * 输出 Shizuku 侧剪贴板直读结果。
+     *
+     * @param eventId 当前剪贴事件 ID，用于串联 Provider payload 与日志。
+     * @param clipData Shizuku 进程通过系统 `IClipboard` 读到的剪贴板；日志只允许输出结构信息。
+     * @param payload 即将写入 Provider 的 payload；为空表示直读失败或系统剪贴板为空。
+     */
+    private fun logShizukuClipboardReadResult(
+        eventId: String,
+        clipData: android.content.ClipData?,
+        payload: ClipboardBridgeClipPayload?,
+    ) {
+        /** 首个剪贴板 item；只用于统计结构，不输出具体内容。 */
+        val firstItem = clipData?.takeIf { data -> data.itemCount > 0 }?.getItemAt(0)
+        /** 首个 item 的普通文本长度；为空表示没有文本或读取失败。 */
+        val textLength = firstItem?.text?.length
+        /** 首个 item 的 HTML 文本长度；为空表示没有 HTML 文本。 */
+        val htmlLength = firstItem?.htmlText?.length
+        /** 首个 item 是否携带 URI；只记录布尔值，避免泄露授权 URI。 */
+        val hasUri = firstItem?.uri != null
+        /** 首个 item 是否携带 Intent；只记录布尔值，避免泄露 Intent 内容。 */
+        val hasIntent = firstItem?.intent != null
+
+        logD(TAG) {
+            "Shizuku 进程直读剪贴板 eventId=$eventId clipNull=${clipData == null} " +
+                "payloadNull=${payload == null} itemCount=${clipData?.itemCount ?: 0} mimeTypes=${payload?.mimeTypes.orEmpty()} " +
+                "textLength=$textLength htmlLength=$htmlLength hasUri=$hasUri hasIntent=$hasIntent"
         }
     }
 
@@ -195,9 +288,19 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
      * 先尝试已有 callback；失败后分别尝试前台服务和普通服务唤醒主进程并等待 callback 重连。
      * 所有等待都有超时，避免 Shizuku 进程因主进程不可用而永久挂起。
      */
-    private suspend fun insert(clipPackageName: String?, appName: String, bitmap: Bitmap?, iconHash: String?) {
+    private suspend fun insert(
+        clipPackageName: String?,
+        appName: String,
+        bitmap: Bitmap?,
+        iconHash: String?,
+        providerEventId: String? = null,
+        clipPayload: ClipboardBridgeClipPayload? = null,
+    ) {
         if (USE_PROVIDER_BRIDGE) {
-            val providerOk = sendByContentProvider(clipPackageName, appName, bitmap, iconHash)
+            /** Provider 模式下的事件 ID；正常来自回调入口，兜底生成避免旧调用路径传空。 */
+            val eventId = providerEventId ?: UUID.randomUUID().toString()
+            /** Provider 直读链路处理结果；返回 false 表示 payload 未被确认处理。 */
+            val providerOk = sendByContentProvider(eventId, clipPackageName, appName, bitmap, iconHash, clipPayload)
             logD(TAG) { "Provider 通道发送完成 ok=$providerOk packageName=$clipPackageName appName=$appName iconHash=$iconHash" }
             return
         }
@@ -285,41 +388,108 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
      * Provider 模式下不自动 fallback AIDL，避免掩盖本次冷启动验证通道的真实可靠性。
      */
     private suspend fun sendByContentProvider(
+        eventId: String,
         clipPackageName: String?,
         appName: String,
         bitmap: Bitmap?,
         iconHash: String?,
-    ): Boolean {
-        /** 本次来源事件的追踪 ID；读剪贴链路和图标链路共享同一个 eventId 便于日志串联。 */
-        val eventId = UUID.randomUUID().toString()
-
-        /** read_clip 读取协程；只负责尽快触发主进程冷启动和剪贴板入库。 */
-        val readJob = serviceScope.async {
-            val callResult = callProviderReadClip(
-                eventId = eventId,
-                clipPackageName = clipPackageName,
-                appName = appName,
-                iconHash = iconHash
-            )
-            val providerSaved = ClipboardBridgeCommandResultParser.isReadClipSuccessful(callResult.exitCode, callResult.output)
-            if (providerSaved) {
-                logD(TAG) {
-                    "Provider 通道保存成功 eventId=$eventId packageName=$clipPackageName appName=$appName hasIcon=${bitmap != null}"
-                }
-            } else {
-                logW(TAG) {
-                    "Provider 通道未确认成功 eventId=$eventId packageName=$clipPackageName appName=$appName " +
-                        "exit=${callResult.exitCode} resultCode=${ClipboardBridgeCommandResultParser.parseResultCode(callResult.output)}"
-                }
-            }
-            providerSaved
+        clipPayload: ClipboardBridgeClipPayload?,
+    ): Boolean = supervisorScope {
+        /** clipPayloadJob 只负责剪贴 payload 写入和提交，不能等待图标链路完成。 */
+        val clipPayloadJob = async {
+            runProviderClipPayload(eventId, clipPackageName, appName, iconHash, clipPayload)
         }
 
-        /** 图标链路协程；独立预判当前来源图标是否需要同步，不等待 read_clip 完成。 */
+        /** iconJob 仍走现有独立链路，失败不影响剪贴内容入库。 */
         launchProviderIconQuery(eventId, clipPackageName, appName, bitmap, iconHash)
 
-        /** 返回值仍以 read_clip 是否最终成功入库为准。 */
-        return readJob.await()
+        /** 返回值以剪贴 payload 是否被 Provider 确认处理为准；图标链路完全解耦。 */
+        clipPayloadJob.await()
+    }
+
+    /**
+     * 执行 Provider 剪贴 payload 写入与提交。
+     *
+     * @param eventId 当前剪贴事件 ID。
+     * @param clipPackageName 来源应用包名。
+     * @param appName 来源应用名称。
+     * @param iconHash 来源图标 hash，提交剪贴时只用于复用已有来源图标。
+     * @param clipPayload Shizuku 直读剪贴板后构造的 payload；为空时可按调试开关走旧 overlay。
+     */
+    private fun runProviderClipPayload(
+        eventId: String,
+        clipPackageName: String?,
+        appName: String?,
+        iconHash: String?,
+        clipPayload: ClipboardBridgeClipPayload?,
+    ): Boolean {
+        if (clipPayload == null) {
+            logW(TAG) { "Provider 剪贴 payload 为空 eventId=$eventId packageName=$clipPackageName" }
+            return runOverlayDebugFallback(eventId, clipPackageName, appName, iconHash)
+        }
+
+        /** payload JSON 字符串；只通过 stdin 写入 Provider，禁止拼接进 shell 参数。 */
+        val payloadJson = clipPayload.toJsonString()
+        /** payload 写入是否成功；只有 content write exit=0 才允许 commit_clip。 */
+        val payloadWriteOk = writeClipPayloadToProvider(eventId, payloadJson)
+        if (!payloadWriteOk) {
+            logW(TAG) { "Provider 剪贴 payload 写入失败 eventId=$eventId packageName=$clipPackageName" }
+            return false
+        }
+
+        /** Provider commit_clip 命令结果；输出只包含脱敏 Bundle 字段。 */
+        val commitResult = callProviderCommitClip(eventId, clipPackageName, appName, iconHash)
+        /** commit_clip 是否完成处理；重复/空内容也属于已按既有语义处理完成。 */
+        val commitOk = ClipboardBridgeCommandResultParser.isCommitClipSuccessful(commitResult.exitCode, commitResult.output)
+        if (commitOk) {
+            logD(TAG) {
+                "Provider 剪贴 payload 处理完成 eventId=$eventId packageName=$clipPackageName " +
+                    "clipStatus=${ClipboardBridgeCommandResultParser.parseClipStatus(commitResult.output)} " +
+                    "clipCommitted=${ClipboardBridgeCommandResultParser.parseClipCommitted(commitResult.output)}"
+            }
+        } else {
+            logW(TAG) {
+                "Provider 剪贴 payload 未确认成功 eventId=$eventId packageName=$clipPackageName " +
+                    "exit=${commitResult.exitCode} resultCode=${ClipboardBridgeCommandResultParser.parseResultCode(commitResult.output)} " +
+                    "clipStatus=${ClipboardBridgeCommandResultParser.parseClipStatus(commitResult.output)}"
+            }
+        }
+        return commitOk
+    }
+
+    /**
+     * 按调试开关决定是否走旧 overlay Provider 读取。
+     *
+     * @param eventId 当前剪贴事件 ID。
+     * @param clipPackageName 来源应用包名。
+     * @param appName 来源应用名称。
+     * @param iconHash 来源图标 hash。
+     */
+    private fun runOverlayDebugFallback(
+        eventId: String,
+        clipPackageName: String?,
+        appName: String?,
+        iconHash: String?,
+    ): Boolean {
+        if (!ENABLE_PROVIDER_OVERLAY_DEBUG_FALLBACK) {
+            logW(TAG) { "Provider overlay 调试回退未开启 eventId=$eventId packageName=$clipPackageName" }
+            return false
+        }
+
+        /** 旧 read_clip 调试回退结果；只在显式开关开启时用于对比系统行为。 */
+        val callResult = callProviderReadClip(
+            eventId = eventId,
+            clipPackageName = clipPackageName,
+            appName = appName,
+            iconHash = iconHash
+        )
+        /** 旧 read_clip 是否确认成功；不作为默认主链路兜底。 */
+        val providerSaved = ClipboardBridgeCommandResultParser.isReadClipSuccessful(callResult.exitCode, callResult.output)
+        logW(TAG) {
+            "Provider overlay 调试回退完成 eventId=$eventId packageName=$clipPackageName saved=$providerSaved " +
+                "exit=${callResult.exitCode} resultCode=${ClipboardBridgeCommandResultParser.parseResultCode(callResult.output)}"
+        }
+        return providerSaved
     }
 
     /**
@@ -524,6 +694,49 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
     }
 
     /**
+     * 将 Shizuku 直读到的剪贴 payload 写入主进程 Provider。
+     *
+     * @param eventId 当前剪贴事件 ID。
+     * @param payloadJson 已序列化的 payload JSON；日志中只能记录字节长度，不能输出正文。
+     */
+    private fun writeClipPayloadToProvider(eventId: String, payloadJson: String): Boolean {
+        /** payload UTF-8 字节；不设置低于系统剪贴板能力的自定义上限。 */
+        val payloadBytes = payloadJson.toByteArray(Charsets.UTF_8)
+
+        /** content write 命令进程；stdin 用于传递 JSON，避免 shell 字符串转义和正文日志泄露。 */
+        val process = ProcessBuilder(
+            "content",
+            "write",
+            "--uri",
+            ClipboardBridgeContract.clipUri(packageName, eventId)
+        ).redirectErrorStream(true).start()
+
+        runCatching {
+            process.outputStream.use { outputStream: OutputStream ->
+                outputStream.write(payloadBytes)
+            }
+        }.onFailure { throwable ->
+            logE(TAG, throwable) { "Provider 剪贴 payload 写入 stdin 失败 eventId=$eventId size=${payloadBytes.size}" }
+            process.destroy()
+            return false
+        }
+
+        /** content write 命令退出码；超时会销毁进程并按失败处理。 */
+        val exitCode = waitForProcess(process, PROVIDER_CLIP_COMMAND_TIMEOUT_MS) ?: run {
+            logW(TAG) { "Provider 剪贴 payload 写入超时 eventId=$eventId size=${payloadBytes.size}" }
+            destroyTimedOutProcess(process)
+            return false
+        }
+
+        /** content write 命令输出；只记录状态摘要，不包含 payload 正文。 */
+        val output = process.inputStream.bufferedReader().use { it.readText() }
+        /** 写入成功判定；只有命令成功才允许后续 commit_clip 消费 eventId 半文件。 */
+        val ok = exitCode == 0 && !output.contains("Error", ignoreCase = true)
+        logD(TAG) { "Provider 剪贴 payload 写入 eventId=$eventId size=${payloadBytes.size} exit=$exitCode ok=$ok output=$output" }
+        return ok
+    }
+
+    /**
      * 调用 Provider 读取剪贴板并保存。
      *
      * @param eventId 当前剪贴事件 ID。
@@ -571,6 +784,61 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
         /** content call 命令输出，包含 Provider 返回的 Bundle 文本。 */
         val output = process.inputStream.bufferedReader().use { it.readText() }
         logD(TAG) { "Provider read_clip eventId=$eventId exit=$exitCode output=$output" }
+        return ProviderCommandResult(exitCode = exitCode, output = output)
+    }
+
+    /**
+     * 调用 Provider 提交已写入的剪贴 payload。
+     *
+     * @param eventId 当前剪贴事件 ID。
+     * @param clipPackageName 来源应用包名。
+     * @param appName 来源应用名称。
+     * @param iconHash 来源图标 Bitmap.toStableHash()。
+     */
+    private fun callProviderCommitClip(
+        eventId: String,
+        clipPackageName: String?,
+        appName: String?,
+        iconHash: String?,
+    ): ProviderCommandResult {
+        /** content call 命令参数，只传递小字段，正文已经通过 content write 写入临时文件。 */
+        val args = mutableListOf(
+            "content",
+            "call",
+            "--uri",
+            ClipboardBridgeContract.callUri(packageName),
+            "--method",
+            ClipboardBridgeContract.METHOD_COMMIT_CLIP,
+            "--extra",
+            "${ClipboardBridgeContract.EXTRA_EVENT_ID}:s:${eventId}"
+        )
+
+        clipPackageName?.takeIf { it.isNotBlank() }?.let { sourcePackage ->
+            args += "--extra"
+            args += "${ClipboardBridgeContract.EXTRA_PACKAGE_NAME}:s:${escapeContentArg(sourcePackage)}"
+        }
+        appName?.takeIf { it.isNotBlank() }?.let { sourceAppName ->
+            args += "--extra"
+            args += "${ClipboardBridgeContract.EXTRA_APP_NAME}:s:${escapeContentArg(sourceAppName)}"
+        }
+        iconHash?.takeIf { it.isNotBlank() }?.let { sourceIconHash ->
+            args += "--extra"
+            args += "${ClipboardBridgeContract.EXTRA_ICON_HASH}:s:${escapeContentArg(sourceIconHash)}"
+        }
+
+        /** content call 命令进程；错误流合并后统一解析输出。 */
+        val process = ProcessBuilder(args).redirectErrorStream(true).start()
+
+        /** content call 命令退出码；超时会销毁进程并按失败处理。 */
+        val exitCode = waitForProcess(process, PROVIDER_CLIP_COMMAND_TIMEOUT_MS) ?: run {
+            destroyTimedOutProcess(process)
+            logW(TAG) { "Provider commit_clip 超时 eventId=$eventId packageName=$clipPackageName" }
+            return ProviderCommandResult(exitCode = -1, output = "timeout")
+        }
+
+        /** content call 命令输出，包含 Provider 返回的脱敏 Bundle 文本。 */
+        val output = process.inputStream.bufferedReader().use { it.readText() }
+        logD(TAG) { "Provider commit_clip eventId=$eventId exit=$exitCode output=$output" }
         return ProviderCommandResult(exitCode = exitCode, output = output)
     }
 

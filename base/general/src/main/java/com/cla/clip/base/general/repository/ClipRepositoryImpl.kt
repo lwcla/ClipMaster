@@ -231,15 +231,11 @@ class ClipRepositoryImpl @Inject constructor(
         val existingClip = clipDao.loadClipDetail(newClip.content, sourceApp.packageName)
         if (existingClip != null) {
             // === 情况 A：数据库有相同 content ===
-            // 使用 newClip 的所有数据，但覆盖回旧数据的 id 和 groupId
-            val clipToUpdate = newClip.copy(
-                id = existingClip.clip.id,
-                pinnedTime = existingClip.clip.pinnedTime,
-                // 重复内容更新时保留折叠状态，避免用户刚折叠的数据因为再次复制同内容而自动回到普通列表。
-                isFolded = existingClip.clip.isFolded,
-                // 重复复制只刷新剪贴时间，不刷新折叠时间，避免折叠列表顺序被剪贴板更新扰动。
-                foldedAt = existingClip.clip.foldedAt,
-                timestamp = System.currentTimeMillis() // 更新时间戳，表示这是最新的一次复制
+            /** 重复内容更新实体；保留用户状态并使用捕获时间刷新列表时间。 */
+            val clipToUpdate = buildDuplicateClipUpdate(
+                newClip = newClip,
+                existingClip = existingClip.clip,
+                capturedAtMillis = captureEntity.timestamp
             )
             // 执行更新
             clipDao.upsertClip(clipToUpdate)
@@ -252,7 +248,7 @@ class ClipRepositoryImpl @Inject constructor(
             val clipId = when {
                 rowId > 0L -> rowId
                 else -> clipDao.loadClipDetail(newClip.content, sourceApp.packageName)?.clip?.id
-                    ?: error("addNewClip: upsertClip 后未找到任务 newClip=$newClip")
+                    ?: error("addNewClip: upsertClip 后未找到任务 contentLength=${newClip.content.length} packageName=${sourceApp.packageName}")
             }
             AppSetting.markBackupDirty()
             return@withContext clipId
@@ -492,5 +488,26 @@ internal fun buildSourceAppIconUpdate(
         iconPath = iconPath,
         primaryColor = primaryColor,
         iconHash = iconHash
+    )
+}
+
+/**
+ * 构建重复剪贴内容的更新实体。
+ *
+ * @param newClip 本次捕获构造出的新剪贴实体，承载最新内容、来源和搜索字段。
+ * @param existingClip 数据库中已有的同内容同来源剪贴实体，用于保留用户状态。
+ * @param capturedAtMillis Shizuku 或主进程捕获剪贴板时记录的时间，避免并发提交完成顺序影响列表顺序。
+ */
+internal fun buildDuplicateClipUpdate(
+    newClip: ClipData,
+    existingClip: ClipData,
+    capturedAtMillis: Long,
+): ClipData {
+    return newClip.copy(
+        id = existingClip.id,
+        pinnedTime = existingClip.pinnedTime,
+        isFolded = existingClip.isFolded,
+        foldedAt = existingClip.foldedAt,
+        timestamp = capturedAtMillis
     )
 }

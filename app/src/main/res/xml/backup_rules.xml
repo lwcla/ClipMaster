@@ -15,6 +15,10 @@
     <exclude
         domain="file"
         path="clipboard_bridge_icons/" />
+    <!-- Shizuku Provider 剪贴 payload 传输目录可能短暂保存敏感文本，只用于单次 commit_clip，不具备跨安装恢复意义。 -->
+    <exclude
+        domain="file"
+        path="clipboard_bridge_clip_payloads/" />
     <!--
    <include domain="sharedpref" path="."/>
    <exclude domain="sharedpref" path="device.xml"/>

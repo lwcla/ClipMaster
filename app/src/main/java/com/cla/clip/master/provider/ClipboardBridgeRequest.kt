@@ -4,7 +4,7 @@ import android.os.Bundle
 import com.cla.clip.shizuku.ClipboardBridgeContract
 
 /**
- * Provider `read_clip` 请求参数。
+ * Provider 剪贴/图标桥接请求参数。
  *
  * 只包含命令行适合传递的小字段；图标 PNG 通过 eventId 关联到临时文件。
  */

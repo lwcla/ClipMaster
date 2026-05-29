@@ -14,15 +14,23 @@
         <exclude
             domain="file"
             path="clipboard_bridge_icons/" />
+        <!-- Shizuku Provider 剪贴 payload 传输目录可能短暂保存敏感文本，恢复后无意义且存在隐私风险。 -->
+        <exclude
+            domain="file"
+            path="clipboard_bridge_clip_payloads/" />
         <!--
         <include .../>
         <exclude .../>
         -->
     </cloud-backup>
-    <!--
     <device-transfer>
-        <include .../>
-        <exclude .../>
+        <!-- Shizuku Provider 图标传输目录只保存临时 PNG，设备迁移后不应恢复。 -->
+        <exclude
+            domain="file"
+            path="clipboard_bridge_icons/" />
+        <!-- Shizuku Provider 剪贴 payload 传输目录只用于单次敏感文本提交，设备迁移后不应恢复。 -->
+        <exclude
+            domain="file"
+            path="clipboard_bridge_clip_payloads/" />
     </device-transfer>
-    -->
 </data-extraction-rules>

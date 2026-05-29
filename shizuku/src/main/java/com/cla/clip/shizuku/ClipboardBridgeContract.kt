@@ -3,7 +3,7 @@ package com.cla.clip.shizuku
 /**
  * Shizuku 进程与主进程 ContentProvider 通道共享的轻量协议。
  *
- * 该协议只承载命令行可稳定传递的小字段；图标二进制通过 `content write` 的 stdin 传输，避免命令参数过长或转义失败。
+ * 该协议只承载命令行可稳定传递的小字段；图标二进制和剪贴板 payload 通过 `content write` 的 stdin 传输，避免命令参数过长或转义失败。
  */
 object ClipboardBridgeContract {
     /** Provider authority 后缀；完整 authority 由 applicationId + suffix 组成。 */
@@ -11,6 +11,9 @@ object ClipboardBridgeContract {
 
     /** Provider `call` 方法名：读取剪贴板并保存一条剪贴记录。 */
     const val METHOD_READ_CLIP = "read_clip"
+
+    /** Provider `call` 方法名：提交 Shizuku 侧直读后写入的剪贴板 payload。 */
+    const val METHOD_COMMIT_CLIP = "commit_clip"
 
     /** Provider `call` 方法名：判断来源图标是否需要同步。 */
     const val METHOD_QUERY_ICON_STATE = "query_icon_state"
@@ -20,6 +23,12 @@ object ClipboardBridgeContract {
 
     /** Provider 图标写入路径首段：`content://authority/icon/<eventId>`。 */
     const val PATH_ICON = "icon"
+
+    /** Provider 剪贴板 payload 写入路径首段：`content://authority/clip/<eventId>`。 */
+    const val PATH_CLIP = "clip"
+
+    /** Shizuku 直读剪贴板 payload 协议版本，app 侧解析时必须校验。 */
+    const val CLIP_PAYLOAD_VERSION = 1
 
     /** `content call` extra：一次剪贴事件的短追踪 ID。 */
     const val EXTRA_EVENT_ID = "eventId"
@@ -38,6 +47,21 @@ object ClipboardBridgeContract {
 
     /** Provider 返回字段：是否已经完成读取和入库；不能只依赖 content 命令 exitCode。 */
     const val RESULT_SAVED = "saved"
+
+    /** Provider 返回字段：commit_clip 是否真实写入或更新了一条剪贴记录。 */
+    const val RESULT_CLIP_COMMITTED = "clipCommitted"
+
+    /** Provider 返回字段：commit_clip 的剪贴处理状态，不承载正文。 */
+    const val RESULT_CLIP_STATUS = "clipStatus"
+
+    /** Provider 返回字段：commit_clip 解析到的普通文本长度，仅用于脱敏诊断。 */
+    const val RESULT_TEXT_LENGTH = "textLength"
+
+    /** Provider 返回字段：commit_clip 解析到的 HTML 长度，仅用于脱敏诊断。 */
+    const val RESULT_HTML_LENGTH = "htmlLength"
+
+    /** Provider 返回字段：commit_clip 解析到的 MIME 类型列表，仅用于类型诊断。 */
+    const val RESULT_MIME_TYPES = "mimeTypes"
 
     /** Provider 返回字段：是否成功读取到剪贴板内容。 */
     const val RESULT_READ_CLIP = "readClip"
@@ -66,6 +90,18 @@ object ClipboardBridgeContract {
     /** Provider 结果码：图标文件不存在、写入失败或哈希不匹配，已按占位图策略降级。 */
     const val CODE_ICON_MISSING = "icon_missing"
 
+    /** Provider 结果码：剪贴板 payload 临时文件不存在或 content write 未完成。 */
+    const val CODE_PAYLOAD_MISSING = "payload_missing"
+
+    /** Provider 结果码：剪贴板 payload 版本、JSON 或 eventId 校验失败。 */
+    const val CODE_INVALID_PAYLOAD = "invalid_payload"
+
+    /** Provider 结果码：当前剪贴板类型第一版不支持入库。 */
+    const val CODE_UNSUPPORTED_CLIP_TYPE = "unsupported_clip_type"
+
+    /** Provider 结果码：commit_clip 入库流程出现异常。 */
+    const val CODE_COMMIT_FAILED = "commit_failed"
+
     /** Provider 结果码：悬浮窗添加失败，无法进入剪贴板读取阶段。 */
     const val CODE_OVERLAY_FAILED = "overlay_failed"
 
@@ -77,6 +113,27 @@ object ClipboardBridgeContract {
 
     /** Provider 结果码：Provider 等待入库完成超时，后台任务可能仍在继续。 */
     const val CODE_TIMEOUT = "timeout"
+
+    /** 剪贴 payload 状态：本次文本已经保存或更新到数据库。 */
+    const val CLIP_STATUS_SAVED = "saved"
+
+    /** 剪贴 payload 状态：内容为空或命中现有去重规则，没有新增记录。 */
+    const val CLIP_STATUS_DUPLICATE_OR_EMPTY = "duplicate_or_empty"
+
+    /** 剪贴 payload 状态：系统剪贴板为空或没有 item。 */
+    const val CLIP_STATUS_NO_CLIP = "no_clip"
+
+    /** 剪贴 payload 状态：当前 item 只有 URI、Intent、图片等第一版不支持的类型。 */
+    const val CLIP_STATUS_UNSUPPORTED_CLIP_TYPE = "unsupported_clip_type"
+
+    /** 剪贴 payload 状态：Shizuku 写入的临时 payload 文件缺失。 */
+    const val CLIP_STATUS_PAYLOAD_MISSING = "payload_missing"
+
+    /** 剪贴 payload 状态：payload JSON、版本或 eventId 无法通过校验。 */
+    const val CLIP_STATUS_INVALID_PAYLOAD = "invalid_payload"
+
+    /** 剪贴 payload 状态：Provider 侧提交过程中出现异常。 */
+    const val CLIP_STATUS_COMMIT_FAILED = "commit_failed"
 
     /** 图标状态：本次传输的 PNG 已校验并保存。 */
     const val ICON_STATUS_SAVED = "saved"
@@ -122,6 +179,16 @@ object ClipboardBridgeContract {
     }
 
     /**
+     * 拼出剪贴板 payload 写入 URI。
+     *
+     * @param applicationId 当前宿主应用 id。
+     * @param eventId 当前剪贴事件 ID，只允许由调用方传入文件名安全的短 ID。
+     */
+    fun clipUri(applicationId: String, eventId: String): String {
+        return "content://${authority(applicationId)}/$PATH_CLIP/$eventId"
+    }
+
+    /**
      * 拼出 Provider call URI。
      *
      * @param applicationId 当前宿主应用 id。
@@ -142,6 +209,12 @@ object ClipboardBridgeCommandResultParser {
 
     /** Provider saved 字段的文本正则，兼容 Bundle 字段顺序变化。 */
     private val savedRegex = Regex("""saved=([^,\]\}\s]+)""")
+
+    /** Provider clipCommitted 字段的文本正则，兼容 Bundle 字段顺序变化。 */
+    private val clipCommittedRegex = Regex("""clipCommitted=([^,\]\}\s]+)""")
+
+    /** Provider clipStatus 字段的文本正则，兼容 Bundle 字段顺序变化。 */
+    private val clipStatusRegex = Regex("""clipStatus=([^,\]\}\s]+)""")
 
     /** Provider iconStatus 字段的文本正则，兼容 Bundle 字段顺序变化。 */
     private val iconStatusRegex = Regex("""iconStatus=([^,\]\}\s]+)""")
@@ -181,6 +254,29 @@ object ClipboardBridgeCommandResultParser {
      */
     fun isReadClipSuccessful(exitCode: Int, output: String): Boolean {
         return isSuccessful(exitCode, output)
+    }
+
+    /**
+     * 判断 `commit_clip` 是否完成剪贴 payload 处理。
+     *
+     * @param exitCode `content call` 进程退出码。
+     * @param output `content call` 标准输出和错误输出合并后的文本。
+     */
+    fun isCommitClipSuccessful(exitCode: Int, output: String): Boolean {
+        /** 命令层必须成功，否则 Provider 可能根本没有被调用。 */
+        val commandSucceeded = exitCode == 0 && !output.contains("Error", ignoreCase = true)
+        if (!commandSucceeded) {
+            return false
+        }
+
+        /** Provider 必须明确返回 ok，避免把参数错误或 payload 错误误判为完成。 */
+        val resultCode = parseResultCode(output)
+
+        /** duplicate_or_empty 是已按去重语义处理完成的状态，不应触发旧 overlay 自动回退。 */
+        val clipStatus = parseClipStatus(output)
+        return resultCode == ClipboardBridgeContract.CODE_OK &&
+            (clipStatus == ClipboardBridgeContract.CLIP_STATUS_SAVED ||
+                clipStatus == ClipboardBridgeContract.CLIP_STATUS_DUPLICATE_OR_EMPTY)
     }
 
     /**
@@ -240,6 +336,24 @@ object ClipboardBridgeCommandResultParser {
      */
     fun parseSaved(output: String): Boolean? {
         return savedRegex.find(output)?.groupValues?.getOrNull(1)?.toBooleanStrictOrNull()
+    }
+
+    /**
+     * 从 `content call` 输出中提取 clipCommitted 布尔值。
+     *
+     * @param output `content call` 打印出的 Bundle 文本。
+     */
+    fun parseClipCommitted(output: String): Boolean? {
+        return clipCommittedRegex.find(output)?.groupValues?.getOrNull(1)?.toBooleanStrictOrNull()
+    }
+
+    /**
+     * 从 `content call` 输出中提取 Provider clipStatus。
+     *
+     * @param output `content call` 打印出的 Bundle 文本。
+     */
+    fun parseClipStatus(output: String): String? {
+        return clipStatusRegex.find(output)?.groupValues?.getOrNull(1)
     }
 
     /**
