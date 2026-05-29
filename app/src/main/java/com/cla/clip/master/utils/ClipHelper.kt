@@ -112,7 +112,7 @@ class ClipHelper @Inject constructor(
 
         val contentText = clip.text?.toString()
         if (!lastClipContent.get().isNullOrBlank() && contentText == lastClipContent.get()) {
-            logD(TAG) { "readNow: contentText=${contentText} 和上一条是重复的，不要重复保存" }
+            logD(TAG) { "readNow: textLength=${contentText?.length} 和上一条重复，跳过保存" }
             return
         }
 
@@ -140,34 +140,56 @@ class ClipHelper @Inject constructor(
         iconPath: String?,
         iconColor: Int?,
         iconHash: String?,
-    ) = withContext(Dispatchers.IO) {
-        // 保存剪贴板内容
-        val contentUri = item.uri
+        capturedAtMillis: Long = System.currentTimeMillis(),
+    ): ClipProcessResult {
+        /** 系统剪贴 item 中的普通文本；为空时由文本入口统一按空内容处理。 */
         val contentText = item.text?.toString()
+        return processClipText(
+            contentText = contentText,
+            packageName = packageName,
+            appName = appName,
+            iconPath = iconPath,
+            iconColor = iconColor,
+            iconHash = iconHash,
+            capturedAtMillis = capturedAtMillis
+        )
+    }
 
-        lastClipContent.set(contentText)
+    /**
+     * 处理已经提取成文本的剪贴板内容。
+     *
+     * Shizuku Provider payload 和系统 `ClipData.Item` 都会委托到这里，确保去重、链接解析、备份 dirty 和通知语义一致。
+     */
+    suspend fun processClipText(
+        contentText: String?,
+        packageName: String?,
+        appName: String?,
+        iconPath: String?,
+        iconColor: Int?,
+        iconHash: String?,
+        capturedAtMillis: Long = System.currentTimeMillis(),
+    ): ClipProcessResult = withContext(Dispatchers.IO) {
+        /** 原始文本去掉首尾空白后的可保存内容；为空时不制造数据库记录。 */
+        val clipContent = contentText?.trim()
 
-        val lastClip = clipRepository.get().loadLastClip()
-        if (lastClip != null) {
-            if (contentText == lastClip.content && (packageName == null || lastClip.sourceAppPackage == packageName)) {
-                logD(TAG) { "processClip: 222 contentText=${contentText} packageName=${packageName} 和上一条是重复的，不要重复保存" }
-                return@withContext
-            }
-        }
-
-        val clipContent = when {
-            // 处理图片类型
-//            contentUri != null && contentUri.toString().startsWith("content://") -> {
-//                saveImageAndGetPath(contentUri)
-//            }
-
-            else -> contentText
-        }?.trim()
+        lastClipContent.set(clipContent)
 
         if (clipContent.isNullOrBlank()) {
-            return@withContext
+            return@withContext ClipProcessResult.DuplicateOrEmpty
         }
 
+        /** 数据库中最后一条剪贴记录，用于沿用现有“连续重复内容跳过保存”的语义。 */
+        val lastClip = clipRepository.get().loadLastClip()
+        if (lastClip != null) {
+            /** 当前文本和来源是否命中连续重复规则；命中时不新增记录。 */
+            val duplicatedWithLast = clipContent == lastClip.content && (packageName == null || lastClip.sourceAppPackage == packageName)
+            if (duplicatedWithLast) {
+                logD(TAG) {
+                    "processClipText: 与上一条重复，跳过保存 textLength=${clipContent.length} packageName=${packageName}"
+                }
+                return@withContext ClipProcessResult.DuplicateOrEmpty
+            }
+        }
 
         // 对于图片类型，启动OCR任务
 //            if (clipType == ClipType.IMAGE) {
@@ -181,9 +203,13 @@ class ClipHelper @Inject constructor(
          * 链接预览可能异步补齐，因此同一条剪贴内容可能先以无预览状态保存，再带着解析结果保存一次。
          */
         suspend fun save(link: String?, linkMeta: LinkMeta?) {
+            /** 入库使用的捕获时间；Shizuku Provider 会传入回调入口时间，前台读取则使用当前时间。 */
+            val clipTimestamp = capturedAtMillis.takeIf { it > 0L } ?: System.currentTimeMillis()
+            /** 链接预览是否存在，用于脱敏日志，不输出具体 URL 或标题。 */
+            val hasLinkMeta = linkMeta != null
             val captureEntity = ClipCaptureEntity(
                 content = clipContent,
-                timestamp = System.currentTimeMillis(),
+                timestamp = clipTimestamp,
                 sourcePackage = packageName ?: "",
                 sourceAppName = appName ?: "",
                 sourceAppIconPath = iconPath,
@@ -196,9 +222,12 @@ class ClipHelper @Inject constructor(
                 linkSiteName = linkMeta?.siteName,
             )
 
-            logI(TAG) { "processClip: isLink=${!link.isNullOrBlank()} captureEntity=$captureEntity" }
+            logI(TAG) {
+                "processClipText: 准备入库 textLength=${clipContent.length} timestamp=$clipTimestamp " +
+                    "packageName=${packageName} hasLink=${!link.isNullOrBlank()} hasLinkMeta=$hasLinkMeta"
+            }
 
-            // 保存到数据库
+            /** 保存或更新后的剪贴记录 ID；通知和日志只记录 ID，不输出剪贴正文。 */
             val clipId = clipRepository.get().addNewClip(captureEntity)
             BackupAutoScheduler.markDirtyAndSchedule(appContext)
 
@@ -213,7 +242,7 @@ class ClipHelper @Inject constructor(
         val extractedLink = LinkUtils.extractFirstUrl(clipContent)
         if (extractedLink.isNullOrBlank()) {
             save(extractedLink, null)
-            return@withContext
+            return@withContext ClipProcessResult.Saved
         }
 
         if (LinkUtils.isImageUrl(extractedLink)) {
@@ -226,38 +255,40 @@ class ClipHelper @Inject constructor(
                     siteName = null,
                 )
             )
-            return@withContext
+            return@withContext ClipProcessResult.Saved
         }
 
         if (LinkUtils.isDownloadableMediaUrl(clipContent)) {
             // 纯媒体直链通常拿不到 OpenGraph 预览图，跳过网络解析可以让记录更快出现在列表里。
             save(extractedLink, null)
-            return@withContext
+            return@withContext ClipProcessResult.Saved
         }
 
+        /** 历史链接预览数据；命中后复用已解析结果，避免重复网络请求。 */
         val history = clipRepository.get().loadLinkPreview(extractedLink)
         if (!history?.imageUrl.isNullOrBlank()) {
-            logD(TAG) { "processClip 使用数据库中的链接数据 extractedLink=$extractedLink" }
-            // 避免重复解析链接
+            logD(TAG) { "processClipText 使用数据库中的链接数据 linkLength=${extractedLink.length}" }
+            /** 数据库中已有的链接预览，避免重复解析链接。 */
             val linkMeta = LinkMeta(history.title, history.description, history.imageUrl, history.siteName)
             save(extractedLink, linkMeta)
-            return@withContext
+            return@withContext ClipProcessResult.Saved
         }
 
         // 解析链接在网络比较差的情况下，耗时长，所以先保存一次剪贴数据，等到链接解析完成之后再更新一次剪贴数据，
         // 这样用户就能第一时间看到保存的剪贴数据了，而不是等链接解析完成之后才看到保存的剪贴数据
         save(extractedLink, null)
 
-        logD(TAG) { "processClip 去解析链接 extractedLink=$extractedLink" }
+        logD(TAG) { "processClipText 去解析链接 linkLength=${extractedLink.length}" }
         // 解析链接可能会比较慢，所以放在协程里，解析完成之后再保存数据
         // 避免网络比较差的情况下，需要很长时间才能看到保存的剪贴数据
         val deferred = async {
             val linkMeta = linkMetaParser.parse(extractedLink)
-            logD(TAG) { "processClip 链接解析结果 linkMeta=$linkMeta" }
+            logD(TAG) { "processClipText 链接解析完成 hasImage=${!linkMeta.imageUrl.isNullOrBlank()}" }
             linkMeta
         }
 
         save(extractedLink, deferred.await())
+        ClipProcessResult.Saved
     }
 
     /**
@@ -294,4 +325,17 @@ class ClipHelper @Inject constructor(
             ""
         }
     }
+}
+
+/**
+ * 剪贴内容处理结果。
+ *
+ * Provider commit_clip 用它区分真实入库和沿用既有去重/空内容规则跳过保存的情况。
+ */
+enum class ClipProcessResult {
+    /** 本次剪贴内容已经保存或更新到数据库。 */
+    Saved,
+
+    /** 本次剪贴内容为空或命中连续重复规则，没有新增记录。 */
+    DuplicateOrEmpty,
 }

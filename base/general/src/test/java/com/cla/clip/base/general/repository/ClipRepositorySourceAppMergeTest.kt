@@ -1,5 +1,6 @@
 package com.cla.clip.base.general.repository
 
+import com.cla.clip.base.general.dao.ClipData
 import com.cla.clip.base.general.dao.SourceAppData
 import com.cla.clip.base.general.entity.ClipCaptureEntity
 import org.junit.Assert.assertEquals
@@ -166,6 +167,40 @@ class ClipRepositorySourceAppMergeTest {
         assertEquals("new-hash", sourceApp.iconHash)
     }
 
+    @Test
+    /** 重复剪贴内容更新时，应使用捕获时间刷新列表顺序并保留用户折叠/置顶状态。 */
+    fun buildDuplicateClipUpdateUsesCapturedTimeAndKeepsUserState() {
+        /** 本次捕获构造出的新剪贴实体，代表 Shizuku payload 已携带 capturedAtMillis。 */
+        val newClip = clipData(
+            id = 0L,
+            timestamp = 9_000L,
+            pinnedTime = 0L,
+            isFolded = false,
+            foldedAt = 0L
+        )
+        /** 数据库中已有的重复剪贴实体，包含用户已经设置过的状态。 */
+        val existingClip = clipData(
+            id = 42L,
+            timestamp = 1_000L,
+            pinnedTime = 2_000L,
+            isFolded = true,
+            foldedAt = 3_000L
+        )
+
+        /** 合并后的重复剪贴更新实体。 */
+        val updatedClip = buildDuplicateClipUpdate(
+            newClip = newClip,
+            existingClip = existingClip,
+            capturedAtMillis = 4_000L
+        )
+
+        assertEquals(42L, updatedClip.id)
+        assertEquals(2_000L, updatedClip.pinnedTime)
+        assertEquals(true, updatedClip.isFolded)
+        assertEquals(3_000L, updatedClip.foldedAt)
+        assertEquals(4_000L, updatedClip.timestamp)
+    }
+
     /**
      * 构造测试用剪贴捕获实体。
      *
@@ -195,6 +230,35 @@ class ClipRepositorySourceAppMergeTest {
             linkDescription = null,
             linkImageUrl = null,
             linkSiteName = null
+        )
+    }
+
+    /**
+     * 构造测试用剪贴数据库实体。
+     *
+     * @param id 剪贴记录 id。
+     * @param timestamp 列表排序时间。
+     * @param pinnedTime 置顶时间。
+     * @param isFolded 是否折叠。
+     * @param foldedAt 折叠时间。
+     */
+    private fun clipData(
+        id: Long,
+        timestamp: Long,
+        pinnedTime: Long,
+        isFolded: Boolean,
+        foldedAt: Long,
+    ): ClipData {
+        return ClipData(
+            id = id,
+            content = "clip",
+            timestamp = timestamp,
+            pinnedTime = pinnedTime,
+            isFolded = isFolded,
+            foldedAt = foldedAt,
+            link = null,
+            sourceAppPackage = "com.example",
+            searchText = "clip"
         )
     }
 }

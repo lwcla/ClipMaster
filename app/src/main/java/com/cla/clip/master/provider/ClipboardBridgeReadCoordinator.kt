@@ -151,7 +151,10 @@ class ClipboardBridgeReadCoordinator @Inject constructor(
                 windowManager.addView(view, buildOverlayLayoutParams())
 
                 /** 当前剪贴板 ClipData 的首个 item；读取失败按空剪贴板处理。 */
-                val clipItem = runCatching { clipboardManager.primaryClip?.getItemAt(0) }.getOrNull()
+                val clipItem = runCatching { clipboardManager.primaryClip?.getItemAt(0) }.getOrElse {
+                    logE(TAG, it) { "Provider 读取剪贴板失败，按空剪贴板处理" }
+                    null
+                }
                 OverlayReadResult(overlayAdded = true, clipItem = clipItem)
             }.onFailure { throwable ->
                 logE(TAG, throwable) { "Provider 添加悬浮窗或读取剪贴板失败" }

@@ -43,6 +43,7 @@
 - `cookie`、`pendingOutputUri`、`tempPath`、未完成临时文件、可恢复登录态。
 - Shizuku Provider 图标传输临时目录 `files/clipboard_bridge_icons/`，该目录只保存 `content write` 写入的短期 PNG，下一次 Provider 调用会清理过期文件，不具备跨安装恢复意义。
 - Shizuku Provider 异步图标补全的 `<eventId>.tmp` 半文件同样只属于传输中间态，不纳入备份；图标补全成功后写入的来源 App 图标路径、主色和 `Bitmap.toStableHash()` 仍通过来源 App 备份字段进入备份。
+- Shizuku 剪贴板 payload 临时目录 `files/clipboard_bridge_clip_payloads/`，该目录只保存 `content write /clip/<eventId>` 写入的短期敏感文本 payload，提交成功、失败或异常后都应清理自己的 eventId 文件，不具备跨安装恢复意义。
 
 ## 用户体验
 
@@ -419,7 +420,7 @@ manifest 简化示例：
 - 日志和 UI 不输出剪贴内容、账号、密码、Cookie 或完整 URL 查询参数。
 - WebDAV 密码只保存在本机独立加密 MMKV 中，不进入备份包；后续如接入 Android Keystore，必须同步验证系统恢复后旧密文不可解时的提示和清理策略。
 - 系统 Auto Backup 需要排除 WebDAV 密码、备份目录 URI、健康状态等敏感或设备绑定配置。
-- 系统 Auto Backup 额外排除 `clipboard_bridge_icons/`；该目录只用于 Shizuku Provider 图标传输，不是正式来源图标缓存，恢复后继续保留反而可能让旧事件临时图标被误用。
+- 系统 Auto Backup 和设备迁移规则额外排除 `clipboard_bridge_icons/` 和 `clipboard_bridge_clip_payloads/`；前者只用于 Shizuku Provider 图标传输，后者只用于 Shizuku 直读剪贴板后的敏感 payload 传输，都不是正式来源图标缓存或可恢复剪贴数据，恢复后继续保留反而可能让旧事件临时文件被误用。
 - 文件名使用脱敏短标识，例如 `clip_master_backup_<installId8>_<yyyyMMdd_HHmmss>.zip`；真实设备名只放备份元信息，不直接暴露在文件名中。
 
 ## 日志与诊断计划
@@ -596,6 +597,7 @@ manifest 简化示例：
 
 ## 变更记录
 
+- 2026-05-29：补充 Shizuku 剪贴板 payload 临时目录备份排除说明；原因是 `files/clipboard_bridge_clip_payloads/` 只承载 `/clip/<eventId>` 的短期敏感传输 payload，提交结束即清理，不属于备份恢复数据，已同步规划 `backup_rules.xml` 与 `data_extraction_rules.xml` 排除。
 - 2026-05-27：备份页和恢复流程页接入统一二级页面骨架；原因是本轮 UI 刷新要求流程页标题栏、背景和底部入口统一，但备份导出、WebDAV、预检恢复和媒体关联状态机保持不变。
 - 2026-05-27：补充 Shizuku Provider 异步图标补全的备份边界；原因是 `read_clip` 先写入来源基础信息，`commit_icon` 后置保存图标并更新来源 App 的图标路径、主色和 `Bitmap.toStableHash()`，传输中的 `<eventId>.tmp` 半文件仍属于临时态，不应进入备份。
 - 2026-05-25：备份协议升级到 schemaVersion 4，并将磁力备份从 base 固定字段拆为可选 `BackupFeatureContributor`；原因是磁力搜索已独立为编译期可选模块，默认构建不能展示、统计或恢复磁力数据，启用模块时仍保留磁力 JSONL 导出恢复能力。

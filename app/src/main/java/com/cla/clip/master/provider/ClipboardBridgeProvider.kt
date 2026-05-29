@@ -37,8 +37,16 @@ class ClipboardBridgeProvider : ContentProvider() {
     /** Provider 图标临时文件管理器。 */
     private val iconStore: ClipboardBridgeIconStore by lazy { entryPoint.clipboardBridgeIconStore() }
 
+    /** Provider 剪贴 payload 临时文件管理器。 */
+    private val clipPayloadStore: ClipboardBridgeClipPayloadStore by lazy { entryPoint.clipboardBridgeClipPayloadStore() }
+
     /** Provider 剪贴板读取协调器。 */
     private val readCoordinator: ClipboardBridgeReadCoordinator by lazy { entryPoint.clipboardBridgeReadCoordinator() }
+
+    /** Provider 剪贴 payload 提交协调器。 */
+    private val clipCommitCoordinator: ClipboardBridgeClipCommitCoordinator by lazy {
+        entryPoint.clipboardBridgeClipCommitCoordinator()
+    }
 
     /** Provider 图标预判协调器。 */
     private val iconQueryCoordinator: ClipboardBridgeIconQueryCoordinator by lazy { entryPoint.clipboardBridgeIconQueryCoordinator() }
@@ -58,7 +66,7 @@ class ClipboardBridgeProvider : ContentProvider() {
     /**
      * Provider 命令调用入口。
      *
-     * @param method 支持 read_clip、query_icon_state 和 commit_icon。
+     * @param method 支持 read_clip、commit_clip、query_icon_state 和 commit_icon。
      * @param arg 当前未使用，保留给 Android ContentProvider call 签名。
      * @param extras `content call` 传入的小字段。
      */
@@ -74,7 +82,10 @@ class ClipboardBridgeProvider : ContentProvider() {
         val request = ClipboardBridgeRequest.fromExtras(extras)
             ?: return ClipboardBridgeResult.of(ClipboardBridgeContract.CODE_INVALID_ARGS).toBundle()
 
-        iconStore.cleanupExpired(requireNotNull(context).applicationContext)
+        /** 应用 Context；Provider 每个入口都需要它定位私有临时目录。 */
+        val appContext = requireNotNull(context).applicationContext
+        iconStore.cleanupExpired(appContext)
+        clipPayloadStore.cleanupExpired(appContext)
         return when (method) {
             ClipboardBridgeContract.METHOD_READ_CLIP -> {
                 logD(TAG) {
@@ -83,6 +94,15 @@ class ClipboardBridgeProvider : ContentProvider() {
                 }
                 runBlocking {
                     readCoordinator.readAndSave(request).toBundle()
+                }
+            }
+            ClipboardBridgeContract.METHOD_COMMIT_CLIP -> {
+                logD(TAG) {
+                    "Provider 收到 commit_clip eventId=${request.eventId} packageName=${request.packageName} " +
+                        "appName=${request.appName} hasIconHash=${!request.iconHash.isNullOrBlank()}"
+                }
+                runBlocking {
+                    clipCommitCoordinator.commit(request).toBundle()
                 }
             }
             ClipboardBridgeContract.METHOD_QUERY_ICON_STATE -> {
@@ -111,15 +131,15 @@ class ClipboardBridgeProvider : ContentProvider() {
     }
 
     /**
-     * Provider 图标写入入口。
+     * Provider 二进制/敏感 payload 写入入口。
      *
-     * `content write` 会调用该方法并把 stdin 字节写入返回的文件描述符。
+     * `content write` 会调用该方法并把 stdin 字节写入返回的文件描述符；图标和剪贴 payload 使用不同路径与临时目录。
      */
     override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {
         /** Binder 调用方 UID；图标写入同样只允许 shell/root。 */
         val callingUid = Binder.getCallingUid()
         if (!ClipboardBridgeCallerPolicy.isAllowed(callingUid)) {
-            logW(TAG) { "Provider 拒绝图标写入 callingUid=$callingUid uri=$uri" }
+            logW(TAG) { "Provider 拒绝文件写入 callingUid=$callingUid uri=$uri" }
             throw FileNotFoundException("invalid caller")
         }
 
@@ -127,10 +147,27 @@ class ClipboardBridgeProvider : ContentProvider() {
             throw FileNotFoundException("unsupported mode: $mode")
         }
 
-        /** 从 URI 路径中解析出的事件 ID。 */
-        val eventId = iconStore.parseEventId(uri.pathSegments)
-        logD(TAG) { "Provider 打开图标写入 eventId=$eventId" }
-        return iconStore.openIconForWrite(requireNotNull(context).applicationContext, eventId)
+        /** 应用 Context；写入入口需要用它定位私有 files 目录。 */
+        val appContext = requireNotNull(context).applicationContext
+        /** Provider URI 的第一段路径，用于区分图标和剪贴 payload 写入。 */
+        val pathType = uri.pathSegments.firstOrNull()
+        return when (pathType) {
+            ClipboardBridgeContract.PATH_ICON -> {
+                /** 从图标 URI 路径中解析出的事件 ID。 */
+                val eventId = iconStore.parseEventId(uri.pathSegments)
+                logD(TAG) { "Provider 打开图标写入 eventId=$eventId" }
+                iconStore.openIconForWrite(appContext, eventId)
+            }
+            ClipboardBridgeContract.PATH_CLIP -> {
+                /** 从剪贴 payload URI 路径中解析出的事件 ID。 */
+                val eventId = clipPayloadStore.parseEventId(uri.pathSegments)
+                logD(TAG) { "Provider 打开剪贴 payload 写入 eventId=$eventId" }
+                clipPayloadStore.openPayloadForWrite(appContext, eventId)
+            }
+            else -> {
+                throw FileNotFoundException("unsupported path: ${uri.pathSegments}")
+            }
+        }
     }
 
     /** 当前 Provider 不提供查询能力。 */

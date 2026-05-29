@@ -123,4 +123,33 @@ class ClipboardBridgeCommandResultParserTest {
         assertFalse(ClipboardBridgeCommandResultParser.isCommitIconSuccessful(0, iconMissingOutput))
         assertFalse(ClipboardBridgeCommandResultParser.isCommitIconSuccessful(1, "Result: Bundle[{resultCode=ok, iconStatus=saved}]"))
     }
+
+    @Test
+    /** commit_clip 接受真实保存和重复跳过两种已处理完成状态。 */
+    fun isCommitClipSuccessfulAcceptsSavedAndDuplicateStatus() {
+        /** 模拟新剪贴记录已经保存成功的 Provider 输出。 */
+        val savedOutput = "Result: Bundle[{resultCode=ok, clipCommitted=true, clipStatus=saved}]"
+        /** 模拟命中现有去重语义的 Provider 输出。 */
+        val duplicateOutput = "Result: Bundle[{clipStatus=duplicate_or_empty, resultCode=ok, clipCommitted=false}]"
+
+        assertTrue(ClipboardBridgeCommandResultParser.isCommitClipSuccessful(0, savedOutput))
+        assertTrue(ClipboardBridgeCommandResultParser.isCommitClipSuccessful(0, duplicateOutput))
+        assertEquals(true, ClipboardBridgeCommandResultParser.parseClipCommitted(savedOutput))
+        assertEquals(ClipboardBridgeContract.CLIP_STATUS_DUPLICATE_OR_EMPTY, ClipboardBridgeCommandResultParser.parseClipStatus(duplicateOutput))
+    }
+
+    @Test
+    /** commit_clip 对 payload 缺失、类型不支持和命令错误都必须判定失败。 */
+    fun isCommitClipSuccessfulRejectsPayloadFailures() {
+        /** 模拟 payload 文件缺失的 Provider 输出。 */
+        val missingOutput = "Result: Bundle[{resultCode=payload_missing, clipStatus=payload_missing}]"
+        /** 模拟第一版不支持的 URI/Intent 剪贴类型输出。 */
+        val unsupportedOutput = "Result: Bundle[{resultCode=unsupported_clip_type, clipStatus=unsupported_clip_type}]"
+        /** 模拟命令层报错但文本里夹带成功字段的输出。 */
+        val commandErrorOutput = "Error while accessing provider\nResult: Bundle[{resultCode=ok, clipStatus=saved}]"
+
+        assertFalse(ClipboardBridgeCommandResultParser.isCommitClipSuccessful(0, missingOutput))
+        assertFalse(ClipboardBridgeCommandResultParser.isCommitClipSuccessful(0, unsupportedOutput))
+        assertFalse(ClipboardBridgeCommandResultParser.isCommitClipSuccessful(0, commandErrorOutput))
+    }
 }

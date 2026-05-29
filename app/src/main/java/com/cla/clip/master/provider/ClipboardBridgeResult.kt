@@ -4,7 +4,7 @@ import android.os.Bundle
 import com.cla.clip.shizuku.ClipboardBridgeContract
 
 /**
- * Provider 读取剪贴板后的结构化结果。
+ * Provider 剪贴板和图标桥接后的结构化结果。
  *
  * Shizuku 侧会解析 `content call` 打印出的 Bundle，所以字段名必须保持稳定。
  */
@@ -13,6 +13,16 @@ data class ClipboardBridgeResult(
     val resultCode: String,
     /** 是否已经读取并保存剪贴记录。 */
     val saved: Boolean,
+    /** commit_clip 是否真实写入或更新了一条剪贴记录。 */
+    val clipCommitted: Boolean,
+    /** commit_clip 的剪贴处理状态，不包含正文。 */
+    val clipStatus: String?,
+    /** commit_clip 解析到的普通文本长度，仅用于脱敏诊断。 */
+    val textLength: Int?,
+    /** commit_clip 解析到的 HTML 长度，仅用于脱敏诊断。 */
+    val htmlLength: Int?,
+    /** commit_clip 解析到的 MIME 类型列表，仅用于类型诊断。 */
+    val mimeTypes: List<String>,
     /** 是否读取到了剪贴板 item。 */
     val readClip: Boolean,
     /** 是否成功添加过透明悬浮窗。 */
@@ -30,6 +40,11 @@ data class ClipboardBridgeResult(
          *
          * @param resultCode Provider 结构化结果码。
          * @param saved 是否已经完成入库。
+         * @param clipCommitted commit_clip 是否真实写入或更新剪贴记录。
+         * @param clipStatus commit_clip 的剪贴处理状态。
+         * @param textLength commit_clip 解析到的普通文本长度。
+         * @param htmlLength commit_clip 解析到的 HTML 长度。
+         * @param mimeTypes commit_clip 解析到的 MIME 类型列表。
          * @param readClip 是否读取到剪贴板内容。
          * @param overlayAdded 是否成功添加悬浮窗。
          * @param iconStatus 图标处理状态。
@@ -39,6 +54,11 @@ data class ClipboardBridgeResult(
         fun of(
             resultCode: String,
             saved: Boolean = false,
+            clipCommitted: Boolean = false,
+            clipStatus: String? = null,
+            textLength: Int? = null,
+            htmlLength: Int? = null,
+            mimeTypes: List<String> = emptyList(),
             readClip: Boolean = false,
             overlayAdded: Boolean = false,
             iconStatus: String = ClipboardBridgeContract.ICON_STATUS_PLACEHOLDER,
@@ -48,6 +68,11 @@ data class ClipboardBridgeResult(
             return ClipboardBridgeResult(
                 resultCode = resultCode,
                 saved = saved,
+                clipCommitted = clipCommitted,
+                clipStatus = clipStatus,
+                textLength = textLength,
+                htmlLength = htmlLength,
+                mimeTypes = mimeTypes,
                 readClip = readClip,
                 overlayAdded = overlayAdded,
                 iconStatus = iconStatus,
@@ -62,6 +87,13 @@ data class ClipboardBridgeResult(
         return Bundle().apply {
             putString(ClipboardBridgeContract.RESULT_CODE, resultCode)
             putBoolean(ClipboardBridgeContract.RESULT_SAVED, saved)
+            putBoolean(ClipboardBridgeContract.RESULT_CLIP_COMMITTED, clipCommitted)
+            clipStatus?.let { putString(ClipboardBridgeContract.RESULT_CLIP_STATUS, it) }
+            textLength?.let { putInt(ClipboardBridgeContract.RESULT_TEXT_LENGTH, it) }
+            htmlLength?.let { putInt(ClipboardBridgeContract.RESULT_HTML_LENGTH, it) }
+            if (mimeTypes.isNotEmpty()) {
+                putStringArrayList(ClipboardBridgeContract.RESULT_MIME_TYPES, ArrayList(mimeTypes))
+            }
             putBoolean(ClipboardBridgeContract.RESULT_READ_CLIP, readClip)
             putBoolean(ClipboardBridgeContract.RESULT_OVERLAY_ADDED, overlayAdded)
             putString(ClipboardBridgeContract.RESULT_ICON_STATUS, iconStatus)
