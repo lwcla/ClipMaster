@@ -3,14 +3,14 @@ package com.cla.clip.base.general
 import android.app.ActivityManager
 import android.app.Application
 import android.os.Build
+import com.cla.clip.base.general.config.MmkvInitializer
 import com.cla.clip.base.general.utils.logD
-import com.tencent.mmkv.MMKV
 
 
 /**
  * 多模块共享的 Application 基类。
  *
- * 负责在主进程初始化 MMKV，并提供主进程判断能力；业务 Application 继承后可以在主进程安全地调度 Worker 或连接服务。
+ * 负责在主进程确认 MMKV 初始化，并提供主进程判断能力；业务 Application 继承后可以在主进程安全地调度 Worker 或连接服务。
  */
 open class BaseApplication : Application() {
 
@@ -19,11 +19,12 @@ open class BaseApplication : Application() {
         private const val TAG = "BaseApplication"
     }
 
-    /** Application 启动时只在主进程初始化 MMKV，避免辅助进程重复创建配置目录或产生初始化竞争。 */
+    /** Application 启动时只在主进程确认 MMKV 初始化，避免辅助进程重复创建配置目录或产生初始化竞争。 */
     override fun onCreate() {
         super.onCreate()
         if (isMainProcess()) {
-            val rootDir = MMKV.initialize(this)
+            /** MMKV 根目录；Provider 冷启动可能已提前初始化，这里通过幂等入口复用结果。 */
+            val rootDir = MmkvInitializer.ensureInitialized(this, "application_main_process")
             logD(TAG) { "onCreate : mmkv root: $rootDir" }
         }
     }

@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Binder
 import android.os.Bundle
 import android.os.ParcelFileDescriptor
+import com.cla.clip.base.general.config.MmkvInitializer
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
 import com.cla.clip.base.general.utils.logW
@@ -62,9 +63,12 @@ class ClipboardBridgeProvider : ContentProvider() {
     /**
      * Provider 创建入口。
      *
-     * 当前 Provider 不需要预初始化资源，真实依赖在首次调用时懒加载。
+     * ContentProvider 冷启动早于 Application.onCreate()，这里先确认 MMKV 初始化，真实业务依赖仍在首次调用时懒加载。
      */
     override fun onCreate(): Boolean {
+        /** Provider 所在的应用 Context；用于在 Application.onCreate() 之前准备 MMKV 默认实例。 */
+        val appContext = requireNotNull(context).applicationContext
+        MmkvInitializer.ensureInitialized(appContext, "clipboard_bridge_provider")
         return true
     }
 

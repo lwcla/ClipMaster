@@ -28,6 +28,7 @@ Shizuku 模块通过 `ClipboardShizukuService` 在 Shizuku 进程中注册 AppOp
 ## 范围
 
 - `base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt`
+- `base/general/src/main/java/com/cla/clip/base/general/config/MmkvInitializer.kt`
 - `base/general/src/main/java/com/cla/clip/base/general/config/NumericInstallIdGenerator.kt`
 - `base/hidden-api/src/main/java/com/cla/clip/base/hidden/api/HiddenApiExemptions.kt`
 - `base/hidden-api/src/main/java/com/cla/clip/base/hidden/api/SystemClipboardHiddenReader.kt`
@@ -159,6 +160,7 @@ Shizuku 模块通过 `ClipboardShizukuService` 在 Shizuku 进程中注册 AppOp
 - 作用：刷新 app 侧当前期望的完整 Shizuku 进程名，best-effort 异步触发最新 Shizuku bind，并把身份字段返回给 Shizuku 进程自检。
 - 约束：
   - 仅允许 shell/root 调用，非法调用返回 `invalid_caller`。
+  - Provider `onCreate()` 必须先通过 `MmkvInitializer.ensureInitialized()` 确认 MMKV 默认实例可用，再允许后续首次调用懒加载 `AppSetting`、Hilt EntryPoint 和业务协调器；原因是 ContentProvider 冷启动早于 `Application.onCreate()`，不能依赖 Application 先完成 `MMKV.initialize()`。
   - Provider 入口通过 lazy EntryPoint 获取 `ClipboardBridgeShizukuProcessCoordinator` 和 `ShizukuConnectRequester`，避免冷启动早期初始化完整剪贴链路。
   - 不等待 `bindUserService` 完成；连接请求由 `ShizukuConnector` 的 `connectMutex`、`boundProcessName` 和 `bindingProcessName` 控制频率。
   - `ShizukuConnector.connect()` 必须在 `delayTime`、`ShizukuUtils.isConnected()`、`isAlive`、early return 和 `bindUserService` 之前调用 `refreshExpectedShizukuProcessName()`，并且只有“当前 binder 活着且已绑定进程名等于最新 expectedProcessName”时才跳过 bind。
@@ -236,6 +238,7 @@ Shizuku 模块通过 `ClipboardShizukuService` 在 Shizuku 进程中注册 AppOp
 - `files/clipboard_bridge_clip_payloads/` 只保存短期敏感 payload 临时文件，提交成功、失败和异常都清理自己的 eventId；系统 Auto Backup 和设备迁移规则必须排除该目录。
 - `AppSetting.pid` 改为安装级固定长度纯数字字符串，只用于本机安装身份、Shizuku 进程名、Shizuku tag 和备份文件 device label 前缀；它不是用户数据，不纳入 WebDAV 备份，卸载重装后变化是预期行为。
 - `AppSetting.shizukuSuffix` 现在保存当前期望完整进程名 `<applicationId>:shizuku_<VERSION>_<pid>`，只属于本机运行态，不纳入 WebDAV 备份、Room schema 或 Auto Backup 协议。
+- `MmkvInitializer` 只负责当前进程内 MMKV native 初始化，不新增 MMKV key、不改变备份白名单，也不改变 `pid` 和 `shizukuSuffix` 的备份排除决策。
 
 ## R8 与隐藏 API 契约
 
@@ -246,6 +249,7 @@ Shizuku 模块通过 `ClipboardShizukuService` 在 Shizuku 进程中注册 AppOp
 ## 日志与诊断计划
 
 - Shizuku 侧继续记录 AppOps 回调、隐藏 API 注册/注销错误、`IClipboard` 读取摘要、Provider `content call/write` 的 exitCode 和结果码。
+- app 侧 MMKV 初始化只记录稳定 `reason` 和 MMKV 根目录，用于定位 Provider 冷启动是否早于 Application；不记录剪贴内容、设置值、pid、WebDAV 配置或任何用户输入。
 - 剪贴内容链路和图标链路都带同一个 `eventId`，用于串联同一次来源事件。
 - 剪贴内容链路只允许记录 `clipNull`、payload 是否为空、item 数量、MIME 类型、text/html 长度、是否含 URI/Intent、`content write` 字节数、exitCode、resultCode、clipStatus、耗时和异常类型。
 - 图标链路继续记录 `iconSyncKey=packageName#iconHash`、`query_icon_state`、`content write`、`commit_icon`、`iconDecisionReason`、是否命中缓存、是否实际上传、是否复用旧图标。
@@ -257,6 +261,7 @@ Shizuku 模块通过 `ClipboardShizukuService` 在 Shizuku 进程中注册 AppOp
 ## 测试验证
 
 - 编译验证：
+  - `./gradlew :base:general:compileDebugKotlin`
   - `./gradlew :shizuku:compileDebugKotlin`
   - `./gradlew :app:compileDebugKotlin`
 - 单元测试：
@@ -268,6 +273,7 @@ Shizuku 模块通过 `ClipboardShizukuService` 在 Shizuku 进程中注册 AppOp
   - `git diff --check`
 - 人工回归建议：
   - 覆盖安装后保留旧 Shizuku 进程，复制普通文本，确认 Provider 被旧进程唤醒后触发最新 bind，旧进程完整进程名不匹配并退出；
+  - 强杀主进程后不手动打开 App，直接复制普通文本，确认 Provider 冷启动时先完成 MMKV 初始化，`query_shizuku_process` 不再因为 `You should Call MMKV.initialize() first.` 返回 `provider_query_failed`；
   - 观察 `query_shizuku_process`、`reasonCode`、`connectRequested`、`connectSkipReason`、`boundProcessName`、`bindingProcessName` 和 `expectedProcessName` 日志，确认不会高频重复 bind；
   - 主进程存活和被杀后分别复制普通文本、富文本、长文本、连续不同文本和连续相同文本；
   - 复制 URI、Intent、图片和文件类剪贴板，确认返回不支持或无内容，不产生误入库；
@@ -294,6 +300,7 @@ Shizuku 模块通过 `ClipboardShizukuService` 在 Shizuku 进程中注册 AppOp
 
 ## 变更记录
 
+- 2026-05-29：新增 `MmkvInitializer` 并让 `ClipboardBridgeProvider.onCreate()` 与 `BaseApplication.onCreate()` 复用同一个幂等 MMKV 初始化入口；原因是 `query_shizuku_process` 可在 ContentProvider 冷启动阶段早于 Application 访问 `AppSetting`，需要避免 Provider 因 MMKV 未初始化而让 Shizuku 身份查询降级为 `provider_query_failed`。
 - 2026-05-29：新增 Shizuku 完整进程名身份校验方案；原因是覆盖安装后部分设备旧 Shizuku 进程不会自动退出且会同时创建新进程，改为 Shizuku 回调先读取剪贴板，再通过 Provider 唤醒 app、触发最新 bind、查询完整期望进程名，并只在完整进程名明确不匹配时 `destroy()` 旧进程。
 - 2026-05-29：将 `AppSetting.pid` 调整为固定长度纯数字字符串，并新增 `ShizukuProcessName` 作为 suffix/fullProcessName 唯一构造入口；原因是进程名身份比较不再拆解版本号和 pid，固定数字串可避免 UUID 横线影响进程名和日志对比。
 - 2026-05-29：将 `ServiceManager`、`IClipboard.Stub` 和 `IClipboard#getPrimaryClip` 反射读取逻辑下沉到 `base:hidden-api` 的 `SystemClipboardHiddenReader`，`ShizukuClipboardReader` 只保留 shell calling package 选择和 payload 映射；原因是系统剪贴板隐藏 API 签名适配属于底层隐藏 API 能力，Shizuku 模块不应直接承载 Binder/反射细节。
