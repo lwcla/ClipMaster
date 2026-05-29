@@ -71,7 +71,9 @@ class BackupPackageIoTest {
             assertEquals(BACKUP_SCHEMA_VERSION, validated.schemaVersion)
             assertEquals(BACKUP_DATA_FORMAT_JSONL, validated.dataFormat)
             assertEquals(1, validated.summary.clipCount)
-            assertEquals(result.packageFile.length(), validated.fileSize)
+            assertEquals(0L, validated.fileSize)
+            assertEquals(result.packageFile.length(), result.manifest.fileSize)
+            assertEquals(result.packageFile.length(), BackupJson.decodeManifest(result.manifestJson).fileSize)
             assertTrue(validated.files.map { it.path }.containsAll(RequiredJsonlDataPaths))
             assertTrue(validated.files.map { it.path }.contains("data/unit_feature.jsonl"))
         } finally {
@@ -118,4 +120,5 @@ class BackupPackageIoTest {
         assertEquals(BackupKind.Safety, parseBackupKindFromFileName(fileName))
         assertEquals(null, parseBackupKindFromFileName("clip_master_backup_install-test_20260519_213045.zip"))
     }
+
 }

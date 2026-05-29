@@ -51,10 +51,13 @@ class BackupPackageWriter @Inject constructor() {
         session: BackupPackageBuildSession,
         manifest: BackupManifest,
     ): BackupPackageFileResult {
+        // packageFile 是最终导出的临时 zip，后续本地 SAF 或 WebDAV 只复制这一份文件。
         val packageFile = File(session.taskDir, session.fileName)
+        // packageManifest 是写入 zip 包内部的 manifest，fileSize 固定为 0，避免“文件大小字段影响压缩后文件大小”的自引用震荡。
+        val packageManifest = manifest.copy(fileSize = 0L)
         runCatching {
             ZipOutputStream(packageFile.outputStream().buffered()).use { zip ->
-                zip.putUtf8Entry(PACKAGE_MANIFEST_PATH, BackupJson.encodeManifest(manifest))
+                zip.putUtf8Entry(PACKAGE_MANIFEST_PATH, BackupJson.encodeManifest(packageManifest))
                 session.entries.forEach { entry ->
                     zip.putNextEntry(ZipEntry(entry.path))
                     entry.file.inputStream().use { input -> input.copyTo(zip) }
@@ -67,24 +70,16 @@ class BackupPackageWriter @Inject constructor() {
             }
             throw BackupFailure.StorageNotWritable(throwable)
         }
-        var finalManifest = manifest.copy(fileSize = packageFile.length())
-        var manifestSizeStable = false
-        var rewriteAttempts = 0
-        while (!manifestSizeStable && rewriteAttempts < 8) {
-            rewriteAttempts += 1
-            rewriteZipManifest(packageFile, finalManifest, session)
-            if (packageFile.length() > MAX_BACKUP_PACKAGE_BYTES) throw BackupFailure.FileTooLarge()
-            val actualSize = packageFile.length()
-            if (actualSize == finalManifest.fileSize) {
-                manifestSizeStable = true
-            } else {
-                finalManifest = finalManifest.copy(fileSize = actualSize)
-            }
-        }
-        if (!manifestSizeStable) throw BackupFailure.StorageNotWritable()
+        // actualPackageSize 是 zip 完成后的真实大小，只写入 sidecar/latest manifest 和导出摘要，不再回写包内 manifest。
+        val actualPackageSize = packageFile.length()
+        if (actualPackageSize > MAX_BACKUP_PACKAGE_BYTES) throw BackupFailure.FileTooLarge()
+        // finalManifest 是本地目录、WebDAV sidecar 和 latest.json 使用的最终 manifest，必须带真实 fileSize 方便列表展示。
+        val finalManifest = packageManifest.copy(fileSize = actualPackageSize)
+        // manifestJson 是本地目录和 WebDAV sidecar 使用的最终摘要，必须带真实 fileSize。
         val manifestJson = BackupJson.encodeManifest(finalManifest)
         logD(TAG) {
-            "备份 zip 组装完成 taskId=${session.taskId} fileName=${session.fileName} fileSize=${packageFile.length()} entries=${session.entries.size}"
+            "备份 zip 组装完成 taskId=${session.taskId} fileName=${session.fileName} fileSize=$actualPackageSize " +
+                "packageManifestFileSize=${packageManifest.fileSize} entries=${session.entries.size}"
         }
         return BackupPackageFileResult(
             packageFile = packageFile,
@@ -94,27 +89,6 @@ class BackupPackageWriter @Inject constructor() {
             manifestFileName = buildManifestFileName(session.fileName),
             taskDir = session.taskDir
         )
-    }
-
-    /** zip 写完后需要写入真实 fileSize；这里重建 zip，避免 sidecar 和包内 manifest 长期不一致。 */
-    private fun rewriteZipManifest(packageFile: File, manifest: BackupManifest, session: BackupPackageBuildSession) {
-        val rewritten = File(session.taskDir, "${session.fileName}.rewrite")
-        runCatching {
-            ZipOutputStream(rewritten.outputStream().buffered()).use { zip ->
-                zip.putUtf8Entry(PACKAGE_MANIFEST_PATH, BackupJson.encodeManifest(manifest))
-                session.entries.forEach { entry ->
-                    zip.putNextEntry(ZipEntry(entry.path))
-                    entry.file.inputStream().use { input -> input.copyTo(zip) }
-                    zip.closeEntry()
-                }
-            }
-            if (!rewritten.renameTo(packageFile)) {
-                packageFile.delete()
-                if (!rewritten.renameTo(packageFile)) throw BackupFailure.StorageNotWritable()
-            }
-        }.getOrElse { throwable ->
-            throw if (throwable is BackupFailure) throwable else BackupFailure.StorageNotWritable(throwable)
-        }
     }
 }
 
