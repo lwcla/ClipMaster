@@ -2,20 +2,79 @@ package com.cla.clip.master.ui.page.search
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.cla.clip.master.ui.widget.FilterChipOption
 import com.cla.clip.master.ui.widget.HorizontalFilterChips
 import com.cla.clip.master.ui.widget.SearchInputField
+
+/**
+ * 无标题搜索页顶部搜索头。
+ *
+ * 该组件只负责展示搜索框和筛选条件，并按页面层传入的运行时偏移整体移动；
+ * 折叠状态、滚动优先级和历史模式切换都留在 SearchPage 中统一编排。
+ */
+@Composable
+internal fun SearchCollapsibleHeader(
+    query: String,
+    filterState: SearchFilterState,
+    selectedSourceAppNames: List<String>,
+    offsetPx: Float,
+    modifier: Modifier = Modifier,
+    tonalElevation: Dp = 2.dp,
+    onQueryChange: (String) -> Unit,
+    onFocusChange: (Boolean) -> Unit,
+    onSubmit: () -> Unit,
+    onTimeFilterChange: (SearchTimeFilter) -> Unit,
+    onSourceClick: () -> Unit,
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                /** 搜索头运行时位移由页面滚动状态驱动，单位为像素，避免 Dp 换算造成跟手误差。 */
+                translationY = offsetPx
+            },
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = tonalElevation,
+        shadowElevation = tonalElevation,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(bottom = 8.dp)
+        ) {
+            SearchBar(
+                query = query,
+                onQueryChange = onQueryChange,
+                onFocusChange = onFocusChange,
+                onSubmit = onSubmit,
+            )
+
+            SearchFilters(
+                filterState = filterState,
+                selectedSourceAppNames = selectedSourceAppNames,
+                onTimeFilterChange = onTimeFilterChange,
+                onSourceClick = onSourceClick,
+            )
+        }
+    }
+}
 
 /**
  * 搜索输入框。

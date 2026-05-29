@@ -1,23 +1,44 @@
 package com.cla.clip.master.ui.page.search
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -31,133 +52,339 @@ import com.cla.clip.master.ui.dialog.ClipDeleteChoiceDialog
 import com.cla.clip.master.ui.navigation.DetailRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.navigation.SearchScope
-import com.cla.clip.master.ui.widget.SecondaryPageScaffold
 import com.cla.clip.master.ui.widget.clip.ClipCardTimeMode
 import com.cla.clip.master.ui.widget.clip.ClipResultList
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlin.math.max
 
 /**
  * 剪贴搜索页。
  *
- * 页面负责搜索输入、筛选条件选择和结果展示；查询组合、分页和剪贴操作都交给 SearchViewModel，
- * 让 UI 层保持轻量，后续增加自定义日期或搜索历史时也能继续沿用这条状态流。
+ * 页面负责搜索输入、筛选条件选择、Result/History 模式切换和结果展示；
+ * 查询组合、分页和剪贴操作都交给 SearchViewModel，让 UI 层只编排页面内交互状态。
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchPage(
     viewModel: SearchViewModel = hiltViewModel(),
     scope: SearchScope = SearchScope.VisibleOnly,
-    onBack: () -> Unit,
     onNavigate: (Route) -> Unit,
 ) {
+    /** 保存态隔离 key；普通搜索和折叠搜索共用实现，但不能串滚动位置或顶部状态。 */
+    val saveableScopeKey = scope.name
+    /** 当前路由对应的数据层可见范围，用于驱动 ViewModel 切换普通/折叠搜索。 */
     val visibilityScope = scope.toVisibilityScope()
+    /** 当前是否为普通可见数据搜索；折叠搜索会禁用快捷动作区并改用折叠时间展示。 */
     val isVisibleSearch = scope == SearchScope.VisibleOnly
     LaunchedEffect(visibilityScope) {
         viewModel.updateVisibilityScope(visibilityScope)
     }
 
+    /** 搜索筛选状态，包含关键词、时间范围和来源 App 集合。 */
     val filterState by viewModel.filterState.collectAsStateWithLifecycle()
+    /** 当前可选来源 App 列表，用于来源筛选底部弹窗和已选展示文案。 */
     val sourceApps by viewModel.sourceApps.collectAsStateWithLifecycle()
+    /** 来源包名到展示名的映射，统一复用来源 App 显示名兜底规则。 */
     val sourceAppDisplayNames = sourceApps.associate { sourceApp ->
         sourceApp.packageName to sourceApp.displayName()
     }
+    /** 当前已选择来源 App 的可见名称列表，用于折叠搜索头里的来源 Chip 文案。 */
     val selectedSourceAppNames = remember(filterState.sourceAppPackages, sourceAppDisplayNames) {
         sourceAppDisplayNames.toSelectedSourceAppNames(
             selectedPackageNames = filterState.sourceAppPackages,
         )
     }
+    /** 当前范围内按输入模糊匹配后的搜索历史。 */
     val searchHistories by viewModel.searchHistories.collectAsStateWithLifecycle()
+    /** 搜索结果分页数据，结果列表只负责消费该 LazyPagingItems。 */
     val pagedClips = viewModel.pagedClips.collectAsLazyPagingItems()
+    /** 页面内焦点管理器，用于上滑收起搜索头或提交搜索时关闭键盘。 */
     val focusManager = LocalFocusManager.current
-    // 只有普通搜索范围响应快捷动作设置；折叠搜索保留整卡点击，避免和“取消折叠”管理语义混在一起。
+    /** 当前屏幕密度，用于把搜索头测量像素和列表内容 Dp 内边距互相转换。 */
+    val density = LocalDensity.current
+    /** 当前系统亮暗色状态，用于主题切换时只恢复搜索头稳定两态，不保留半拖拽偏移。 */
+    val darkTheme = isSystemInDarkTheme()
+    /** 协程作用域用于执行搜索头短吸附动画，不把动画状态放进 ViewModel。 */
+    val coroutineScope = rememberCoroutineScope()
+    /** 只有普通搜索范围响应快捷动作设置；折叠搜索保留整卡点击，避免和“取消折叠”管理语义混在一起。 */
     val quickAction by AppSetting.clipItemQuickActionFlow.collectAsStateWithLifecycle()
-    val listState = rememberLazyListState()
+    /** 结果列表滚动状态需要跨亮暗色切换保存，并按搜索范围隔离。 */
+    val resultListState = rememberSaveable(saveableScopeKey, saver = LazyListState.Saver) { LazyListState() }
+    /** 历史列表滚动状态独立保存，避免 Result/History 模式互相重置位置。 */
+    val historyListState = rememberSaveable(saveableScopeKey, saver = LazyListState.Saver) { LazyListState() }
+    /** 当前页面模式；History 模式在亮暗色切换后要恢复，但新搜索页实例默认 Result。 */
+    var pageMode by rememberSaveable(saveableScopeKey) { mutableStateOf(SearchPageMode.Result) }
+    /** 搜索头稳定吸附状态；只保存两态，不保存运行时像素偏移。 */
+    var headerCollapseState by rememberSaveable(saveableScopeKey) {
+        mutableStateOf(SearchHeaderCollapseState.Expanded)
+    }
+    /** 搜索头当前测量高度，单位像素；Collapsed 恢复时用最新高度换算偏移。 */
+    var headerHeightPx by remember { mutableFloatStateOf(0f) }
+    /** 搜索头运行时偏移，单位像素；拖拽中可以是中间态，但不会持久保存。 */
+    var headerOffsetPx by remember { mutableFloatStateOf(0f) }
+    /** 搜索头吸附动画任务；新拖拽开始时取消旧任务，避免两个动画争抢偏移。 */
+    var headerSnapJob by remember { mutableStateOf<Job?>(null) }
+    /** 待删除的剪贴记录；非空时展示统一删除选择弹窗。 */
     var deleteClip by remember { mutableStateOf<ClipShowEntity?>(null) }
+    /** 来源选择弹窗显示状态，弹窗内部继续维护草稿选择。 */
     var showSourcePicker by remember { mutableStateOf(false) }
+    /** 搜索框当前焦点状态，只用于键盘和进入历史模式，不直接决定历史面板生命周期。 */
     var searchBarFocused by remember { mutableStateOf(false) }
+    /** 清空当前搜索范围历史的确认弹窗显示状态。 */
     var showClearHistoryConfirm by remember { mutableStateOf(false) }
-    val showHistoryPanel = searchBarFocused && searchHistories.isNotEmpty()
+    /** 状态栏顶部安全区高度，搜索头完全收起后列表仍需要避开系统状态栏。 */
+    val statusBarTopPx = with(density) {
+        WindowInsets.statusBars.asPaddingValues().calculateTopPadding().toPx()
+    }
+    /** 系统导航栏底部安全区高度，页面不再依赖 Scaffold 后需要自行保护底部内容。 */
+    val navigationBarBottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    /** 当前内容顶部内边距，展开时跟随搜索头，收起时至少保留状态栏安全区。 */
+    val contentTopPaddingDp = with(density) {
+        max(statusBarTopPx, headerHeightPx + headerOffsetPx).toDp()
+    }
 
-    BackHandler(enabled = showHistoryPanel) {
-        // 历史面板是搜索页内部的临时覆盖层，返回键先关闭它并释放焦点，再由下一次返回退出页面。
+    /**
+     * 将搜索头吸附到稳定两态。
+     *
+     * 只在 Result 模式执行；History 模式顶部固定展开，不参与吸附。
+     */
+    fun settleHeader(velocityY: Float = 0f) {
+        if (pageMode != SearchPageMode.Result || headerHeightPx <= 0f) {
+            return
+        }
+        /** 根据当前位置和 fling 方向得到最终稳定状态。 */
+        val targetState = resolveSearchHeaderCollapseState(
+            offsetPx = headerOffsetPx,
+            headerHeightPx = headerHeightPx,
+            velocityY = velocityY,
+        )
+        /** 稳定状态对应的目标像素偏移，Collapsed 始终按最新测量高度计算。 */
+        val targetOffsetPx = when (targetState) {
+            SearchHeaderCollapseState.Expanded -> 0f
+            SearchHeaderCollapseState.Collapsed -> -headerHeightPx
+        }
+        headerSnapJob?.cancel()
+        headerSnapJob = coroutineScope.launch {
+            /** 每次吸附都从当前偏移创建动画，避免保存中间动画对象。 */
+            val offsetAnimation = Animatable(headerOffsetPx)
+            offsetAnimation.animateTo(
+                targetValue = targetOffsetPx,
+                animationSpec = tween(durationMillis = SEARCH_HEADER_SNAP_DURATION_MS),
+            ) {
+                headerOffsetPx = value
+            }
+            headerCollapseState = targetState
+        }
+    }
+
+    /** Result 模式下的嵌套滚动连接，负责让搜索头先于结果列表收起或展开。 */
+    val resultNestedScrollConnection = remember(pageMode, searchBarFocused, headerHeightPx) {
+        object : NestedScrollConnection {
+            /** 跟手滚动阶段只调整运行时偏移，不提前做两态吸附。 */
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (pageMode != SearchPageMode.Result || headerHeightPx <= 0f) {
+                    return Offset.Zero
+                }
+                /** 当前垂直滚动增量，负值表示上滑，正值表示下滑。 */
+                val deltaY = available.y
+                if (deltaY == 0f) {
+                    return Offset.Zero
+                }
+                if (deltaY < 0f && searchBarFocused) {
+                    // 上滑开始收起搜索头时先释放输入焦点，避免输入框被移出屏幕后键盘仍占位。
+                    searchBarFocused = false
+                    focusManager.clearFocus()
+                }
+                /** 本次滚动前的搜索头偏移，用于计算父层实际消费了多少滚动距离。 */
+                val previousOffsetPx = headerOffsetPx
+                /** 本次滚动后的搜索头偏移，始终钳制在完全收起和完全展开之间。 */
+                val nextOffsetPx = (headerOffsetPx + deltaY).coerceIn(-headerHeightPx, 0f)
+                if (nextOffsetPx == previousOffsetPx) {
+                    return Offset.Zero
+                }
+                headerSnapJob?.cancel()
+                headerOffsetPx = nextOffsetPx
+                when (nextOffsetPx) {
+                    0f -> headerCollapseState = SearchHeaderCollapseState.Expanded
+                    -headerHeightPx -> headerCollapseState = SearchHeaderCollapseState.Collapsed
+                }
+                return Offset(x = 0f, y = nextOffsetPx - previousOffsetPx)
+            }
+
+            /** fling 开始时根据速度方向安排最终吸附，但不抢走列表自己的 fling。 */
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                /** 当前 fling 方向是否仍需要优先移动搜索头；需要时消费速度，避免列表和搜索头同时惯性滚动。 */
+                val shouldConsumeVelocity = when {
+                    available.y < 0f -> headerOffsetPx > -headerHeightPx
+                    available.y > 0f -> headerOffsetPx < 0f
+                    else -> false
+                }
+                settleHeader(velocityY = available.y)
+                return if (shouldConsumeVelocity) available else Velocity.Zero
+            }
+
+            /** fling 完成后再兜底吸附一次，确保低速拖拽结束后不会停在半截。 */
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                /** 优先使用剩余速度，剩余速度为 0 时退回子列表已消费速度判断方向。 */
+                val settleVelocityY = if (available.y != 0f) available.y else consumed.y
+                settleHeader(velocityY = settleVelocityY)
+                return Velocity.Zero
+            }
+        }
+    }
+
+    LaunchedEffect(darkTheme, headerHeightPx, headerCollapseState, pageMode) {
+        /** 根据稳定状态和最新测量高度恢复运行时偏移，主题切换后不会沿用旧像素值。 */
+        headerOffsetPx = when {
+            pageMode == SearchPageMode.History -> 0f
+            headerCollapseState == SearchHeaderCollapseState.Collapsed -> -headerHeightPx
+            else -> 0f
+        }
+    }
+
+    LaunchedEffect(searchBarFocused, searchHistories.isNotEmpty()) {
+        if (searchBarFocused && searchHistories.isNotEmpty()) {
+            /** 搜索历史出现时进入 History 模式，并强制搜索头完整展开。 */
+            pageMode = SearchPageMode.History
+            headerCollapseState = SearchHeaderCollapseState.Expanded
+            headerOffsetPx = 0f
+        }
+    }
+
+    LaunchedEffect(resultListState, pageMode, headerHeightPx) {
+        snapshotFlow { resultListState.isScrollInProgress }.collect { isScrolling ->
+            if (!isScrolling && pageMode == SearchPageMode.Result && headerOffsetPx !in listOf(0f, -headerHeightPx)) {
+                /** 用户停止拖拽后触发短吸附，避免搜索头停在半截。 */
+                settleHeader()
+            }
+        }
+    }
+
+    BackHandler(enabled = pageMode == SearchPageMode.History) {
+        // 历史面板是搜索页内部模式，返回键先关闭它并释放焦点，再由下一次返回退出页面。
+        pageMode = SearchPageMode.Result
+        headerCollapseState = SearchHeaderCollapseState.Expanded
+        headerOffsetPx = 0f
         searchBarFocused = false
         focusManager.clearFocus()
     }
 
-    SecondaryPageScaffold(
-        title = stringResource(scope.titleRes),
-        onBack = onBack
-    ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            SearchBar(
-                query = filterState.query,
-                onQueryChange = viewModel::updateQuery,
-                onFocusChange = { searchBarFocused = it },
-                onSubmit = {
-                    viewModel.submitCurrentQuery()
-                    searchBarFocused = false
-                    focusManager.clearFocus()
-                }
-            )
-
-            SearchFilters(
-                filterState = filterState,
-                selectedSourceAppNames = selectedSourceAppNames,
-                onTimeFilterChange = viewModel::updateTimeFilter,
-                onSourceClick = {
-                    showSourcePicker = true
-                }
-            )
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    // 结果区占用搜索框和筛选器下方的剩余高度，避免列表在 Column 中抢占顶部控件空间。
-                    .weight(1f)
-            ) {
-                if (showHistoryPanel) {
-                    SearchHistoryPanel(
-                        histories = searchHistories,
-                        query = filterState.query,
-                        onHistoryClick = { history ->
-                            viewModel.selectHistory(history.query)
-                            searchBarFocused = false
-                            focusManager.clearFocus()
-                        },
-                        onDeleteHistory = viewModel::deleteHistory,
-                        onClearHistories = { showClearHistoryConfirm = true }
-                    )
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .then(
+                if (pageMode == SearchPageMode.Result) {
+                    Modifier.nestedScroll(resultNestedScrollConnection)
                 } else {
-                    ClipResultList(
-                        listState = listState,
-                        pagedClips = pagedClips,
-                        emptyText = stringResource(scope.emptyTextRes),
-                        highlightQuery = filterState.query,
-                        // 搜索结果和其他剪贴结果列表保持统一，只保留一层明确但不过分的轻量底部留白。
-                        contentPadding = PaddingValues(start = 10.dp, top = 10.dp, end = 10.dp, bottom = 12.dp),
-                        // 折叠搜索保留置顶操作能力；数据层会先排置顶数据，再在分组内按 foldedAt 倒序。
-                        onPinToggle = { clip -> viewModel.updatePinStatus(clip, !clip.isPinned) },
-                        onDelete = { deleteClip = it },
-                        onCopy = viewModel::copyToClipboard,
-                        onSwipePastAction = { clip ->
-                            viewModel.updateFoldStatus(
-                                clip = clip,
-                                isFolded = scope == SearchScope.VisibleOnly
-                            )
-                        },
-                        swipePastActionText = stringResource(scope.swipePastTextRes),
-                        timeMode = if (isVisibleSearch) ClipCardTimeMode.ClipTime else ClipCardTimeMode.FoldedTime,
-                        quickAction = quickAction,
-                        enableQuickAction = isVisibleSearch && quickAction != ClipItemQuickAction.None,
-                        onClick = { onNavigate(DetailRoute(it.id)) },
-                        onLongClick = {}
-                    )
+                    Modifier
+                }
+            )
+            .pointerInput(pageMode, headerHeightPx) {
+                awaitEachGesture {
+                    /** 首次按下只用于识别一次指针生命周期，不消费事件，避免影响列表或卡片手势。 */
+                    awaitFirstDown(requireUnconsumed = false)
+                    do {
+                        /** 在 Final pass 观察抬手，确保子组件先处理点击、侧滑和列表滚动。 */
+                        val pointerEvent = awaitPointerEvent(PointerEventPass.Final)
+                    } while (pointerEvent.changes.any { pointerChange -> pointerChange.pressed })
+
+                    if (pageMode == SearchPageMode.Result) {
+                        /** 普通拖拽结束后兜底吸附，覆盖搜索头完全消费滚动而列表未进入滚动态的场景。 */
+                        settleHeader()
+                    }
                 }
             }
+    ) {
+        if (pageMode == SearchPageMode.History) {
+            SearchHistoryPanel(
+                listState = historyListState,
+                histories = searchHistories,
+                query = filterState.query,
+                contentPadding = PaddingValues(
+                    start = 12.dp,
+                    top = contentTopPaddingDp + 8.dp,
+                    end = 12.dp,
+                    bottom = navigationBarBottomPadding + 24.dp,
+                ),
+                onHistoryClick = { history ->
+                    viewModel.selectHistory(history.query)
+                    pageMode = SearchPageMode.Result
+                    headerCollapseState = SearchHeaderCollapseState.Expanded
+                    headerOffsetPx = 0f
+                    searchBarFocused = false
+                    focusManager.clearFocus()
+                },
+                onDeleteHistory = viewModel::deleteHistory,
+                onClearHistories = { showClearHistoryConfirm = true }
+            )
+        } else {
+            ClipResultList(
+                listState = resultListState,
+                pagedClips = pagedClips,
+                emptyText = stringResource(scope.emptyTextRes),
+                highlightQuery = filterState.query,
+                // 搜索结果和其他剪贴结果列表保持统一，同时把顶部留白交给折叠搜索头的当前可见高度。
+                contentPadding = PaddingValues(
+                    start = 10.dp,
+                    top = contentTopPaddingDp + 10.dp,
+                    end = 10.dp,
+                    bottom = navigationBarBottomPadding + 12.dp,
+                ),
+                // 折叠搜索保留置顶操作能力；数据层会先排置顶数据，再在分组内按 foldedAt 倒序。
+                onPinToggle = { clip -> viewModel.updatePinStatus(clip, !clip.isPinned) },
+                onDelete = { deleteClip = it },
+                onCopy = viewModel::copyToClipboard,
+                onSwipePastAction = { clip ->
+                    viewModel.updateFoldStatus(
+                        clip = clip,
+                        isFolded = scope == SearchScope.VisibleOnly
+                    )
+                },
+                swipePastActionText = stringResource(scope.swipePastTextRes),
+                timeMode = if (isVisibleSearch) ClipCardTimeMode.ClipTime else ClipCardTimeMode.FoldedTime,
+                quickAction = quickAction,
+                enableQuickAction = isVisibleSearch && quickAction != ClipItemQuickAction.None,
+                onClick = { onNavigate(DetailRoute(it.id)) },
+                onLongClick = {
+                    // 搜索页暂不提供长按动作，保留共享列表回调契约即可。
+                }
+            )
         }
+
+        SearchCollapsibleHeader(
+            query = filterState.query,
+            filterState = filterState,
+            selectedSourceAppNames = selectedSourceAppNames,
+            offsetPx = if (pageMode == SearchPageMode.History) 0f else headerOffsetPx,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .onSizeChanged { size ->
+                    /** 最新搜索头高度来自真实布局测量，Collapsed 恢复必须使用这次高度。 */
+                    headerHeightPx = size.height.toFloat()
+                },
+            onQueryChange = viewModel::updateQuery,
+            onFocusChange = { focused ->
+                searchBarFocused = focused
+                if (focused && searchHistories.isNotEmpty()) {
+                    pageMode = SearchPageMode.History
+                    headerCollapseState = SearchHeaderCollapseState.Expanded
+                    headerOffsetPx = 0f
+                }
+            },
+            onSubmit = {
+                viewModel.submitCurrentQuery()
+                pageMode = SearchPageMode.Result
+                headerCollapseState = SearchHeaderCollapseState.Expanded
+                headerOffsetPx = 0f
+                searchBarFocused = false
+                focusManager.clearFocus()
+            },
+            onTimeFilterChange = viewModel::updateTimeFilter,
+            onSourceClick = {
+                showSourcePicker = true
+            }
+        )
     }
 
     ClipDeleteChoiceDialog(
@@ -184,6 +411,11 @@ fun SearchPage(
             onDismiss = { showClearHistoryConfirm = false },
             onConfirm = {
                 viewModel.clearCurrentScopeHistory()
+                pageMode = SearchPageMode.Result
+                headerCollapseState = SearchHeaderCollapseState.Expanded
+                headerOffsetPx = 0f
+                searchBarFocused = false
+                focusManager.clearFocus()
                 showClearHistoryConfirm = false
             }
         )
@@ -198,13 +430,6 @@ private fun SearchScope.toVisibilityScope(): ClipVisibilityScope {
     }
 }
 
-/** 搜索标题随范围变化，折叠搜索复用同一页面但需要给用户明确上下文。 */
-private val SearchScope.titleRes: Int
-    get() = when (this) {
-        SearchScope.VisibleOnly -> com.cla.clip.base.general.R.string.base_general_search
-        SearchScope.FoldedOnly -> com.cla.clip.base.general.R.string.base_general_search_folded_clips
-    }
-
 /** 搜索空态随范围区分，避免折叠搜索无结果被误解为没有折叠数据。 */
 private val SearchScope.emptyTextRes: Int
     get() = when (this) {
@@ -218,3 +443,15 @@ private val SearchScope.swipePastTextRes: Int
         SearchScope.VisibleOnly -> com.cla.clip.base.general.R.string.base_general_continue_swipe_to_fold_clip
         SearchScope.FoldedOnly -> com.cla.clip.base.general.R.string.base_general_continue_swipe_to_unfold_clip
     }
+
+/** 搜索页当前展示模式，明确区分结果列表折叠链路和历史列表固定顶部链路。 */
+private enum class SearchPageMode {
+    /** 结果模式，搜索头跟随结果列表滚动优先收起或展开。 */
+    Result,
+
+    /** 历史模式，搜索头固定展开，历史列表独立滚动。 */
+    History,
+}
+
+/** 搜索头吸附动画时长，单位毫秒；短动画只负责归位，不承担额外动效表现。 */
+private const val SEARCH_HEADER_SNAP_DURATION_MS = 140

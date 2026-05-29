@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
@@ -39,13 +40,15 @@ import java.util.Locale
 /**
  * 搜索历史覆盖面板。
  *
- * 只有搜索框聚焦且当前范围存在匹配历史时才展示；面板临时替换结果区，不改变当前搜索结果 Paging 流，
- * 用户收起面板后会继续看到原来的结果和筛选状态。
+ * 面板由 SearchPage 的 History 模式控制显示；它只负责渲染历史列表和回调用户操作，
+ * 不直接绑定搜索框焦点，避免键盘、主题切换或滚动状态变化误关闭历史模式。
  */
 @Composable
 internal fun SearchHistoryPanel(
+    listState: LazyListState,
     histories: List<SearchHistoryData>,
     query: String,
+    contentPadding: PaddingValues = PaddingValues(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 24.dp),
     onHistoryClick: (SearchHistoryData) -> Unit,
     onDeleteHistory: (Long) -> Unit,
     onClearHistories: () -> Unit,
@@ -57,8 +60,9 @@ internal fun SearchHistoryPanel(
         color = MaterialTheme.colorScheme.surface
     ) {
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 24.dp)
+            contentPadding = contentPadding
         ) {
             item {
                 Row(

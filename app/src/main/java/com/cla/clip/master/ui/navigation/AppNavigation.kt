@@ -99,7 +99,6 @@ fun AppNavigation(
             val route = backStackEntry.toRoute<SearchRoute>()
             SearchPage(
                 scope = route.scope,
-                onBack = onBack,
                 onNavigate = onNavigate
             )
         }
