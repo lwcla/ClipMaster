@@ -1,4 +1,4 @@
-状态：实现中
+状态：已完成
 
 # Shizuku 剪贴板服务方案
 
@@ -9,7 +9,8 @@ Shizuku 模块通过 `ClipboardShizukuService` 在 Shizuku 进程中注册 AppOp
 当前 Provider 通道已经从“主进程 overlay 读取剪贴板”升级为“Shizuku 进程直读剪贴板 + app Provider 提交入库”的正式链路：
 
 - Shizuku 回调入口立即生成独立 `eventId`，记录 `capturedAtMillis`，并用 `ShizukuClipboardReader` 以 `com.android.shell` 身份委托 `SystemClipboardHiddenReader` 通过 `IClipboard.getPrimaryClip` 读取当前 `ClipData` 快照。
-- 为处理覆盖安装后部分设备旧 Shizuku 进程不自动退出、同时新建 Shizuku 进程的问题，Shizuku 在读取剪贴板之后、提交 payload 和图标之前，会通过 Provider `query_shizuku_process` 唤醒 app、异步触发最新 Shizuku bind，并获取 app 当前期望的完整 Shizuku 进程名；只有当前进程名和期望进程名都非空且明确不一致时，旧进程才调用 `destroy()` 自杀。
+- 为处理部分系统无法通过 `content call` 冷启动 Provider 的差异，Shizuku 在读取剪贴板之后、提交 payload 和图标之前，会先通过无副作用 AIDL callback `pingAppProcess()` 探测 app 主进程；callback 不可达时先用 `am start-foreground-service` 拉起 `ClipboardService`，如果命令失败、超时或被 parser 判定为失败，再用 NoDisplay `ShizukuWakeActivity` 拉起主进程并等待 app 重新 `setCallback`，再调用 Provider `query_shizuku_process` 获取 app 当前期望的完整 Shizuku 进程名。
+- 为处理覆盖安装后部分设备旧 Shizuku 进程不自动退出、同时新建 Shizuku 进程的问题，Shizuku 仍只把 Provider 返回的完整进程名作为身份凭据；只有当前进程名和期望进程名都非空且明确不一致时，旧进程才调用 `destroy()` 自杀，callback 可达或前台服务唤醒成功都不能替代身份校验。
 - 剪贴内容链路把 v1 JSON payload 通过 `content write content://<authority>/clip/<eventId>` 写入 app 私有临时目录，再调用 Provider `commit_clip` 解析和入库。
 - 图标链路继续沿用既有 `query_icon_state`、`content write /icon/<eventId>`、`commit_icon` 方案，不改变 hash、decode、保存、来源缓存或去重规则。
 - 剪贴内容链路和图标链路使用同一个 `eventId` 串联日志，但分别走不同 Provider path、不同临时目录和不同协程，任一链路失败都不取消另一条链路。
@@ -23,7 +24,7 @@ Shizuku 模块通过 `ClipboardShizukuService` 在 Shizuku 进程中注册 AppOp
 - 让 `capturedAtMillis` 跟随读取快照进入入库时间，避免并发 `commit_clip` 完成顺序改变剪贴列表顺序。
 - 继续让图标同步脱离剪贴内容关键路径，图标失败不影响文本入库，文本失败也不影响图标缓存预热。
 - 使用完整 Shizuku 进程名作为唯一身份凭据，避免拆解版本号和安装 pid 后产生分支判断；身份不确定时宁可丢弃本次提交，也不误杀最新进程。
-- 在 Provider 身份查询时先刷新 app 侧期望完整进程名，再 best-effort 异步请求 `ShizukuConnector.connect()`，让旧进程冷启动 app 时也能拉起新进程修复链路。
+- 在 Provider 身份查询前先用 callback 探活、前台服务和 NoDisplay WakeActivity fallback 补偿唤醒 app 主进程，再刷新 app 侧期望完整进程名并 best-effort 异步请求 `ShizukuConnector.connect()`，让旧进程或 app 冷启动场景都能拉起新进程修复链路。
 
 ## 范围
 
@@ -33,11 +34,14 @@ Shizuku 模块通过 `ClipboardShizukuService` 在 Shizuku 进程中注册 AppOp
 - `base/hidden-api/src/main/java/com/cla/clip/base/hidden/api/HiddenApiExemptions.kt`
 - `base/hidden-api/src/main/java/com/cla/clip/base/hidden/api/SystemClipboardHiddenReader.kt`
 - `shizuku/src/main/java/com/cla/clip/shizuku/ClipboardShizukuService.kt`
+- `shizuku/src/main/java/com/cla/clip/shizuku/ShizukuAppProcessReadiness.kt`
 - `shizuku/src/main/java/com/cla/clip/shizuku/ShizukuClipboardReader.kt`
 - `shizuku/src/main/java/com/cla/clip/shizuku/ClipboardBridgeClipPayload.kt`
 - `shizuku/src/main/java/com/cla/clip/shizuku/ClipboardBridgeContract.kt`
 - `shizuku/src/main/java/com/cla/clip/shizuku/ShizukuProcessName.kt`
 - `shizuku/src/main/java/com/cla/clip/shizuku/ShizukuProcessIdentity.kt`
+- `shizuku/src/main/aidl/com/cla/clip/shizuku/ShizukuCallback.aidl`
+- `app/src/main/java/com/cla/clip/master/wake/ShizukuWakeActivity.kt`
 - `app/src/main/java/com/cla/clip/master/provider/ClipboardBridgeProvider.kt`
 - `app/src/main/java/com/cla/clip/master/provider/ClipboardBridgeClipPayloadStore.kt`
 - `app/src/main/java/com/cla/clip/master/provider/ClipboardBridgeClipCommitCoordinator.kt`
@@ -76,15 +80,20 @@ Shizuku 模块通过 `ClipboardShizukuService` 在 Shizuku 进程中注册 AppOp
 4. `handleOpNoted()` 每次回调立即生成独立 `eventId`，记录 `capturedAtMillis`，并在 Shizuku 进程内用 `ShizukuClipboardReader.readPrimaryClip()` 读取 `ClipData` 快照；该读取必须发生在身份查询之前，避免唤醒 app 和 bind 请求拖慢剪贴板快照捕获。
 5. `ShizukuClipboardReader` 固定以 `com.android.shell` 作为 `IClipboard.getPrimaryClip` 的 calling package，并委托 `base:hidden-api` 的 `SystemClipboardHiddenReader` 读取系统剪贴板；`SystemClipboardHiddenReader` 通过 `HiddenApiExemptions.addIfNeeded(...)` 在 Android P/API 28 及以上先豁免 `ServiceManager` 和 `IClipboard` 隐藏 API，Android 8.1/API 27 及以下跳过豁免但保留同一反射读取流程。AppOps 回调里的来源包名只作为来源 App package，主包名只作为 host package，三者禁止混用。
 6. Shizuku 只读取第一个 `ClipData.Item`，提取 `text`、`htmlText`、MIME、URI/Intent 是否存在等低敏摘要；日志只记录长度和布尔值，不输出正文。
-7. `ShizukuProcessIdentity` 读取 `/proc/self/cmdline` 获取当前完整进程名，并调用 Provider `query_shizuku_process`；Provider 合法 shell/root 调用后刷新 `AppSetting.shizukuSuffix` 为最新完整进程名，best-effort 异步触发 `ShizukuConnector.connect()`，并立即返回 `shizukuProcessName`、`connectRequested`、`connectSkipReason` 和 `reasonCode`。
-8. 身份规则只比较完整字符串：当前进程名和期望进程名都非空且完全一致时继续提交；都非空但不一致时确认旧进程，调用现有 `destroy()` 先注销监听和 callback 再杀进程；Provider 失败、resultCode 非 ok、当前进程名为空或期望进程名为空时只跳过本次提交，不自杀。
-9. `ClipboardShizukuService` 只有在身份匹配后才解析来源应用名、图标 bitmap 和 `Bitmap.toStableHash()`，并通过 `supervisorScope` 并行启动剪贴 payload 和图标链路；身份不匹配或不确定时不写入 payload，也不进入图标补全链路。
-10. `clipPayloadJob` 把 payload 序列化为 UTF-8 JSON，通过进程 stdin 写给 `content write --uri content://<authority>/clip/<eventId>`；只有 exitCode 为 0 后，才调用 `content call --method commit_clip`。
-11. `commit_clip` 在 app 侧读取 `files/clipboard_bridge_clip_payloads/<eventId>.tmp`，校验版本、eventId、时间戳和 JSON 结构，提取文本或 HTML fallback 后委托 `ClipHelper.processClipText(...)` 入库。
-12. `ClipHelper.processClipText(...)` 复用现有链接解析、通知、备份 dirty 标记和“上一条内容相同则跳过保存”规则；保存时优先使用 payload 的 `capturedAtMillis` 作为剪贴记录时间。
-13. `iconJob` 独立调用 `query_icon_state`，必要时继续执行 `content write --uri content://<authority>/icon/<eventId>` 和 `commit_icon`；图标逻辑完全沿用既有缓存命中与坏文件清理规则。
-14. `commit_clip` 提交成功、失败或异常都会清理自己的 eventId 文件；过期清理只删除超时 `.tmp` 文件，不清空整个目录。
-15. 当旧调试回退开关显式开启且 payload 不可用时，Shizuku 才会调用旧 `read_clip` overlay 路径；默认正式链路不会自动 fallback。
+7. `ShizukuAppProcessReadiness` 使用当前 `ShizukuCallback` 的 `pingAppProcess()` 做无副作用探活；callback 为空、ping 超时、旧 transaction 不支持或 Binder 异常时，compare-and-clear 旧 callback，并先通过 `am start-foreground-service -n <package>/com.cla.clip.master.service.ClipboardService` 唤醒 app 主进程，避免部分 ROM 对相对 service 类名解析不一致。
+8. 前台服务唤醒命令最多等待 2000ms，输出由 `ClipboardBridgeCommandResultParser.isStartForegroundServiceSuccessful(...)` 集中判断；如果命令未被系统接受，Shizuku 改用 `am start --activity-no-animation -n <package>/com.cla.clip.master.wake.ShizukuWakeActivity` 启动 NoDisplay 唤醒页。`ShizukuWakeActivity` 只触发 `ShizukuConnector.requestConnect("wake_activity")` 并立即 `finish()`，不读取或提交剪贴内容，不等待 callback。
+9. app 唤醒命令不带 `--user`，多用户策略留到后续单独设计；前台服务和 NoDisplay Activity 输出由 `ClipboardBridgeCommandResultParser.isAppWakeCommandSuccessful(...)` 统一判断。唤醒后最多等待 2500ms 等待 app 重新 `setCallback`，并再次 ping 确认不是旧坏 callback。
+10. `ShizukuAppProcessReadiness` 使用进程内 `Mutex` 共享同一轮 `wake + wait callback`，并发剪贴事件必须先各自读取自己的剪贴板快照，再共享唤醒结果；唤醒失败后 3000ms cooldown 内不重复拉起前台服务或 NoDisplay Activity。
+11. `ShizukuProcessIdentity` 读取 `/proc/self/cmdline` 获取当前完整进程名，并调用 Provider `query_shizuku_process`；Provider 合法 shell/root 调用后刷新 `AppSetting.shizukuSuffix` 为最新完整进程名，best-effort 异步触发 `ShizukuConnector.connect()`，并立即返回 `shizukuProcessName`、`connectRequested`、`connectSkipReason` 和 `reasonCode`。
+12. 如果 ping 成功后 app 又被杀，导致 `query_shizuku_process` 输出 `Could not find provider` 或 `Error while accessing provider:<authority>`，且本事件还没有执行过唤醒，则 Shizuku 补做一次同样的唤醒流程后重试身份查询；如果本事件已经唤醒过，则不再二次拉起。
+13. 身份规则只比较完整字符串：当前进程名和期望进程名都非空且完全一致时继续提交；都非空但不一致时确认旧进程，调用现有 `destroy()` 先注销监听和 callback 再杀进程；Provider 失败、resultCode 非 ok、当前进程名为空或期望进程名为空时只跳过本次提交，不自杀。
+14. `ClipboardShizukuService` 只有在身份匹配后才解析来源应用名、图标 bitmap 和 `Bitmap.toStableHash()`，并通过 `supervisorScope` 并行启动剪贴 payload 和图标链路；身份不匹配或不确定时不写入 payload，也不进入图标补全链路。
+15. `clipPayloadJob` 把 payload 序列化为 UTF-8 JSON，通过进程 stdin 写给 `content write --uri content://<authority>/clip/<eventId>`；只有 exitCode 为 0 后，才调用 `content call --method commit_clip`。
+16. `commit_clip` 在 app 侧读取 `files/clipboard_bridge_clip_payloads/<eventId>.tmp`，校验版本、eventId、时间戳和 JSON 结构，提取文本或 HTML fallback 后委托 `ClipHelper.processClipText(...)` 入库。
+17. `ClipHelper.processClipText(...)` 复用现有链接解析、通知、备份 dirty 标记和“上一条内容相同则跳过保存”规则；保存时优先使用 payload 的 `capturedAtMillis` 作为剪贴记录时间。
+18. `iconJob` 独立调用 `query_icon_state`，必要时继续执行 `content write --uri content://<authority>/icon/<eventId>` 和 `commit_icon`；图标逻辑完全沿用既有缓存命中与坏文件清理规则。
+19. `commit_clip` 提交成功、失败或异常都会清理自己的 eventId 文件；过期清理只删除超时 `.tmp` 文件，不清空整个目录。
+20. 当旧调试回退开关显式开启且 payload 不可用时，Shizuku 才会调用旧 `read_clip` overlay 路径；默认正式链路不会自动 fallback。
 
 ## Payload 协议
 
@@ -157,7 +166,7 @@ Shizuku 模块通过 `ClipboardShizukuService` 在 Shizuku 进程中注册 AppOp
 ### `query_shizuku_process`
 
 - 输入：`eventId`
-- 作用：刷新 app 侧当前期望的完整 Shizuku 进程名，best-effort 异步触发最新 Shizuku bind，并把身份字段返回给 Shizuku 进程自检。
+- 作用：在 Shizuku 已通过 callback 探活和必要 app 唤醒后，刷新 app 侧当前期望的完整 Shizuku 进程名，best-effort 异步触发最新 Shizuku bind，并把身份字段返回给 Shizuku 进程自检。
 - 约束：
   - 仅允许 shell/root 调用，非法调用返回 `invalid_caller`。
   - Provider `onCreate()` 必须先通过 `MmkvInitializer.ensureInitialized()` 确认 MMKV 默认实例可用，再允许后续首次调用懒加载 `AppSetting`、Hilt EntryPoint 和业务协调器；原因是 ContentProvider 冷启动早于 `Application.onCreate()`，不能依赖 Application 先完成 `MMKV.initialize()`。
@@ -216,12 +225,16 @@ Shizuku 模块通过 `ClipboardShizukuService` 在 Shizuku 进程中注册 AppOp
 - `provider_query_failed`：Shizuku 侧 Provider 查询命令失败、超时或输出不可信。
 - `process_matched`：当前完整进程名与 app 侧期望完整进程名一致。
 - `process_mismatched`：当前完整进程名与 app 侧期望完整进程名明确不一致。
+- `callback_missing` / `ping_timeout` / `wake_succeeded` / `wake_command_timeout` / `wake_command_failed` / `callback_wait_timeout` / `wake_activity_started_callback_timeout` / `wake_cooldown_skipped`：Shizuku 侧 app 主进程探活、前台服务唤醒和 NoDisplay Activity fallback 链路的低敏诊断原因码。
 
 ## 并发与边界
 
 - 每次 AppOps 回调都生成独立 `eventId`，payload 文件名使用 `<eventId>.tmp`，避免连续回调互相覆盖。
 - 身份查询发生在剪贴板快照读取之后、payload 和图标链路启动之前；旧进程可能已经读到剪贴板，但一旦完整进程名不匹配会丢弃本次 payload，由最新 Shizuku 进程负责下一次或后续回调提交，优先避免重复入库。
+- app 主进程探活、前台服务唤醒和 NoDisplay Activity fallback 同样发生在剪贴板快照读取之后；等待 callback 重连不会导致本次 payload 被后续复制覆盖。
 - 身份不确定时只跳过本次提交，不调用 `destroy()`；原因是 Provider 冷启动失败、输出缺字段或本地进程名读取失败都不足以证明当前进程就是旧进程。
+- Provider 模式下唤醒 `ClipboardService` 只用于拉起 app 主进程，不传真实剪贴数据，不调用旧 AIDL `onOpNoted` 保存同一条剪贴内容，避免 Provider payload 与旧 callback 双写。
+- app 唤醒失败后短时间内通过 cooldown 跳过重复拉起；并发事件通过 `Mutex` 共享同一轮唤醒结果，但每个事件都保留自己已经读取到的剪贴板快照。
 - `clipPayloadJob` 不等待上一条 Provider 提交、图标预判或图标上传；只要 Shizuku 已读取到 payload，就尽快写入 `/clip/<eventId>`。
 - `iconJob` 不等待剪贴内容提交结果，继续沿用已有图标同步流程。
 - `supervisorScope` 隔离失败，剪贴内容失败不取消图标同步，图标失败也不影响剪贴内容入库。
@@ -245,6 +258,7 @@ Shizuku 模块通过 `ClipboardShizukuService` 在 Shizuku 进程中注册 AppOp
 - `AppOpsManagerHidden` 和 `OnOpNotedListener` 属于隐藏 API 编译壳，稳定边界是类名、接口名、成员方法签名和默认方法签名；通过 AndroidX `@Keep` 交给 annotation 自带 consumer rule 保留。
 - `ClipboardListener` 属于隐藏 API 回调实现，稳定边界是实现类本身、接口关系和两个 `onOpNoted` 方法签名；当前类已使用 `@Keep`，因此不再需要宽泛 consumer rule。
 - `ClipboardShizukuService(Context)` 仍由 Shizuku 反射实例化，稳定边界是服务类名和 `Context` 构造函数；当前构造函数已使用 `@Keep`。
+- `ShizukuWakeActivity` 由 Shizuku 进程硬编码 component class name 通过 shell `am start` 调用，稳定边界是 Activity 完整类名；当前类已使用 `@Keep`，避免 release 混淆后 fallback component 失效。
 
 ## 日志与诊断计划
 
@@ -253,7 +267,8 @@ Shizuku 模块通过 `ClipboardShizukuService` 在 Shizuku 进程中注册 AppOp
 - 剪贴内容链路和图标链路都带同一个 `eventId`，用于串联同一次来源事件。
 - 剪贴内容链路只允许记录 `clipNull`、payload 是否为空、item 数量、MIME 类型、text/html 长度、是否含 URI/Intent、`content write` 字节数、exitCode、resultCode、clipStatus、耗时和异常类型。
 - 图标链路继续记录 `iconSyncKey=packageName#iconHash`、`query_icon_state`、`content write`、`commit_icon`、`iconDecisionReason`、是否命中缓存、是否实际上传、是否复用旧图标。
-- 身份查询链路只记录 `eventId`、`currentProcessName`、`expectedProcessName`、`matched`、`resultCode`、`reasonCode`、`connectRequested`、`connectSkipReason`、`boundProcessName`、`bindingProcessName` 和 `expectedProcessName`，用于判断旧进程是否退出以及 Provider 是否频繁触发 bind。
+- app 主进程探活链路只记录 `eventId`、`appPingResult`、`appWakeRequested`、`appWakeMode`、`appWakeResult`、`callbackRebound`、`wakeCooldownSkipped`、`appWakeElapsedMs`、`readyForProviderQuery` 和 `reasonCode`；NoDisplay 唤醒页只记录 `entryReason`、`requested`、`expectedProcessName` 和 `reasonCode`；禁止记录 callback 对象地址、剪贴内容或唤醒命令以外的用户上下文。
+- 身份查询链路只记录 `eventId`、`currentProcessName`、`expectedProcessName`、`matched`、`resultCode`、`reasonCode`、`connectRequested`、`connectSkipReason`、`boundProcessName`、`bindingProcessName`、`wakeFailedProviderFallback`、`providerIdentityAfterWake` 和 `providerQueryElapsedMs`，用于判断旧进程是否退出、Provider 是否频繁触发 bind 以及已知设备是否命中唤醒补偿。
 - app 侧 payload store 只记录 eventId、文件大小、解析结果、过期清理数量和异常类型；禁止输出 payload 正文、HTML 原文、URI 或 Intent 内容。
 - HTML fallback 只记录 HTML 长度和转换后文本长度；转换结果禁止输出。
 - 日志禁止输出剪贴板正文、HTML 原文、完整用户输入、Token、Cookie、完整 URL 查询串、本地授权 URI、URI 原文或 Intent 内容；允许保留包名、应用名、图标尺寸、图标字节数、hash、eventId、iconSyncKey、进程名、reasonCode 和耗时等低敏诊断信息。
@@ -268,12 +283,16 @@ Shizuku 模块通过 `ClipboardShizukuService` 在 Shizuku 进程中注册 AppOp
   - `./gradlew :base:general:testDebugUnitTest`
   - `./gradlew :shizuku:testDebugUnitTest --tests "com.cla.clip.shizuku.*"`
   - `./gradlew :shizuku:testDebugUnitTest --tests "com.cla.clip.shizuku.*ClipboardBridge*"`
+  - `./gradlew :shizuku:testDebugUnitTest --tests "com.cla.clip.shizuku.ShizukuAppProcessReadinessTest"`
   - `./gradlew :app:testDebugUnitTest --tests "com.cla.clip.master.provider.*ClipboardBridge*"`
 - 静态检查：
   - `git diff --check`
 - 人工回归建议：
   - 覆盖安装后保留旧 Shizuku 进程，复制普通文本，确认 Provider 被旧进程唤醒后触发最新 bind，旧进程完整进程名不匹配并退出；
-  - 强杀主进程后不手动打开 App，直接复制普通文本，确认 Provider 冷启动时先完成 MMKV 初始化，`query_shizuku_process` 不再因为 `You should Call MMKV.initialize() first.` 返回 `provider_query_failed`；
+  - 手动验证 NoDisplay Activity 入口：`adb shell am start --user 0 --activity-no-animation -n com.cla.clip.master/com.cla.clip.master.wake.ShizukuWakeActivity`，确认命令不返回 `Error`，日志出现 `ShizukuWakeActivity`、`reasonCode=wake_activity` 和 `appWakeMode=ACTIVITY_NO_DISPLAY`；
+  - 额外记录 force-stop 场景：明确区分“进程被杀”和“应用被强行停止”，如果 force-stop 后显式 Activity 或 Provider 受系统限制不可用，应记录为系统限制或非目标支持场景；
+  - 强杀主进程后不手动打开 App，直接复制普通文本，确认先出现 `appPingResult=callback_missing` 或 `ping_timeout`；若前台服务返回 `Not found`，随后应出现 `wake-activity` 命令、callback 回流、Provider 身份 matched 并提交成功；
+  - 三星 S10 回归时备注 app 是否处于深度休眠、受限电池、后台限制或类似系统管控状态，避免把系统策略差异误判为代码回归；
   - 观察 `query_shizuku_process`、`reasonCode`、`connectRequested`、`connectSkipReason`、`boundProcessName`、`bindingProcessName` 和 `expectedProcessName` 日志，确认不会高频重复 bind；
   - 主进程存活和被杀后分别复制普通文本、富文本、长文本、连续不同文本和连续相同文本；
   - 复制 URI、Intent、图片和文件类剪贴板，确认返回不支持或无内容，不产生误入库；
@@ -287,6 +306,8 @@ Shizuku 模块通过 `ClipboardShizukuService` 在 Shizuku 进程中注册 AppOp
 - 第一版不保存原始 HTML，只在普通文本为空时用 HTML 生成纯文本 fallback。
 - Provider 模式下默认不自动 fallback 到 overlay 或 AIDL，原因是正式链路需要暴露 Shizuku 直读与 payload 提交的真实失败率。
 - Provider 身份查询只做 best-effort 异步修复，不等待新 Shizuku bind 完成；原因是旧进程自检不能阻塞剪贴板回调，且最终提交仍以完整进程名比较结果为准。
+- app 唤醒只作为 app 主进程不可达时的补偿路径，当前优先复用 `ClipboardService`，并在前台服务失败后使用 NoDisplay `ShizukuWakeActivity` fallback；是否拆出专用 `ShizukuWakeService` 留到链路稳定后单独评估。
+- 初版 `am start-foreground-service` 不带 `--user`；如果后续发现多用户或工作资料空间问题，再单独设计 current user 探测和 fallback 策略。
 - 当前处于开发阶段，旧 UUID 格式 `AppSetting.pid` 会被直接重建为固定长度纯数字字符串，不做线上兼容迁移。
 - 图标同步状态只保存在 Shizuku 进程内存，不落数据库；进程死亡后允许下次事件自然重试。
 - `eventId` 只用于日志串联和临时 payload/icon 文件，不参与来源缓存身份判断；数据库来源更新仍以 `packageName` 和 `Bitmap.toStableHash()` 为核心。
@@ -295,11 +316,17 @@ Shizuku 模块通过 `ClipboardShizukuService` 在 Shizuku 进程中注册 AppOp
 
 - 如果后续支持 URI、Intent、图片或文件，需要重新设计权限、文件搬运、大小上限、MIME 白名单和日志脱敏边界。
 - 如果后续支持多 item，需要定义多 item 的排序、去重、失败部分提交和 UI 展示规则。
+- 如果前台服务预算、通知闪烁、NoDisplay Activity 生命周期、component 解析差异或 no-payload 生命周期继续变复杂，应评估拆出专用 `ShizukuWakeService`，或补充 `BroadcastReceiver + goAsync()` / 透明短停留 Activity 作为后续兜底方案。
+- 如果多用户、工作资料空间或厂商 ROM 对不带 `--user` 的 `am start-foreground-service` 行为不一致，需要单独补充 userId 检测、显式 user 调用和无 user fallback 策略。
 - 如果后续接入更多 AppOps 隐藏 API 回调实现，需要统一检查新增实现类是否已显式 `@Keep`。
 - 如果后续调整 Shizuku 服务构造函数签名或新增其他反射实例化入口，需要同步补充 `@Keep` 或精确 consumer rule。
 
 ## 变更记录
 
+- 2026-05-30：将 `ShizukuWakeActivity` 收敛为 `Theme.NoDisplay` 即退入口，并新增 `appWakeMode` 与 `wake_activity_started_callback_timeout` 诊断；原因是唤醒页只需要拉起主进程并提交长生命周期 `ShizukuConnector.requestConnect("wake_activity")`，不应获取焦点或保留短暂透明窗口。
+- 2026-05-30：新增 `ShizukuWakeActivity` 作为 app 主进程冷启动 fallback，并让 Shizuku 在前台服务唤醒失败后执行 `am start --activity-no-animation`；原因是三星 S10 上 `adb shell am start-foreground-service -n com.cla.clip.master/com.cla.clip.master.service.ClipboardService` 仍返回 `Error: Not found; no service started.`，需要先验证 Activity 冷启动入口是否能让 callback 回流。
+- 2026-05-30：将 Shizuku 唤醒 app 主进程的 `am start-foreground-service -n` component 从相对类名调整为完整服务类名；原因是三星 S10 回归日志显示相对 component 返回 `Error: Not found; no service started.`，说明命令阶段未解析到服务而不是前台服务后台启动限制。
+- 2026-05-30：新增 `ShizukuCallback.pingAppProcess()`、`ShizukuAppProcessReadiness` 和 Provider 身份查询前的 app 主进程探活/前台服务唤醒流程；原因是三星 S10 在 app 主进程未启动时 `content call` 无法冷启动 `clipboard-bridge` Provider，需要先用 callback 判断 app 是否存活，失活时通过唤醒命令拉起主进程，再继续完整进程名身份查询和 payload 提交。
 - 2026-05-29：新增 `MmkvInitializer` 并让 `ClipboardBridgeProvider.onCreate()` 与 `BaseApplication.onCreate()` 复用同一个幂等 MMKV 初始化入口；原因是 `query_shizuku_process` 可在 ContentProvider 冷启动阶段早于 Application 访问 `AppSetting`，需要避免 Provider 因 MMKV 未初始化而让 Shizuku 身份查询降级为 `provider_query_failed`。
 - 2026-05-29：新增 Shizuku 完整进程名身份校验方案；原因是覆盖安装后部分设备旧 Shizuku 进程不会自动退出且会同时创建新进程，改为 Shizuku 回调先读取剪贴板，再通过 Provider 唤醒 app、触发最新 bind、查询完整期望进程名，并只在完整进程名明确不匹配时 `destroy()` 旧进程。
 - 2026-05-29：将 `AppSetting.pid` 调整为固定长度纯数字字符串，并新增 `ShizukuProcessName` 作为 suffix/fullProcessName 唯一构造入口；原因是进程名身份比较不再拆解版本号和 pid，固定数字串可避免 UUID 横线影响进程名和日志对比。

@@ -392,6 +392,55 @@ object ClipboardBridgeCommandResultParser {
     }
 
     /**
+     * 判断 `am start-foreground-service` 是否已经被系统接受。
+     *
+     * @param exitCode `am` 命令进程退出码；部分 ROM 会返回非 0 但仍输出 Starting service。
+     * @param output `am` 命令标准输出和错误输出合并文本。
+     */
+    fun isStartForegroundServiceSuccessful(exitCode: Int, output: String): Boolean {
+        /** 命令输出中的错误标记；出现 Error 或 Exception 时不能认为服务已可靠启动。 */
+        val hasError = output.contains("Error", ignoreCase = true) ||
+            output.contains("Exception", ignoreCase = true)
+        /** 部分系统在服务启动被接受时输出 Starting service，即使退出码不稳定也可作为成功信号。 */
+        val hasStartingService = output.contains("Starting service", ignoreCase = true)
+        return !hasError && (exitCode == 0 || hasStartingService)
+    }
+
+    /**
+     * 判断 app 主进程唤醒命令是否已经被系统接受。
+     *
+     * @param exitCode `am` 命令进程退出码；Activity 唤醒通常为 0，部分 Service 唤醒退出码不稳定。
+     * @param output `am` 命令标准输出和错误输出合并文本。
+     */
+    fun isAppWakeCommandSuccessful(exitCode: Int, output: String): Boolean {
+        /** 命令输出中的错误标记；出现 Error 或 Exception 时不能认为 app 已可靠拉起。 */
+        val hasError = output.contains("Error", ignoreCase = true) ||
+            output.contains("Exception", ignoreCase = true)
+        /** 前台服务被系统接受时的输出特征，用于兼容非 0 退出码 ROM。 */
+        val hasStartingService = output.contains("Starting service", ignoreCase = true)
+        /** NoDisplay Activity 被系统接受时的输出特征，用于前台服务命令失败后的通用 fallback。 */
+        val hasStartingActivity = output.contains("Starting:", ignoreCase = true) ||
+            output.contains("Starting activity", ignoreCase = true)
+        return !hasError && (exitCode == 0 || hasStartingService || hasStartingActivity)
+    }
+
+    /**
+     * 判断 Provider 查询失败是否符合主进程未冷启动导致的缺失特征。
+     *
+     * @param output `content call` 标准输出和错误输出合并文本。
+     * @param authority 当前 Provider authority，用于避免误判其他 Provider 的错误。
+     */
+    fun isProviderMissingForColdStart(output: String, authority: String): Boolean {
+        /** Provider authority 是否出现在错误输出里；命令缺失具体 authority 时不按本应用冷启动失败处理。 */
+        val authorityMatched = output.contains(authority, ignoreCase = true)
+        /** Android content 命令在 Provider 无法解析时输出的稳定错误片段。 */
+        val providerMissing = output.contains("Could not find provider", ignoreCase = true)
+        /** Android content 命令访问 Provider 失败时输出的外层错误片段。 */
+        val providerAccessFailed = output.contains("Error while accessing provider", ignoreCase = true)
+        return authorityMatched && (providerMissing || providerAccessFailed)
+    }
+
+    /**
      * 从 `content call` 输出中提取 Provider resultCode。
      *
      * @param output `content call` 打印出的 Bundle 文本。

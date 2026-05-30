@@ -6,4 +6,7 @@
         <item name="android:windowLightNavigationBar">true</item>
         <item name="android:colorAccent">@color/host_brand_primary</item>
     </style>
+
+    <!-- Shizuku 唤醒页使用的 NoDisplay 主题，只用于冷启动主进程，不创建可见窗口或业务 UI。 -->
+    <style name="Theme.ClipMaster.ShizukuWakeNoDisplay" parent="android:style/Theme.NoDisplay" tools:ignore="ResourceName" />
 </resources>

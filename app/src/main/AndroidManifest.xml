@@ -72,6 +72,18 @@
             </intent-filter>
         </activity>
 
+        <!-- Shizuku 冷启动补偿入口：NoDisplay 即退，只拉起主进程并触发 callback 回流，不展示业务页面也不传输剪贴板内容。 -->
+        <activity
+            android:name=".wake.ShizukuWakeActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:finishOnTaskLaunch="true"
+            android:hardwareAccelerated="false"
+            android:launchMode="singleTop"
+            android:noHistory="true"
+            android:theme="@style/Theme.ClipMaster.ShizukuWakeNoDisplay"
+            tools:ignore="ExportedActivity" />
+
         <!--把 androidx.startup.InitializationProvider 下面注册的 WorkManagerInitializer 这条初始化项，从最终合并后的 Manifest 里删掉。-->
         <!--告诉系统：不要再自动初始化 WorkManager，我自己在 Application 里手动初始化。-->
         <!-- 否则可能出现 Could not instantiate com.cla.clip.master.work.ShizukuStatusWorker (Fix with AI)

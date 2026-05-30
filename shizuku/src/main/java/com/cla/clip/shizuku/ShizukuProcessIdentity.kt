@@ -34,6 +34,30 @@ internal class ShizukuProcessIdentity(
                 connectSkipReason = null
             )
         }
+        return verifyQueryResult(queryResult, currentProcessName)
+    }
+
+    /**
+     * 使用调用方已经完成的 Provider 查询结果校验 Shizuku 进程身份。
+     *
+     * @param queryResult Provider 身份查询命令结果，调用方可在查询前后插入 app 进程唤醒逻辑。
+     */
+    fun verifyQueryResult(queryResult: ProviderCommandResult): ShizukuProcessIdentityDecision {
+        /** 当前 Shizuku 进程完整名称；为空时最终只会跳过提交，不会误杀当前进程。 */
+        val currentProcessName = processNameReader()?.trim()?.takeIf { it.isNotBlank() }
+        return verifyQueryResult(queryResult, currentProcessName)
+    }
+
+    /**
+     * 根据当前进程名和 Provider 查询结果生成身份决策。
+     *
+     * @param queryResult Provider 身份查询命令结果。
+     * @param currentProcessName 已读取并规整的当前 Shizuku 进程名。
+     */
+    private fun verifyQueryResult(
+        queryResult: ProviderCommandResult,
+        currentProcessName: String?,
+    ): ShizukuProcessIdentityDecision {
         /** Provider resultCode；非 ok 时身份不确定。 */
         val resultCode = ClipboardBridgeCommandResultParser.parseResultCode(queryResult.output)
         /** Provider 返回的最新 Shizuku 完整进程名。 */

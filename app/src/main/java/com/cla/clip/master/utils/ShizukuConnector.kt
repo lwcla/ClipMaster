@@ -56,7 +56,7 @@ class ShizukuConnector @Inject constructor(
          * shizuku的版本号，这个不要跟app的版本
          * 否则只是更新了app，但shizuku服务没有发生变化的情况下，也会重启shizuku进程
          */
-        const val VERSION = 12
+        const val VERSION = 16
 
         /**
          * 判断当前连接是否可以跳过重新 bind。
@@ -99,6 +99,12 @@ class ShizukuConnector @Inject constructor(
                 bindingProcessName = null
                 service.start()
                 service.setCallback(object : ShizukuCallback.Stub() {
+                    /** Shizuku 进程探测 app 主进程是否仍可达；该方法必须无业务副作用，避免探活触发入库或服务启动。 */
+                    override fun pingAppProcess(): Boolean {
+                        return true
+                    }
+
+                    /** 接收旧 AIDL 链路投递的剪贴来源信息；Provider 直读模式不应通过该方法保存同一条剪贴内容。 */
                     override fun onOpNoted(packageName: String?, appName: String?, appIcon: Bitmap?, iconHash: String?) {
                         if (packageName == BuildConfig.APPLICATION_ID) {
                             // 自己复制的内容，不处理

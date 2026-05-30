@@ -199,4 +199,54 @@ class ClipboardBridgeCommandResultParserTest {
         assertEquals("alive_same_process", ClipboardBridgeCommandResultParser.parseConnectSkipReason(output))
         assertEquals(null, ClipboardBridgeCommandResultParser.parseSaved(output))
     }
+
+    @Test
+    /** start-foreground-service 解析应兼容 ROM 退出码差异，同时拒绝 Error 输出。 */
+    fun startForegroundServiceParserHandlesOutputAndErrors() {
+        /** 标准成功输出，退出码为 0。 */
+        val normalSuccess = "Starting service: Intent { cmp=com.cla.clip.master/com.cla.clip.master.service.ClipboardService }"
+        /** ROM 退出码异常但输出显示服务启动被接受。 */
+        val oddExitSuccess = "Starting service: Intent { cmp=com.cla.clip.master/com.cla.clip.master.service.ClipboardService }"
+        /** 系统明确拒绝后台启动服务的输出。 */
+        val backgroundError = "Starting service: Intent { cmp=com.cla.clip.master/com.cla.clip.master.service.ClipboardService }\nError: app is in background uid null"
+        /** 系统未解析到服务 component 的输出；这种情况必须判定为唤醒失败。 */
+        val notFoundError = "Starting service: Intent { cmp=com.cla.clip.master/.service.ClipboardService }\nError: Not found; no service started."
+
+        assertTrue(ClipboardBridgeCommandResultParser.isStartForegroundServiceSuccessful(0, normalSuccess))
+        assertTrue(ClipboardBridgeCommandResultParser.isStartForegroundServiceSuccessful(255, oddExitSuccess))
+        assertFalse(ClipboardBridgeCommandResultParser.isStartForegroundServiceSuccessful(0, backgroundError))
+        assertFalse(ClipboardBridgeCommandResultParser.isStartForegroundServiceSuccessful(255, notFoundError))
+    }
+
+    @Test
+    /** app 唤醒命令解析应同时支持前台服务和 NoDisplay Activity 输出。 */
+    fun appWakeParserHandlesServiceAndActivityOutput() {
+        /** 前台服务被系统接受时的输出。 */
+        val serviceSuccess = "Starting service: Intent { cmp=com.cla.clip.master/com.cla.clip.master.service.ClipboardService }"
+        /** NoDisplay Activity 被系统接受时的输出。 */
+        val activitySuccess = "Starting: Intent { cmp=com.cla.clip.master/.wake.ShizukuWakeActivity }"
+        /** Activity component 不存在时的系统错误输出。 */
+        val activityMissing = "Error type 3\nError: Activity class {com.cla.clip.master/com.cla.clip.master.wake.ShizukuWakeActivity} does not exist."
+
+        assertTrue(ClipboardBridgeCommandResultParser.isAppWakeCommandSuccessful(255, serviceSuccess))
+        assertTrue(ClipboardBridgeCommandResultParser.isAppWakeCommandSuccessful(0, activitySuccess))
+        assertFalse(ClipboardBridgeCommandResultParser.isAppWakeCommandSuccessful(0, activityMissing))
+    }
+
+    @Test
+    /** Provider 缺失解析必须同时命中本应用 authority 和冷启动缺失错误片段。 */
+    fun providerMissingParserRequiresAuthorityAndMissingMessage() {
+        /** 本应用 Provider authority。 */
+        val authority = "com.cla.clip.master.clipboard-bridge"
+        /** 三星 S10 上 content call 找不到 Provider 时的典型输出。 */
+        val missingOutput = "Error while accessing provider:$authority\njava.lang.IllegalStateException: Could not find provider: $authority"
+        /** 其他 Provider 的缺失输出，不能误触发本应用唤醒重试。 */
+        val otherAuthorityOutput = "Error while accessing provider:other.provider\njava.lang.IllegalStateException: Could not find provider: other.provider"
+        /** 本应用 Provider 返回结构化错误时，不应被当成冷启动缺失。 */
+        val structuredFailure = "Result: Bundle[{resultCode=invalid_args, reasonCode=bad_request}]"
+
+        assertTrue(ClipboardBridgeCommandResultParser.isProviderMissingForColdStart(missingOutput, authority))
+        assertFalse(ClipboardBridgeCommandResultParser.isProviderMissingForColdStart(otherAuthorityOutput, authority))
+        assertFalse(ClipboardBridgeCommandResultParser.isProviderMissingForColdStart(structuredFailure, authority))
+    }
 }

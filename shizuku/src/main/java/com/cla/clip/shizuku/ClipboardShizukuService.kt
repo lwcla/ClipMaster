@@ -5,6 +5,7 @@ import android.app.AppOpsManagerHidden
 import android.content.Context
 import android.graphics.Bitmap
 import android.os.Build
+import android.os.SystemClock
 import androidx.annotation.Keep
 import com.cla.clip.base.hidden.api.HiddenApiExemptions
 import com.cla.clip.base.general.utils.exceptionHandler
@@ -59,6 +60,15 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
 
         /** 旧 Provider overlay 读取调试回退开关，默认关闭，避免掩盖 Shizuku 直读链路问题。 */
         private const val ENABLE_PROVIDER_OVERLAY_DEBUG_FALLBACK = false
+
+        /** 前台服务唤醒命令等待上限，避免厂商 ROM 卡住 am 命令拖住剪贴事件。 */
+        private const val APP_WAKE_COMMAND_TIMEOUT_MS = 2_000L
+
+        /** 主进程剪贴板服务完整类名；shell `am` 唤醒使用完整 component，避免 ROM 对相对类名解析不一致。 */
+        private const val CLIPBOARD_SERVICE_CLASS_NAME = "com.cla.clip.master.service.ClipboardService"
+
+        /** 主进程 NoDisplay 唤醒 Activity 完整类名；前台服务命令失败时作为冷启动 fallback。 */
+        private const val SHIZUKU_WAKE_ACTIVITY_CLASS_NAME = "com.cla.clip.master.wake.ShizukuWakeActivity"
     }
 
     /** AppOpsManager 隐藏 API 入口，用于监听剪贴板写入 op 和授予悬浮窗模式。 */
@@ -81,6 +91,16 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
 
     /** 主进程注册的 AIDL 回调；为空表示主进程尚未连接或已经死亡。 */
     private var callFlow = MutableStateFlow<ShizukuCallback?>(null)
+
+    /** Provider 提交前的 app 主进程探活与唤醒协作者，只负责可达性，不判断身份或写入剪贴数据。 */
+    private val appProcessReadiness by lazy {
+        ShizukuAppProcessReadiness(
+            callbackFlow = callFlow,
+            pingCallback = { callback -> callback.pingAppProcess() },
+            wakeAppProcess = ::wakeAppProcessCommand,
+            clockMillis = { SystemClock.elapsedRealtime() }
+        )
+    }
 
     /** 监听启动状态，防止重复注册 AppOps listener。 */
     private var isRunning = AtomicBoolean(false)
@@ -206,9 +226,21 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
         )
         logShizukuClipboardReadResult(eventId, clipData, clipPayload)
 
+        /** app 主进程探活和必要唤醒结果；必须发生在读取剪贴板快照之后，避免等待期间快照被新内容覆盖。 */
+        val readinessResult = appProcessReadiness.ensureReady()
+        logAppProcessReadiness(eventId, readinessResult)
+
         /** 进程身份判断结果；必须在剪贴板读取之后、payload 和图标写入 Provider 之前执行。 */
-        val identityDecision = processIdentity.verify(eventId)
-        logShizukuProcessIdentityDecision(eventId, identityDecision)
+        val identityResult = verifyShizukuProcessIdentityAfterReadiness(eventId, readinessResult)
+        /** 身份判断的最终决策；只有 Matched 才允许继续提交 payload 和图标。 */
+        val identityDecision = identityResult.decision
+        logShizukuProcessIdentityDecision(
+            eventId = eventId,
+            decision = identityDecision,
+            providerQueryElapsedMs = identityResult.providerQueryElapsedMs,
+            wakeFailedProviderFallback = identityResult.wakeFailedProviderFallback,
+            providerIdentityAfterWake = identityResult.providerIdentityAfterWake
+        )
         when (identityDecision) {
             is ShizukuProcessIdentityDecision.Matched -> Unit
             is ShizukuProcessIdentityDecision.Mismatched -> {
@@ -302,14 +334,94 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
     }
 
     /**
+     * 输出 Provider 提交前 app 主进程探活与唤醒结果。
+     *
+     * @param eventId 当前剪贴事件 ID。
+     * @param result app 主进程 callback 探活和唤醒策略结果。
+     */
+    private fun logAppProcessReadiness(
+        eventId: String,
+        result: ShizukuAppProcessReadinessResult,
+    ) {
+        logD(TAG) {
+            "Shizuku app 进程探活 eventId=$eventId " +
+                "appPingResult=${result.appPingResult} appWakeRequested=${result.appWakeRequested} " +
+                "appWakeMode=${result.appWakeMode} appWakeResult=${result.appWakeResult} callbackRebound=${result.callbackRebound} " +
+                "wakeCooldownSkipped=${result.wakeCooldownSkipped} appWakeElapsedMs=${result.appWakeElapsedMs} " +
+                "readyForProviderQuery=${result.readyForProviderQuery} reasonCode=${result.reasonCode}"
+        }
+    }
+
+    /**
+     * 在 app 进程探活后执行 Shizuku 身份查询，并处理 Provider 缺失竞态兜底。
+     *
+     * @param eventId 当前剪贴事件 ID。
+     * @param readinessResult 身份查询前的 app 进程探活结果。
+     */
+    private suspend fun verifyShizukuProcessIdentityAfterReadiness(
+        eventId: String,
+        readinessResult: ShizukuAppProcessReadinessResult,
+    ): ShizukuProcessIdentityVerification {
+        /** 首次身份查询结果和耗时；无论探活是否成功都执行，作为 Provider 兼容兜底。 */
+        var queryWithElapsed = queryShizukuProcessWithElapsed(eventId)
+        /** 本次身份查询是否已经在 Provider 缺失后补做过唤醒。 */
+        var providerIdentityAfterWake = readinessResult.appWakeRequested
+        /** 唤醒失败或 cooldown 后仍尝试 Provider 查询时记录 fallback 标记。 */
+        val wakeFailedProviderFallback = !readinessResult.readyForProviderQuery
+        /** 当前 Provider authority，用于识别本应用 Provider 冷启动缺失。 */
+        val providerAuthority = ClipboardBridgeContract.authority(packageName)
+
+        if (
+            readinessResult.canRetryWakeAfterProviderMissing &&
+            ClipboardBridgeCommandResultParser.isProviderMissingForColdStart(queryWithElapsed.result.output, providerAuthority)
+        ) {
+            /** Provider 查询发现 app 可能在 ping 后又被杀，补做一次同样的唤醒流程。 */
+            val retryReadinessResult = appProcessReadiness.ensureReady()
+            providerIdentityAfterWake = providerIdentityAfterWake || retryReadinessResult.appWakeRequested
+            logAppProcessReadiness(eventId, retryReadinessResult)
+            queryWithElapsed = queryShizukuProcessWithElapsed(eventId)
+        }
+
+        /** 身份判断结果；只消费最终一次 Provider 查询输出。 */
+        val decision = processIdentity.verifyQueryResult(queryWithElapsed.result)
+        return ShizukuProcessIdentityVerification(
+            decision = decision,
+            providerQueryElapsedMs = queryWithElapsed.elapsedMs,
+            wakeFailedProviderFallback = wakeFailedProviderFallback,
+            providerIdentityAfterWake = providerIdentityAfterWake
+        )
+    }
+
+    /**
+     * 调用 Provider 身份查询并记录命令耗时。
+     *
+     * @param eventId 当前剪贴事件 ID。
+     */
+    private fun queryShizukuProcessWithElapsed(eventId: String): TimedProviderCommandResult {
+        /** Provider 查询开始时间，使用单调时钟避免系统时间跳变影响耗时。 */
+        val queryStartMillis = SystemClock.elapsedRealtime()
+        /** Provider 身份查询结果；输出只包含低敏身份字段或命令错误摘要。 */
+        val queryResult = callProviderQueryShizukuProcess(eventId)
+        /** Provider 查询耗时，单位毫秒；假如时钟异常回退则兜底为 0。 */
+        val queryElapsedMillis = (SystemClock.elapsedRealtime() - queryStartMillis).coerceAtLeast(0L)
+        return TimedProviderCommandResult(result = queryResult, elapsedMs = queryElapsedMillis)
+    }
+
+    /**
      * 输出 Shizuku 进程身份判断结果。
      *
      * @param eventId 当前剪贴事件 ID。
      * @param decision 当前进程与 Provider 期望进程名的完整字符串比较结果。
+     * @param providerQueryElapsedMs Provider 身份查询命令耗时，单位毫秒。
+     * @param wakeFailedProviderFallback 是否在 app 唤醒失败后继续执行 Provider 兼容查询。
+     * @param providerIdentityAfterWake 本次身份查询前是否执行过 app 唤醒命令。
      */
     private fun logShizukuProcessIdentityDecision(
         eventId: String,
         decision: ShizukuProcessIdentityDecision,
+        providerQueryElapsedMs: Long,
+        wakeFailedProviderFallback: Boolean,
+        providerIdentityAfterWake: Boolean,
     ) {
         /** 当前进程和期望进程是否已经完整匹配；不确定时固定为 false。 */
         val matched = decision is ShizukuProcessIdentityDecision.Matched
@@ -319,7 +431,10 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
                 "expectedProcessName=${decision.expectedProcessName} matched=$matched " +
                 "resultCode=${decision.resultCode} reasonCode=${decision.reasonCode} " +
                 "connectRequested=${decision.connectRequested} " +
-                "connectSkipReason=${decision.connectSkipReason}"
+                "connectSkipReason=${decision.connectSkipReason} " +
+                "wakeFailedProviderFallback=$wakeFailedProviderFallback " +
+                "providerIdentityAfterWake=$providerIdentityAfterWake " +
+                "providerQueryElapsedMs=$providerQueryElapsedMs"
         }
     }
 
@@ -1028,18 +1143,118 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
      * Shizuku 进程不直接调用 Context.startForegroundService，避免后台启动限制；返回 false 表示命令失败或输出包含 Error。
      */
     private fun startForegroundService(): Boolean {
+        /** 前台服务唤醒命令结果；旧 AIDL 链路只需要布尔结果。 */
+        val commandResult = startForegroundServiceCommand()
+        return !commandResult.timedOut &&
+            ClipboardBridgeCommandResultParser.isStartForegroundServiceSuccessful(commandResult.exitCode, commandResult.output)
+    }
+
+    /**
+     * 执行 app 主进程唤醒命令。
+     *
+     * 优先沿用前台服务入口；如果设备返回 Service 不可解析、后台限制或其他失败，再尝试 NoDisplay Activity 冷启动入口。
+     */
+    private fun wakeAppProcessCommand(): AppWakeCommandResult {
+        /** 前台服务唤醒结果；它是常规路径，成功时不再打开 NoDisplay Activity。 */
+        val foregroundResult = startForegroundServiceCommand()
+        /** 前台服务命令是否已经被系统接受；集中 parser 兼容 ROM 退出码差异。 */
+        val foregroundAccepted = !foregroundResult.timedOut &&
+            ClipboardBridgeCommandResultParser.isStartForegroundServiceSuccessful(
+                foregroundResult.exitCode,
+                foregroundResult.output
+            )
+        if (foregroundAccepted) {
+            return foregroundResult
+        }
+
+        logW(TAG) {
+            "start-foreground-service 唤醒失败，尝试 NoDisplay WakeActivity fallback " +
+                "exit=${foregroundResult.exitCode} timedOut=${foregroundResult.timedOut}"
+        }
+        return startWakeActivityCommand()
+    }
+
+    /**
+     * 执行前台服务唤醒命令并返回完整命令结果。
+     *
+     * Provider 直读链路使用该结果做唤醒策略和日志诊断；命令不带 `--user`，避免多用户设备上引入新的权限差异。
+     */
+    private fun startForegroundServiceCommand(): AppWakeCommandResult {
+        /** 前台服务 component；包名来自运行时 Context，类名固定为主进程 manifest 声明的完整类名。 */
+        val serviceComponent = "$packageName/$CLIPBOARD_SERVICE_CLASS_NAME"
+        /** `am start-foreground-service` 进程；只拉起无 payload ClipboardService，不传真实剪贴数据。 */
         val process = ProcessBuilder(
             "am",
             "start-foreground-service",
 //            "--user", "0", // 这个参数在某些设备上可能会导致权限问题，暂时先不加了，等后续有需要再说
-            "-n", "${packageName}/.service.ClipboardService"
+            "-n", serviceComponent
         ).redirectErrorStream(true).start()
 
-        val exitCode = process.waitFor()
-        val output = process.inputStream.bufferedReader().use { it.readText() }
-        logD(TAG) { "start-foreground-service  exit=$exitCode  output=$output" }
+        /** 前台服务唤醒命令退出码；超时说明 ROM 或系统服务卡住，不能继续等待。 */
+        val exitCode = waitForProcess(process, APP_WAKE_COMMAND_TIMEOUT_MS) ?: run {
+            destroyTimedOutProcess(process)
+            logW(TAG) { "start-foreground-service 超时 timeoutMs=$APP_WAKE_COMMAND_TIMEOUT_MS" }
+            return AppWakeCommandResult(
+                wakeMode = AppWakeMode.FOREGROUND_SERVICE,
+                exitCode = -1,
+                output = "timeout",
+                timedOut = true
+            )
+        }
 
-        return (exitCode == 0) && !output.contains("Error:", ignoreCase = true)
+        /** 前台服务唤醒命令输出；只包含系统服务启动摘要，不携带剪贴板正文。 */
+        val output = process.inputStream.bufferedReader().use { it.readText() }
+        /** 前台服务命令是否被系统接受；集中 parser 兼容 ROM 退出码差异。 */
+        val ok = ClipboardBridgeCommandResultParser.isStartForegroundServiceSuccessful(exitCode, output)
+        logD(TAG) { "start-foreground-service exit=$exitCode ok=$ok output=$output" }
+        return AppWakeCommandResult(
+            wakeMode = AppWakeMode.FOREGROUND_SERVICE,
+            exitCode = exitCode,
+            output = output,
+            timedOut = false
+        )
+    }
+
+    /**
+     * 执行 NoDisplay WakeActivity 唤醒命令并返回完整命令结果。
+     *
+     * 该入口只拉起 app 主进程和 Shizuku callback，不传真实剪贴数据；命令不带 `--user`，延续当前多用户取舍。
+     */
+    private fun startWakeActivityCommand(): AppWakeCommandResult {
+        /** NoDisplay 唤醒 Activity component；包名来自运行时 Context，类名固定为 app manifest 声明的完整类名。 */
+        val activityComponent = "$packageName/$SHIZUKU_WAKE_ACTIVITY_CLASS_NAME"
+        /** `am start` 进程；只负责打开 NoDisplay Activity，不携带剪贴板正文或来源应用信息。 */
+        val process = ProcessBuilder(
+            "am",
+            "start",
+            "--activity-no-animation",
+//            "--user", "0", // 多用户策略后续统一设计，当前保持与前台服务唤醒一致。
+            "-n", activityComponent
+        ).redirectErrorStream(true).start()
+
+        /** NoDisplay Activity 唤醒命令退出码；超时说明系统服务卡住，不能继续等待。 */
+        val exitCode = waitForProcess(process, APP_WAKE_COMMAND_TIMEOUT_MS) ?: run {
+            destroyTimedOutProcess(process)
+            logW(TAG) { "wake-activity 超时 timeoutMs=$APP_WAKE_COMMAND_TIMEOUT_MS" }
+            return AppWakeCommandResult(
+                wakeMode = AppWakeMode.ACTIVITY_NO_DISPLAY,
+                exitCode = -1,
+                output = "timeout",
+                timedOut = true
+            )
+        }
+
+        /** NoDisplay Activity 唤醒命令输出；只包含系统启动摘要，不携带剪贴板正文。 */
+        val output = process.inputStream.bufferedReader().use { it.readText() }
+        /** NoDisplay Activity 命令是否被系统接受；集中 parser 判断 Error/Exception 和 Starting 输出。 */
+        val ok = ClipboardBridgeCommandResultParser.isAppWakeCommandSuccessful(exitCode, output)
+        logD(TAG) { "wake-activity exit=$exitCode ok=$ok output=$output" }
+        return AppWakeCommandResult(
+            wakeMode = AppWakeMode.ACTIVITY_NO_DISPLAY,
+            exitCode = exitCode,
+            output = output,
+            timedOut = false
+        )
     }
 
     /**
@@ -1079,4 +1294,30 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
 internal data class ProviderCommandResult(
     val exitCode: Int,
     val output: String,
+)
+
+/**
+ * 带耗时的 Provider 命令结果。
+ *
+ * @param result Provider 命令退出码和输出。
+ * @param elapsedMs Provider 命令耗时，单位毫秒。
+ */
+private data class TimedProviderCommandResult(
+    val result: ProviderCommandResult,
+    val elapsedMs: Long,
+)
+
+/**
+ * Shizuku 身份查询的最终结果和诊断字段。
+ *
+ * @param decision 当前 Shizuku 进程身份判断结果。
+ * @param providerQueryElapsedMs 最终一次 Provider 身份查询耗时，单位毫秒。
+ * @param wakeFailedProviderFallback 是否在 app 进程未确认可达时仍执行 Provider 兼容查询。
+ * @param providerIdentityAfterWake 最终身份查询前是否执行过 app 唤醒命令。
+ */
+private data class ShizukuProcessIdentityVerification(
+    val decision: ShizukuProcessIdentityDecision,
+    val providerQueryElapsedMs: Long,
+    val wakeFailedProviderFallback: Boolean,
+    val providerIdentityAfterWake: Boolean,
 )
