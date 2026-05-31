@@ -103,12 +103,13 @@ public 仓库 README 作为人可读发布页维护，至少包含最新版版�
 
 1. 使用 release 签名构建 APK，并确认 `versionCode` 单调递增；打包产物文件名应自动带上当前 `versionName`，例如 `ClipMaster-v0.4.1.apk`。
 2. 推荐使用 `scripts/publish_github_release.sh` 自动完成 GitHub + Gitee 双端发布：脚本会执行 `:app:assembleRelease`，读取 release APK metadata，计算 APK SHA256，生成 `build/github-gitee-release/update.json` 与 `build/github-gitee-release/sha256.txt`，按 `v<versionName>` 创建或复用两端 Release，并上传 APK、`sha256.txt` 和 `update.json`。
-3. 脚本默认先上传 Gitee APK，读取 Gitee API 返回的 `browser_download_url` 后重新生成最终 `update.json`，再把同一份 manifest 同步到 Gitee 和 GitHub，避免两个源的下载链接不一致。
-4. 脚本使用 GitHub token 和 Gitee token 调用 REST API。日常发布推荐在用户级 `~/.gradle/gradle.properties` 中配置 `githubToken=<token>` 与 `giteeToken=<token>`，这样不需要每次输入，也不会随项目源码上传；脚本也兼容读取项目 `local.properties`。禁止把真实 token 放进项目 `gradle.properties`，因为该文件会进入源码仓库。临时覆盖可使用 `GITHUB_TOKEN` / `GITEE_TOKEN` 环境变量，且环境变量优先级最高。token 不写入仓库、不写入生成文件、不打印到日志。
-5. 如需先检查生成内容，可运行 `scripts/publish_github_release.sh --dry-run`，该模式只构建 APK 和生成发布文件，不调用 GitHub/Gitee API；如需临时单端发布，可用 `--skip-github` 或 `--skip-gitee`。
-6. 用旧版本 App 手动执行一次“检查更新”，验证 Gitee release API 可解析 `update.json` 附件、GitHub manifest 兜底可用、弹窗文案正确、Gitee 和 GitHub 下载入口均可打开。
-7. 更新 public 仓库 README 的最新版、历史版本、Gitee/GitHub Release 入口和 SHA256 说明，确保用户手动访问时也能找到正确 APK。
-8. 发布完成后在方案文档变更记录或 release note 中记录版本、发布时间、主要变更和验证结果。
+3. Windows 11 设备可直接双击 `scripts/publish_github_release_windows.cmd` 执行真实发布；该双击入口保持批处理头 ASCII 内容并先切换到 UTF-8 代码页，避免 `cmd.exe` 把中文输出显示成乱码，同时在同一个文件内嵌 PowerShell 包装层，结束后暂停窗口方便查看结果。PowerShell 包装层会把完整输出写入 `build/github-gitee-release/windows-release.log`，便于失败后回看具体原因。需要先 dry-run 时，可从 PowerShell 运行 `cmd /c scripts\publish_github_release_windows.cmd --dry-run`。内嵌 PowerShell 包装层只查找 Git Bash、补齐 Bash 可见的 `python3` 兼容入口，强制 Windows Python 使用 UTF-8 stdout/stderr，并过滤 stdout 中的 CR 字符，避免 Bash 把 APK 文件名读成 `.apk\r` 或让 Gitee 表单字段里的中文变成系统代码页字节，然后以登录 Bash 环境直接调用 `scripts/publish_github_release.sh`；如果本机缺少 Git Bash 或 Python 3，会在构建和上传前失败。
+4. 脚本默认先上传 Gitee APK，读取 Gitee API 返回的 `browser_download_url` 后重新生成最终 `update.json`，再把同一份 manifest 同步到 Gitee 和 GitHub，避免两个源的下载链接不一致。
+5. 脚本使用 GitHub token 和 Gitee token 调用 REST API。日常发布推荐在用户级 `~/.gradle/gradle.properties` 中配置 `githubToken=<token>` 与 `giteeToken=<token>`，这样不需要每次输入，也不会随项目源码上传；脚本也兼容读取项目 `local.properties`。禁止把真实 token 放进项目 `gradle.properties`，因为该文件会进入源码仓库。临时覆盖可使用 `GITHUB_TOKEN` / `GITEE_TOKEN` 环境变量，且环境变量优先级最高。token 不写入仓库、不写入生成文件、不打印到日志。
+6. 如需先检查生成内容，可运行 `scripts/publish_github_release.sh --dry-run`，Windows 11 可运行 `cmd /c scripts\publish_github_release_windows.cmd --dry-run`；该模式只构建 APK 和生成发布文件，不调用 GitHub/Gitee API。如需临时单端发布，可用 `--skip-github` 或 `--skip-gitee`。
+7. 用旧版本 App 手动执行一次“检查更新”，验证 Gitee release API 可解析 `update.json` 附件、GitHub manifest 兜底可用、弹窗文案正确、Gitee 和 GitHub 下载入口均可打开。
+8. 更新 public 仓库 README 的最新版、历史版本、Gitee/GitHub Release 入口和 SHA256 说明，确保用户手动访问时也能找到正确 APK。
+9. 发布完成后在方案文档变更记录或 release note 中记录版本、发布时间、主要变更和验证结果。
 
 ## 日志与诊断计划
 
@@ -118,7 +119,7 @@ public 仓库 README 作为人可读发布页维护，至少包含最新版版�
 - 降级路径：`WARN`，单个更新源不可达、Gitee Release 中缺少 `update.json` 附件或解析失败时记录 `sourceId`、reasonCode 和状态码；下一个源可用时继续检查，全部失败时让 UI 展示发布页入口。
 - 打开外部链接：`INFO`，只记录 linkType，例如 `github`、`gitee`、`releasePage`，不记录完整下载 URL、token 或用户可恢复凭据。
 - 高频自动检查按 24 小时限频，不输出重复成功日志，避免噪声。
-- 发布脚本日志：仅输出构建阶段、生成文件路径、tag、repo、附件名称和最终 release 地址；禁止输出 `GITHUB_TOKEN`、`githubToken`、签名密码、完整构建环境变量或响应体中的敏感字段。GitHub/Gitee API 失败时输出 HTTP 状态码和低敏 `message`/`errors` 摘要，其中 GitHub 422 会额外提示 release/tag、同名附件、token 权限和仓库状态等常见排查方向；Gitee 按 tag 查询 Release 返回 JSON `null` 时应视为 Release 不存在并继续创建；Gitee 返回空响应、HTML 登录页或其它非 JSON 响应时，脚本应输出“响应体为空/响应体不是 JSON”的可读诊断，不暴露 Python traceback；日志不得输出 token 或完整敏感配置。
+- 发布脚本日志：仅输出构建阶段、生成文件路径、tag、repo、附件名称和最终 release 地址；Windows 包装层只额外输出选中的 Bash、Python、原脚本路径和 `build/github-gitee-release/windows-release.log` 完整运行日志，便于定位本机环境问题；禁止输出 `GITHUB_TOKEN`、`githubToken`、签名密码、完整构建环境变量或响应体中的敏感字段。GitHub/Gitee API 失败时输出 HTTP 状态码和低敏 `message`/`errors` 摘要，其中 GitHub 422 会额外提示 release/tag、同名附件、token 权限和仓库状态等常见排查方向；GitHub JSON 请求体通过临时 UTF-8 文件传给 `curl --data-binary @file`，避免 Windows Git Bash 把中文 release body 经命令行参数转码后触发 GitHub `Problems parsing JSON`；Gitee 按 tag 查询 Release 返回 JSON `null` 时应视为 Release 不存在并继续创建；Gitee multipart 表单字段值通过临时 UTF-8 文件传给 `curl -F name=<file`，避免 Windows Git Bash 把 release body 中文参数转成本机代码页后触发 Gitee `invalid byte sequence in UTF-8`；curl 遇到 DNS、连接、超时或 TLS 握手等连接层错误时按 `CURL_RETRY_COUNT`、`CURL_RETRY_DELAY_SECONDS` 和 `CURL_CONNECT_TIMEOUT_SECONDS` 做有限重试，仍失败时保留原 curl 退出码；如果 Gitee 已完成但 GitHub 因网络失败，重新执行脚本会复用已有 Release 并替换同名附件，或可临时使用 `--skip-github` 完成单端 Gitee 发布；Gitee 返回空响应、HTML 登录页或其它非 JSON 响应时，脚本应输出“响应体为空/响应体不是 JSON”的可读诊断，不暴露 Python traceback；日志不得输出 token 或完整敏感配置。
 
 失败 `reasonCode` 第一版约定：
 
@@ -141,7 +142,7 @@ public 仓库 README 作为人可读发布页维护，至少包含最新版版�
 - 人工验证：public 仓库 README 在浏览器中可读，能找到最新版、历史版本、SHA256 和 Gitee/GitHub Release 入口。
 - 人工验证：当前版本不弹更新；新版本弹窗展示更新日志；`forceUpdate` 只加强提示不阻断使用；外部浏览器可打开 Gitee 和 GitHub 入口。
 - 实现后运行 `./gradlew :app:testDebugUnitTest`、`./gradlew :app:compileDebugKotlin`、`git diff --check`；发布前评估并运行 release/R8 验证，确认序列化模型在混淆后仍可解析 manifest。
-- 发布脚本验证：运行 `bash -n scripts/publish_github_release.sh`、`scripts/publish_github_release.sh --help`、`scripts/publish_github_release.sh --dry-run`、`scripts/publish_github_release.sh --self-test-json-errors` 和 `git diff --check`，确认脚本语法、token 配置说明、release APK 构建、`update.json`/`sha256.txt` 生成、发布路径推导和非 JSON API 响应诊断正确；使用无效临时 token 做受控失败验证时，应能看到 GitHub/Gitee 返回的状态码与 `message`，但不能输出 token。真实上传需要在用户级 `~/.gradle/gradle.properties` 配置有效 `githubToken` 与 `giteeToken`，或通过 `GITHUB_TOKEN` / `GITEE_TOKEN` 临时覆盖后再执行非 dry-run。
+- 发布脚本验证：运行 `bash -n scripts/publish_github_release.sh`、`scripts/publish_github_release.sh --help`、`scripts/publish_github_release.sh --dry-run`、`scripts/publish_github_release.sh --self-test-json-errors`、`cmd /c scripts\publish_github_release_windows.cmd --self-test-json-errors`、`cmd /c scripts\publish_github_release_windows.cmd --help` 和 `git diff --check`，确认脚本语法、token 配置说明、Windows 11 环境适配、双击入口转调、release APK 构建、`update.json`/`sha256.txt` 生成、发布路径推导和非 JSON API 响应诊断正确；使用无效临时 token 做受控失败验证时，应能看到 GitHub/Gitee 返回的状态码与 `message`，但不能输出 token。真实上传需要在用户级 `~/.gradle/gradle.properties` 配置有效 `githubToken` 与 `giteeToken`，或通过 `GITHUB_TOKEN` / `GITEE_TOKEN` 临时覆盖后再执行非 dry-run。
 
 当前已新增 `AppUpdateManifestParserTest` 和 `AppUpdateCheckerTest`，覆盖 parser/checker 第一版核心契约；本次实现已运行 `./gradlew :app:testDebugUnitTest --tests '*AppUpdate*'`，结果通过。完整 app 单元测试、编译和 diff 检查以任务最终验证结果为准。
 
@@ -171,3 +172,8 @@ public 仓库 README 作为人可读发布页维护，至少包含最新版版�
 - 2026-05-26：增强 GitHub 发布脚本错误诊断；原因是 GitHub API 422 等失败不能只显示 `curl` 状态，需要输出低敏的 GitHub `message`/`errors` 摘要和常见排查方向，便于定位 release、附件或 token 权限问题。
 - 2026-05-26：自更新发布源从 GitHub + 历史备用下载路径改为 GitHub + Gitee，并改造脚本为一键双端发布；原因是需要去掉非结构化网盘，同时为中国境内网络提供可结构化读取的更新源，且发布仓库地址需要可配置。
 - 2026-05-26：增强 Gitee 发布脚本响应解析诊断；原因是 Gitee Release 查询可能返回 JSON `null`、空响应或非 JSON 内容，其中 `null` 表示 tag release 不存在，应继续创建，其它异常响应应输出可读错误而不是 Python traceback。
+- 2026-05-30：新增 Windows 11 PowerShell 发布包装入口和可双击 `.cmd` 启动器，并将 `.cmd` 收敛为 ASCII + UTF-8 代码页入口；原因是原始 Bash 脚本在 Windows 设备上需要 Git Bash 登录环境、`shasum` 和可用 `python3` 命令名，包装层负责环境适配、完整日志、Windows Python UTF-8 输出、CRLF 输出过滤和稳定退出码，双击入口负责免命令行启动且避免 `cmd.exe` 中文乱码，并继续复用原发布脚本。
+- 2026-05-30：Gitee multipart 表单字段改为临时 UTF-8 文件传值；原因是 Windows Git Bash 调用 `curl -F body=中文` 时可能在 argv 边界发生代码页转换，导致 Gitee 创建 Release 返回 `invalid byte sequence in UTF-8`。
+- 2026-05-31：将 Windows 发布入口合并为单个 `publish_github_release_windows.cmd`；原因是双击入口和 PowerShell 包装层可以通过批处理头 + 内嵌 PowerShell 正文共存，减少用户侧需要识别的脚本数量，同时保留 UTF-8、日志、Git Bash 查找和 `python3` shim 逻辑。
+- 2026-05-31：为发布脚本的 GitHub/Gitee API 和附件上传请求增加 curl 连接层重试；原因是 Windows 设备访问 `api.github.com` 可能出现 `SSL_ERROR_SYSCALL` 等短暂 TLS/网络错误，脚本应先自动重试，失败后仍保留原退出码和可重跑的发布状态。
+- 2026-05-31：GitHub JSON API 请求体改为临时 UTF-8 文件传输；原因是 Windows Git Bash 通过 `curl --data` 传递中文 release body 时可能发生命令行编码转换，导致 GitHub 返回 `Problems parsing JSON`。

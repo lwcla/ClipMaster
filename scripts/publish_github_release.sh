@@ -16,6 +16,12 @@ BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK_DIR="${BASE_DIR}/build/github-gitee-release"
 LOCAL_PROPERTIES_FILE="${LOCAL_PROPERTIES_FILE:-${BASE_DIR}/local.properties}"
 USER_GRADLE_PROPERTIES_FILE="${USER_GRADLE_PROPERTIES_FILE:-${HOME}/.gradle/gradle.properties}"
+# curl 建连超时时间；GitHub 在部分网络环境下可能卡在 TLS 握手，限制等待时间便于进入重试。
+CURL_CONNECT_TIMEOUT_SECONDS="${CURL_CONNECT_TIMEOUT_SECONDS:-20}"
+# curl 网络错误重试次数；只用于没有拿到 HTTP 响应的连接层失败，避免把接口 4xx 伪装成可重试问题。
+CURL_RETRY_COUNT="${CURL_RETRY_COUNT:-3}"
+# curl 网络错误重试间隔；给 GitHub/Gitee 短暂网络抖动留出恢复时间。
+CURL_RETRY_DELAY_SECONDS="${CURL_RETRY_DELAY_SECONDS:-3}"
 
 # 打印命令行帮助，避免发布脚本参数越来越多后使用者只能读源码。
 usage() {
@@ -52,6 +58,9 @@ usage() {
   SKIP_GITHUB=true                   等同 --skip-github
   SKIP_GITEE=true                    等同 --skip-gitee
   DRY_RUN=true                       等同 --dry-run
+  CURL_RETRY_COUNT=3                 curl 网络错误重试次数，默认 3
+  CURL_RETRY_DELAY_SECONDS=3         curl 网络错误重试间隔秒数，默认 3
+  CURL_CONNECT_TIMEOUT_SECONDS=20    curl 建连超时秒数，默认 20
 
 本地配置：
   推荐在用户级 ~/.gradle/gradle.properties 中添加：
@@ -288,6 +297,49 @@ for key in ("message", "error", "error_description"):
 PY
 }
 
+# 判断 curl 退出码是否属于可安全重试的连接层错误。
+curl_exit_code_should_retry() {
+    # 当前 curl 退出码；只对 DNS、连接、超时和 TLS 握手阶段失败做自动重试。
+    local exit_code="$1"
+
+    case "$exit_code" in
+        5|6|7|28|35)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+# 执行 curl 并对连接层失败做有限重试，保持 stdout 仍只返回 curl 的原始输出。
+run_curl_with_retry() {
+    # 当前尝试次数；第一次执行不算重试，用于日志展示当前进度。
+    local attempt=1
+    # 最大尝试次数；等于首次请求加配置的重试次数。
+    local max_attempts=$((CURL_RETRY_COUNT + 1))
+    # 本次 curl 退出码；上层依赖该值判断是否属于网络请求失败。
+    local exit_code=0
+    # curl stdout 内容；当前脚本用它接收 HTTP 状态码，不能混入重试日志。
+    local output=""
+
+    while true; do
+        output="$("$@")"
+        exit_code=$?
+        if [[ "$exit_code" -eq 0 ]]; then
+            printf '%s' "$output"
+            return 0
+        fi
+        if (( attempt >= max_attempts )) || ! curl_exit_code_should_retry "$exit_code"; then
+            printf '%s' "$output"
+            return "$exit_code"
+        fi
+        echo "curl 网络请求失败，${CURL_RETRY_DELAY_SECONDS}s 后重试（${attempt}/${CURL_RETRY_COUNT}），退出码：${exit_code}" >&2
+        sleep "$CURL_RETRY_DELAY_SECONDS"
+        attempt=$((attempt + 1))
+    done
+}
+
 # 发送 GitHub API 请求并把响应体/状态码写回全局变量，便于上层统一判断成功或失败。
 github_request() {
     local method="$1"
@@ -299,9 +351,14 @@ github_request() {
 
     body_file="$(mktemp)"
     if [[ -n "$data" ]]; then
+        # GitHub JSON 请求体临时文件；Windows Git Bash 调用 curl.exe 时，中文 JSON 经 argv 传递可能被转码。
+        local data_file
+        data_file="$(mktemp)"
+        printf '%s' "$data" > "$data_file"
         set +e
         status="$(
-            curl --silent --show-error \
+            run_curl_with_retry curl --silent --show-error \
+            --connect-timeout "$CURL_CONNECT_TIMEOUT_SECONDS" \
             --output "$body_file" \
             --write-out "%{http_code}" \
             -X "$method" \
@@ -310,14 +367,16 @@ github_request() {
             -H "X-GitHub-Api-Version: 2022-11-28" \
             -H "Content-Type: application/json" \
             "$url" \
-            --data "$data"
+            --data-binary "@${data_file}"
         )"
         curl_status=$?
         set -e
+        rm -f "$data_file"
     else
         set +e
         status="$(
-            curl --silent --show-error \
+            run_curl_with_retry curl --silent --show-error \
+            --connect-timeout "$CURL_CONNECT_TIMEOUT_SECONDS" \
             --output "$body_file" \
             --write-out "%{http_code}" \
             -X "$method" \
@@ -366,25 +425,39 @@ gitee_request() {
 
     body_file="$(mktemp)"
     if [[ -n "$data" ]]; then
+        # 表单字段临时目录；Windows Git Bash 调用 curl 时，中文参数经 argv 传递可能被转成本机代码页，
+        # 因此把字段值写成 UTF-8 文件，再让 curl 以 `name=<file` 读取原始字节。
+        local form_dir
         local -a form_args
+        form_dir="$(mktemp -d)"
         form_args=(-F "access_token=${GITEE_TOKEN}")
         while IFS= read -r form_field; do
             form_args+=(-F "$form_field")
         done < <(
-            python3 - "$data" <<'PY'
+            python3 - "$data" "$form_dir" <<'PY'
 import json
+import os
 import sys
 
 payload = json.loads(sys.argv[1])
-for key, value in payload.items():
+form_dir = sys.argv[2]
+for index, (key, value) in enumerate(payload.items()):
     if isinstance(value, bool):
         value = str(value).lower()
-    print(f"{key}={value}")
+    elif value is None:
+        value = ""
+    else:
+        value = str(value)
+    path = os.path.join(form_dir, f"{index}.txt")
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        f.write(value)
+    print(f"{key}=<{path}")
 PY
         )
         set +e
         status="$(
-            curl --silent --show-error \
+            run_curl_with_retry curl --silent --show-error \
+            --connect-timeout "$CURL_CONNECT_TIMEOUT_SECONDS" \
             --output "$body_file" \
             --write-out "%{http_code}" \
             -X "$method" \
@@ -394,6 +467,7 @@ PY
         )"
         curl_status=$?
         set -e
+        rm -rf "$form_dir"
     else
         if [[ "$url" == *\?* ]]; then
             token_separator="&"
@@ -402,7 +476,8 @@ PY
         fi
         set +e
         status="$(
-            curl --silent --show-error \
+            run_curl_with_retry curl --silent --show-error \
+            --connect-timeout "$CURL_CONNECT_TIMEOUT_SECONDS" \
             --output "$body_file" \
             --write-out "%{http_code}" \
             -X "$method" \
@@ -463,7 +538,8 @@ github_upload_binary_asset() {
 
     set +e
     status="$(
-        curl --silent --show-error \
+        run_curl_with_retry curl --silent --show-error \
+            --connect-timeout "$CURL_CONNECT_TIMEOUT_SECONDS" \
             --output "$body_file" \
             --write-out "%{http_code}" \
             -X POST \
@@ -527,7 +603,8 @@ gitee_upload_binary_asset() {
 
     set +e
     status="$(
-        curl --silent --show-error \
+        run_curl_with_retry curl --silent --show-error \
+            --connect-timeout "$CURL_CONNECT_TIMEOUT_SECONDS" \
             --output "$body_file" \
             --write-out "%{http_code}" \
             -X POST \
