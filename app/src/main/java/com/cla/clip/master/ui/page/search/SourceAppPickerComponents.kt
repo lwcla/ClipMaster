@@ -36,7 +36,7 @@ internal fun SourceAppPickerSheet(
     val configuration = LocalConfiguration.current
     val sheetMaxHeight = configuration.screenHeightDp.dp * SOURCE_APP_SHEET_MAX_HEIGHT_RATIO
     val allPackageNames = remember(sourceApps) {
-        // 只把当前候选列表里的包名参与全选联动；候选缺失的旧筛选包名会保留到外部 Chip，但不出现在弹窗内。
+        // 只把当前候选列表里的包名参与全选联动；候选缺失的旧筛选包名会保留到外部选择器，但不出现在弹窗内。
         sourceApps.map { it.packageName }.toSet()
     }
     var draftSelection by remember(selectedPackageNames, allPackageNames) {

@@ -1,6 +1,5 @@
 package com.cla.clip.master.ui.page.search
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -12,6 +11,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyListState
@@ -26,9 +26,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -37,6 +41,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
@@ -52,6 +57,8 @@ import com.cla.clip.master.ui.dialog.ClipDeleteChoiceDialog
 import com.cla.clip.master.ui.navigation.DetailRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.navigation.SearchScope
+import com.cla.clip.master.ui.widget.SingleChoiceDialog
+import com.cla.clip.master.ui.widget.SingleChoiceOption
 import com.cla.clip.master.ui.widget.clip.ClipCardTimeMode
 import com.cla.clip.master.ui.widget.clip.ClipResultList
 import kotlinx.coroutines.Job
@@ -64,6 +71,7 @@ import kotlin.math.max
  * 页面负责搜索输入、筛选条件选择、Result/History 模式切换和结果展示；
  * 查询组合、分页和剪贴操作都交给 SearchViewModel，让 UI 层只编排页面内交互状态。
  */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun SearchPage(
     viewModel: SearchViewModel = hiltViewModel(),
@@ -88,7 +96,7 @@ fun SearchPage(
     val sourceAppDisplayNames = sourceApps.associate { sourceApp ->
         sourceApp.packageName to sourceApp.displayName()
     }
-    /** 当前已选择来源 App 的可见名称列表，用于折叠搜索头里的来源 Chip 文案。 */
+    /** 当前已选择来源 App 的可见名称列表，用于折叠搜索头里的来源选择器文案。 */
     val selectedSourceAppNames = remember(filterState.sourceAppPackages, sourceAppDisplayNames) {
         sourceAppDisplayNames.toSelectedSourceAppNames(
             selectedPackageNames = filterState.sourceAppPackages,
@@ -96,10 +104,12 @@ fun SearchPage(
     }
     /** 当前范围内按输入模糊匹配后的搜索历史。 */
     val searchHistories by viewModel.searchHistories.collectAsStateWithLifecycle()
-    /** 搜索结果分页数据，结果列表只负责消费该 LazyPagingItems。 */
-    val pagedClips = viewModel.pagedClips.collectAsLazyPagingItems()
     /** 页面内焦点管理器，用于上滑收起搜索头或提交搜索时关闭键盘。 */
     val focusManager = LocalFocusManager.current
+    /** 页面级键盘控制器，用于首次进入拉起输入法以及提交搜索后主动收起输入法。 */
+    val keyboardController = LocalSoftwareKeyboardController.current
+    /** 搜索框焦点请求器，只在搜索页新实例首次进入时主动请求焦点。 */
+    val searchFocusRequester = remember { FocusRequester() }
     /** 当前屏幕密度，用于把搜索头测量像素和列表内容 Dp 内边距互相转换。 */
     val density = LocalDensity.current
     /** 当前系统亮暗色状态，用于主题切换时只恢复搜索头稳定两态，不保留半拖拽偏移。 */
@@ -112,8 +122,10 @@ fun SearchPage(
     val resultListState = rememberSaveable(saveableScopeKey, saver = LazyListState.Saver) { LazyListState() }
     /** 历史列表滚动状态独立保存，避免 Result/History 模式互相重置位置。 */
     val historyListState = rememberSaveable(saveableScopeKey, saver = LazyListState.Saver) { LazyListState() }
-    /** 当前页面模式；History 模式在亮暗色切换后要恢复，但新搜索页实例默认 Result。 */
-    var pageMode by rememberSaveable(saveableScopeKey) { mutableStateOf(SearchPageMode.Result) }
+    /** 当前页面模式；新搜索页实例默认 History，回栈恢复时保留用户已进入的 Result 模式。 */
+    var pageMode by rememberSaveable(saveableScopeKey) { mutableStateOf(SearchPageMode.History) }
+    /** 首次进入是否已请求过搜索框焦点；保存后可避免详情返回或配置变化重复强拉键盘。 */
+    var initialFocusRequested by rememberSaveable(saveableScopeKey) { mutableStateOf(false) }
     /** 搜索头稳定吸附状态；只保存两态，不保存运行时像素偏移。 */
     var headerCollapseState by rememberSaveable(saveableScopeKey) {
         mutableStateOf(SearchHeaderCollapseState.Expanded)
@@ -128,6 +140,8 @@ fun SearchPage(
     var deleteClip by remember { mutableStateOf<ClipShowEntity?>(null) }
     /** 来源选择弹窗显示状态，弹窗内部继续维护草稿选择。 */
     var showSourcePicker by remember { mutableStateOf(false) }
+    /** 时间筛选单选弹窗显示状态；打开和取消都不改变历史/结果模式和列表滚动位置。 */
+    var showTimeFilterDialog by remember { mutableStateOf(false) }
     /** 搜索框当前焦点状态，只用于键盘和进入历史模式，不直接决定历史面板生命周期。 */
     var searchBarFocused by remember { mutableStateOf(false) }
     /** 清空当前搜索范围历史的确认弹窗显示状态。 */
@@ -138,9 +152,40 @@ fun SearchPage(
     }
     /** 系统导航栏底部安全区高度，页面不再依赖 Scaffold 后需要自行保护底部内容。 */
     val navigationBarBottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    /** 输入法底部占位高度，历史列表需要避开它以免最后几条历史被键盘遮住。 */
+    val imeBottomPadding = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+    /** 历史列表底部安全距离，输入法打开时优先按输入法高度保护内容。 */
+    val historyBottomPadding = maxOf(navigationBarBottomPadding, imeBottomPadding)
     /** 当前内容顶部内边距，展开时跟随搜索头，收起时至少保留状态栏安全区。 */
     val contentTopPaddingDp = with(density) {
         max(statusBarTopPx, headerHeightPx + headerOffsetPx).toDp()
+    }
+
+    /**
+     * 切到历史模式并展开搜索头。
+     *
+     * 用户进入搜索页、重新聚焦输入框、编辑关键词或清空关键词时调用；不依赖历史是否为空，保证空历史也覆盖结果。
+     */
+    fun showHistoryMode() {
+        pageMode = SearchPageMode.History
+        headerCollapseState = SearchHeaderCollapseState.Expanded
+        headerOffsetPx = 0f
+    }
+
+    /**
+     * 切到结果模式并按需要释放输入焦点。
+     *
+     * 只有提交搜索或点击历史项才调用；空关键词也允许进入结果模式，但历史仓库会忽略空白关键词保存。
+     */
+    fun showResultMode(clearInputFocus: Boolean = true) {
+        pageMode = SearchPageMode.Result
+        headerCollapseState = SearchHeaderCollapseState.Expanded
+        headerOffsetPx = 0f
+        if (clearInputFocus) {
+            searchBarFocused = false
+            focusManager.clearFocus()
+            keyboardController?.hide()
+        }
     }
 
     /**
@@ -242,12 +287,13 @@ fun SearchPage(
         }
     }
 
-    LaunchedEffect(searchBarFocused, searchHistories.isNotEmpty()) {
-        if (searchBarFocused && searchHistories.isNotEmpty()) {
-            /** 搜索历史出现时进入 History 模式，并强制搜索头完整展开。 */
-            pageMode = SearchPageMode.History
-            headerCollapseState = SearchHeaderCollapseState.Expanded
-            headerOffsetPx = 0f
+    LaunchedEffect(saveableScopeKey) {
+        if (!initialFocusRequested && pageMode == SearchPageMode.History) {
+            /** 首次自动聚焦只在新搜索页实例执行；下一帧再请求焦点，确保 TextField 已挂载到焦点树。 */
+            withFrameNanos { }
+            searchFocusRequester.requestFocus()
+            keyboardController?.show()
+            initialFocusRequested = true
         }
     }
 
@@ -258,15 +304,6 @@ fun SearchPage(
                 settleHeader()
             }
         }
-    }
-
-    BackHandler(enabled = pageMode == SearchPageMode.History) {
-        // 历史面板是搜索页内部模式，返回键先关闭它并释放焦点，再由下一次返回退出页面。
-        pageMode = SearchPageMode.Result
-        headerCollapseState = SearchHeaderCollapseState.Expanded
-        headerOffsetPx = 0f
-        searchBarFocused = false
-        focusManager.clearFocus()
     }
 
     Box(
@@ -305,20 +342,19 @@ fun SearchPage(
                     start = 12.dp,
                     top = contentTopPaddingDp + 8.dp,
                     end = 12.dp,
-                    bottom = navigationBarBottomPadding + 24.dp,
+                    bottom = historyBottomPadding + 24.dp,
                 ),
                 onHistoryClick = { history ->
                     viewModel.selectHistory(history.query)
-                    pageMode = SearchPageMode.Result
-                    headerCollapseState = SearchHeaderCollapseState.Expanded
-                    headerOffsetPx = 0f
-                    searchBarFocused = false
-                    focusManager.clearFocus()
+                    showResultMode()
                 },
                 onDeleteHistory = viewModel::deleteHistory,
                 onClearHistories = { showClearHistoryConfirm = true }
             )
         } else {
+            /** 结果模式才收集分页数据，避免搜索页初始历史态提前加载剪贴数据列表。 */
+            val pagedClips = viewModel.pagedClips.collectAsLazyPagingItems()
+
             ClipResultList(
                 listState = resultListState,
                 pagedClips = pagedClips,
@@ -357,30 +393,30 @@ fun SearchPage(
             filterState = filterState,
             selectedSourceAppNames = selectedSourceAppNames,
             offsetPx = if (pageMode == SearchPageMode.History) 0f else headerOffsetPx,
+            searchFieldModifier = Modifier.focusRequester(searchFocusRequester),
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .onSizeChanged { size ->
                     /** 最新搜索头高度来自真实布局测量，Collapsed 恢复必须使用这次高度。 */
                     headerHeightPx = size.height.toFloat()
                 },
-            onQueryChange = viewModel::updateQuery,
+            onQueryChange = { query ->
+                viewModel.updateQuery(query)
+                showHistoryMode()
+            },
             onFocusChange = { focused ->
                 searchBarFocused = focused
-                if (focused && searchHistories.isNotEmpty()) {
-                    pageMode = SearchPageMode.History
-                    headerCollapseState = SearchHeaderCollapseState.Expanded
-                    headerOffsetPx = 0f
+                if (focused) {
+                    showHistoryMode()
                 }
             },
             onSubmit = {
                 viewModel.submitCurrentQuery()
-                pageMode = SearchPageMode.Result
-                headerCollapseState = SearchHeaderCollapseState.Expanded
-                headerOffsetPx = 0f
-                searchBarFocused = false
-                focusManager.clearFocus()
+                showResultMode()
             },
-            onTimeFilterChange = viewModel::updateTimeFilter,
+            onTimeClick = {
+                showTimeFilterDialog = true
+            },
             onSourceClick = {
                 showSourcePicker = true
             }
@@ -393,6 +429,26 @@ fun SearchPage(
         onMoveToRecycleBin = viewModel::deleteClip,
         onDeletePermanently = viewModel::deleteClipPermanently
     )
+
+    if (showTimeFilterDialog) {
+        SingleChoiceDialog(
+            title = stringResource(com.cla.clip.base.general.R.string.base_general_time),
+            options = SearchTimeFilter.entries.map { filter ->
+                /** 时间筛选弹窗选项，标题和顶部选择器共用同一份本地化文案。 */
+                SingleChoiceOption(
+                    value = filter,
+                    title = filter.labelText(),
+                )
+            },
+            selectedValue = filterState.timeFilter,
+            onSelect = { selectedFilter ->
+                viewModel.updateTimeFilter(selectedFilter)
+                showTimeFilterDialog = false
+            },
+            onDismiss = { showTimeFilterDialog = false },
+            dismissText = stringResource(com.cla.clip.base.general.R.string.base_general_cancel),
+        )
+    }
 
     if (showSourcePicker) {
         SourceAppPickerSheet(
@@ -411,11 +467,7 @@ fun SearchPage(
             onDismiss = { showClearHistoryConfirm = false },
             onConfirm = {
                 viewModel.clearCurrentScopeHistory()
-                pageMode = SearchPageMode.Result
-                headerCollapseState = SearchHeaderCollapseState.Expanded
-                headerOffsetPx = 0f
-                searchBarFocused = false
-                focusManager.clearFocus()
+                showHistoryMode()
                 showClearHistoryConfirm = false
             }
         )

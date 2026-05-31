@@ -44,7 +44,7 @@
 
 1. 新增共享表单、选择、分页状态组件。
 2. 我的页入口卡片、快捷动作单选弹窗和权限设置展开卡片接入共享组件。
-3. 搜索页搜索输入、时间筛选 Chip 和来源 App 选择弹层接入共享组件。
+3. 搜索页搜索输入、时间选择弹窗和来源 App 选择弹层接入共享组件；时间与来源的等宽选择器留在搜索页业务适配层。
 4. 下载记录页选择操作条和分页加载/空态/错误状态接入共享组件。
 5. 回收站多选底部操作栏、保留天数单选行和确认弹窗尽量复用共享组件。
 6. 运行 `./gradlew :app:compileDebugKotlin` 验证编译。
@@ -52,7 +52,7 @@
 ## 测试验证
 
 - 我的页入口点击、快捷动作选择和权限开关行为保持不变。
-- 搜索页输入、清空、键盘搜索、时间筛选和来源 App 多选确认行为保持不变。
+- 搜索页输入、清空、键盘搜索、时间选择和来源 App 多选确认行为保持不变。
 - 下载记录页分页加载、空态、失败重试、多选删除和图片预览行为保持不变。
 - 回收站多选彻底删除、还原确认、清空确认和保留天数设置行为保持不变。
 - 已运行 `./gradlew :app:compileDebugKotlin`，结果通过；仅保留既有 Gradle 配置和弃用 API 警告。
@@ -68,7 +68,7 @@
 - `ListEntryCard` 承载图标、标题、说明和点击入口，当前由我的页下载记录、折叠数据、回收站和快捷动作设置入口复用。
 - `ExpandableSettingCard`、`SettingSwitchRow` 和 `SettingSwitchRowState` 承载可展开设置组与开关行，当前由我的页权限说明复用；页面仍负责权限刷新、系统跳转和 Shizuku 回调。
 - `SingleChoiceDialog`、`SingleChoiceOption` 和 `SingleChoiceRow` 承载单选弹窗/单选行，当前由我的页快捷动作设置和回收站保留天数选项复用。
-- `SearchInputField`、`HorizontalFilterChips` 和 `FilterChipOption` 承载搜索输入和横向互斥筛选，当前由搜索页顶部控件复用；搜索页继续保留连续折叠和时间语义。
+- `SearchInputField`、`HorizontalFilterChips` 和 `FilterChipOption` 承载搜索输入和横向互斥筛选；当前搜索页继续复用搜索输入，时间筛选改为复用 `SingleChoiceDialog`，页面层保留时间/来源等宽选择器和折叠语义。
 - `SelectableListBottomSheet`、`SelectableListItemState` 和 `SelectableListItem` 承载复选列表底部弹层，当前由搜索页来源 App 选择复用；搜索页继续保留“空集合表示全部来源”和临时 0 选中禁用确认的草稿契约。
 - `SelectionActionBar` 承载底部多选主操作条，当前由下载记录页多选删除复用；下载记录页继续保留删除方式弹窗和本地文件授权流程。
 - `PagingLoadingContent`、`PagingEmptyContent`、`PagingErrorContent` 和 `pagingAppendStateItem` 承载分页状态，当前由下载记录页和共享剪贴结果组件部分复用。
@@ -76,5 +76,6 @@
 
 ## 变更记录
 
+- 2026-05-31：同步搜索页时间筛选接入方式；原因是搜索页已从横向时间 Chips 改为“时间 / 来源”两个等宽单行选择器，并复用现有单选弹窗承载时间选择。
 - 2026-05-18：新增共享表单与选择组件方案并标记为实现中；原因是按照最新 Compose 规则，需要再次整理所有页面组件，把通用 UI 形态从页面目录收敛到共享组件。
 - 2026-05-18：完成共享表单、选择、分页状态和共享剪贴结果组件收敛，并通过 `./gradlew :app:compileDebugKotlin` 验证；原因是当前页面组件已按默认公共化规则迁入 `ui/widget` 或 `ui/widget/clip`，页面目录只保留强业务耦合适配。

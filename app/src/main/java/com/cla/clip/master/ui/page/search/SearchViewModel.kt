@@ -214,8 +214,11 @@ class SearchViewModel @Inject constructor(
      * 保存只在明确提交时发生，输入过程不会污染历史；当前范围尚未初始化时忽略保存，避免误写到普通范围。
      */
     fun submitCurrentQuery() {
+        /** 当前搜索范围；范围尚未初始化时不能把历史误写到普通或折叠的错误分组。 */
         val scope = visibilityScope.value ?: return
+        /** 当前搜索框内容；空白搜索只用于展示全部匹配结果，不写历史也不触发备份 dirty。 */
         val query = _filterState.value.query
+        if (query.trim().isBlank()) return
         viewModelScope.launch {
             searchHistoryRepository.get().saveHistory(scope, query)
             BackupAutoScheduler.markDirtyAndSchedule(appContext)

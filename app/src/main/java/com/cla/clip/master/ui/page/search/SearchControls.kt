@@ -1,25 +1,26 @@
 package com.cla.clip.master.ui.page.search
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material3.AssistChip
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.cla.clip.master.ui.widget.FilterChipOption
-import com.cla.clip.master.ui.widget.HorizontalFilterChips
 import com.cla.clip.master.ui.widget.SearchInputField
 
 /**
@@ -35,11 +36,12 @@ internal fun SearchCollapsibleHeader(
     selectedSourceAppNames: List<String>,
     offsetPx: Float,
     modifier: Modifier = Modifier,
+    searchFieldModifier: Modifier = Modifier,
     tonalElevation: Dp = 2.dp,
     onQueryChange: (String) -> Unit,
     onFocusChange: (Boolean) -> Unit,
     onSubmit: () -> Unit,
-    onTimeFilterChange: (SearchTimeFilter) -> Unit,
+    onTimeClick: () -> Unit,
     onSourceClick: () -> Unit,
 ) {
     Surface(
@@ -61,6 +63,7 @@ internal fun SearchCollapsibleHeader(
         ) {
             SearchBar(
                 query = query,
+                modifier = searchFieldModifier,
                 onQueryChange = onQueryChange,
                 onFocusChange = onFocusChange,
                 onSubmit = onSubmit,
@@ -69,7 +72,7 @@ internal fun SearchCollapsibleHeader(
             SearchFilters(
                 filterState = filterState,
                 selectedSourceAppNames = selectedSourceAppNames,
-                onTimeFilterChange = onTimeFilterChange,
+                onTimeClick = onTimeClick,
                 onSourceClick = onSourceClick,
             )
         }
@@ -84,6 +87,7 @@ internal fun SearchCollapsibleHeader(
 @Composable
 internal fun SearchBar(
     query: String,
+    modifier: Modifier = Modifier,
     onQueryChange: (String) -> Unit,
     onFocusChange: (Boolean) -> Unit,
     onSubmit: () -> Unit,
@@ -95,22 +99,26 @@ internal fun SearchBar(
         onSubmit = onSubmit,
         placeholder = stringResource(com.cla.clip.base.general.R.string.base_general_search_clip_hint),
         clearContentDescription = stringResource(com.cla.clip.base.general.R.string.base_general_clear_search_keyword),
+        modifier = modifier,
     )
 }
 
 /**
  * 搜索筛选区。
  *
- * 时间筛选使用 FilterChip 表达互斥选项，来源筛选单独用 AssistChip 打开弹窗，
- * 这样固定选项和动态 App 列表不会挤在同一个横向区域里。
+ * 时间和来源各占一半宽度，避免多来源只显示数量后筛选区左右视觉重量不一致。
  */
 @Composable
 internal fun SearchFilters(
     filterState: SearchFilterState,
     selectedSourceAppNames: List<String>,
-    onTimeFilterChange: (SearchTimeFilter) -> Unit,
+    onTimeClick: () -> Unit,
     onSourceClick: () -> Unit,
 ) {
+    /** 当前时间筛选的展示值，和单选弹窗选项共用同一份本地化文案。 */
+    val selectedTimeLabel = filterState.timeFilter.labelText()
+
+    /** 当前来源筛选的展示值，多选时只显示数量，避免长 App 名撑破半宽选择器。 */
     val selectedSourceAppLabel = when (selectedSourceAppNames.size) {
         0 -> stringResource(com.cla.clip.base.general.R.string.base_general_all_source_apps)
         1 -> selectedSourceAppNames.first()
@@ -120,44 +128,75 @@ internal fun SearchFilters(
         )
     }
 
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp)
+            .padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        HorizontalFilterChips(
-            options = SearchTimeFilter.entries.map { filter ->
-                FilterChipOption(
-                    value = filter,
-                    label = filter.labelText()
-                )
-            },
-            selectedValue = filterState.timeFilter,
-            onSelected = onTimeFilterChange,
+        SearchFilterSelector(
+            title = stringResource(com.cla.clip.base.general.R.string.base_general_time),
+            value = selectedTimeLabel,
+            onClick = onTimeClick,
+            modifier = Modifier.weight(1f),
         )
 
-        AssistChip(
+        SearchFilterSelector(
+            title = stringResource(com.cla.clip.base.general.R.string.base_general_source_app),
+            value = selectedSourceAppLabel,
             onClick = onSourceClick,
-            label = {
-                Text(
-                    text = selectedSourceAppLabel,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            },
-            leadingIcon = {
-                Icon(
-                    imageVector = Icons.Default.Tune,
-                    contentDescription = null
-                )
-            }
+            modifier = Modifier.weight(1f),
         )
+    }
+}
+
+/**
+ * 单行筛选选择器。
+ *
+ * 左侧显示筛选维度，右侧显示当前取值；取值区域单行省略，避免半屏宽度下把控件撑成两行。
+ */
+@Composable
+private fun SearchFilterSelector(
+    title: String,
+    value: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier
+            .heightIn(min = 44.dp)
+            .clickable(onClick = onClick),
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            /** 标题和值之间的固定间隔，保证单行结构在窄屏下仍能读出维度和值的边界。 */
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 
 /** 时间筛选对应的本地化展示文案。 */
 @Composable
-private fun SearchTimeFilter.labelText(): String {
+internal fun SearchTimeFilter.labelText(): String {
     return when (this) {
         SearchTimeFilter.ALL -> stringResource(com.cla.clip.base.general.R.string.base_general_all_time)
         SearchTimeFilter.TODAY -> stringResource(com.cla.clip.base.general.R.string.base_general_today)

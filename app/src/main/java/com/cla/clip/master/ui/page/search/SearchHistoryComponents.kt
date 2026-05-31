@@ -32,6 +32,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.cla.clip.base.general.dao.SearchHistoryData
@@ -53,6 +54,9 @@ internal fun SearchHistoryPanel(
     onDeleteHistory: (Long) -> Unit,
     onClearHistories: () -> Unit,
 ) {
+    /** 当前是否有可清理历史；空态下隐藏清空入口，避免用户点击无效动作。 */
+    val showClearAction = histories.isNotEmpty()
+
     Surface(
         modifier = Modifier
             .fillMaxSize()
@@ -77,28 +81,44 @@ internal fun SearchHistoryPanel(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f)
                     )
-                    TextButton(onClick = onClearHistories) {
-                        Icon(
-                            imageVector = Icons.Default.DeleteSweep,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(stringResource(com.cla.clip.base.general.R.string.base_general_clear_search_history))
+                    if (showClearAction) {
+                        TextButton(onClick = onClearHistories) {
+                            Icon(
+                                imageVector = Icons.Default.DeleteSweep,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(stringResource(com.cla.clip.base.general.R.string.base_general_clear_search_history))
+                        }
                     }
                 }
             }
 
-            items(
-                items = histories,
-                key = { it.id }
-            ) { history ->
-                SearchHistoryRow(
-                    history = history,
-                    query = query,
-                    onClick = { onHistoryClick(history) },
-                    onDelete = { onDeleteHistory(history.id) }
-                )
+            if (histories.isEmpty()) {
+                item {
+                    Text(
+                        text = stringResource(com.cla.clip.base.general.R.string.base_general_no_search_history),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 36.dp)
+                    )
+                }
+            } else {
+                items(
+                    items = histories,
+                    key = { it.id }
+                ) { history ->
+                    SearchHistoryRow(
+                        history = history,
+                        query = query,
+                        onClick = { onHistoryClick(history) },
+                        onDelete = { onDeleteHistory(history.id) }
+                    )
+                }
             }
         }
     }
