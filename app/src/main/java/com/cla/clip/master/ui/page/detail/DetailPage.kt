@@ -1,25 +1,32 @@
 package com.cla.clip.master.ui.page.detail
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Error
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -27,18 +34,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.LinkAnnotation
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.TextLinkStyles
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withLink
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.entity.ClipShowEntity
+import com.cla.clip.base.general.utils.LinkUtils
 import com.cla.clip.feature.magnet.api.MagnetFeatureEntry
 import com.cla.clip.master.ui.dialog.ClipDeleteChoiceDialog
 import com.cla.clip.master.ui.navigation.ImageExtractRoute
@@ -48,11 +54,56 @@ import com.cla.clip.master.ui.widget.ClipMasterCard
 import com.cla.clip.master.ui.widget.SecondaryPageScaffold
 import com.cla.clip.master.ui.theme.ClipMasterThemeTokens
 import kotlinx.coroutines.flow.collectLatest
+import java.net.URI
+import java.util.Locale
+
+/** 详情页底部默认直接展示的链接数量，更多链接进入选择弹层，避免底部区域膨胀。 */
+private const val DETAIL_LINK_PREVIEW_LIMIT = 3
+
+/** 链接摘要最多展示的 path 段数，query 默认不展示以降低视觉噪声和敏感参数暴露。 */
+private const val DETAIL_LINK_SUMMARY_PATH_SEGMENT_LIMIT = 2
+
+/** 无法解析 host 时原始链接摘要的最大长度，防止异常输入撑开详情页底部。 */
+private const val DETAIL_LINK_RAW_SUMMARY_MAX_LENGTH = 48
+
+/** 单个 path 片段的最大展示长度，过长文件名或 slug 会被省略。 */
+private const val DETAIL_LINK_PATH_SEGMENT_MAX_LENGTH = 24
+
+/**
+ * 详情页内部链接展示模型。
+ *
+ * 完整 URL 只用于复制和导航；摘要和类型用于多链接场景下帮助用户辨认目标。
+ */
+internal data class DetailLinkUiState(
+    /** 原始完整 URL，复制和图片/视频提取必须使用该值，不能使用摘要。 */
+    val url: String,
+    /** 隐藏 query 后的短摘要，用于详情页底部和弹层展示。 */
+    val summary: String,
+    /** 链接资源类型，决定用户看到的轻量类型提示。 */
+    val type: DetailLinkType,
+    /** 是否允许进入公网图片/视频提取流程；非公网或非 http/https 链接只能复制。 */
+    val canExtract: Boolean,
+)
+
+/** 详情页多链接选择时展示的轻量链接类型。 */
+internal enum class DetailLinkType {
+    /** 图片资源直链。 */
+    Image,
+
+    /** 音视频或流媒体资源直链。 */
+    Media,
+
+    /** 普通公网网页链接。 */
+    Web,
+
+    /** 其他可复制但不适合提取的链接，例如 file、ftp 或内网地址。 */
+    Other,
+}
 
 /**
  * 剪贴详情页。
  *
- * 页面根据路由传入的 `clipId` 加载单条剪贴记录，提供删除、复制以及跳转到图片/视频提取的入口。
+ * 页面根据路由传入的 `clipId` 加载单条剪贴记录，点击正文卡片复制内容，并提供删除以及跳转到图片/视频提取的入口。
  * 数据读取和剪贴操作放在 ViewModel 中，Composable 只负责生命周期触发和状态渲染。
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -147,6 +198,7 @@ fun DetailPage(
             }
 
             is DetailUiState.Success -> {
+                /** 当前成功加载的剪贴记录；正文卡片点击和底部能力入口都围绕这条记录工作。 */
                 val clip = uiState.clip
                 Column(
                     modifier = Modifier
@@ -160,9 +212,13 @@ fun DetailPage(
                             .fillMaxWidth()
                             .weight(1f)
                     ) {
-                        // 正文可能非常长，Card 内部滚动可以保留顶部标题和底部操作按钮的稳定位置。
+                        // 正文可能非常长，Card 内部滚动可以保留顶部标题和底部能力入口的稳定位置。
                         ClipMasterCard(
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = {
+                                // 正文卡片轻点复用通用复制能力，同时保持时间戳刷新和复制提示一致。
+                                detailVm.copyToClipboard(clip)
+                            }
                         ) {
                             Text(
                                 text = clip.content,
@@ -198,8 +254,9 @@ fun DetailPage(
  * 详情页操作分区。
  *
  * 当剪贴内容识别出链接时额外展示图片/视频提取入口；磁力搜索会用标题或正文作为初始关键词，不读取系统剪贴板。
- * 复制作为普通主操作保留；删除入口上移到标题栏右侧低频操作位，降低正文底部干扰。
+ * 复制入口由正文卡片点击承载；删除入口保留在标题栏右侧低频操作位，降低正文底部干扰。
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DetailActionSections(
     detailVm: DetailViewModel,
@@ -210,81 +267,465 @@ private fun DetailActionSections(
 ) {
     /** 详情页操作区间距 token，确保正文、能力入口和普通操作区节奏一致。 */
     val spacing = ClipMasterThemeTokens.tokens.spacing
+    /** 从正文实时提取出的链接展示模型；历史剪贴不需要迁移即可展示多链接。 */
+    val linkItems = remember(clip.content) { buildDetailLinkItems(clip.content) }
+    /** 是否存在磁力扩展动作；没有动作时不渲染空操作行，避免移除复制按钮后留下无意义间距。 */
+    val hasMagnetActions = magnetFeatures.isNotEmpty()
+    /** 当前被用户选中并准备操作的链接；为 null 时不显示链接操作弹层。 */
+    var selectedLink by remember { mutableStateOf<DetailLinkUiState?>(null) }
+    /** 是否显示全部链接选择弹层；只在链接数量超过默认预览数量时使用。 */
+    var showAllLinks by remember { mutableStateOf(false) }
+
+    LaunchedEffect(clip.id) {
+        // 剪贴记录切换时清空弹层状态，避免快速进入另一条详情后仍显示旧链接。
+        selectedLink = null
+        showAllLinks = false
+    }
+
+    if (linkItems.isEmpty() && !hasMagnetActions) {
+        return
+    }
+
     Column(
         verticalArrangement = Arrangement.spacedBy(spacing.small)
     ) {
-        val link = clip.link
-        if (link.isNullOrBlank().not()) {
-            val tipText = buildAnnotatedString {
-                append(stringResource(R.string.base_general_videos_or_pictures_from_web_pages_can_be_extracted_1))
-                withLink(
-                    LinkAnnotation.Clickable(
-                        tag = "LINK",
-                        styles = TextLinkStyles(
-                            style = SpanStyle(color = MaterialTheme.colorScheme.error)
-                        )
-                    ) {
-                        // 只点击链接片段时触发复制，避免整段说明文字都变成可点击区域。
-                        detailVm.copyToClipboard(link)
-                    }
-                ) {
-                    append(link)
+        if (linkItems.isNotEmpty()) {
+            DetailLinksSection(
+                links = linkItems,
+                onCopyLink = { url ->
+                    // 链接复制只写入当前链接，不刷新整条剪贴记录时间戳。
+                    detailVm.copyToClipboard(url)
+                },
+                onOpenLinkActions = { link ->
+                    /** 用户点选的链接；后续弹层只围绕该链接执行复制或提取动作。 */
+                    selectedLink = link
+                },
+                onShowAllLinks = {
+                    // 多链接超出默认展示数量时进入完整选择弹层，避免底部列表过高。
+                    showAllLinks = true
+                },
+                onExtractVideo = { link ->
+                    // 视频提取页需要原始页面 URL 和一个可读名称，名称用于后续生成下载任务文件名。
+                    onNavigate(VideoExtractRoute(link.url, name = clip.linkTitle ?: clip.content))
+                },
+                onExtractImages = { link ->
+                    // 图片提取已有独立页面，进入后会先提取并落库，再由用户确认批量下载。
+                    onNavigate(ImageExtractRoute(link.url, name = clip.linkTitle ?: clip.content))
                 }
-
-                append(stringResource(R.string.base_general_videos_or_pictures_from_web_pages_can_be_extracted_2))
-            }
-            Text(
-                text = tipText,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
 
+        if (hasMagnetActions) {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(spacing.small)
             ) {
-                OutlinedButton(
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        // 视频提取页需要原始页面 URL 和一个可读名称，名称用于后续生成下载任务文件名。
-                        onNavigate(VideoExtractRoute(link, name = clip.linkTitle ?: clip.content))
+                /** 磁力扩展动作的初始关键词，优先使用网页标题，缺失时回退到剪贴正文。 */
+                val magnetInitialQuery = clip.linkTitle ?: clip.content
+                magnetFeatures.sortedBy { it.featureId }.forEach { feature ->
+                    with(feature) {
+                        DetailAction(
+                            initialQuery = magnetInitialQuery,
+                            onOpenSearch = { query -> onOpenMagnetSearch(feature, query) }
+                        )
                     }
-                ) {
-                    Text(stringResource(R.string.base_general_video_extract))
                 }
-
-                OutlinedButton(
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        // 图片提取已有独立页面，进入后会先提取并落库，再由用户确认批量下载。
-                        onNavigate(ImageExtractRoute(link, name = clip.linkTitle ?: clip.content))
-                    }
-                ) {
-                    Text(stringResource(R.string.base_general_image_extract))
-                }
-            }
-        }
-
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(spacing.small)
-        ) {
-            val magnetInitialQuery = clip.linkTitle ?: clip.content
-            magnetFeatures.sortedBy { it.featureId }.forEach { feature ->
-                with(feature) {
-                    DetailAction(
-                        initialQuery = magnetInitialQuery,
-                        onOpenSearch = { query -> onOpenMagnetSearch(feature, query) }
-                    )
-                }
-            }
-
-            Button(
-                modifier = Modifier.weight(1f),
-                onClick = {
-                    detailVm.copyToClipboard(clip)
-                }
-            ) {
-                Text(stringResource(R.string.base_general_copy))
             }
         }
     }
+
+    if (showAllLinks) {
+        DetailAllLinksBottomSheet(
+            links = linkItems,
+            onDismiss = { showAllLinks = false },
+            onSelectLink = { link ->
+                /** 从全部链接弹层中选中的目标链接，会继续进入单链接操作弹层。 */
+                selectedLink = link
+                showAllLinks = false
+            }
+        )
+    }
+
+    selectedLink?.let { link ->
+        DetailLinkActionBottomSheet(
+            link = link,
+            onDismiss = { selectedLink = null },
+            onCopyLink = {
+                // 弹层复制只复制完整 URL；摘要永远不参与剪贴板写入。
+                detailVm.copyToClipboard(link.url)
+                selectedLink = null
+            },
+            onExtractVideo = {
+                // 进入视频提取前关闭弹层，避免导航后返回时残留旧操作面板。
+                selectedLink = null
+                onNavigate(VideoExtractRoute(link.url, name = clip.linkTitle ?: clip.content))
+            },
+            onExtractImages = {
+                // 进入图片提取前关闭弹层，避免导航后返回时残留旧操作面板。
+                selectedLink = null
+                onNavigate(ImageExtractRoute(link.url, name = clip.linkTitle ?: clip.content))
+            }
+        )
+    }
+}
+
+/**
+ * 详情页链接区域。
+ *
+ * 单链接直接展示快捷操作；多链接只展示紧凑摘要，具体操作放到链接操作弹层里完成。
+ */
+@Composable
+private fun DetailLinksSection(
+    links: List<DetailLinkUiState>,
+    onCopyLink: (String) -> Unit,
+    onOpenLinkActions: (DetailLinkUiState) -> Unit,
+    onShowAllLinks: () -> Unit,
+    onExtractVideo: (DetailLinkUiState) -> Unit,
+    onExtractImages: (DetailLinkUiState) -> Unit,
+) {
+    /** 详情页链接区间距 token，和页面其他操作区域保持一致。 */
+    val spacing = ClipMasterThemeTokens.tokens.spacing
+    /** 是否只有一条链接；单链接场景保留快速提取入口。 */
+    val isSingleLink = links.size == 1
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 220.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(spacing.small)
+    ) {
+        Text(
+            text = stringResource(R.string.base_general_recognized_link_count, links.size),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        if (isSingleLink) {
+            /** 单链接场景下唯一的链接目标，快捷操作都围绕它执行。 */
+            val link = links.first()
+            DetailLinkSummaryRow(
+                link = link,
+                onClick = { onOpenLinkActions(link) }
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(spacing.small),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                DetailLinkTextAction(
+                    label = stringResource(R.string.base_general_copy_link),
+                    onClick = { onCopyLink(link.url) }
+                )
+                if (link.canExtract) {
+                    DetailLinkTextAction(
+                        label = stringResource(R.string.base_general_video_extract),
+                        onClick = { onExtractVideo(link) }
+                    )
+                    DetailLinkTextAction(
+                        label = stringResource(R.string.base_general_image_extract),
+                        onClick = { onExtractImages(link) }
+                    )
+                }
+            }
+            if (!link.canExtract) {
+                Text(
+                    text = stringResource(R.string.base_general_link_extract_unsupported),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            /** 默认预览的前几条链接，剩余链接通过“查看全部链接”进入弹层。 */
+            val visibleLinks = links.take(DETAIL_LINK_PREVIEW_LIMIT)
+            visibleLinks.forEach { link ->
+                DetailLinkSummaryRow(
+                    link = link,
+                    onClick = { onOpenLinkActions(link) }
+                )
+            }
+            if (links.size > DETAIL_LINK_PREVIEW_LIMIT) {
+                TextButton(onClick = onShowAllLinks) {
+                    Text(stringResource(R.string.base_general_view_all_links))
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 详情页链接摘要行。
+ *
+ * 行只展示摘要和类型，点击后由调用方决定打开操作弹层或完整选择弹层。
+ */
+@Composable
+private fun DetailLinkSummaryRow(
+    link: DetailLinkUiState,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = link.summary,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = detailLinkTypeLabel(link.type),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+/**
+ * 全部链接选择弹层。
+ *
+ * 只负责列出全部链接并把用户选择回传给详情页，避免在默认底部区域堆叠过多行。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DetailAllLinksBottomSheet(
+    links: List<DetailLinkUiState>,
+    onDismiss: () -> Unit,
+    onSelectLink: (DetailLinkUiState) -> Unit,
+) {
+    /** 链接选择弹层状态；跳过半展开，避免长链接列表在半高状态下难以浏览。 */
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 520.dp)
+                .padding(bottom = 24.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.base_general_select_link),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+            )
+            LazyColumn {
+                items(
+                    items = links,
+                    key = { link -> link.url }
+                ) { link ->
+                    DetailLinkSummaryRow(
+                        link = link,
+                        onClick = { onSelectLink(link) },
+                        modifier = Modifier.padding(horizontal = 20.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 单条链接操作弹层。
+ *
+ * 复制对所有识别到的链接开放；图片/视频提取只对公网 http/https 链接开放。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DetailLinkActionBottomSheet(
+    link: DetailLinkUiState,
+    onDismiss: () -> Unit,
+    onCopyLink: () -> Unit,
+    onExtractVideo: () -> Unit,
+    onExtractImages: () -> Unit,
+) {
+    /** 链接操作弹层状态；跳过半展开，保证操作文案和完整链接提示一次可见。 */
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    /** 弹层内容滚动状态；完整链接很长时允许用户滚动查看所有内容。 */
+    val sheetContentScrollState = rememberScrollState()
+    /** 完整链接横向滚动状态；不截断 URL，复制和核对都以完整原文为准。 */
+    val fullUrlScrollState = rememberScrollState()
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(sheetContentScrollState)
+                .padding(horizontal = 20.dp, vertical = 12.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = detailLinkTypeLabel(link.type),
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = stringResource(R.string.base_general_full_link),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = link.url,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(fullUrlScrollState),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                softWrap = false
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(ClipMasterThemeTokens.tokens.spacing.small),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                DetailLinkTextAction(
+                    label = stringResource(R.string.base_general_copy_link),
+                    onClick = onCopyLink
+                )
+                if (link.canExtract) {
+                    DetailLinkTextAction(
+                        label = stringResource(R.string.base_general_video_extract),
+                        onClick = onExtractVideo
+                    )
+                    DetailLinkTextAction(
+                        label = stringResource(R.string.base_general_image_extract),
+                        onClick = onExtractImages
+                    )
+                }
+            }
+            if (!link.canExtract) {
+                Text(
+                    text = stringResource(R.string.base_general_link_extract_unsupported),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(modifier = Modifier.size(4.dp))
+        }
+    }
+}
+
+/**
+ * 详情页链接文字操作。
+ *
+ * 只使用主色文案和点击语义，不使用按钮外框，避免小屏下按钮最小宽度挤压文案换行。
+ */
+@Composable
+private fun DetailLinkTextAction(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = label,
+        modifier = modifier
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(vertical = 8.dp, horizontal = 2.dp),
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        maxLines = 1,
+        overflow = TextOverflow.Clip
+    )
+}
+
+/** 把链接类型映射为资源化文案，避免展示模型直接持有 Android 字符串。 */
+@Composable
+private fun detailLinkTypeLabel(type: DetailLinkType): String {
+    return when (type) {
+        DetailLinkType.Image -> stringResource(R.string.base_general_link_type_image)
+        DetailLinkType.Media -> stringResource(R.string.base_general_link_type_media)
+        DetailLinkType.Web -> stringResource(R.string.base_general_link_type_web)
+        DetailLinkType.Other -> stringResource(R.string.base_general_link_type_other)
+    }
+}
+
+/**
+ * 从剪贴正文构建详情页链接展示模型。
+ *
+ * 该函数保持纯逻辑，便于单元测试覆盖多链接、摘要生成和提取安全边界。
+ */
+internal fun buildDetailLinkItems(content: String): List<DetailLinkUiState> {
+    /** 按正文顺序提取出的完整链接，已经由 `LinkUtils` 完成尾部标点清理和完整 URL 去重。 */
+    val urls = LinkUtils.extractUrls(content)
+    /** 链接展示模型；摘要不追加序号，避免识别到的链接列表出现额外编号。 */
+    val items = urls.map { url ->
+        /** 链接类型，决定列表里的轻量提示。 */
+        val type = resolveDetailLinkType(url)
+        DetailLinkUiState(
+            url = url,
+            summary = summarizeDetailLink(url),
+            type = type,
+            canExtract = LinkUtils.isPublicHttpUrl(url)
+        )
+    }
+
+    return items
+}
+
+/** 判断详情页链接类型，按更具体的图片/媒体直链优先归类。 */
+private fun resolveDetailLinkType(url: String): DetailLinkType {
+    return when {
+        LinkUtils.isImageUrl(url) -> DetailLinkType.Image
+        LinkUtils.isDownloadableMediaUrl(url) -> DetailLinkType.Media
+        LinkUtils.isPublicHttpUrl(url) -> DetailLinkType.Web
+        else -> DetailLinkType.Other
+    }
+}
+
+/**
+ * 生成链接摘要。
+ *
+ * 摘要只包含 host 和前几段 path，不包含 query；无法解析 host 时回退到原始 URL 截断。
+ */
+internal fun summarizeDetailLink(url: String): String {
+    /** 尝试解析后的 URI；失败时说明 URL 不能可靠拆分 host/path。 */
+    val uri = runCatching { URI(url) }.getOrNull()
+    /** 摘要主机名；去掉 www 前缀以减少无效占宽。 */
+    val host = uri?.host
+        ?.lowercase(Locale.ROOT)
+        ?.removePrefix("www.")
+        ?.takeIf { it.isNotBlank() }
+    if (host.isNullOrBlank()) {
+        return shortenDetailLinkText(url, DETAIL_LINK_RAW_SUMMARY_MAX_LENGTH)
+    }
+
+    /** path 中可展示的前几段；query 永远不进入摘要。 */
+    val pathSegments = uri.path
+        .orEmpty()
+        .split("/")
+        .filter { it.isNotBlank() }
+        .take(DETAIL_LINK_SUMMARY_PATH_SEGMENT_LIMIT)
+        .map { segment -> shortenDetailLinkText(segment, DETAIL_LINK_PATH_SEGMENT_MAX_LENGTH) }
+
+    if (pathSegments.isEmpty()) return host
+
+    /** path 是否还有未展示内容，有剩余时用省略标记提示用户摘要被压缩。 */
+    val hasMorePath = uri.path
+        .orEmpty()
+        .split("/")
+        .filter { it.isNotBlank() }
+        .size > DETAIL_LINK_SUMMARY_PATH_SEGMENT_LIMIT
+    /** 摘要 path 文案，最多包含前两个 path 片段。 */
+    val pathSummary = pathSegments.joinToString(separator = "/")
+    return if (hasMorePath) {
+        "$host/$pathSummary/..."
+    } else {
+        "$host/$pathSummary"
+    }
+}
+
+/** 截断过长摘要片段，保证链接展示不会撑开详情页底部。 */
+private fun shortenDetailLinkText(text: String, maxLength: Int): String {
+    if (text.length <= maxLength) return text
+    return text.take((maxLength - 3).coerceAtLeast(0)) + "..."
 }

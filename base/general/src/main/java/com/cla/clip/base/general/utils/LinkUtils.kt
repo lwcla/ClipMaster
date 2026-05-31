@@ -6,8 +6,8 @@ import java.util.Locale
 /**
  * 链接识别和分类工具。
  *
- * 负责从剪贴文本中提取 URL，并区分“适合网页预览”“可直接下载媒体”“图片链接”等场景；这里只处理公网 http/https，
- * 避免 file、localhost 或内网地址进入 WebView 预览和下载流程。
+ * 负责从剪贴文本中提取 URL，并区分“适合网页预览”“可直接下载媒体”“图片链接”等场景；提取阶段保留原文可识别 URL，
+ * 进入预览、WebView 或下载流程前再限制为公网 http/https，避免本地地址或内网地址被误用。
  */
 object LinkUtils {
 
@@ -50,24 +50,51 @@ object LinkUtils {
         "jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", "ico", "avif"
     )
 
+    /**
+     * 提取字符串中的全部 URL（不保证适合做网页预览）。
+     *
+     * 返回值按原文出现顺序排列，并按清理后的完整 URL 去重；同一 host 但 query 不同的资源会被保留为不同链接。
+     */
+    fun extractUrls(text: String?): List<String> {
+        if (text.isNullOrBlank()) return emptyList()
+
+        /** 按插入顺序保存清理后的完整链接，避免重复链接在详情页重复展示。 */
+        val orderedUrls = linkedSetOf<String>()
+        URL_PATTERN.findAll(text).forEach { matchResult ->
+            /** 正则命中的原始链接片段，可能带有句尾标点。 */
+            val rawUrl = matchResult.value
+            /** 去掉句尾标点后的完整链接，后续复制和导航都会使用这个值。 */
+            val cleanedUrl = cleanupTrailingPunctuation(rawUrl)
+            if (cleanedUrl.isNotBlank()) {
+                orderedUrls.add(cleanedUrl)
+            }
+        }
+
+        return orderedUrls.toList()
+    }
+
     /** 提取字符串中的第一个 URL（不保证适合做网页预览） */
     fun extractFirstUrl(text: String?): String? {
-        if (text.isNullOrBlank()) return null
-
-        val rawUrl = URL_PATTERN.find(text)?.value ?: return null
-        return cleanupTrailingPunctuation(rawUrl)
+        return extractUrls(text).firstOrNull()
     }
 
     /** 提取字符串中第一个“适合做网页预览”的 URL */
     fun extractFirstPreviewableUrl(text: String?): String? {
-        val url = extractFirstUrl(text) ?: return null
-        return if (isPreviewableUrl(url)) url else null
+        return extractUrls(text).firstOrNull { url ->
+            isPreviewableUrl(url)
+        }
     }
 
     /** 提取字符串中第一个“可下载媒体链接” URL */
     fun extractFirstDownloadableMediaUrl(text: String?): String? {
-        val url = extractFirstUrl(text) ?: return null
-        return if (isDownloadableMediaUrl(url)) url else null
+        return extractUrls(text).firstOrNull { url ->
+            isDownloadableMediaUrl(url)
+        }
+    }
+
+    /** 判断 URL 是否是可进入 WebView 或下载流程的公网 http/https 链接。 */
+    fun isPublicHttpUrl(url: String): Boolean {
+        return parsePublicHttpUri(url) != null
     }
 
     /** 判断 URL 是否适合做网页预览 */

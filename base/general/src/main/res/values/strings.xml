@@ -67,6 +67,15 @@
     <string name="base_general_clip_not_found">剪贴板内容不存在</string>
     <string name="base_general_clip_detail">详情</string>
     <string name="base_general_copy_link">复制链接</string>
+    <string name="base_general_recognized_link_count">识别到 %1$d 条链接</string>
+    <string name="base_general_view_all_links">查看全部链接</string>
+    <string name="base_general_select_link">选择链接</string>
+    <string name="base_general_full_link">完整链接</string>
+    <string name="base_general_link_type_image">图片链接</string>
+    <string name="base_general_link_type_media">媒体链接</string>
+    <string name="base_general_link_type_web">网页链接</string>
+    <string name="base_general_link_type_other">其他链接</string>
+    <string name="base_general_link_extract_unsupported">该链接不支持图片或视频提取，只能复制。</string>
     <string name="base_general_video_extract">提取视频</string>
     <string name="base_general_video">视频</string>
     <string name="base_general_image">图片</string>
