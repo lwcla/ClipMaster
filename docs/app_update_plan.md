@@ -23,6 +23,7 @@
 - “我的”页可见时允许做一次轻量自动检查，但需要通过本地设置记录上次检查时间并按 24 小时限频；页面不可见时不启动检查任务。
 - 检查到新版本时弹出更新提示，展示版本号、发布时间、更新日志、SHA256 摘要、Gitee 下载入口和 GitHub 下载入口。
 - Gitee 下载入口标记为中国境内推荐；GitHub 入口作为备用下载路径。
+- 因 Gitee Release 的 APK 下载在部分浏览器中可能保存为 `.apk.zip`，更新弹窗用一行弱提示说明“改回 `.apk` 后安装”，避免用户误以为需要解压。
 - Gitee manifest 不可用时自动尝试 GitHub；两个源都不可用时，不向用户表达为“更新失败”，而展示“暂时无法检查更新，可稍后重试或前往发布页查看”，并保留可配置的发布页入口。
 - `forceUpdate` 或低于 `minSupportedVersionCode` 时，第一版只加强提示文案，不完全阻断用户进入 App，避免内测分发链路异常导致用户无法使用。
 
@@ -150,6 +151,7 @@ public 仓库 README 作为人可读发布页维护，至少包含最新版版�
 
 - GitHub private 仓库不适合作为客户端版本检查源，因为客户端不能内置 token；public release 仓库只暴露已经准备外发的 APK。
 - 第一版展示 SHA256 摘要但不做 App 内下载校验；后续若接入直接下载，必须在下载完成后做 SHA256 校验并重新评估安装权限、文件存储和失败恢复。
+- Gitee Release 下载 APK 时存在浏览器把文件保存为 `.apk.zip` 的平台侧问题；当前先在弹窗中保留短提示，不在客户端引导解压，也不改变发布脚本的附件上传契约。
 - 第一版不做启动时全局检查，优先把任务绑定到“我的”页可见生命周期，降低不可见页面网络消耗。
 - `update.json` 解析 DTO 使用 `@Serializable` 和 `@SerialName` 固定外部字段名；当前 release/R8 验证未在本次任务中执行，发布前仍需补跑混淆构建确认序列化模型可解析。
 
@@ -177,3 +179,4 @@ public 仓库 README 作为人可读发布页维护，至少包含最新版版�
 - 2026-05-31：将 Windows 发布入口合并为单个 `publish_github_release_windows.cmd`；原因是双击入口和 PowerShell 包装层可以通过批处理头 + 内嵌 PowerShell 正文共存，减少用户侧需要识别的脚本数量，同时保留 UTF-8、日志、Git Bash 查找和 `python3` shim 逻辑。
 - 2026-05-31：为发布脚本的 GitHub/Gitee API 和附件上传请求增加 curl 连接层重试；原因是 Windows 设备访问 `api.github.com` 可能出现 `SSL_ERROR_SYSCALL` 等短暂 TLS/网络错误，脚本应先自动重试，失败后仍保留原退出码和可重跑的发布状态。
 - 2026-05-31：GitHub JSON API 请求体改为临时 UTF-8 文件传输；原因是 Windows Git Bash 通过 `curl --data` 传递中文 release body 时可能发生命令行编码转换，导致 GitHub 返回 `Problems parsing JSON`。
+- 2026-05-31：更新弹窗新增 `.apk.zip` 短提示；原因是 Gitee Release APK 在部分浏览器下载后会被追加 `.zip` 后缀，需要让用户知道改回 `.apk` 即可安装，同时避免冗长说明干扰更新流程。

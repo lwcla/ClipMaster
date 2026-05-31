@@ -101,6 +101,7 @@ private fun UpdateAvailableContent(
         info.sha256?.let { sha256 ->
             AppUpdateMetaText(text = stringResource(R.string.base_general_app_update_sha256, sha256.groupForDisplay()))
         }
+        AppUpdateMetaText(text = stringResource(R.string.base_general_app_update_apk_zip_tip))
         if (info.changelog.isNotEmpty()) {
             Text(
                 text = stringResource(R.string.base_general_app_update_changelog),

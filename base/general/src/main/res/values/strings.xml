@@ -240,6 +240,7 @@
     <string name="base_general_app_update_force_tip">当前版本低于建议支持范围，请尽快更新。</string>
     <string name="base_general_app_update_published_at">发布时间：%1$s</string>
     <string name="base_general_app_update_sha256">SHA256：%1$s</string>
+    <string name="base_general_app_update_apk_zip_tip">下载后若显示为 .apk.zip，改回 .apk 后安装。</string>
     <string name="base_general_app_update_changelog">更新内容</string>
     <string name="base_general_app_update_changelog_item">• %1$s</string>
     <string name="base_general_app_update_download_sources">下载入口</string>
