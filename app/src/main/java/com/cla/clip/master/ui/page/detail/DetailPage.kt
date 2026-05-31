@@ -11,15 +11,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -65,11 +65,14 @@ fun DetailPage(
     magnetFeatures: Set<MagnetFeatureEntry> = emptySet(),
     onOpenMagnetSearch: (MagnetFeatureEntry, String) -> Unit = { _, _ -> },
 ) {
+    /** 当前等待删除确认的剪贴记录；为 null 时不显示删除选择弹窗。 */
     var deleteClip by remember { mutableStateOf<ClipShowEntity?>(null) }
 
     // 只在 clipId 变化时触发加载，避免每次重组都查库。
     LaunchedEffect(clipId) { detailVm.loadClip(clipId) }
     val uiState = detailVm.clipFlow.collectAsStateWithLifecycle().value
+    /** 当前已成功加载的剪贴详情；只有成功态才在标题栏展示低频删除入口。 */
+    val loadedClip = (uiState as? DetailUiState.Success)?.clip
 
     LaunchedEffect(Unit) {
         detailVm.deleteSuccessFlow.collectLatest {
@@ -80,7 +83,22 @@ fun DetailPage(
 
     SecondaryPageScaffold(
         title = stringResource(R.string.base_general_clip_detail),
-        onBack = onBack
+        onBack = onBack,
+        actions = {
+            loadedClip?.let { clip ->
+                IconButton(
+                    onClick = {
+                        // 标题栏删除入口只打开现有二次确认弹窗，不直接执行危险操作。
+                        deleteClip = clip
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DeleteOutline,
+                        contentDescription = stringResource(R.string.base_general_delete)
+                    )
+                }
+            }
+        }
     ) { paddingValues ->
         when (uiState) {
             is DetailUiState.Loading -> {
@@ -161,7 +179,6 @@ fun DetailPage(
                         onNavigate = onNavigate,
                         magnetFeatures = magnetFeatures,
                         onOpenMagnetSearch = onOpenMagnetSearch,
-                        onDelete = { clip -> deleteClip = clip },
                         clip = clip
                     )
                 }
@@ -181,7 +198,7 @@ fun DetailPage(
  * 详情页操作分区。
  *
  * 当剪贴内容识别出链接时额外展示图片/视频提取入口；磁力搜索会用标题或正文作为初始关键词，不读取系统剪贴板。
- * 复制作为普通主操作保留，删除放入危险操作区，降低误触风险。
+ * 复制作为普通主操作保留；删除入口上移到标题栏右侧低频操作位，降低正文底部干扰。
  */
 @Composable
 private fun DetailActionSections(
@@ -189,10 +206,9 @@ private fun DetailActionSections(
     onNavigate: (Route) -> Unit,
     magnetFeatures: Set<MagnetFeatureEntry>,
     onOpenMagnetSearch: (MagnetFeatureEntry, String) -> Unit,
-    onDelete: (ClipShowEntity) -> Unit,
     clip: ClipShowEntity
 ) {
-    /** 详情页操作区间距 token，确保正文、能力和危险操作区节奏一致。 */
+    /** 详情页操作区间距 token，确保正文、能力入口和普通操作区节奏一致。 */
     val spacing = ClipMasterThemeTokens.tokens.spacing
     Column(
         verticalArrangement = Arrangement.spacedBy(spacing.small)
@@ -269,14 +285,6 @@ private fun DetailActionSections(
             ) {
                 Text(stringResource(R.string.base_general_copy))
             }
-        }
-
-        TextButton(
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-            onClick = { onDelete(clip) }
-        ) {
-            Text(stringResource(R.string.base_general_delete))
         }
     }
 }
