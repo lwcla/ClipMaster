@@ -56,7 +56,7 @@ class App : BaseApplication(), Configuration.Provider {
      */
     override fun onCreate() {
         super.onCreate()
-        if (isMainProcess()) {
+        if (isMainProcess) {
             // 手动初始化 WorkManager，确保用的是HiltWorkerFactory去执行的初始化
             WorkManager.initialize(this, workManagerConfiguration)
             // 不要在app启动之后自动执行上次遗留的下载任务

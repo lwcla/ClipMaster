@@ -14,10 +14,16 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.rememberNavController
+import com.cla.clip.base.general.BaseApplication
 import com.cla.clip.base.general.R
+import com.cla.clip.base.general.config.AppSetting
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.toast
+import com.cla.clip.feature.ad.api.AdSessionFailureFuse
+import com.cla.clip.feature.ad.api.AdSourceEntry
+import com.cla.clip.feature.ad.api.AdSourceSelector
 import com.cla.clip.feature.magnet.api.MagnetFeatureEntry
+import com.cla.clip.master.ad.DetailAdSensitivityPolicy
 import com.cla.clip.master.ui.navigation.AppNavigation
 import com.cla.clip.master.ui.navigation.DetailRoute
 import com.cla.clip.master.ui.navigation.VideoDownloadRoute
@@ -54,6 +60,22 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var magnetFeatures: Set<@JvmSuppressWildcards MagnetFeatureEntry>
 
+    /** 可选广告源入口；默认 release 构建集合为空，debug 构建可由调试广告模块注入。 */
+    @Inject
+    lateinit var adSources: Set<@JvmSuppressWildcards AdSourceEntry>
+
+    /** 广告会话保险丝；某个广告源初始化或渲染失败后用于本进程内临时禁用。 */
+    @Inject
+    lateinit var adSessionFailureFuse: AdSessionFailureFuse
+
+    /** 广告源选择器；宿主通过它按运行时策略选择当前详情页广告源。 */
+    @Inject
+    lateinit var adSourceSelector: AdSourceSelector
+
+    /** 详情页广告敏感内容保护策略；只返回布尔值，不输出剪贴正文。 */
+    @Inject
+    lateinit var detailAdSensitivityPolicy: DetailAdSensitivityPolicy
+
     /** Activity 级 ViewModel，保存来自通知 intent 的一次性跳转目标。 */
     private val mainVm by viewModels<MainVm>()
 
@@ -79,6 +101,8 @@ class MainActivity : ComponentActivity() {
                 val navController = rememberNavController()
                 /** 图片通知打开目录失败时需要从 Compose 侧发起 Toast 协程，避免在 LaunchedEffect 中阻塞 UI。 */
                 val coroutineScope = rememberCoroutineScope()
+                /** 当前是否运行在应用主进程；广告 SDK 只能在主进程懒初始化。 */
+                val isAppMainProcess = (application as? BaseApplication)?.isMainProcess ?: false
 
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
@@ -117,7 +141,17 @@ class MainActivity : ComponentActivity() {
 
                         AppNavigation(
                             navController = navController,
-                            magnetFeatures = magnetFeatures
+                            magnetFeatures = magnetFeatures,
+                            adSources = adSources,
+                            adSourceSelector = adSourceSelector,
+                            activeAdSourceIdFlow = AppSetting.activeAdSourceIdFlow,
+                            adsGlobalEnabledFlow = AppSetting.adsGlobalEnabledFlow,
+                            adConsentStateFlow = AppSetting.adConsentStateFlow,
+                            adPrivacyPolicyVersionFlow = AppSetting.adPrivacyPolicyVersionFlow,
+                            adDisabledSourceIdsFlow = adSessionFailureFuse.disabledSourceIdsFlow,
+                            isMainProcess = isAppMainProcess,
+                            detailAdSensitivityPolicy = detailAdSensitivityPolicy,
+                            onDisableAdSource = adSessionFailureFuse::disableSource,
                         )
                     }
                 }

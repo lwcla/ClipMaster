@@ -9,6 +9,7 @@ import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.flow.StateFlow
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -16,7 +17,10 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
 import com.cla.clip.base.general.utils.logD
+import com.cla.clip.feature.ad.api.AdSourceEntry
+import com.cla.clip.feature.ad.api.AdSourceSelector
 import com.cla.clip.feature.magnet.api.MagnetFeatureEntry
+import com.cla.clip.master.ad.DetailAdSensitivityPolicy
 import com.cla.clip.master.ui.page.backup.BackupMediaRelocationPage
 import com.cla.clip.master.ui.page.backup.BackupPage
 import com.cla.clip.master.ui.page.backup.BackupRestoreFlowPage
@@ -50,6 +54,16 @@ private const val TAG = "AppNavigation"
 fun AppNavigation(
     navController: NavHostController,
     magnetFeatures: Set<MagnetFeatureEntry>,
+    adSources: Set<AdSourceEntry>,
+    adSourceSelector: AdSourceSelector,
+    activeAdSourceIdFlow: StateFlow<String>,
+    adsGlobalEnabledFlow: StateFlow<Boolean>,
+    adConsentStateFlow: StateFlow<String>,
+    adPrivacyPolicyVersionFlow: StateFlow<String>,
+    adDisabledSourceIdsFlow: StateFlow<Set<String>>,
+    isMainProcess: Boolean,
+    detailAdSensitivityPolicy: DetailAdSensitivityPolicy,
+    onDisableAdSource: (String) -> Unit,
 ) {
     /** 子页面统一使用的跳转回调，保持所有页面都通过类型安全 Route 导航。 */
     val onNavigate = { route: Route ->
@@ -112,7 +126,17 @@ fun AppNavigation(
                 onBack = onBack,
                 onNavigate = onNavigate,
                 magnetFeatures = magnetFeatures,
-                onOpenMagnetSearch = { feature, query -> feature.openSearch(navController, query) }
+                onOpenMagnetSearch = { feature, query -> feature.openSearch(navController, query) },
+                adSources = adSources,
+                adSourceSelector = adSourceSelector,
+                activeAdSourceIdFlow = activeAdSourceIdFlow,
+                adsGlobalEnabledFlow = adsGlobalEnabledFlow,
+                adConsentStateFlow = adConsentStateFlow,
+                adPrivacyPolicyVersionFlow = adPrivacyPolicyVersionFlow,
+                adDisabledSourceIdsFlow = adDisabledSourceIdsFlow,
+                isMainProcess = isMainProcess,
+                detailAdSensitivityPolicy = detailAdSensitivityPolicy,
+                onDisableAdSource = onDisableAdSource,
             )
         }
 

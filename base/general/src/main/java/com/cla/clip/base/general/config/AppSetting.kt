@@ -180,6 +180,123 @@ object AppSetting {
             mmkv.putLong(KEY_APP_UPDATE_LAST_CHECK_AT, value.coerceAtLeast(0L))
         }
 
+    /** 广告源自动选择模式，具体含义由广告 API 模块的 `AdSourceSelectionMode.AUTO` 保持一致。 */
+    const val DEFAULT_ACTIVE_AD_SOURCE_ID = "auto"
+
+    /** 广告总开关默认值；第一版默认开启，由广告源集合、隐私状态和调试模块共同决定是否真正展示。 */
+    const val DEFAULT_ADS_GLOBAL_ENABLED = true
+
+    /** 默认广告隐私同意状态；未接入正式隐私流程前真实 SDK 必须保持不可用。 */
+    const val DEFAULT_AD_CONSENT_STATE = "unknown"
+
+    /** 默认隐私政策版本；空字符串表示当前没有可验证的广告 SDK 隐私版本。 */
+    const val DEFAULT_AD_PRIVACY_POLICY_VERSION = ""
+
+    /** 当前广告源选择配置 key；值为 `auto`、`off` 或稳定 sourceId，不进入备份包。 */
+    private const val KEY_ACTIVE_AD_SOURCE_ID = "active_ad_source_id"
+
+    /** 广告总开关配置 key；只影响本机广告展示，不代表用户可恢复数据。 */
+    private const val KEY_ADS_GLOBAL_ENABLED = "ads_global_enabled"
+
+    /** 广告隐私同意状态配置 key；属于本机合规运行态，不进入备份包。 */
+    private const val KEY_AD_CONSENT_STATE = "ad_consent_state"
+
+    /** 用户同意的广告隐私版本配置 key；用于防止旧隐私版本绕过新增 SDK 清单。 */
+    private const val KEY_AD_PRIVACY_POLICY_VERSION = "ad_privacy_policy_version"
+
+    /** 当前广告源选择状态流；宿主收集后可在运行时切换已内置广告源。 */
+    private val _activeAdSourceIdFlow by lazy {
+        MutableStateFlow(activeAdSourceId)
+    }
+
+    /** 广告总开关状态流；关闭时宿主隐藏所有广告位。 */
+    private val _adsGlobalEnabledFlow by lazy {
+        MutableStateFlow(adsGlobalEnabled)
+    }
+
+    /** 广告隐私同意状态流；真实 SDK 只在 granted 且版本匹配时可用。 */
+    private val _adConsentStateFlow by lazy {
+        MutableStateFlow(adConsentState)
+    }
+
+    /** 广告隐私政策版本流；版本变化后真实 SDK 需要等待用户重新同意。 */
+    private val _adPrivacyPolicyVersionFlow by lazy {
+        MutableStateFlow(adPrivacyPolicyVersion)
+    }
+
+    /** 当前广告源选择流；只用于运行时 UI/宿主接线刷新，不触发备份 dirty。 */
+    val activeAdSourceIdFlow: StateFlow<String>
+        get() = _activeAdSourceIdFlow.asStateFlow()
+
+    /** 广告总开关流；只用于本机广告显示策略，不触发备份 dirty。 */
+    val adsGlobalEnabledFlow: StateFlow<Boolean>
+        get() = _adsGlobalEnabledFlow.asStateFlow()
+
+    /** 广告隐私同意状态流；只用于广告 SDK 懒初始化判断，不触发备份 dirty。 */
+    val adConsentStateFlow: StateFlow<String>
+        get() = _adConsentStateFlow.asStateFlow()
+
+    /** 广告隐私政策版本流；只用于广告 SDK 合规判断，不触发备份 dirty。 */
+    val adPrivacyPolicyVersionFlow: StateFlow<String>
+        get() = _adPrivacyPolicyVersionFlow.asStateFlow()
+
+    /** 当前广告源选择；空白值保存时回退到 auto，避免异常配置让广告位永久不可用。 */
+    var activeAdSourceId: String
+        get() = mmkv.getString(KEY_ACTIVE_AD_SOURCE_ID, DEFAULT_ACTIVE_AD_SOURCE_ID)
+            ?.trim()
+            ?.ifBlank { DEFAULT_ACTIVE_AD_SOURCE_ID }
+            ?: DEFAULT_ACTIVE_AD_SOURCE_ID
+        set(value) {
+            /** 待保存的广告源选择值；空白值不保留，统一写回 auto。 */
+            val normalizedSourceId = value.trim().ifBlank { DEFAULT_ACTIVE_AD_SOURCE_ID }
+            mmkv.putString(KEY_ACTIVE_AD_SOURCE_ID, normalizedSourceId)
+            _activeAdSourceIdFlow.value = normalizedSourceId
+        }
+
+    /** 广告总开关；关闭后所有广告位直接隐藏，但不影响剪贴、备份、下载等核心功能。 */
+    var adsGlobalEnabled: Boolean
+        get() = mmkv.getBoolean(KEY_ADS_GLOBAL_ENABLED, DEFAULT_ADS_GLOBAL_ENABLED)
+        set(value) {
+            mmkv.putBoolean(KEY_ADS_GLOBAL_ENABLED, value)
+            _adsGlobalEnabledFlow.value = value
+        }
+
+    /** 广告隐私同意状态；只接受 granted/denied/unknown/not_required 这类稳定低敏值。 */
+    var adConsentState: String
+        get() = normalizeAdConsentState(mmkv.getString(KEY_AD_CONSENT_STATE, DEFAULT_AD_CONSENT_STATE))
+        set(value) {
+            /** 规范化后的同意状态；未知或空白统一回退 unknown，避免真实 SDK 误初始化。 */
+            val normalizedConsentState = normalizeAdConsentState(value)
+            mmkv.putString(KEY_AD_CONSENT_STATE, normalizedConsentState)
+            _adConsentStateFlow.value = normalizedConsentState
+        }
+
+    /** 用户最近同意的广告隐私版本；空字符串表示当前没有可验证版本。 */
+    var adPrivacyPolicyVersion: String
+        get() = mmkv.getString(KEY_AD_PRIVACY_POLICY_VERSION, DEFAULT_AD_PRIVACY_POLICY_VERSION)
+            ?.trim()
+            ?: DEFAULT_AD_PRIVACY_POLICY_VERSION
+        set(value) {
+            /** 清理后的隐私版本，只保存低敏版本号，不保存政策正文或 URL。 */
+            val normalizedVersion = value.trim()
+            mmkv.putString(KEY_AD_PRIVACY_POLICY_VERSION, normalizedVersion)
+            _adPrivacyPolicyVersionFlow.value = normalizedVersion
+        }
+
+    /**
+     * 规范化广告同意状态。
+     *
+     * 该状态属于本机合规运行态，未知值必须回退 `unknown`，避免配置污染导致真实 SDK 在未同意时启动。
+     */
+    private fun normalizeAdConsentState(value: String?): String {
+        /** 去掉首尾空白并转小写后的状态值；只允许固定白名单进入持久化和 Flow。 */
+        val normalizedValue = value?.trim()?.lowercase().orEmpty()
+        return when (normalizedValue) {
+            "granted", "denied", "not_required" -> normalizedValue
+            else -> DEFAULT_AD_CONSENT_STATE
+        }
+    }
+
     /** 回收站默认保留天数，单位天；默认 30 天，和产品默认自动清理策略保持一致。 */
     const val DEFAULT_RECYCLE_BIN_RETENTION_DAYS = 30
 

@@ -38,6 +38,7 @@ codelocator = "2.0.4"
 kontlinx-serialization-json = "1.11.0"
 work = "2.11.2"
 mmkv = "2.4.0"
+csjAds = "7.6.1.2"
 
 [libraries]
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
@@ -116,6 +117,7 @@ androidx-hilt-work = { group = "androidx.hilt", name = "hilt-work", version.ref 
 androidx-hilt-compiler = { group = "androidx.hilt", name = "hilt-compiler", version.ref = "hiltNavigationCompose" }
 #mmkv
 mmkv = { group = "com.tencent", name = "mmkv", version.ref = "mmkv" }
+csj-ads-sdk-pro = { group = "com.pangle.cn", name = "ads-sdk-pro", version.ref = "csjAds" }
 
 [bundles]
 compose = [

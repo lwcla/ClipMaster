@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:tools="http://schemas.android.com/tools"
+    xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- 穿山甲详情页广告仅在用户同意后按需联网请求，adapter 不申请定位、存储、应用列表或传感器权限。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application>
+        <!-- 第一版不声明穿山甲下载类广告所需的 provider/activity 扩展，避免支持下载广告形态。 -->
+        <meta-data
+            android:name="com.cla.clip.feature.ad.csj.VERSION"
+            android:value="7.6.1.2"
+            tools:ignore="UnusedAttribute" />
+    </application>
+</manifest>

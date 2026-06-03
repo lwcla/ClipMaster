@@ -17,6 +17,7 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         maven { setUrl("https://jitpack.io") }
+        maven { setUrl("https://artifact.bytedance.com/repository/pangle") }
     }
 }
 
@@ -27,4 +28,7 @@ include(":base:general")
 include(":base:hidden-api")
 include(":feature:magnet-api")
 include(":feature:magnet")
+include(":feature:ad-api")
+include(":feature:ad-debug")
+include(":feature:ad-csj")
 include(":shizuku")

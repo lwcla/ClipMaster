@@ -32,6 +32,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
@@ -45,7 +46,19 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.utils.LinkUtils
+import com.cla.clip.base.general.utils.logD
+import com.cla.clip.base.general.utils.logW
+import com.cla.clip.feature.ad.api.AdConsentState
+import com.cla.clip.feature.ad.api.AdPlacement
+import com.cla.clip.feature.ad.api.AdRuntimePolicy
+import com.cla.clip.feature.ad.api.AdSlotEvent
+import com.cla.clip.feature.ad.api.AdSlotEventType
+import com.cla.clip.feature.ad.api.AdSlotRequest
+import com.cla.clip.feature.ad.api.AdSourceEntry
+import com.cla.clip.feature.ad.api.AdSourceSelection
+import com.cla.clip.feature.ad.api.AdSourceSelector
 import com.cla.clip.feature.magnet.api.MagnetFeatureEntry
+import com.cla.clip.master.ad.DetailAdSensitivityPolicy
 import com.cla.clip.master.ui.dialog.ClipDeleteChoiceDialog
 import com.cla.clip.master.ui.navigation.ImageExtractRoute
 import com.cla.clip.master.ui.navigation.Route
@@ -53,9 +66,12 @@ import com.cla.clip.master.ui.navigation.VideoExtractRoute
 import com.cla.clip.master.ui.widget.ClipMasterCard
 import com.cla.clip.master.ui.widget.SecondaryPageScaffold
 import com.cla.clip.master.ui.theme.ClipMasterThemeTokens
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import java.net.URI
 import java.util.Locale
+import java.util.UUID
 
 /** 详情页底部默认直接展示的链接数量，更多链接进入选择弹层，避免底部区域膨胀。 */
 private const val DETAIL_LINK_PREVIEW_LIMIT = 3
@@ -68,6 +84,9 @@ private const val DETAIL_LINK_RAW_SUMMARY_MAX_LENGTH = 48
 
 /** 单个 path 片段的最大展示长度，过长文件名或 slug 会被省略。 */
 private const val DETAIL_LINK_PATH_SEGMENT_MAX_LENGTH = 24
+
+/** 详情页广告日志标签，只输出低敏 source、placement、事件和 reasonCode。 */
+private const val DETAIL_AD_TAG = "DetailAdSlot"
 
 /**
  * 详情页内部链接展示模型。
@@ -115,6 +134,16 @@ fun DetailPage(
     onNavigate: (Route) -> Unit,  // 跳转页面
     magnetFeatures: Set<MagnetFeatureEntry> = emptySet(),
     onOpenMagnetSearch: (MagnetFeatureEntry, String) -> Unit = { _, _ -> },
+    adSources: Set<AdSourceEntry> = emptySet(),
+    adSourceSelector: AdSourceSelector = remember { AdSourceSelector() },
+    activeAdSourceIdFlow: StateFlow<String> = remember { MutableStateFlow("auto") },
+    adsGlobalEnabledFlow: StateFlow<Boolean> = remember { MutableStateFlow(true) },
+    adConsentStateFlow: StateFlow<String> = remember { MutableStateFlow("not_required") },
+    adPrivacyPolicyVersionFlow: StateFlow<String> = remember { MutableStateFlow("") },
+    adDisabledSourceIdsFlow: StateFlow<Set<String>> = remember { MutableStateFlow(emptySet()) },
+    isMainProcess: Boolean = true,
+    detailAdSensitivityPolicy: DetailAdSensitivityPolicy = remember { DetailAdSensitivityPolicy() },
+    onDisableAdSource: (String) -> Unit = {},
 ) {
     /** 当前等待删除确认的剪贴记录；为 null 时不显示删除选择弹窗。 */
     var deleteClip by remember { mutableStateOf<ClipShowEntity?>(null) }
@@ -235,7 +264,17 @@ fun DetailPage(
                         onNavigate = onNavigate,
                         magnetFeatures = magnetFeatures,
                         onOpenMagnetSearch = onOpenMagnetSearch,
-                        clip = clip
+                        clip = clip,
+                        adSources = adSources,
+                        adSourceSelector = adSourceSelector,
+                        activeAdSourceIdFlow = activeAdSourceIdFlow,
+                        adsGlobalEnabledFlow = adsGlobalEnabledFlow,
+                        adConsentStateFlow = adConsentStateFlow,
+                        adPrivacyPolicyVersionFlow = adPrivacyPolicyVersionFlow,
+                        adDisabledSourceIdsFlow = adDisabledSourceIdsFlow,
+                        isMainProcess = isMainProcess,
+                        detailAdSensitivityPolicy = detailAdSensitivityPolicy,
+                        onDisableAdSource = onDisableAdSource,
                     )
                 }
             }
@@ -251,6 +290,125 @@ fun DetailPage(
 }
 
 /**
+ * 详情页广告位。
+ *
+ * 广告位只在成功加载剪贴记录后出现，不读取剪贴正文、链接或搜索词；同一个 `clipId` 生命周期内复用同一个请求标识。
+ */
+@Composable
+private fun DetailAdSlot(
+    clipId: Long,
+    isSensitiveContext: Boolean,
+    adSources: Set<AdSourceEntry>,
+    adSourceSelector: AdSourceSelector,
+    activeAdSourceIdFlow: StateFlow<String>,
+    adsGlobalEnabledFlow: StateFlow<Boolean>,
+    adConsentStateFlow: StateFlow<String>,
+    adPrivacyPolicyVersionFlow: StateFlow<String>,
+    adDisabledSourceIdsFlow: StateFlow<Set<String>>,
+    isMainProcess: Boolean,
+    onDisableAdSource: (String) -> Unit,
+) {
+    /** 当前广告源选择，来自本机设置或未来远程策略；只包含 sourceId，不包含用户内容。 */
+    val activeAdSourceId = activeAdSourceIdFlow.collectAsStateWithLifecycle().value
+    /** 广告总开关；关闭时选择器会隐藏所有广告位。 */
+    val adsGlobalEnabled = adsGlobalEnabledFlow.collectAsStateWithLifecycle().value
+    /** 当前广告隐私同意状态 code；真实 SDK 只有 granted 才可能展示。 */
+    val adConsentStateCode = adConsentStateFlow.collectAsStateWithLifecycle().value
+    /** 用户同意的广告隐私政策版本；当前详情页只负责生命周期收集，真实版本匹配由 adapter 内部读取同一来源。 */
+    adPrivacyPolicyVersionFlow.collectAsStateWithLifecycle().value
+    /** 当前会话被保险丝禁用的广告源集合。 */
+    val disabledSourceIds = adDisabledSourceIdsFlow.collectAsStateWithLifecycle().value
+    /** 当前详情页生命周期内的广告请求标识；clipId 变化时重新生成，避免旧请求污染新详情。 */
+    val requestNonce = rememberSaveable(clipId) { UUID.randomUUID().toString() }
+    /** 当前详情页广告运行时策略；debugMode 仅用于调试广告源和测试广告位隔离。 */
+    val runtimePolicy = remember(adsGlobalEnabled, disabledSourceIds, isMainProcess, isSensitiveContext) {
+        AdRuntimePolicy(
+            adsGlobalEnabled = adsGlobalEnabled,
+            sessionDisabledSourceIds = disabledSourceIds,
+            debugMode = com.cla.clip.master.BuildConfig.DEBUG,
+            isMainProcess = isMainProcess,
+            isSensitiveContext = isSensitiveContext,
+        )
+    }
+    /** 当前广告同意状态；真实 SDK 必须显式 granted，调试源可使用 not_required。 */
+    val adConsentState = remember(adConsentStateCode) {
+        when (adConsentStateCode.trim().lowercase(Locale.ROOT)) {
+            "granted" -> AdConsentState.Granted
+            "denied" -> AdConsentState.Denied
+            "not_required" -> AdConsentState.NotRequired
+            else -> if (com.cla.clip.master.BuildConfig.DEBUG) AdConsentState.NotRequired else AdConsentState.Unknown
+        }
+    }
+    /** 当前广告源选择结果；不可用时直接隐藏，不渲染空卡片。 */
+    val selection = remember(adSources, activeAdSourceId, runtimePolicy, adConsentState) {
+        adSourceSelector.select(
+            sources = adSources,
+            placement = AdPlacement.DetailNative,
+            activeSourceId = activeAdSourceId,
+            consentState = adConsentState,
+            runtimePolicy = runtimePolicy,
+        )
+    }
+
+    when (selection) {
+        is AdSourceSelection.Hidden -> {
+            LaunchedEffect(selection.reasonCode) {
+                logD(DETAIL_AD_TAG) {
+                    "详情页广告隐藏 placement=${AdPlacement.DetailNative.placementId} reasonCode=${selection.reasonCode}"
+                }
+            }
+        }
+
+        is AdSourceSelection.Selected -> {
+            /** 当前广告请求；只携带广告位、请求标识和调试标记，不包含剪贴内容。 */
+            val request = remember(requestNonce, runtimePolicy.debugMode) {
+                AdSlotRequest(
+                    placement = AdPlacement.DetailNative,
+                    requestNonce = requestNonce,
+                    isDebugRequest = runtimePolicy.debugMode,
+                    isSensitiveContext = runtimePolicy.isSensitiveContext,
+                )
+            }
+
+            selection.source.NativeAdSlot(
+                request = request,
+                onEvent = { event ->
+                    // 初始化或渲染失败说明当前 source 本会话不再可信，触发保险丝避免反复失败。
+                    if (event.eventType == AdSlotEventType.InitializationFailed || event.eventType == AdSlotEventType.RenderFailed) {
+                        onDisableAdSource(event.providerId)
+                    }
+                    logDetailAdEvent(event)
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+/**
+ * 输出详情页广告低敏事件日志。
+ *
+ * 该日志只记录 source、placement、事件、reasonCode、耗时和调试标记，禁止记录剪贴正文、完整链接或 SDK 响应。
+ */
+private fun logDetailAdEvent(event: AdSlotEvent) {
+    /** 事件耗时字段；未知时使用 -1，避免日志里出现 null 分支噪声。 */
+    val duration = event.durationMs ?: -1L
+    /** 事件原因码；空值用 none 表示正常路径。 */
+    val reasonCode = event.reasonCode.ifBlank { "none" }
+    /** SDK 版本号；空值用 unknown 表示当前源未提供版本。 */
+    val sdkVersion = event.sdkVersion.ifBlank { "unknown" }
+    /** 日志正文构造器；复用 lambda 避免日志关闭时拼接字符串。 */
+    val message = {
+        "详情页广告事件 providerId=${event.providerId} placement=${event.placementId} event=${event.eventType.eventCode} reasonCode=$reasonCode durationMs=$duration isDebug=${event.isDebug} sdkVersion=$sdkVersion"
+    }
+    if (event.eventType == AdSlotEventType.InitializationFailed || event.eventType == AdSlotEventType.RenderFailed) {
+        logW(DETAIL_AD_TAG, info = message)
+    } else {
+        logD(DETAIL_AD_TAG, info = message)
+    }
+}
+
+/**
  * 详情页操作分区。
  *
  * 当剪贴内容识别出链接时额外展示图片/视频提取入口；磁力搜索会用标题或正文作为初始关键词，不读取系统剪贴板。
@@ -263,12 +421,26 @@ private fun DetailActionSections(
     onNavigate: (Route) -> Unit,
     magnetFeatures: Set<MagnetFeatureEntry>,
     onOpenMagnetSearch: (MagnetFeatureEntry, String) -> Unit,
-    clip: ClipShowEntity
+    clip: ClipShowEntity,
+    adSources: Set<AdSourceEntry>,
+    adSourceSelector: AdSourceSelector,
+    activeAdSourceIdFlow: StateFlow<String>,
+    adsGlobalEnabledFlow: StateFlow<Boolean>,
+    adConsentStateFlow: StateFlow<String>,
+    adPrivacyPolicyVersionFlow: StateFlow<String>,
+    adDisabledSourceIdsFlow: StateFlow<Set<String>>,
+    isMainProcess: Boolean,
+    detailAdSensitivityPolicy: DetailAdSensitivityPolicy,
+    onDisableAdSource: (String) -> Unit,
 ) {
     /** 详情页操作区间距 token，确保正文、能力入口和普通操作区节奏一致。 */
     val spacing = ClipMasterThemeTokens.tokens.spacing
     /** 从正文实时提取出的链接展示模型；历史剪贴不需要迁移即可展示多链接。 */
     val linkItems = remember(clip.content) { buildDetailLinkItems(clip.content) }
+    /** 当前详情页是否命中敏感内容保护；只传布尔值给广告策略，不记录正文或命中片段。 */
+    val isSensitiveAdContext = remember(clip.id, clip.content) {
+        detailAdSensitivityPolicy.shouldHideAds(clip.content)
+    }
     /** 是否存在磁力扩展动作；没有动作时不渲染空操作行，避免移除复制按钮后留下无意义间距。 */
     val hasMagnetActions = magnetFeatures.isNotEmpty()
     /** 当前被用户选中并准备操作的链接；为 null 时不显示链接操作弹层。 */
@@ -282,13 +454,23 @@ private fun DetailActionSections(
         showAllLinks = false
     }
 
-    if (linkItems.isEmpty() && !hasMagnetActions) {
-        return
-    }
-
     Column(
         verticalArrangement = Arrangement.spacedBy(spacing.small)
     ) {
+        DetailAdSlot(
+            clipId = clip.id,
+            isSensitiveContext = isSensitiveAdContext,
+            adSources = adSources,
+            adSourceSelector = adSourceSelector,
+            activeAdSourceIdFlow = activeAdSourceIdFlow,
+            adsGlobalEnabledFlow = adsGlobalEnabledFlow,
+            adConsentStateFlow = adConsentStateFlow,
+            adPrivacyPolicyVersionFlow = adPrivacyPolicyVersionFlow,
+            adDisabledSourceIdsFlow = adDisabledSourceIdsFlow,
+            isMainProcess = isMainProcess,
+            onDisableAdSource = onDisableAdSource,
+        )
+
         if (linkItems.isNotEmpty()) {
             DetailLinksSection(
                 links = linkItems,

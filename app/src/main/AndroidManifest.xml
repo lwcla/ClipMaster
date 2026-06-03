@@ -58,7 +58,8 @@
         android:label="@string/base_general_app_name"
         android:roundIcon="@mipmap/base_general_ic_app_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.ClipMaster">
+        android:theme="@style/Theme.ClipMaster"
+        tools:replace="android:label">
 
         <activity
             android:name=".MainActivity"

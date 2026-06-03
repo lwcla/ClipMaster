@@ -12,11 +12,25 @@ plugins {
     id("kotlin-parcelize")
 }
 
+apply(from = rootProject.file("gradle/csj-ad-config.gradle.kts"))
+
 /** 把原始字符串转成可安全写入 `buildConfigField` 的 Kotlin 字面量。 */
 fun String.asBuildConfigString(): String = "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
 /** 规范化 APK 文件名片段，只保留文件系统安全字符。 */
 fun String.asApkFileNamePart(): String = replace(Regex("[^A-Za-z0-9._-]"), "_")
+
+/** 是否把穿山甲广告 adapter 编译进 debug/internal 包；debug 广告 ID 齐全时默认启用。 */
+val csjDebugAdFeatureConfigured: Boolean = extra["csjDebugAdFeatureConfigured"] as Boolean
+
+/** 是否把穿山甲广告 adapter 编译进 release 包；release 广告 ID 齐全时默认启用。 */
+val csjReleaseAdFeatureConfigured: Boolean = extra["csjReleaseAdFeatureConfigured"] as Boolean
+
+/** debug/internal 构建是否声明使用穿山甲测试广告位；默认 true，避免内部验证污染正式收益。 */
+val csjDebugUseTestAdSlot: Boolean = extra["csjDebugUseTestAdSlot"] as Boolean
+
+/** release 构建是否声明使用穿山甲测试广告位；默认 false，正式包应使用正式广告位。 */
+val csjReleaseUseTestAdSlot: Boolean = extra["csjReleaseUseTestAdSlot"] as Boolean
 
 android {
     namespace = "com.cla.clip.master"
@@ -26,15 +40,33 @@ android {
     }
 
     signingConfigs {
+        create("internalDebug") {
+            /** 固定 internal/debug keystore 文件；用于让不同电脑的 debug 包签名一致。 */
+            val internalDebugKeystoreFile = rootProject.file("debug-internal.keystore")
+            storeFile = internalDebugKeystoreFile
+            /** 固定 internal/debug keystore 密码；仅用于开发调试包，不作为 release 机密。 */
+            storePassword = "clipmaster_debug"
+            /** 固定 internal/debug key alias；穿山甲 debug 应用后台绑定该签名指纹。 */
+            keyAlias = "clipmaster_debug"
+            /** 固定 internal/debug key 密码；仅用于开发调试包。 */
+            keyPassword = "clipmaster_debug"
+        }
+
         create("release") {
+            /** 正式签名属性文件；release 包只从这里读取发布 keystore，不使用 debug/internal 签名。 */
             val keystoreFile = project.rootProject.file("keystore.properties")
             if (keystoreFile.exists()) {
+                /** 正式签名属性集合；只在 Gradle 配置期读取，不打印到构建日志。 */
                 val properties = Properties()
                 properties.load(FileInputStream(keystoreFile))
 
+                /** 正式发布 keystore 文件；穿山甲 release 应用后台绑定该签名指纹。 */
                 storeFile = rootProject.file(properties.getProperty("storeFile"))
+                /** 正式发布 keystore 密码；来自本机敏感配置文件。 */
                 storePassword = properties.getProperty("storePassword")
+                /** 正式发布 key alias；来自本机敏感配置文件。 */
                 keyAlias = properties.getProperty("keyAlias")
+                /** 正式发布 key 密码；来自本机敏感配置文件。 */
                 keyPassword = properties.getProperty("keyPassword")
             }
         }
@@ -88,6 +120,7 @@ android {
             "APP_UPDATE_CHANNEL",
             providers.gradleProperty("appUpdateChannel").getOrElse("internal").asBuildConfigString()
         )
+        buildConfigField("String", "ADS_CSJ_SOURCE_ID", "csj".asBuildConfigString())
     }
 
     buildTypes {
@@ -95,11 +128,16 @@ android {
             isMinifyEnabled = true          // 开启 R8（代码压缩/优化/混淆）
             isShrinkResources = true        // 可选：开启资源压缩（依赖 minify）
             signingConfig = signingConfigs.getByName("release")
+            buildConfigField("boolean", "ADS_CSJ_ENABLED", csjReleaseAdFeatureConfigured.toString())
+            buildConfigField("boolean", "ADS_CSJ_USE_TEST_AD_SLOT", csjReleaseUseTestAdSlot.toString())
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
 
         debug {
             isMinifyEnabled = false         // 调试包不混淆，方便调试
+            signingConfig = signingConfigs.getByName("internalDebug")
+            buildConfigField("boolean", "ADS_CSJ_ENABLED", csjDebugAdFeatureConfigured.toString())
+            buildConfigField("boolean", "ADS_CSJ_USE_TEST_AD_SLOT", csjDebugUseTestAdSlot.toString())
 //            isShrinkResources = false       // 调试包不压缩资源
         }
     }
@@ -141,7 +179,9 @@ android {
 dependencies {
     implementation(project(":base:general"))
     implementation(project(":feature:magnet-api"))
+    implementation(project(":feature:ad-api"))
     implementation(project(":shizuku"))
+    debugImplementation(project(":feature:ad-debug"))
 
     /** 是否按 Gradle 属性编译进磁力模块；默认关闭，避免宿主强依赖可选特性。 */
     val enableMagnetFeature = providers.gradleProperty("enableMagnetFeature")
@@ -149,6 +189,16 @@ dependencies {
         .getOrElse(false)
     if (enableMagnetFeature) {
         implementation(project(":feature:magnet"))
+    }
+
+    /** 是否按 debug/internal 广告参数编译进穿山甲广告模块；默认关闭，避免无配置 debug 包误带国内广告 SDK。 */
+    if (csjDebugAdFeatureConfigured) {
+        debugImplementation(project(":feature:ad-csj"))
+    }
+
+    /** 是否按 release 广告参数编译进穿山甲广告模块；默认关闭，避免海外/默认 release 包误带国内广告 SDK。 */
+    if (csjReleaseAdFeatureConfigured) {
+        releaseImplementation(project(":feature:ad-csj"))
     }
 
     val composeBom = platform(libs.androidx.compose.bom)

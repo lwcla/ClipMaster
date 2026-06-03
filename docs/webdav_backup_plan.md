@@ -45,6 +45,7 @@
 - Shizuku Provider 异步图标补全的 `<eventId>.tmp` 半文件同样只属于传输中间态，不纳入备份；图标补全成功后写入的来源 App 图标路径、主色和 `Bitmap.toStableHash()` 仍通过来源 App 备份字段进入备份。
 - Shizuku 剪贴板 payload 临时目录 `files/clipboard_bridge_clip_payloads/`，该目录只保存 `content write /clip/<eventId>` 写入的短期敏感文本 payload，提交成功、失败或异常后都应清理自己的 eventId 文件，不具备跨安装恢复意义。
 - `AppSetting.pid` 和 `AppSetting.shizukuSuffix` 属于本机安装态与 Shizuku 运行态，不纳入 WebDAV 备份；卸载重装后重新生成纯数字 pid 是预期行为，备份文件名中的 device label 继续只使用 pid 的脱敏前缀。
+- `AppSetting.activeAdSourceId`、`AppSetting.adsGlobalEnabled`、`AppSetting.adConsentState`、`AppSetting.adPrivacyPolicyVersion`、广告会话保险丝和后续可能出现的本地广告事件缓存属于本机广告/隐私/运营态，不纳入 WebDAV/本地备份，不触发 backup dirty；卸载重装后恢复默认 `auto`、默认总开关和未知广告同意状态，由当前渠道包、隐私同意流程和内置广告源决定是否展示广告。
 
 ## 用户体验
 
@@ -600,6 +601,7 @@ manifest 简化示例：
 
 ## 变更记录
 
+- 2026-06-01：补充广告源选择、广告总开关、广告同意状态、广告隐私政策版本、广告会话保险丝和后续本地广告事件缓存不纳入备份；原因是这些状态只影响本机广告展示、隐私同意门禁和运行时降级，不属于用户生成数据或跨安装恢复价值数据，也不应触发备份 dirty。
 - 2026-05-29：补充 Shizuku 安装级 pid 和当前期望进程名不纳入 WebDAV 备份；原因是二者只服务本机安装身份、Shizuku 进程名和运行态校验，卸载重装后重新生成符合预期，备份文件名 device label 继续使用其脱敏前缀即可。
 - 2026-05-29：移除备份 zip 包内 manifest 真实 `fileSize` 自校准；原因是日志确认写入 fileSize 会让压缩包大小在相邻字节间震荡，最终实现改为包内 manifest 固定 `fileSize = 0`，真实大小只保存在 sidecar/latest manifest 和导出摘要。
 - 2026-05-29：补充 Shizuku 剪贴板 payload 临时目录备份排除说明；原因是 `files/clipboard_bridge_clip_payloads/` 只承载 `/clip/<eventId>` 的短期敏感传输 payload，提交结束即清理，不属于备份恢复数据，已同步规划 `backup_rules.xml` 与 `data_extraction_rules.xml` 排除。
