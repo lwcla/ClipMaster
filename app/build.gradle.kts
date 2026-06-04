@@ -13,6 +13,7 @@ plugins {
 }
 
 apply(from = rootProject.file("gradle/csj-ad-config.gradle.kts"))
+apply(from = rootProject.file("gradle/uniad-ad-config.gradle.kts"))
 
 /** 把原始字符串转成可安全写入 `buildConfigField` 的 Kotlin 字面量。 */
 fun String.asBuildConfigString(): String = "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
@@ -31,6 +32,12 @@ val csjDebugUseTestAdSlot: Boolean = extra["csjDebugUseTestAdSlot"] as Boolean
 
 /** release 构建是否声明使用穿山甲测试广告位；默认 false，正式包应使用正式广告位。 */
 val csjReleaseUseTestAdSlot: Boolean = extra["csjReleaseUseTestAdSlot"] as Boolean
+
+/** 是否把 uni-ad adapter 编译进 debug/internal 包；debug 三项广告 ID 齐全时默认启用。 */
+val uniadDebugAdFeatureConfigured: Boolean = extra["uniadDebugAdFeatureConfigured"] as Boolean
+
+/** 是否把 uni-ad adapter 编译进 release 包；release 三项广告 ID 齐全时默认启用。 */
+val uniadReleaseAdFeatureConfigured: Boolean = extra["uniadReleaseAdFeatureConfigured"] as Boolean
 
 android {
     namespace = "com.cla.clip.master"
@@ -121,6 +128,7 @@ android {
             providers.gradleProperty("appUpdateChannel").getOrElse("internal").asBuildConfigString()
         )
         buildConfigField("String", "ADS_CSJ_SOURCE_ID", "csj".asBuildConfigString())
+        buildConfigField("String", "ADS_UNIAD_SOURCE_ID", "uniad".asBuildConfigString())
     }
 
     buildTypes {
@@ -130,6 +138,7 @@ android {
             signingConfig = signingConfigs.getByName("release")
             buildConfigField("boolean", "ADS_CSJ_ENABLED", csjReleaseAdFeatureConfigured.toString())
             buildConfigField("boolean", "ADS_CSJ_USE_TEST_AD_SLOT", csjReleaseUseTestAdSlot.toString())
+            buildConfigField("boolean", "ADS_UNIAD_ENABLED", uniadReleaseAdFeatureConfigured.toString())
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
 
@@ -138,6 +147,7 @@ android {
             signingConfig = signingConfigs.getByName("internalDebug")
             buildConfigField("boolean", "ADS_CSJ_ENABLED", csjDebugAdFeatureConfigured.toString())
             buildConfigField("boolean", "ADS_CSJ_USE_TEST_AD_SLOT", csjDebugUseTestAdSlot.toString())
+            buildConfigField("boolean", "ADS_UNIAD_ENABLED", uniadDebugAdFeatureConfigured.toString())
 //            isShrinkResources = false       // 调试包不压缩资源
         }
     }
@@ -148,9 +158,17 @@ android {
             val apkOutput = this as ApkVariantOutput
             /** 参与文件名拼接的版本号片段。 */
             val normalizedVersionName = versionName.asApkFileNamePart()
+            /** 广告包标记；用于区分默认包、CSJ 包和 uni-ad 包，避免发布产物混淆。 */
+            val adPackageMarker = when {
+                buildType.name == "debug" && uniadDebugAdFeatureConfigured -> "-uniad"
+                buildType.name == "release" && uniadReleaseAdFeatureConfigured -> "-uniad"
+                buildType.name == "debug" && csjDebugAdFeatureConfigured -> "-csj"
+                buildType.name == "release" && csjReleaseAdFeatureConfigured -> "-csj"
+                else -> ""
+            }
             /** 非 release 变体追加后缀，避免多产物同名覆盖。 */
             val variantNamePart = if (buildType.name == "release") "" else "-${name.asApkFileNamePart()}"
-            apkOutput.outputFileName = "ClipMaster-v$normalizedVersionName$variantNamePart.apk"
+            apkOutput.outputFileName = "ClipMaster-v$normalizedVersionName$adPackageMarker$variantNamePart.apk"
         }
     }
 
@@ -199,6 +217,16 @@ dependencies {
     /** 是否按 release 广告参数编译进穿山甲广告模块；默认关闭，避免海外/默认 release 包误带国内广告 SDK。 */
     if (csjReleaseAdFeatureConfigured) {
         releaseImplementation(project(":feature:ad-csj"))
+    }
+
+    /** 是否按 debug/internal 广告参数编译进 uni-ad 广告模块；默认关闭，避免无配置 debug 包误带国内广告 SDK。 */
+    if (uniadDebugAdFeatureConfigured) {
+        debugImplementation(project(":feature:ad-uniad"))
+    }
+
+    /** 是否按 release 广告参数编译进 uni-ad 广告模块；默认关闭，避免海外/默认 release 包误带国内广告 SDK。 */
+    if (uniadReleaseAdFeatureConfigured) {
+        releaseImplementation(project(":feature:ad-uniad"))
     }
 
     val composeBom = platform(libs.androidx.compose.bom)

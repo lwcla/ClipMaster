@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-详情页按路由传入的 `clipId` 加载单条剪贴记录，展示正文内容，并通过点击正文卡片复制剪贴数据；页面继续提供删除、链接复制、图片提取和视频提取入口。当 `:feature:magnet` 通过 `-PenableMagnetFeature=true` 编译进应用时，页面通过 `MagnetFeatureEntry.DetailAction` 追加磁力搜索动作，完整磁力模块化规则以 `docs/magnet_search_plan.md` 为准。页面入口 `DetailPage` 负责触发加载、收集详情状态、处理删除成功后返回和接入统一删除选择弹窗；详情页已接入 `SecondaryPageScaffold` 和 `ClipMasterCard`，正文卡片点击复用已有复制能力，删除入口位于标题栏右侧低频危险操作位，底部链接区从正文实时识别全部链接并以紧凑入口展示。详情页新增一个信息流/原生广告位，位于正文卡片和底部链接/磁力操作区之间；广告模块化、运行时选择、隐私边界和 adapter 验收规则以 `docs/ad_module_plan.md` 为准。完整卡片规则以 `docs/shared_card_component_plan.md` 为准。
+详情页按路由传入的 `clipId` 加载单条剪贴记录，展示正文内容，并通过点击正文卡片复制剪贴数据；页面继续提供删除、链接复制、图片提取和视频提取入口。当 `:feature:magnet` 通过 `-PenableMagnetFeature=true` 编译进应用时，页面通过 `MagnetFeatureEntry.DetailAction` 追加磁力搜索动作，完整磁力模块化规则以 `docs/magnet_search_plan.md` 为准。页面入口 `DetailPage` 负责触发加载、收集详情状态、处理删除成功后返回和接入统一删除选择弹窗；详情页已接入 `SecondaryPageScaffold` 和 `ClipMasterCard`，正文卡片点击复用已有复制能力，删除入口位于标题栏右侧低频危险操作位，底部链接区从正文实时识别全部链接并以紧凑入口展示。详情页新增一个信息流/原生广告位，位于正文卡片和底部链接/磁力操作区之间；广告模块化、运行时选择、隐私边界和 adapter 验收规则以 `docs/ad_module_plan.md` 为准，当前真实 adapter 包含 CSJ 与 uni-ad。完整卡片规则以 `docs/shared_card_component_plan.md` 为准。
 
 ## 目标
 
@@ -38,6 +38,7 @@
 - 底部不再展示普通复制按钮；如果没有链接提取入口且没有磁力扩展动作，则不渲染空操作区。
 - 详情页成功态会在正文和底部操作区之间尝试渲染一个原生广告位；无广告源、广告关闭、隐私未同意、敏感详情、无填充、加载失败或保险丝禁用时直接隐藏，不占空白。
 - 国内广告包启用 `:feature:ad-csj` 后可展示穿山甲模板信息流广告；广告异步加载，成功后才插入容器，容器保留“广告”标识且最大高度由 adapter 限制。
+- 国内广告包启用 `:feature:ad-uniad` 后可展示 uni-ad 信息流广告；广告通过 `DCFeedAdLoader` 异步加载，渲染成功后才插入容器，找不到 Activity、无网、无填充、加载失败或超时时直接隐藏。
 - 详情页广告不做用户可感知频控；同一个 `clipId` 在一次详情页生命周期内最多创建一次广告请求，切换剪贴记录后生成新的低敏 request nonce。
 - 删除作为低频危险操作放在标题栏右上角图标按钮中，点击后仍进入统一删除选择弹窗。
 - 磁力搜索按钮只在磁力模块启用时出现，点击后通过 `MagnetFeatureEntry.openSearch(initialQuery = clip.linkTitle ?: clip.content)` 进入磁力搜索页；该动作只传内部路由参数，不读取或写入系统剪贴板，也不保存磁力搜索历史。
@@ -86,6 +87,7 @@
 - 手动验证点：启用磁力模块时，点击磁力搜索按钮后进入磁力搜索页并带入标题或正文作为初始关键词，不写入剪贴板；默认禁用构建不展示该按钮。
 - 手动验证点：debug 构建显示调试广告占位，release 默认无真实广告源时不显示广告；同一详情页重组不重复创建请求，切换到另一条剪贴记录后生成新的请求。
 - 手动验证点：在 `local.properties` 或 CI Gradle 属性配置 `csjDebugAppId`/`csjDebugDetailNativeAdSlotId` 或 `csjReleaseAppId`/`csjReleaseDetailNativeAdSlotId` 后，对应 debug/release 构建会携带穿山甲详情页广告模块；debug 包使用项目固定 internal keystore，release 包使用正式 release keystore。隐私未同意或敏感详情不初始化穿山甲，同意后广告异步展示，离开详情页释放，弱网、无网、超时和无填充不占空白。
+- 手动验证点：在 `local.properties` 或 CI Gradle 属性配置 `uniadDebugAppId`/`uniadDebugUnionId`/`uniadDebugDetailNativeAdpid` 或 `uniadReleaseAppId`/`uniadReleaseUnionId`/`uniadReleaseDetailNativeAdpid` 后，对应 debug/release 构建会携带 uni-ad 详情页广告模块；CSJ 与 uni-ad 同一 buildType 同时配置时构建失败。隐私未同意或敏感详情不初始化 uni-ad，同意后广告异步展示，离开详情页释放，弱网、无网、超时和无填充不占空白。
 
 ## 日志与诊断计划
 
@@ -117,6 +119,7 @@
 - 2026-06-01：调整穿山甲手动验证入口，从必须显式传启用开关改为广告 ID 配置存在时默认带入广告模块；原因是本机/CI 已配置广告参数时，详情页验证不应依赖额外命令行开关。
 - 2026-06-02：同步穿山甲 buildType 专属广告 ID 与固定 debug/internal 签名验证点；原因是详情页广告展示依赖当前包签名和对应广告位，debug/release 不能共用同一套后台配置。
 - 2026-06-02：同步删除广告总启用配置的验证口径；原因是临时关闭详情页真实广告模块只需要注释对应 buildType 的 AppId 或广告位 ID。
+- 2026-06-03：同步 uni-ad 详情页信息流 adapter 接入方式、CSJ/uni-ad 互斥和手动验证点；原因是当前详情页真实国内广告优先切换到 uni-ad 章鱼 + 泛连渠道验证。
 - 2026-05-31：详情页底部改为从正文实时识别全部链接，长链接显示摘要，多链接通过 BottomSheet 选择后再复制或提取；原因是单条长链接会挤压正文、多条链接此前只能识别第一条。
 - 2026-05-31：详情页链接列表去掉序号，链接操作弹层改为类型标题、完整 URL 可滚动展示和主色文案动作；原因是序号和按钮式操作在小屏下增加视觉负担，长链接仍需要完整核对。
 - 2026-05-31：移除详情页底部复制按钮，改为点击正文卡片复制剪贴内容；原因是用户希望详情页阅读卡片本身承担复制动作，减少底部重复主操作。

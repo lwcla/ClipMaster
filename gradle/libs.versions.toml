@@ -12,6 +12,8 @@ lifecycleRuntimeKtx = "2.10.0"
 activityCompose = "1.13.0"
 composeBom = "2026.03.01"
 appcompat = "1.7.1"
+recyclerview = "1.4.0"
+glide = "4.16.0"
 # Hilt与Jetpack Navigation Compose的集成库版本，提供hiltViewModel()函数
 hiltNavigationCompose = "1.3.0"
 constraintLayoutCompose = "1.1.1"
@@ -42,6 +44,8 @@ csjAds = "7.6.1.2"
 
 [libraries]
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+androidx-recyclerview = { group = "androidx.recyclerview", name = "recyclerview", version.ref = "recyclerview" }
+glide = { group = "com.github.bumptech.glide", name = "glide", version.ref = "glide" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:tools="http://schemas.android.com/tools"
+    xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- uni-ad 详情页广告仅在用户同意后按需联网请求，adapter 不申请定位、存储、应用列表或传感器权限。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- 请求前轻量判断网络状态；无网时直接隐藏广告，不占位、不 toast。 -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application>
+        <!-- 当前模块版本标识仅用于 manifest 合并排查，不包含 AppId、联盟 ID 或 adpid。 -->
+        <meta-data
+            android:name="com.cla.clip.feature.ad.uniad.VERSION"
+            android:value="5.5.2.0606"
+            tools:ignore="UnusedAttribute" />
+    </application>
+</manifest>

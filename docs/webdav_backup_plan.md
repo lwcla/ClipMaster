@@ -45,7 +45,7 @@
 - Shizuku Provider 异步图标补全的 `<eventId>.tmp` 半文件同样只属于传输中间态，不纳入备份；图标补全成功后写入的来源 App 图标路径、主色和 `Bitmap.toStableHash()` 仍通过来源 App 备份字段进入备份。
 - Shizuku 剪贴板 payload 临时目录 `files/clipboard_bridge_clip_payloads/`，该目录只保存 `content write /clip/<eventId>` 写入的短期敏感文本 payload，提交成功、失败或异常后都应清理自己的 eventId 文件，不具备跨安装恢复意义。
 - `AppSetting.pid` 和 `AppSetting.shizukuSuffix` 属于本机安装态与 Shizuku 运行态，不纳入 WebDAV 备份；卸载重装后重新生成纯数字 pid 是预期行为，备份文件名中的 device label 继续只使用 pid 的脱敏前缀。
-- `AppSetting.activeAdSourceId`、`AppSetting.adsGlobalEnabled`、`AppSetting.adConsentState`、`AppSetting.adPrivacyPolicyVersion`、广告会话保险丝和后续可能出现的本地广告事件缓存属于本机广告/隐私/运营态，不纳入 WebDAV/本地备份，不触发 backup dirty；卸载重装后恢复默认 `auto`、默认总开关和未知广告同意状态，由当前渠道包、隐私同意流程和内置广告源决定是否展示广告。
+- `AppSetting.activeAdSourceId`、`AppSetting.adsGlobalEnabled`、`AppSetting.adConsentState`、`AppSetting.adPrivacyPolicyVersion`、广告会话保险丝和后续可能出现的本地广告事件缓存属于本机广告/隐私/运营态，不纳入 WebDAV/本地备份，不触发 backup dirty；`local.properties` 中的 CSJ/uni-ad AppId、联盟 ID、adpid、代码位 ID 和签名配置属于本机/CI 构建态，同样不进入备份。卸载重装后恢复默认 `auto`、默认总开关和未知广告同意状态，由当前渠道包、隐私同意流程和内置广告源决定是否展示广告。
 
 ## 用户体验
 
