@@ -11,7 +11,7 @@ import org.junit.Test
 class ClipRepositorySourceAppMergeTest {
 
     @Test
-    /** read_clip 没有携带图标字段时，应保留数据库中已经补齐的图标缓存。 */
+    /** commit_clip 没有携带图标字段时，应保留数据库中已经补齐的图标缓存。 */
     fun buildSourceAppForClipKeepsExistingIconWhenCaptureHasNoIcon() {
         /** 数据库中已补齐图标的来源 App。 */
         val existingSourceApp = SourceAppData(
@@ -22,7 +22,7 @@ class ClipRepositorySourceAppMergeTest {
             iconHash = "old-hash"
         )
 
-        /** Provider 轻量 read_clip 传入的捕获数据，不等待图标写入完成。 */
+        /** Provider 轻量入库传入的捕获数据，不等待图标写入完成。 */
         val captureEntity = captureEntity(
             sourcePackage = "com.example",
             sourceAppName = "新名称",
@@ -72,7 +72,7 @@ class ClipRepositorySourceAppMergeTest {
     @Test
     /** 首次轻量入库且没有图标时，图标字段应保持为空等待 commit_icon 后续补齐。 */
     fun buildSourceAppForClipKeepsIconEmptyWithoutExistingCache() {
-        /** Provider 轻量 read_clip 传入的首次来源数据。 */
+        /** Provider 轻量入库传入的首次来源数据。 */
         val captureEntity = captureEntity(
             sourcePackage = "com.example",
             sourceAppName = "示例应用",
@@ -91,7 +91,7 @@ class ClipRepositorySourceAppMergeTest {
     }
 
     @Test
-    /** 坏路径被 query_icon_state 清空后，后续轻量 read_clip 不应再把旧坏路径重新写回。 */
+    /** 坏路径被 query_icon_state 清空后，后续轻量入库不应再把旧坏路径重新写回。 */
     fun buildSourceAppForClipKeepsClearedIconCacheEmpty() {
         /** query_icon_state 已清空旧图标字段后的来源缓存。 */
         val existingSourceApp = SourceAppData(
@@ -102,7 +102,7 @@ class ClipRepositorySourceAppMergeTest {
             iconHash = null
         )
 
-        /** 不携带新图标字段的轻量 read_clip 捕获数据。 */
+        /** 不携带新图标字段的轻量入库捕获数据。 */
         val captureEntity = captureEntity(
             sourcePackage = "com.example",
             sourceAppName = "新名称",

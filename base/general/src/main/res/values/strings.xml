@@ -49,10 +49,9 @@
     <string name="base_general_mine_tab">我的页</string>
     <string name="base_general_to_download">去下载</string>
     <string name="base_general_clipboard_service">剪贴板服务</string>
-    <string name="base_general_clipboard_update">剪贴板更新</string>
-    <string name="base_general_display_clipboard_content_updates">剪贴板更新的通知</string>
+    <string name="base_general_clipboard_update">剪贴更新通知</string>
+    <string name="base_general_display_clipboard_content_updates">剪贴保存通知</string>
     <string name="base_general_service_is_running">服务正在运行中</string>
-    <string name="base_general_read_clip_channel">读取剪贴板时的通知</string>
     <string name="base_general_waiting_for_shizuku_connection">等待shizuku连接..</string>
     <string name="base_general_shizuku_not_install">shizuku未安装</string>
     <string name="base_general_shizuku_service_not_alive">shizuku服务未存活</string>
@@ -92,7 +91,6 @@
     <string name="base_general_video_download_success">视频下载完成，点击播放</string>
     <string name="base_general_video_download">视频下载</string>
     <string name="base_general_update_the_download_progress_and_status">更新下载进度和状态</string>
-    <string name="base_general_without_the_floating_window_permission">没有悬浮窗权限，无法读取剪贴板内容</string>
     <string name="base_general_storage_permission_is_required">需要存储权限</string>
     <string name="base_general_saving_data_to_a_local_folder_requires_storage_permissions">保存数据到本地文件夹中需要存储权限</string>
     <string name="base_general_initialize_download">准备下载</string>
@@ -151,7 +149,6 @@
     <string name="base_general_choose_saved_image_location">选择查看已保存图片的位置</string>
     <string name="base_general_open_image_folder_chooser">打开图片文件夹</string>
     <string name="base_general_no_available_app_to_open_image_folder">没有可用应用打开相册</string>
-    <string name="base_general_the_clipboard_is_being_read">正在读取剪贴板</string>
     <string name="base_general_unknow">未知</string>
     <string name="base_general_there_is_no_available_application_to_open_this_video">没有可用的应用打开该视频</string>
     <string name="base_general_failed_to_create_the_download_task">创建下载任务失败</string>
@@ -217,12 +214,11 @@
     <string name="base_general_custom_days">自定义天数</string>
     <string name="base_general_custom_retention_days_hint">输入保留天数（1-3650）</string>
     <string name="base_general_recycle_bin_retention_warning">保存后会立即清理超过该天数的数据。</string>
-    <string name="base_general_permission_description">权限说明</string>
+    <string name="base_general_mine_permission_section">权限</string>
     <string name="base_general_mine_data_management_section">数据管理</string>
     <string name="base_general_mine_feature_section">功能入口</string>
-    <string name="base_general_mine_settings_section">设置与权限</string>
+    <string name="base_general_mine_settings_section">设置</string>
     <string name="base_general_notice">通知</string>
-    <string name="base_general_suspended_window">悬浮窗</string>
     <string name="base_general_clip_item_quick_action_setting">剪贴快捷操作</string>
     <string name="base_general_clip_item_quick_action_setting_desc">普通列表和普通搜索结果的快捷动作区执行所选动作，其余区域进入详情。</string>
     <string name="base_general_current_option">当前：%1$s</string>

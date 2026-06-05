@@ -51,7 +51,7 @@ class ClipboardBridgeIconQueryCoordinator @Inject constructor(
                 "Provider 图标预判失败 eventId=${request.eventId} packageName=${request.packageName} type=${throwable::class.simpleName}"
             }
             ClipboardBridgeResult.of(
-                resultCode = ClipboardBridgeContract.CODE_READ_FAILED,
+                resultCode = ClipboardBridgeContract.CODE_ICON_COMMIT_FAILED,
                 shouldSyncIcon = false,
                 iconDecisionReason = ClipboardBridgeContract.ICON_REASON_NO_ICON_AVAILABLE
             )

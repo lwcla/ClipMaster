@@ -6,7 +6,7 @@ import com.cla.clip.base.general.utils.logW
 /**
  * Shizuku 进程唤醒 app 主进程的 shell 命令执行器。
  *
- * 优先使用前台服务唤醒；命令失败、超时或输出被 parser 判定失败时，再使用 NoDisplay Activity fallback。
+ * 只使用 NoDisplay Activity 拉起主进程；剪贴读取已经改为 Shizuku 进程直读，不再依赖 app 前台服务。
  *
  * @param packageName 当前应用包名，用于构造 manifest component。
  * @param shellCommandRunner shell 命令执行器。
@@ -21,57 +21,10 @@ internal class ShizukuAppWakeCommandRunner(
     /**
      * 执行 app 主进程唤醒命令。
      *
-     * 前台服务被系统接受时直接返回；否则尝试 NoDisplay Activity。
+     * 只启动 NoDisplay Activity，不携带剪贴正文或来源应用信息。
      */
     fun wakeAppProcess(): AppWakeCommandResult {
-        /** 前台服务唤醒结果；它是常规路径，成功时不再打开 NoDisplay Activity。 */
-        val foregroundResult = startForegroundServiceCommand()
-        /** 前台服务命令是否已经被系统接受；集中 parser 兼容 ROM 退出码差异。 */
-        val foregroundAccepted = !foregroundResult.timedOut &&
-            ClipboardBridgeCommandResultParser.isStartForegroundServiceSuccessful(
-                foregroundResult.exitCode,
-                foregroundResult.output
-            )
-        if (foregroundAccepted) {
-            return foregroundResult
-        }
-
-        logW(ClipboardShizukuService.TAG) {
-            "start-foreground-service 唤醒失败，尝试 NoDisplay WakeActivity fallback " +
-                "exit=${foregroundResult.exitCode} timedOut=${foregroundResult.timedOut}"
-        }
         return startWakeActivityCommand()
-    }
-
-    /**
-     * 执行前台服务唤醒命令并返回完整命令结果。
-     *
-     * 命令不带 `--user`，避免多用户设备上引入新的权限差异。
-     */
-    internal fun startForegroundServiceCommand(): AppWakeCommandResult {
-        /** 前台服务 component；类名固定为主进程 manifest 声明的完整类名。 */
-        val serviceComponent = "$packageName/$CLIPBOARD_SERVICE_CLASS_NAME"
-        /** `am start-foreground-service` 命令参数；不传真实剪贴数据。 */
-        val args = listOf(
-            "am",
-            "start-foreground-service",
-            "-n",
-            serviceComponent
-        )
-        /** 前台服务唤醒命令执行结果。 */
-        val result = shellCommandRunner.run(args, wakeCommandTimeoutMillis)
-        if (result.timedOut) {
-            logW(ClipboardShizukuService.TAG) { "start-foreground-service 超时 timeoutMs=$wakeCommandTimeoutMillis" }
-        }
-        /** 前台服务命令是否被系统接受；集中 parser 兼容 ROM 退出码差异。 */
-        val ok = ClipboardBridgeCommandResultParser.isStartForegroundServiceSuccessful(result.exitCode, result.output)
-        logD(ClipboardShizukuService.TAG) { "start-foreground-service exit=${result.exitCode} ok=$ok output=${result.output}" }
-        return AppWakeCommandResult(
-            wakeMode = AppWakeMode.FOREGROUND_SERVICE,
-            exitCode = result.exitCode,
-            output = result.output,
-            timedOut = result.timedOut
-        )
     }
 
     /**
@@ -107,13 +60,10 @@ internal class ShizukuAppWakeCommandRunner(
     }
 
     companion object {
-        /** 前台服务唤醒命令等待上限，避免厂商 ROM 卡住 am 命令拖住剪贴事件。 */
+        /** NoDisplay Activity 唤醒命令等待上限，避免厂商 ROM 卡住 am 命令拖住剪贴事件。 */
         private const val DEFAULT_APP_WAKE_COMMAND_TIMEOUT_MS = 2_000L
 
-        /** 主进程剪贴板服务完整类名；shell `am` 唤醒使用完整 component，避免 ROM 对相对类名解析不一致。 */
-        private const val CLIPBOARD_SERVICE_CLASS_NAME = "com.cla.clip.master.service.ClipboardService"
-
-        /** 主进程 NoDisplay 唤醒 Activity 完整类名；前台服务命令失败时作为冷启动 fallback。 */
+        /** 主进程 NoDisplay 唤醒 Activity 完整类名；shell `am start` 通过它冷启动 app 主进程。 */
         private const val SHIZUKU_WAKE_ACTIVITY_CLASS_NAME = "com.cla.clip.master.wake.ShizukuWakeActivity"
     }
 }

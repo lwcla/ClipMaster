@@ -131,16 +131,6 @@ object AppSetting {
             mmkv.putString(KEY_SHIZUKU_SUFFIX, normalizedProcessName)
         }
 
-    /** 权限说明是否已经展开，保存用户在“我的”页的折叠偏好。 */
-    private const val KEY_PERMISSION_EXPANDED = "permission_expanded"
-
-    /** “权限说明”卡片展开状态；只影响 UI 展示，不参与权限判断。 */
-    var permissionExpanded: Boolean
-        get() = mmkv.getBoolean(KEY_PERMISSION_EXPANDED, false)
-        set(value) {
-            mmkv.putBoolean(KEY_PERMISSION_EXPANDED, value)
-        }
-
     /** 剪贴 item 快捷动作配置 key；值使用 `ClipItemQuickAction.storageValue`，当前功能较新，重命名后不迁移旧 key。 */
     private const val KEY_CLIP_ITEM_QUICK_ACTION = "clip_item_quick_action"
 

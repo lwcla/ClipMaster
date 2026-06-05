@@ -23,10 +23,6 @@ data class ClipboardBridgeResult(
     val htmlLength: Int?,
     /** commit_clip 解析到的 MIME 类型列表，仅用于类型诊断。 */
     val mimeTypes: List<String>,
-    /** 是否读取到了剪贴板 item。 */
-    val readClip: Boolean,
-    /** 是否成功添加过透明悬浮窗。 */
-    val overlayAdded: Boolean,
     /** 图标处理状态，取值来自 ClipboardBridgeContract 的 ICON_STATUS_*。 */
     val iconStatus: String,
     /** query_icon_state 是否要求调用方继续同步来源图标。 */
@@ -53,8 +49,6 @@ data class ClipboardBridgeResult(
          * @param textLength commit_clip 解析到的普通文本长度。
          * @param htmlLength commit_clip 解析到的 HTML 长度。
          * @param mimeTypes commit_clip 解析到的 MIME 类型列表。
-         * @param readClip 是否读取到剪贴板内容。
-         * @param overlayAdded 是否成功添加悬浮窗。
          * @param iconStatus 图标处理状态。
          * @param shouldSyncIcon query_icon_state 是否要求继续同步来源图标。
          * @param iconDecisionReason 本次图标决策原因。
@@ -71,8 +65,6 @@ data class ClipboardBridgeResult(
             textLength: Int? = null,
             htmlLength: Int? = null,
             mimeTypes: List<String> = emptyList(),
-            readClip: Boolean = false,
-            overlayAdded: Boolean = false,
             iconStatus: String = ClipboardBridgeContract.ICON_STATUS_PLACEHOLDER,
             shouldSyncIcon: Boolean? = null,
             iconDecisionReason: String? = null,
@@ -89,8 +81,6 @@ data class ClipboardBridgeResult(
                 textLength = textLength,
                 htmlLength = htmlLength,
                 mimeTypes = mimeTypes,
-                readClip = readClip,
-                overlayAdded = overlayAdded,
                 iconStatus = iconStatus,
                 shouldSyncIcon = shouldSyncIcon,
                 iconDecisionReason = iconDecisionReason,
@@ -114,8 +104,6 @@ data class ClipboardBridgeResult(
             if (mimeTypes.isNotEmpty()) {
                 putStringArrayList(ClipboardBridgeContract.RESULT_MIME_TYPES, ArrayList(mimeTypes))
             }
-            putBoolean(ClipboardBridgeContract.RESULT_READ_CLIP, readClip)
-            putBoolean(ClipboardBridgeContract.RESULT_OVERLAY_ADDED, overlayAdded)
             putString(ClipboardBridgeContract.RESULT_ICON_STATUS, iconStatus)
             shouldSyncIcon?.let { putBoolean(ClipboardBridgeContract.RESULT_SHOULD_SYNC_ICON, it) }
             iconDecisionReason?.let { putString(ClipboardBridgeContract.RESULT_ICON_DECISION_REASON, it) }

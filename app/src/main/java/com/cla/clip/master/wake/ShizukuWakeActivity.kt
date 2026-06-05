@@ -12,7 +12,7 @@ import javax.inject.Inject
 /**
  * Shizuku 唤醒 app 主进程的 NoDisplay Activity。
  *
- * 该入口只用于补偿 `am start-foreground-service` 失败、超时或被系统拒绝的通用场景；
+ * 该入口只负责被 Shizuku 通过 `am start --activity-no-animation` 显式拉起主进程；
  * 不展示业务 UI，不读取剪贴板正文，也不保存数据，只提交 Shizuku 重连请求后立即关闭自己。
  */
 @AndroidEntryPoint

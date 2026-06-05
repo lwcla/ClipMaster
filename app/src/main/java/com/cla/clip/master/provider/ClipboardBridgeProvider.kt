@@ -19,7 +19,7 @@ import java.io.FileNotFoundException
 /**
  * Shizuku 命令行访问的剪贴板桥接 Provider。
  *
- * 该 Provider 只用于验证主进程冷启动后能否通过悬浮窗读取剪贴板；旧 AIDL callback 通道仍保留为随时可回退路径。
+ * 该 Provider 只接收 Shizuku 进程直读后的 payload、来源图标和身份查询，不再读取系统剪贴板。
  */
 class ClipboardBridgeProvider : ContentProvider() {
     companion object {
@@ -40,9 +40,6 @@ class ClipboardBridgeProvider : ContentProvider() {
 
     /** Provider 剪贴 payload 临时文件管理器。 */
     private val clipPayloadStore: ClipboardBridgeClipPayloadStore by lazy { entryPoint.clipboardBridgeClipPayloadStore() }
-
-    /** Provider 剪贴板读取协调器。 */
-    private val readCoordinator: ClipboardBridgeReadCoordinator by lazy { entryPoint.clipboardBridgeReadCoordinator() }
 
     /** Provider 剪贴 payload 提交协调器。 */
     private val clipCommitCoordinator: ClipboardBridgeClipCommitCoordinator by lazy {
@@ -75,7 +72,7 @@ class ClipboardBridgeProvider : ContentProvider() {
     /**
      * Provider 命令调用入口。
      *
-     * @param method 支持 read_clip、commit_clip、query_icon_state、commit_icon 和 query_shizuku_process。
+     * @param method 支持 commit_clip、query_icon_state、commit_icon 和 query_shizuku_process。
      * @param arg 当前未使用，保留给 Android ContentProvider call 签名。
      * @param extras `content call` 传入的小字段。
      */
@@ -87,24 +84,21 @@ class ClipboardBridgeProvider : ContentProvider() {
             return ClipboardBridgeResult.of(ClipboardBridgeContract.CODE_INVALID_CALLER).toBundle()
         }
 
-        /** 解析后的 Provider 请求参数；无效时不读取剪贴板。 */
+        /** 当前 method 是否属于保留的 Provider 公共接口；旧 read_clip 会在这里被拒绝。 */
+        val methodSupported = method == ClipboardBridgeContract.METHOD_COMMIT_CLIP ||
+            method == ClipboardBridgeContract.METHOD_QUERY_ICON_STATE ||
+            method == ClipboardBridgeContract.METHOD_COMMIT_ICON ||
+            method == ClipboardBridgeContract.METHOD_QUERY_SHIZUKU_PROCESS
+        if (!methodSupported) {
+            logW(TAG) { "Provider 不支持 method=$method callingUid=$callingUid" }
+            return ClipboardBridgeResult.of(ClipboardBridgeContract.CODE_INVALID_ARGS).toBundle()
+        }
+
+        /** 解析后的 Provider 请求参数；无效时不进入任何桥接方法。 */
         val request = ClipboardBridgeRequest.fromExtras(extras)
             ?: return ClipboardBridgeResult.of(ClipboardBridgeContract.CODE_INVALID_ARGS).toBundle()
 
         return when (method) {
-            ClipboardBridgeContract.METHOD_READ_CLIP -> {
-                /** 应用 Context；读取旧 overlay 路径前清理 Provider 临时目录。 */
-                val appContext = requireNotNull(context).applicationContext
-                iconStore.cleanupExpired(appContext)
-                clipPayloadStore.cleanupExpired(appContext)
-                logD(TAG) {
-                    "Provider 收到 read_clip eventId=${request.eventId} packageName=${request.packageName} " +
-                        "appName=${request.appName} hasIconHash=${!request.iconHash.isNullOrBlank()}"
-                }
-                runBlocking {
-                    readCoordinator.readAndSave(request).toBundle()
-                }
-            }
             ClipboardBridgeContract.METHOD_COMMIT_CLIP -> {
                 /** 应用 Context；提交剪贴 payload 前清理过期临时文件。 */
                 val appContext = requireNotNull(context).applicationContext
@@ -149,6 +143,7 @@ class ClipboardBridgeProvider : ContentProvider() {
                 shizukuProcessCoordinator.query(request).toBundle()
             }
             else -> {
+                /** 理论不可达分支；保留是为了防止未来新增 method 时忘记补齐处理分支。 */
                 logW(TAG) { "Provider 不支持 method=$method callingUid=$callingUid" }
                 ClipboardBridgeResult.of(ClipboardBridgeContract.CODE_INVALID_ARGS).toBundle()
             }

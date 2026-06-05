@@ -3,20 +3,15 @@ package com.cla.clip.master.utils
 import android.content.ComponentName
 import android.content.Context
 import android.content.ServiceConnection
-import android.graphics.Bitmap
 import android.os.IBinder
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.config.AppSetting
-import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.base.general.utils.ApplicationScope
-import com.cla.clip.base.general.utils.extractUsableColor
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.logW
-import com.cla.clip.base.general.utils.saveIcon
 import com.cla.clip.master.BuildConfig
-import com.cla.clip.master.service.ClipboardService
 import com.cla.clip.shizuku.ClipboardShizukuService
 import com.cla.clip.shizuku.IClipboardShizukuService
 import com.cla.clip.shizuku.ShizukuCallback
@@ -26,12 +21,10 @@ import com.cla.clip.shizuku.ShizukuUtils
 import dagger.Lazy
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -45,7 +38,6 @@ import javax.inject.Singleton
 class ShizukuConnector @Inject constructor(
     @param:ApplicationScope private val scope: CoroutineScope,
     @param:ApplicationContext private val appContext: Context,
-    private val clipRepository: Lazy<ClipRepository>,
     private val notificationHelper: Lazy<NotificationHelper>,
 ) {
 
@@ -53,10 +45,11 @@ class ShizukuConnector @Inject constructor(
         private const val TAG = "ShizukuConnector"
 
         /**
-         * shizuku的版本号，这个不要跟app的版本
-         * 否则只是更新了app，但shizuku服务没有发生变化的情况下，也会重启shizuku进程
+         * Shizuku UserService 协议版本；删除旧 AIDL 保存回调后必须升级，确保残留旧进程被重建。
+         *
+         * 这个版本号不跟随 app 版本，只在跨进程协议或服务行为需要强制替换时递增。
          */
-        const val VERSION = 17
+        const val VERSION = 18
 
         /**
          * 判断当前连接是否可以跳过重新 bind。
@@ -102,53 +95,6 @@ class ShizukuConnector @Inject constructor(
                     /** Shizuku 进程探测 app 主进程是否仍可达；该方法必须无业务副作用，避免探活触发入库或服务启动。 */
                     override fun pingAppProcess(): Boolean {
                         return true
-                    }
-
-                    /** 接收旧 AIDL 链路投递的剪贴来源信息；Provider 直读模式不应通过该方法保存同一条剪贴内容。 */
-                    override fun onOpNoted(packageName: String?, appName: String?, appIcon: Bitmap?, iconHash: String?) {
-                        if (packageName == BuildConfig.APPLICATION_ID) {
-                            // 自己复制的内容，不处理
-                            return
-                        }
-
-                        logD(TAG) {
-                            """
-                                剪贴板有更新了：
-                                packageName=$packageName
-                                appName=$appName
-                                appIcon=${appIcon?.width} x ${appIcon?.height}
-                            """.trimIndent()
-                        }
-
-                        scope.launch(Dispatchers.IO) {
-                            val sourceAppData = packageName?.let { clipRepository.get().loadSourceApp(it) }
-                            val appColor: Int?
-                            val appIconPath: String?
-
-                            if (sourceAppData?.iconHash == iconHash) {
-                                logD(TAG) { "onOpNoted 使用数据库中的应用数据" }
-                                appColor = sourceAppData?.primaryColor
-                                appIconPath = sourceAppData?.iconPath
-                            } else {
-                                logD(TAG) { "onOpNoted 去提取应用图标的颜色和保存图标到本地" }
-                                // 提取图标里的颜色后续用来做边框的颜色
-                                appColor = appIcon?.extractUsableColor()
-                                appIconPath = appContext.saveIcon(packageName, appIcon)
-                            }
-
-                            withContext(Dispatchers.Main) {
-                                // CoroutineExceptionHandler--> Coroutine exception (Show original) (Fix with AI)
-                                // android.app.ForegroundServiceStartNotAllowedException: startForegroundService() not allowed due to mAllowStartForeground false: service com.cla.clip.master/.service.ClipboardService
-                                ClipboardService.start(
-                                    appContext,
-                                    packageName,
-                                    appName,
-                                    appIconPath,
-                                    appColor,
-                                    iconHash
-                                )
-                            }
-                        }
                     }
                 })
             } else {

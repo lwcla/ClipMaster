@@ -3,14 +3,11 @@ package com.cla.clip.master.entity
 /**
  * 通用设置开关子项 UI 模型。
  *
- * 用于“我的/权限”页面展示某个权限或设置项的标题、描述、选中状态和可用状态，不直接持久化。
+ * 用于“我的/权限”页面展示某个权限或设置项的描述、选中状态和可用状态，不直接持久化。
  */
 data class SettingSwitchItemUi(
     /** 设置项稳定 id，用于区分点击后应进入哪一种权限或设置流程。 */
     val id: Id,
-
-    /** 用户可见标题，调用方应从字符串资源读取后传入。 */
-    val title: String,
 
     /** 用户可见说明文案，描述该开关或权限当前的作用。 */
     val description: String,
@@ -28,11 +25,8 @@ data class SettingSwitchItemUi(
             /** Shizuku 授权项，用于读取其他应用剪贴板来源信息。 */
             object Shizuku : Permission()
 
-            /** 通知权限项，用于展示剪贴板读取和下载状态通知。 */
+            /** 通知权限项，用于展示剪贴保存、下载进度和 Shizuku 状态提醒。 */
             object Notice : Permission()
-
-            /** 悬浮窗权限项，用于后台读取剪贴板时保持服务可见性。 */
-            object Overlay : Permission()
         }
     }
 }

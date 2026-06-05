@@ -26,7 +26,6 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.cla.clip.base.general.utils.hasNotificationRuntimePermission
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.master.R
@@ -58,8 +57,8 @@ fun ShizukuServiceUnavailableTip(
                 // 在 onResume 时检查 Shizuku 状态
                 val new = ShizukuUtils.checkStatus(context)
                 logI(tag) { "ON_RESUME shizuku状态 $new" }
-                // 从后台返回前台时，如果是已经连接shizuku的情况下，尝试绑定shizuku进程，如果已经绑定中，则不作其他操作，如果是已经失活，则再次绑定
-                if (new is ShizukuStatus.Connected && context.hasNotificationRuntimePermission()) viewModel.connectShizuku()
+                // 从后台返回前台时，如果 Shizuku 已连接，则直接尝试绑定最新 UserService；通知权限不再是剪贴读取前置条件。
+                if (new is ShizukuStatus.Connected) viewModel.connectShizuku()
                 status = new
             }
         }
@@ -75,15 +74,6 @@ fun ShizukuServiceUnavailableTip(
             Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener)
         }
     }
-
-    // ========================================================
-    // 【关键修改】调用分离出来的权限处理组件
-    // 只要 status 是 Connected，就触发权限检查逻辑
-    // 将它放在 return 之前，确保连接成功后即便 UI 消失，权限逻辑仍能运行一次（如果它还在 Composable 树中）
-    // 或者，因为下面 return 了，这个组件会留在 Composition 中（因为它是 return 之前的），
-    // 只有 return 之后的组件才会被移除。所以这里逻辑是通的。
-    // ========================================================
-    HandleNotificationPermission(trigger = status is ShizukuStatus.Connected)
 
     val tip = when (status) {
         is ShizukuStatus.Connected -> {

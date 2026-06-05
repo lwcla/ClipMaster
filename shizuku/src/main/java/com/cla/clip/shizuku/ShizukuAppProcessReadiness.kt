@@ -19,11 +19,11 @@ import kotlinx.coroutines.sync.withLock
  *
  * @param callbackFlow 当前 app 主进程注册的 callback 状态。
  * @param pingCallback 无副作用 callback 探活函数，返回 true 表示 app 主进程可达。
- * @param wakeAppProcess 使用 shell 命令拉起 app 主进程的函数，可由前台服务或 NoDisplay Activity 实现。
+ * @param wakeAppProcess 使用 shell 命令拉起 app 主进程的函数，当前由 NoDisplay Activity 实现。
  * @param clockMillis 单调时间来源，用于耗时和 cooldown，测试可替换为假时钟。
  * @param pingDispatcher 执行 Binder ping 的调度器，避免阻塞调用方协程。
  * @param pingTimeoutMillis 单次 callback 探活最长等待时间。
- * @param callbackWaitMillis 唤醒后等待新 callback 的最长时间，必须小于 ClipboardService 无 payload 自停时间。
+ * @param callbackWaitMillis 唤醒后等待新 callback 的最长时间，避免 content call 在主进程未恢复时直接失败。
  * @param wakeCooldownMillis 唤醒失败后的短冷却，避免连续复制反复拉起 app。
  */
 internal class ShizukuAppProcessReadiness<T : Any>(
@@ -40,7 +40,7 @@ internal class ShizukuAppProcessReadiness<T : Any>(
         /** callback 探活超时；超过该值按 callback 不可信处理。 */
         private const val DEFAULT_PING_TIMEOUT_MS = 300L
 
-        /** 唤醒后等待 callback 重连的时间；必须小于 ClipboardService 的 3000ms 无 payload 自停延迟。 */
+        /** 唤醒后等待 callback 重连的时间；超过后本次 Provider 提交会按唤醒失败处理。 */
         private const val DEFAULT_CALLBACK_WAIT_MS = 2_500L
 
         /** 唤醒失败后的进程内短冷却，避免高频复制反复拉起 app。 */
@@ -119,7 +119,7 @@ internal class ShizukuAppProcessReadiness<T : Any>(
             val wakeCommandResult = wakeAppProcess()
             /** 唤醒命令耗时；假时钟回退时兜底为 0，避免日志出现负数。 */
             val wakeElapsedMillis = (clockMillis() - wakeStartMillis).coerceAtLeast(0L)
-            /** 唤醒命令是否被系统接受；前台服务和 NoDisplay Activity 输出解析集中在 ClipboardBridgeCommandResultParser。 */
+            /** 唤醒命令是否被系统接受；NoDisplay Activity 输出解析集中在 ClipboardBridgeCommandResultParser。 */
             val wakeCommandAccepted = !wakeCommandResult.timedOut &&
                 ClipboardBridgeCommandResultParser.isAppWakeCommandSuccessful(
                     wakeCommandResult.exitCode,
@@ -252,9 +252,6 @@ private data class AppProcessPingResult(
 internal enum class AppWakeMode {
     /** 未执行 app 唤醒命令，通常表示 callback 已可达或 cooldown 跳过。 */
     NONE,
-
-    /** 通过 `am start-foreground-service` 唤醒主进程。 */
-    FOREGROUND_SERVICE,
 
     /** 通过 `am start --activity-no-animation` 启动 NoDisplay Activity 唤醒主进程。 */
     ACTIVITY_NO_DISPLAY,

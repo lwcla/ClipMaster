@@ -167,7 +167,6 @@ class ClipboardBridgeClipCommitCoordinator @Inject constructor(
         return ClipboardBridgeResult.of(
             resultCode = ClipboardBridgeContract.CODE_OK,
             saved = clipCommitted,
-            readClip = true,
             clipCommitted = clipCommitted,
             clipStatus = clipStatus,
             textLength = clipText.length,

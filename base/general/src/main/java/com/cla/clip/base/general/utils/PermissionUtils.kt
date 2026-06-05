@@ -13,7 +13,7 @@ import androidx.core.content.ContextCompat
 /**
  * 权限相关工具和阈值。
  *
- * 集中处理通知、悬浮窗、存储权限和系统设置页跳转；不同 Android 版本权限模型不同，调用方不要绕过这里直接判断。
+ * 集中处理通知、存储权限和系统设置页跳转；不同 Android 版本权限模型不同，调用方不要绕过这里直接判断。
  */
 object PermissionUtils {
     /**
@@ -25,7 +25,7 @@ object PermissionUtils {
     const val DENIED_FOREVER_TAKE_TIME = 400
 }
 
-/** 检查普通运行时权限是否已授予；只适用于 Android 标准 dangerous permission，不适用于悬浮窗等特殊权限。 */
+/** 检查普通运行时权限是否已授予；只适用于 Android 标准 dangerous permission，不适用于完整文件访问等特殊权限。 */
 fun Context.hasPermission(permission: String) = ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 
 /**
@@ -44,22 +44,15 @@ fun Context.hasNotificationPermission(): Boolean {
     return notificationEnabled && runtimeGranted
 }
 
-/**
- * 判断前台服务启动链路需要的通知运行时权限是否已授予。
- *
- * 这里不检查系统通知总开关，避免用户只关闭通知展示时，误阻断 Shizuku/前台服务启动流程。
- */
+/** 判断 Android 13+ 通知运行时权限是否已授予；该结果只影响通知展示，不影响剪贴入库。 */
 fun Context.hasNotificationRuntimePermission(): Boolean {
     return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || hasPermission(Manifest.permission.POST_NOTIFICATIONS)
 }
 
-/** 检查悬浮窗特殊权限；该权限不能通过普通运行时权限弹窗授予，只能跳系统设置页。 */
-fun Context.hasOverlayPermission() = Settings.canDrawOverlays(this)
-
 /**
  * 跳转到当前应用对应权限的系统设置页面。
  *
- * 通知、悬浮窗和完整文件访问权限有专属入口，其余权限回退到应用详情页；部分定制 ROM 可能抛异常，因此会兜底到详情页。
+ * 通知和完整文件访问权限有专属入口，其余权限回退到应用详情页；部分定制 ROM 可能抛异常，因此会兜底到详情页。
  */
 fun Context.toPermissionSetting(permission: String) {
     fun newIntent(): Intent {
@@ -69,13 +62,6 @@ fun Context.toPermissionSetting(permission: String) {
                     return Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
                         putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
                     }
-                }
-            }
-            // Android 11+ 完整文件访问权限，跳专属页面
-            permission == Manifest.permission.SYSTEM_ALERT_WINDOW -> {
-                // 悬浮窗权限没有运行时授权弹窗，需要进入系统“显示在其他应用上层”页面处理。
-                return Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
-                    data = Uri.fromParts("package", packageName, null)
                 }
             }
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && permission == Manifest.permission.MANAGE_EXTERNAL_STORAGE -> {

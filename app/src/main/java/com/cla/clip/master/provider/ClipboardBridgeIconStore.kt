@@ -17,7 +17,7 @@ import javax.inject.Inject
 /**
  * Provider 图标临时传输目录管理器。
  *
- * Shizuku 通过 `content write` 把 PNG 写入这里，Provider 读取剪贴板时再校验 hash 并搬到正式来源图标目录。
+ * Shizuku 通过 `content write` 把 PNG 写入这里，Provider 在 `commit_icon` 时校验 hash 并搬到正式来源图标目录。
  */
 class ClipboardBridgeIconStore @Inject constructor() {
     companion object {
@@ -90,40 +90,6 @@ class ClipboardBridgeIconStore @Inject constructor() {
         }
 
         return saveVerifiedIcon(context, request, iconFile)
-    }
-
-    /**
-     * 读取并保存当前事件图标。
-     *
-     * @param context 应用 Context，用于读取临时目录和写入正式图标目录。
-     * @param request Provider read_clip 请求参数。
-     * @param cachedIconPath 数据库中同包名同 hash 的旧图标路径，可为空。
-     */
-    fun resolveIcon(
-        context: Context,
-        request: ClipboardBridgeRequest,
-        cachedIconPath: String?,
-    ): ClipboardBridgeIconResolution {
-        cleanupExpired(context)
-
-        if (!request.iconHash.isNullOrBlank() && !cachedIconPath.isNullOrBlank()) {
-            return ClipboardBridgeIconResolution(
-                iconPath = cachedIconPath,
-                iconColor = null,
-                iconHash = request.iconHash,
-                bitmap = null,
-                status = ClipboardBridgeContract.ICON_STATUS_REUSED
-            )
-        }
-
-        /** 当前事件图标临时文件；不存在说明 content write 失败或被跳过。 */
-        val file = iconFile(tempDir(context), request.eventId)
-        if (!file.exists()) {
-            logW(TAG) { "Provider 图标缺失 eventId=${request.eventId} packageName=${request.packageName}" }
-            return ClipboardBridgeIconResolution.placeholder()
-        }
-
-        return saveVerifiedIcon(context, request, file)
     }
 
     /**

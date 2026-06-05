@@ -5,8 +5,8 @@ import androidx.compose.ui.res.stringResource
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.config.ClipItemQuickAction
 import com.cla.clip.master.entity.SettingSwitchItemUi
-import com.cla.clip.master.ui.widget.ExpandableSettingCard as SharedExpandableSettingCard
 import com.cla.clip.master.ui.widget.SettingSwitchRowState
+import com.cla.clip.master.ui.widget.SettingSwitchListCard as SharedSettingSwitchListCard
 import com.cla.clip.master.ui.widget.SingleChoiceDialog
 import com.cla.clip.master.ui.widget.SingleChoiceOption
 
@@ -51,31 +51,27 @@ private val clipItemQuickActionOptions = listOf(
 )
 
 /**
- * 可展开的设置卡片。
+ * 权限设置项卡片列表。
  *
- * 用于承载一组相关设置项；展开状态由调用方管理，便于后续把其他设置分组复用同一布局。
+ * 每个权限项都独立成卡；权限刷新、系统跳转和授权动作仍由页面与 ViewModel 负责。
  */
 @Composable
-internal fun ExpandableSettingCard(
-    title: String,
-    expanded: Boolean,
-    onToggleExpanded: () -> Unit,
+internal fun PermissionSettingItems(
     items: List<SettingSwitchItemUi>,
     onItemCheckedChange: (id: SettingSwitchItemUi.Id, checked: Boolean) -> Unit,
 ) {
-    SharedExpandableSettingCard(
-        title = title,
-        expanded = expanded,
-        onToggleExpanded = onToggleExpanded,
-        items = items.map { item ->
-            SettingSwitchRowState(
-                id = item.id,
-                title = item.title,
-                description = item.description,
-                checked = item.checked,
-                enabled = item.enabled
-            )
-        },
-        onItemCheckedChange = onItemCheckedChange,
-    )
+    items.forEach { item ->
+        /** 当前权限项对应的共享开关行状态；单项成卡，避免多个权限挤在同一个卡片里。 */
+        val rowState = SettingSwitchRowState(
+            id = item.id,
+            description = item.description,
+            checked = item.checked,
+            enabled = item.enabled
+        )
+
+        SharedSettingSwitchListCard(
+            items = listOf(rowState),
+            onItemCheckedChange = onItemCheckedChange,
+        )
+    }
 }

@@ -56,7 +56,7 @@ class ClipboardBridgeIconCommitter @Inject constructor(
         } catch (throwable: Throwable) {
             logE(TAG, throwable) { "Provider 图标提交失败 eventId=${request.eventId} packageName=${request.packageName}" }
             ClipboardBridgeResult.of(
-                resultCode = ClipboardBridgeContract.CODE_READ_FAILED,
+                resultCode = ClipboardBridgeContract.CODE_ICON_COMMIT_FAILED,
                 iconStatus = ClipboardBridgeContract.ICON_STATUS_PLACEHOLDER
             )
         }

@@ -13,7 +13,7 @@ import org.junit.Test
 class ShizukuAppProcessReadinessTest {
 
     @Test
-    /** callback 已经可达时不应启动前台服务，避免常态路径通知闪烁。 */
+    /** callback 已经可达时不应启动 NoDisplay Activity，避免常态路径重复拉起主进程。 */
     fun ensureReadyReturnsReadyWhenCallbackPings() = runBlocking {
         /** 当前 callback 状态，初始即为可 ping 通的 app 主进程 callback。 */
         val callbackFlow = MutableStateFlow<TestCallback?>(TestCallback(id = "alive"))
@@ -37,7 +37,7 @@ class ShizukuAppProcessReadinessTest {
     }
 
     @Test
-    /** callback 为空时应拉起前台服务并等待新 callback 回来。 */
+    /** callback 为空时应拉起 NoDisplay Activity 并等待新 callback 回来。 */
     fun ensureReadyWakesWhenCallbackMissing() = runBlocking {
         /** 当前 callback 状态，初始为空表示 app 主进程不可达。 */
         val callbackFlow = MutableStateFlow<TestCallback?>(null)
@@ -58,7 +58,7 @@ class ShizukuAppProcessReadinessTest {
 
         assertTrue(result is ShizukuAppProcessReadinessResult.WakeSucceeded)
         assertEquals(1, wakeCount)
-        assertEquals(AppWakeMode.FOREGROUND_SERVICE, result.appWakeMode)
+        assertEquals(AppWakeMode.ACTIVITY_NO_DISPLAY, result.appWakeMode)
         assertEquals(true, result.appWakeResult)
         assertEquals(true, result.callbackRebound)
     }
@@ -174,7 +174,7 @@ class ShizukuAppProcessReadinessTest {
             callbackFlow = callbackFlow,
             wakeAppProcess = {
                 AppWakeCommandResult(
-                    wakeMode = AppWakeMode.FOREGROUND_SERVICE,
+                    wakeMode = AppWakeMode.ACTIVITY_NO_DISPLAY,
                     exitCode = -1,
                     output = "timeout",
                     timedOut = true
@@ -191,7 +191,7 @@ class ShizukuAppProcessReadinessTest {
     }
 
     @Test
-    /** 唤醒失败后短时间内再次进入应被 cooldown 拦截，避免连续拉起通知。 */
+    /** 唤醒失败后短时间内再次进入应被 cooldown 拦截，避免连续拉起 NoDisplay Activity。 */
     fun ensureReadySkipsWakeDuringCooldown() = runBlocking {
         /** 当前 callback 状态，始终为空表示 app 主进程没有回来。 */
         val callbackFlow = MutableStateFlow<TestCallback?>(null)
@@ -206,7 +206,7 @@ class ShizukuAppProcessReadinessTest {
             wakeAppProcess = {
                 wakeCount += 1
                 AppWakeCommandResult(
-                    wakeMode = AppWakeMode.FOREGROUND_SERVICE,
+                    wakeMode = AppWakeMode.ACTIVITY_NO_DISPLAY,
                     exitCode = 1,
                     output = "Error: background restricted",
                     timedOut = false
@@ -285,12 +285,12 @@ class ShizukuAppProcessReadinessTest {
         )
     }
 
-    /** 构造成功的前台服务唤醒命令结果。 */
+    /** 构造成功的 NoDisplay Activity 唤醒命令结果。 */
     private fun successfulWake(): AppWakeCommandResult {
         return AppWakeCommandResult(
-            wakeMode = AppWakeMode.FOREGROUND_SERVICE,
+            wakeMode = AppWakeMode.ACTIVITY_NO_DISPLAY,
             exitCode = 0,
-            output = "Starting service: Intent { cmp=com.cla.clip.master/com.cla.clip.master.service.ClipboardService }",
+            output = "Starting: Intent { cmp=com.cla.clip.master/.wake.ShizukuWakeActivity }",
             timedOut = false
         )
     }

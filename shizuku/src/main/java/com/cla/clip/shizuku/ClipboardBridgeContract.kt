@@ -9,9 +9,6 @@ object ClipboardBridgeContract {
     /** Provider authority 后缀；完整 authority 由 applicationId + suffix 组成。 */
     const val AUTHORITY_SUFFIX = ".clipboard-bridge"
 
-    /** Provider `call` 方法名：读取剪贴板并保存一条剪贴记录。 */
-    const val METHOD_READ_CLIP = "read_clip"
-
     /** Provider `call` 方法名：提交 Shizuku 侧直读后写入的剪贴板 payload。 */
     const val METHOD_COMMIT_CLIP = "commit_clip"
 
@@ -48,7 +45,7 @@ object ClipboardBridgeContract {
     /** Provider 返回字段：结构化结果码，供 Shizuku 侧判断本次 Provider 通道是否真实成功。 */
     const val RESULT_CODE = "resultCode"
 
-    /** Provider 返回字段：是否已经完成读取和入库；不能只依赖 content 命令 exitCode。 */
+    /** Provider 返回字段：当前 Provider 请求是否完成核心处理；不能只依赖 content 命令 exitCode。 */
     const val RESULT_SAVED = "saved"
 
     /** Provider 返回字段：commit_clip 是否真实写入或更新了一条剪贴记录。 */
@@ -65,12 +62,6 @@ object ClipboardBridgeContract {
 
     /** Provider 返回字段：commit_clip 解析到的 MIME 类型列表，仅用于类型诊断。 */
     const val RESULT_MIME_TYPES = "mimeTypes"
-
-    /** Provider 返回字段：是否成功读取到剪贴板内容。 */
-    const val RESULT_READ_CLIP = "readClip"
-
-    /** Provider 返回字段：是否成功添加过悬浮窗。 */
-    const val RESULT_OVERLAY_ADDED = "overlayAdded"
 
     /** Provider 返回字段：图标传输是否被使用，缺失或失败时用于诊断降级原因。 */
     const val RESULT_ICON_STATUS = "iconStatus"
@@ -93,10 +84,10 @@ object ClipboardBridgeContract {
     /** Provider 返回字段：当前阶段的低敏原因码，用于身份查询和错误诊断。 */
     const val RESULT_REASON_CODE = "reasonCode"
 
-    /** Provider 结果码：读取剪贴板并完成入库。 */
+    /** Provider 结果码：当前 Provider 请求已按协议处理完成。 */
     const val CODE_OK = "ok"
 
-    /** Provider 结果码：调用方不是 shell/root，拒绝读取剪贴板。 */
+    /** Provider 结果码：调用方不是 shell/root，拒绝 Provider 调用。 */
     const val CODE_INVALID_CALLER = "invalid_caller"
 
     /** Provider 结果码：缺少 eventId 或 method 不匹配等参数错误。 */
@@ -117,14 +108,11 @@ object ClipboardBridgeContract {
     /** Provider 结果码：commit_clip 入库流程出现异常。 */
     const val CODE_COMMIT_FAILED = "commit_failed"
 
-    /** Provider 结果码：悬浮窗添加失败，无法进入剪贴板读取阶段。 */
-    const val CODE_OVERLAY_FAILED = "overlay_failed"
-
     /** Provider 结果码：剪贴板为空或没有可保存内容。 */
     const val CODE_NO_CLIP = "no_clip"
 
-    /** Provider 结果码：读取剪贴板或入库过程失败。 */
-    const val CODE_READ_FAILED = "read_failed"
+    /** Provider 结果码：图标预判或图标提交过程出现异常。 */
+    const val CODE_ICON_COMMIT_FAILED = "icon_commit_failed"
 
     /** Provider 结果码：Provider 等待入库完成超时，后台任务可能仍在继续。 */
     const val CODE_TIMEOUT = "timeout"
@@ -240,7 +228,7 @@ object ClipboardBridgeContract {
 /**
  * 解析 `content call` 命令输出。
  *
- * Android `content` 命令即使成功调用 Provider，也只会把 Bundle 打印成文本；这里用低耦合文本解析确认 Provider 明确返回 `saved=true` 和 `resultCode=ok`。
+ * Android `content` 命令即使成功调用 Provider，也只会把 Bundle 打印成文本；这里用低耦合文本解析确认 Provider 明确返回稳定字段。
  */
 object ClipboardBridgeCommandResultParser {
     /** Provider resultCode 的文本正则，兼容 Bundle 字段顺序变化。 */
@@ -277,37 +265,6 @@ object ClipboardBridgeCommandResultParser {
     private val reasonCodeRegex = Regex("""reasonCode=([^,\]\}\s]+)""")
 
     /**
-     * 判断 Provider 命令是否真实完成读取入库。
-     *
-     * @param exitCode `content call` 进程退出码。
-     * @param output `content call` 标准输出和错误输出合并后的文本。
-     */
-    fun isSuccessful(exitCode: Int, output: String): Boolean {
-        /** 命令层必须成功，否则 Provider 可能根本没有被调用。 */
-        val commandSucceeded = exitCode == 0 && !output.contains("Error", ignoreCase = true)
-        if (!commandSucceeded) {
-            return false
-        }
-
-        /** Provider 必须明确返回 ok，不能把任意 Bundle 输出都当成功。 */
-        val resultCode = parseResultCode(output)
-
-        /** Provider 必须明确返回 saved=true，表示本次读取和入库已经完成。 */
-        val saved = parseSaved(output)
-        return resultCode == ClipboardBridgeContract.CODE_OK && saved == true
-    }
-
-    /**
-     * 判断 `read_clip` 是否真实完成剪贴读取和入库。
-     *
-     * @param exitCode `content call` 进程退出码。
-     * @param output `content call` 标准输出和错误输出合并后的文本。
-     */
-    fun isReadClipSuccessful(exitCode: Int, output: String): Boolean {
-        return isSuccessful(exitCode, output)
-    }
-
-    /**
      * 判断 `commit_clip` 是否完成剪贴 payload 处理。
      *
      * @param exitCode `content call` 进程退出码。
@@ -323,7 +280,7 @@ object ClipboardBridgeCommandResultParser {
         /** Provider 必须明确返回 ok，避免把参数错误或 payload 错误误判为完成。 */
         val resultCode = parseResultCode(output)
 
-        /** duplicate_or_empty 是已按去重语义处理完成的状态，不应触发旧 overlay 自动回退。 */
+        /** duplicate_or_empty 是已按去重语义处理完成的状态，不需要 Shizuku 再做兜底读取。 */
         val clipStatus = parseClipStatus(output)
         return resultCode == ClipboardBridgeContract.CODE_OK &&
             (clipStatus == ClipboardBridgeContract.CLIP_STATUS_SAVED ||
@@ -392,36 +349,19 @@ object ClipboardBridgeCommandResultParser {
     }
 
     /**
-     * 判断 `am start-foreground-service` 是否已经被系统接受。
-     *
-     * @param exitCode `am` 命令进程退出码；部分 ROM 会返回非 0 但仍输出 Starting service。
-     * @param output `am` 命令标准输出和错误输出合并文本。
-     */
-    fun isStartForegroundServiceSuccessful(exitCode: Int, output: String): Boolean {
-        /** 命令输出中的错误标记；出现 Error 或 Exception 时不能认为服务已可靠启动。 */
-        val hasError = output.contains("Error", ignoreCase = true) ||
-            output.contains("Exception", ignoreCase = true)
-        /** 部分系统在服务启动被接受时输出 Starting service，即使退出码不稳定也可作为成功信号。 */
-        val hasStartingService = output.contains("Starting service", ignoreCase = true)
-        return !hasError && (exitCode == 0 || hasStartingService)
-    }
-
-    /**
      * 判断 app 主进程唤醒命令是否已经被系统接受。
      *
-     * @param exitCode `am` 命令进程退出码；Activity 唤醒通常为 0，部分 Service 唤醒退出码不稳定。
+     * @param exitCode `am` 命令进程退出码；当前只作为日志上下文，不再让裸 0 退出码替代 Activity 输出。
      * @param output `am` 命令标准输出和错误输出合并文本。
      */
     fun isAppWakeCommandSuccessful(exitCode: Int, output: String): Boolean {
         /** 命令输出中的错误标记；出现 Error 或 Exception 时不能认为 app 已可靠拉起。 */
         val hasError = output.contains("Error", ignoreCase = true) ||
             output.contains("Exception", ignoreCase = true)
-        /** 前台服务被系统接受时的输出特征，用于兼容非 0 退出码 ROM。 */
-        val hasStartingService = output.contains("Starting service", ignoreCase = true)
-        /** NoDisplay Activity 被系统接受时的输出特征，用于前台服务命令失败后的通用 fallback。 */
+        /** NoDisplay Activity 被系统接受时的输出特征。 */
         val hasStartingActivity = output.contains("Starting:", ignoreCase = true) ||
             output.contains("Starting activity", ignoreCase = true)
-        return !hasError && (exitCode == 0 || hasStartingService || hasStartingActivity)
+        return !hasError && hasStartingActivity
     }
 
     /**

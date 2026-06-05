@@ -1,9 +1,8 @@
 <resources>
     <string name="host_shizuku_service_require">App 需要 Shizuku 权限，才能在后台监听剪贴板变化。</string>
     <string name="host_notification_permission_is_required">需要通知权限</string>
-    <string name="host_notification_permission_tip">App 需要通知权限来创建前台服务，从而在后台监听剪贴板变化。</string>
-    <string name="host_notification_permission_denied_tip">通知权限已关闭，剪贴板监听不可用，通知也不会显示。请开启通知权限以恢复后台监听。</string>
-    <string name="host_notification_system_disabled_tip">系统通知已关闭，剪贴板监听仍可用，但相关通知不会显示。可进入系统通知设置重新开启。</string>
-    <string name="host_suspended_window_permission_tip">App 需要悬浮窗权限，在剪贴板监听回调时添加悬浮窗，才能读取剪贴板内容。</string>
-    <string name="host_notification_permission_tip_dialog">为了在后台读取剪贴板，App 需要通知权限来创建前台服务。\n请在下一步授权中点击“允许”。</string>
+    <string name="host_notification_permission_tip">通知权限用于展示剪贴保存、下载进度和 Shizuku 状态提醒；关闭后剪贴仍会保存。</string>
+    <string name="host_notification_permission_denied_tip">通知权限已关闭，剪贴仍会保存，但剪贴保存、下载进度和 Shizuku 状态提醒不会显示。</string>
+    <string name="host_notification_system_disabled_tip">系统通知已关闭，剪贴仍会保存，但相关提醒不会显示。可进入系统通知设置重新开启。</string>
+    <string name="host_notification_permission_tip_dialog">通知权限用于展示剪贴保存、下载进度和 Shizuku 状态提醒；关闭后剪贴仍会保存。\n请在下一步授权中点击“允许”。</string>
 </resources>

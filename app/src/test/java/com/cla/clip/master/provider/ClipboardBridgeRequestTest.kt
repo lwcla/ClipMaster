@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-/** Provider read_clip 参数解析测试，保护命令行入口的失败契约。 */
+/** Provider 桥接参数解析测试，保护 commit_clip、query_icon_state 和 commit_icon 的失败契约。 */
 class ClipboardBridgeRequestTest {
     @Test
     /** 合法原始字段应解析成请求对象，并保留非空来源字段。 */

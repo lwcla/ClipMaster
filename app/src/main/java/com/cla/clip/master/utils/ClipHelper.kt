@@ -32,7 +32,7 @@ import javax.inject.Singleton
 /**
  * 剪贴板读取与入库协调器。
  *
- * 负责从系统剪贴板或 Shizuku 回调接收内容，做重复过滤、链接识别、预览信息解析和通知发送。
+ * 负责从前台系统剪贴板读取或 Shizuku Provider payload 接收内容，做重复过滤、链接识别、预览信息解析和通知发送。
  * 该类是应用级单例，内部状态需要能承受 MainActivity 与 Shizuku 服务几乎同时上报同一条剪贴内容。
  */
 @Singleton
@@ -130,7 +130,7 @@ class ClipHelper @Inject constructor(
     /**
      * 处理新的剪贴板内容。
      *
-     * 输入可能来自系统剪贴板或 Shizuku 监听；保存前会去重、提取首个链接、复用历史链接预览并异步补齐元信息。
+     * 输入可能来自前台系统剪贴板读取或 Shizuku Provider payload；保存前会去重、提取首个链接、复用历史链接预览并异步补齐元信息。
      * 图标路径、主色和 Hash 由调用方按来源 App 传入，用于列表卡片展示和缓存命中判断。
      */
     suspend fun processClip(
@@ -190,12 +190,6 @@ class ClipHelper @Inject constructor(
                 return@withContext ClipProcessResult.DuplicateOrEmpty
             }
         }
-
-        // 对于图片类型，启动OCR任务
-//            if (clipType == ClipType.IMAGE) {
-//                // TODO: 实现图片OCR逻辑
-//                // OcrProcessingWorker.enqueue(this@ClipboardService, clipContent, newClip.id)
-//            }
 
         /**
          * 将当前剪贴内容保存或更新到数据库。

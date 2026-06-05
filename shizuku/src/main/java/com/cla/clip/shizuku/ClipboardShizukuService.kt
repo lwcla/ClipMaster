@@ -55,7 +55,7 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
     /** 来源应用解析器，解析失败时回退 Unknown/空图标，不阻断剪贴 payload。 */
     private val sourceAppResolver by lazy { ShizukuSourceAppResolver(packageManager) }
 
-    /** app 主进程唤醒命令执行器，负责前台服务和 NoDisplay Activity fallback。 */
+    /** app 主进程唤醒命令执行器，只负责 NoDisplay Activity 唤醒入口。 */
     private val appWakeCommandRunner by lazy { ShizukuAppWakeCommandRunner(packageName) }
 
     /** Shizuku 进程内协程作用域，使用 SupervisorJob 避免单次回调失败终止整个监听服务。 */
@@ -150,7 +150,7 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
     /**
      * 处理剪贴板写入事件。
      *
-     * 直接进入 Provider 直读链路；旧 AIDL `onOpNoted` 保存入口只保留兼容，不再由服务端调用。
+     * 直接进入 Provider 直读链路；AIDL callback 只保留 `pingAppProcess()` 探活，不再承载剪贴保存回调。
      */
     fun handleOpNoted(clipPackageName: String?) {
         serviceScope.launch {
@@ -383,7 +383,7 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
      *
      * @param sourceAppInfo 来源应用展示信息。
      * @param eventId 当前剪贴事件 ID。
-     * @param clipPayload Shizuku 直读剪贴板后构造的 payload；为空时只记录失败，不触发旧 overlay fallback。
+     * @param clipPayload Shizuku 直读剪贴板后构造的 payload；为空时只记录失败，不进入旧读取链路。
      */
     private suspend fun submitProviderBridgeEvent(
         sourceAppInfo: ShizukuSourceAppInfo,
@@ -425,7 +425,7 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
      * @param clipPackageName 来源应用包名。
      * @param appName 来源应用名称。
      * @param iconHash 来源图标 hash，提交剪贴时只用于复用已有来源图标。
-     * @param clipPayload Shizuku 直读剪贴板后构造的 payload；为空时不再 fallback 到旧 overlay。
+     * @param clipPayload Shizuku 直读剪贴板后构造的 payload；为空时不再尝试旧读取入口。
      */
     private fun runProviderClipPayload(
         eventId: String,

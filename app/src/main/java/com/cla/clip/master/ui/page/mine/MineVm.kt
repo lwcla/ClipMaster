@@ -11,7 +11,6 @@ import com.cla.clip.base.general.config.ClipItemQuickAction
 import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.base.general.utils.hasNotificationPermission
 import com.cla.clip.base.general.utils.hasNotificationRuntimePermission
-import com.cla.clip.base.general.utils.hasOverlayPermission
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.master.entity.SettingSwitchItemUi
@@ -42,7 +41,7 @@ import javax.inject.Inject
 /**
  * 我的页 ViewModel。
  *
- * 负责汇总 Shizuku、通知和悬浮窗权限状态，并把用户点击转换为一次性权限动作。
+ * 负责汇总 Shizuku 和通知权限状态，并把用户点击转换为一次性权限动作。
  * 实际系统弹窗或设置页跳转由 UI 层执行，避免 ViewModel 持有 Activity 结果 API。
  */
 @HiltViewModel
@@ -64,10 +63,6 @@ class MineVm @Inject constructor(
         private const val TAG = "MineVm"
     }
 
-    /** 权限说明卡片是否展开；属于纯 UI 状态，页面重建后恢复默认折叠。 */
-    var permissionExpanded by mutableStateOf(false)
-        private set
-
     /** Shizuku 服务是否已连接，连接成功才代表可以使用跨进程剪贴板监听。 */
     var shizukuChecked by mutableStateOf(false)
         private set
@@ -78,10 +73,6 @@ class MineVm @Inject constructor(
 
     /** 通知权限的细分状态，用于区分运行时拒绝和系统通知总开关关闭。 */
     var notificationStatus by mutableStateOf(NotificationStatus.RuntimeDenied)
-        private set
-
-    /** 悬浮窗权限是否已授予，当前只负责展示和跳转设置页。 */
-    var overlayChecked by mutableStateOf(false)
         private set
 
     /**
@@ -150,11 +141,6 @@ class MineVm @Inject constructor(
     init {
         // 初始化时读取一次系统权限状态，确保页面首次展示的开关状态准确。
         refreshPermissionStatus()
-    }
-
-    /** 展开或收起权限说明卡片。 */
-    fun togglePermissionExpanded() {
-        permissionExpanded = !permissionExpanded
     }
 
     /**
@@ -261,7 +247,7 @@ class MineVm @Inject constructor(
     }
 
     /**
-     * 刷新三类权限的真实状态。
+     * 刷新 Shizuku 和通知权限的真实状态。
      *
      * 开关本身不保存用户意图，只展示系统当前状态，避免用户从设置页返回后 UI 状态不一致。
      */
@@ -269,8 +255,10 @@ class MineVm @Inject constructor(
         shizukuChecked = ShizukuUtils.isConnected(appContext)
         notificationStatus = resolveNotificationStatus()
         notificationChecked = notificationStatus == NotificationStatus.Enabled
-        overlayChecked = appContext.hasOverlayPermission()
-        logD(TAG) { "refreshPermissionStatus shizukuChecked=$shizukuChecked notificationStatus=$notificationStatus notificationChecked=$notificationChecked overlayChecked=$overlayChecked" }
+        logD(TAG) {
+            "refreshPermissionStatus shizukuChecked=$shizukuChecked " +
+                "notificationStatus=$notificationStatus notificationChecked=$notificationChecked"
+        }
     }
 
     /**
@@ -284,7 +272,6 @@ class MineVm @Inject constructor(
         when (id) {
             SettingSwitchItemUi.Id.Permission.Shizuku -> handleShizukuClick()
             SettingSwitchItemUi.Id.Permission.Notice -> handleNotificationClick()
-            SettingSwitchItemUi.Id.Permission.Overlay -> handleOverlayClick()
         }
     }
 
@@ -307,7 +294,7 @@ class MineVm @Inject constructor(
     /**
      * 根据通知权限当前状态决定下一步动作。
      *
-     * 通知权限已开启时跳转系统通知设置用于关闭；未开启时触发运行时权限申请。
+     * 通知权限已开启时跳转系统通知设置用于关闭；未开启时触发运行时权限申请或进入系统通知设置。
      */
     private fun handleNotificationClick() {
         if (appContext.hasNotificationPermission()) {
@@ -322,7 +309,7 @@ class MineVm @Inject constructor(
     /**
      * 拆分通知的真实状态。
      *
-     * 运行时权限关闭会影响剪贴板监听链路；系统通知总开关关闭只影响通知展示，不应阻断前台服务启动。
+     * 通知权限只影响剪贴保存、下载和 Shizuku 状态提醒展示；关闭后剪贴仍会继续入库。
      */
     private fun resolveNotificationStatus(): NotificationStatus {
         return when {
@@ -330,15 +317,6 @@ class MineVm @Inject constructor(
             appContext.hasNotificationPermission() -> NotificationStatus.Enabled
             else -> NotificationStatus.SystemDisabled
         }
-    }
-
-    /**
-     * 根据悬浮窗权限当前状态决定下一步动作。
-     *
-     * 悬浮窗权限没有标准运行时弹窗，开启和关闭都需要进入系统悬浮窗设置页。
-     */
-    private fun handleOverlayClick() {
-        emitPermissionAction(PermissionAction.OpenOverlaySettings)
     }
 
     /** 发送权限动作事件，缓冲区满时丢弃旧动作，避免连续点击造成多个系统页面叠加。 */
@@ -367,8 +345,6 @@ class MineVm @Inject constructor(
         /** 打开系统通知设置页。 */
         data object OpenNotificationSettings : PermissionAction()
 
-        /** 打开系统悬浮窗设置页。 */
-        data object OpenOverlaySettings : PermissionAction()
     }
 
     /**

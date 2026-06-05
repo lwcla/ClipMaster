@@ -3,10 +3,8 @@ package com.cla.clip.master.utils
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
@@ -22,7 +20,7 @@ import javax.inject.Singleton
 /**
  * 应用通知构建与渠道管理工具。
  *
- * 集中管理剪贴板前台服务、剪贴更新、Shizuku 状态和视频下载相关通知，保证渠道 ID、通知 ID 和 PendingIntent extra 约定一致。
+ * 集中管理剪贴更新、Shizuku 状态和下载相关通知，保证渠道 ID、通知 ID 和 PendingIntent extra 约定一致。
  */
 @Singleton
 class NotificationHelper @Inject constructor(
@@ -31,11 +29,6 @@ class NotificationHelper @Inject constructor(
 ) {
 
     companion object {
-        /** 读取剪贴板数据通知 */
-        const val READ_CLIP_CHANNEL_ID = "read_clip_channel_id"
-        /** 读取剪贴板前台服务通知固定 ID，固定 ID 便于重复启动服务时更新同一条通知。 */
-        const val READ_CLIP_NOTIFICATION_ID = 1001
-
         /** 视频下载通知 */
         const val VIDEO_DOWNLOAD_CHANNEL_ID = "download_channel_id"
         /** 视频下载进度通知固定 ID，当前同一时间只展示一个下载进度。 */
@@ -270,44 +263,7 @@ class NotificationHelper @Inject constructor(
         manager.notify(IMAGE_DOWNLOAD_RESULT_NOTIFICATION_ID, notification)
     }
 
-    /** 读取剪贴板的前台服务通知 */
-    fun readClipForeground(service: Service) {
-        createChannels()
-
-        val notification = NotificationCompat.Builder(appContext, READ_CLIP_CHANNEL_ID)
-            .setContentTitle(appContext.getString(R.string.base_general_app_name))
-            .setContentText(appContext.getString(R.string.base_general_the_clipboard_is_being_read))
-            .setSmallIcon(R.mipmap.base_general_ic_app)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setContentIntent(launchPendingIntent)
-            .setSilent(true)
-            .setDefaults(0)
-            .setVibrate(longArrayOf(0L))
-            .setAutoCancel(false)
-            .setOnlyAlertOnce(true)
-            .setOngoing(true)
-            .build()
-
-        service.apply {
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    // Android 10+ 支持声明前台服务类型；Android 14 会更严格校验 Manifest 中的声明。
-                    startForeground(
-                        READ_CLIP_NOTIFICATION_ID,
-                        notification,
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-                    )
-                } else {
-                    startForeground(READ_CLIP_NOTIFICATION_ID, notification)
-                }
-            } catch (e: Exception) {
-                // 如果 Manifest 中缺少 foregroundServiceType 属性，兜底尝试不带 type 启动，避免服务完全不可用。
-                startForeground(READ_CLIP_NOTIFICATION_ID, notification)
-            }
-        }
-    }
-
-    /** 剪贴数据更新通知 */
+    /** 剪贴数据更新通知；只在数据库真实保存或更新剪贴记录后发送。 */
     fun notifyClipUpdate(
         title: String,
         content: String,
@@ -396,22 +352,10 @@ class NotificationHelper @Inject constructor(
     /**
      * 创建通知渠道。
      *
-     * Android O 以下没有渠道概念直接返回；所有渠道默认静音，避免剪贴板监听和下载进度造成频繁打扰。
+     * Android O 以下没有渠道概念直接返回；所有渠道默认静音，避免剪贴保存和下载进度造成频繁打扰。
      */
     fun createChannels() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-
-        val readClipChannel = NotificationChannel(
-            READ_CLIP_CHANNEL_ID,
-            appContext.getString(R.string.base_general_clipboard_service),
-            NotificationManager.IMPORTANCE_LOW
-        ).apply {
-            // 前台服务通知只用于保活说明，不应反复震动或响铃。
-            enableVibration(false)
-            vibrationPattern = longArrayOf(0L)
-            setSound(null, null)
-            description = appContext.getString(R.string.base_general_read_clip_channel)
-        }
 
         val videoDownloadChannel = NotificationChannel(
             VIDEO_DOWNLOAD_CHANNEL_ID,
@@ -439,7 +383,7 @@ class NotificationHelper @Inject constructor(
 
         val clipUpdateChannel = NotificationChannel(
             CLIP_UPDATE_CHANNEL_ID,
-            appContext.getString(R.string.base_general_clipboard_service),
+            appContext.getString(R.string.base_general_clipboard_update),
             NotificationManager.IMPORTANCE_LOW
         ).apply {
             // 剪贴更新可能很频繁，只需要在通知栏展示最新内容，不打断当前操作。
@@ -450,7 +394,6 @@ class NotificationHelper @Inject constructor(
         }
 
         manager.createNotificationChannel(videoDownloadChannel)
-        manager.createNotificationChannel(readClipChannel)
         manager.createNotificationChannel(shizukuStatusChannel)
         manager.createNotificationChannel(clipUpdateChannel)
     }

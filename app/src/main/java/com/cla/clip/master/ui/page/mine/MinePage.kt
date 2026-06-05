@@ -45,7 +45,7 @@ import rikka.shizuku.Shizuku
 /**
  * 我的页面。
  *
- * 当前承载权限说明和授权入口，后续增加设置项时也应保持 ViewModel 只发动作、页面执行系统跳转的边界。
+ * 当前承载权限项和授权入口，后续增加设置项时也应保持 ViewModel 只发动作、页面执行系统跳转的边界。
  */
 @Composable
 fun MinePage(
@@ -112,6 +112,9 @@ fun MinePage(
                 .padding(paddingValues),
             contentPadding = PaddingValues(top = spacing.small, bottom = spacing.large),
         ) {
+            item { MineSectionHeader(title = stringResource(R.string.base_general_mine_permission_section)) }
+            item { Permission(mineVm = mineVm) }
+
             item { MineSectionHeader(title = stringResource(R.string.base_general_mine_data_management_section)) }
             item { BackupEntry(onNavigate = onNavigate) }
             item { DownloadHistoryEntry(onNavigate = onNavigate) }
@@ -138,7 +141,6 @@ fun MinePage(
                     onClick = { showClipItemActionDialog = true }
                 )
             }
-            item { Permission(mineVm = mineVm) }
         }
     }
 
@@ -178,7 +180,7 @@ private fun MineSectionHeader(title: String) {
 
 
 /**
- * 权限说明模块。
+ * 权限设置项模块。
  *
  * 负责展示权限开关、监听生命周期恢复和消费 ViewModel 发出的权限动作；权限真实状态始终从系统刷新。
  */
@@ -218,10 +220,6 @@ private fun Permission(
                 MineVm.PermissionAction.OpenNotificationSettings -> {
                     context.toPermissionSetting(Manifest.permission.POST_NOTIFICATIONS)
                 }
-
-                MineVm.PermissionAction.OpenOverlaySettings -> {
-                    context.toPermissionSetting(Manifest.permission.SYSTEM_ALERT_WINDOW)
-                }
             }
         }
     }
@@ -231,21 +229,13 @@ private fun Permission(
         // 每次重组重新生成展示项，确保字符串资源、系统权限状态和开关状态保持同步。
         SettingSwitchItemUi(
             id = SettingSwitchItemUi.Id.Permission.Shizuku,
-            title = stringResource(R.string.base_general_shizuku),
             description = stringResource(com.cla.clip.master.R.string.host_shizuku_service_require),
             checked = mineVm.shizukuChecked,
         ),
         SettingSwitchItemUi(
             id = SettingSwitchItemUi.Id.Permission.Notice,
-            title = stringResource(R.string.base_general_notice),
             description = stringResource(mineVm.notificationStatus.descriptionRes),
             checked = mineVm.notificationChecked,
-        ),
-        SettingSwitchItemUi(
-            id = SettingSwitchItemUi.Id.Permission.Overlay,
-            title = stringResource(R.string.base_general_suspended_window),
-            description = stringResource(com.cla.clip.master.R.string.host_suspended_window_permission_tip),
-            checked = mineVm.overlayChecked,
         ),
     )
 
@@ -277,10 +267,7 @@ private fun Permission(
         }
     }
 
-    ExpandableSettingCard(
-        title = stringResource(R.string.base_general_permission_description),
-        expanded = mineVm.permissionExpanded,
-        onToggleExpanded = { mineVm.togglePermissionExpanded() },
+    PermissionSettingItems(
         items = items,
         onItemCheckedChange = mineVm::onItemCheckedChange,
     )
@@ -289,7 +276,7 @@ private fun Permission(
 /**
  * 根据通知状态选择设置项说明文案。
  *
- * 同一个“通知”入口承载三种状态，避免拆成多个开关给普通用户造成困惑。
+ * 同一个“通知”入口承载三种状态，强调它只影响提醒展示，不影响剪贴保存。
  */
 private val MineVm.NotificationStatus.descriptionRes: Int
     get() = when (this) {

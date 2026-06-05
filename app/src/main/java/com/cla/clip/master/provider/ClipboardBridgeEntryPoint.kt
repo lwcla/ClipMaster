@@ -12,9 +12,6 @@ import dagger.hilt.components.SingletonComponent
 @EntryPoint
 @InstallIn(SingletonComponent::class)
 interface ClipboardBridgeEntryPoint {
-    /** Provider 剪贴板读取协调器。 */
-    fun clipboardBridgeReadCoordinator(): ClipboardBridgeReadCoordinator
-
     /** Provider 剪贴 payload 提交协调器。 */
     fun clipboardBridgeClipCommitCoordinator(): ClipboardBridgeClipCommitCoordinator
 

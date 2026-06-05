@@ -10,43 +10,6 @@ import org.junit.Test
 class ClipboardBridgeCommandResultParserTest {
 
     @Test
-    /** Provider 明确返回 ok 且 saved=true 时才算通道成功。 */
-    fun isSuccessfulReturnsTrueOnlyForOkAndSaved() {
-        /** 模拟 Android `content call` 打印出的 Bundle 文本。 */
-        val output = "Result: Bundle[{resultCode=ok, saved=true, readClip=true}]"
-
-        assertTrue(ClipboardBridgeCommandResultParser.isSuccessful(0, output))
-        assertTrue(ClipboardBridgeCommandResultParser.isReadClipSuccessful(0, output))
-    }
-
-    @Test
-    /** exitCode 为 0 但 Provider 返回非 ok 时必须判定失败。 */
-    fun isSuccessfulRejectsNonOkResultCode() {
-        /** 模拟 Provider 被调用成功但悬浮窗失败的输出。 */
-        val output = "Result: Bundle[{resultCode=overlay_failed, saved=false}]"
-
-        assertFalse(ClipboardBridgeCommandResultParser.isSuccessful(0, output))
-    }
-
-    @Test
-    /** exitCode 为 0 但缺少 saved=true 时必须判定失败。 */
-    fun isSuccessfulRejectsMissingSavedFlag() {
-        /** 模拟旧版本或异常 Provider 没有返回 saved 字段的输出。 */
-        val output = "Result: Bundle[{resultCode=ok}]"
-
-        assertFalse(ClipboardBridgeCommandResultParser.isSuccessful(0, output))
-    }
-
-    @Test
-    /** 命令层输出 Error 时必须判定失败，即使 Bundle 字段看起来成功。 */
-    fun isSuccessfulRejectsCommandErrorOutput() {
-        /** 模拟 content 命令访问 Provider 失败但输出里夹带旧 Bundle 文本。 */
-        val output = "Error while accessing provider:com.cla.clip.master.clipboard-bridge\nResult: Bundle[{resultCode=ok, saved=true}]"
-
-        assertFalse(ClipboardBridgeCommandResultParser.isSuccessful(0, output))
-    }
-
-    @Test
     /** resultCode 和 saved 解析应兼容字段顺序变化。 */
     fun parserHandlesDifferentBundleFieldOrder() {
         /** 模拟 Bundle 字段顺序变化后的输出。 */
@@ -201,34 +164,16 @@ class ClipboardBridgeCommandResultParserTest {
     }
 
     @Test
-    /** start-foreground-service 解析应兼容 ROM 退出码差异，同时拒绝 Error 输出。 */
-    fun startForegroundServiceParserHandlesOutputAndErrors() {
-        /** 标准成功输出，退出码为 0。 */
-        val normalSuccess = "Starting service: Intent { cmp=com.cla.clip.master/com.cla.clip.master.service.ClipboardService }"
-        /** ROM 退出码异常但输出显示服务启动被接受。 */
-        val oddExitSuccess = "Starting service: Intent { cmp=com.cla.clip.master/com.cla.clip.master.service.ClipboardService }"
-        /** 系统明确拒绝后台启动服务的输出。 */
-        val backgroundError = "Starting service: Intent { cmp=com.cla.clip.master/com.cla.clip.master.service.ClipboardService }\nError: app is in background uid null"
-        /** 系统未解析到服务 component 的输出；这种情况必须判定为唤醒失败。 */
-        val notFoundError = "Starting service: Intent { cmp=com.cla.clip.master/.service.ClipboardService }\nError: Not found; no service started."
-
-        assertTrue(ClipboardBridgeCommandResultParser.isStartForegroundServiceSuccessful(0, normalSuccess))
-        assertTrue(ClipboardBridgeCommandResultParser.isStartForegroundServiceSuccessful(255, oddExitSuccess))
-        assertFalse(ClipboardBridgeCommandResultParser.isStartForegroundServiceSuccessful(0, backgroundError))
-        assertFalse(ClipboardBridgeCommandResultParser.isStartForegroundServiceSuccessful(255, notFoundError))
-    }
-
-    @Test
-    /** app 唤醒命令解析应同时支持前台服务和 NoDisplay Activity 输出。 */
-    fun appWakeParserHandlesServiceAndActivityOutput() {
-        /** 前台服务被系统接受时的输出。 */
+    /** app 唤醒命令解析只接受 NoDisplay Activity 输出，并拒绝旧前台服务输出。 */
+    fun appWakeParserHandlesActivityOutputOnly() {
+        /** 旧前台服务被系统接受时的输出；新链路必须拒绝这类输出，避免回退到已删除服务。 */
         val serviceSuccess = "Starting service: Intent { cmp=com.cla.clip.master/com.cla.clip.master.service.ClipboardService }"
         /** NoDisplay Activity 被系统接受时的输出。 */
         val activitySuccess = "Starting: Intent { cmp=com.cla.clip.master/.wake.ShizukuWakeActivity }"
         /** Activity component 不存在时的系统错误输出。 */
         val activityMissing = "Error type 3\nError: Activity class {com.cla.clip.master/com.cla.clip.master.wake.ShizukuWakeActivity} does not exist."
 
-        assertTrue(ClipboardBridgeCommandResultParser.isAppWakeCommandSuccessful(255, serviceSuccess))
+        assertFalse(ClipboardBridgeCommandResultParser.isAppWakeCommandSuccessful(0, serviceSuccess))
         assertTrue(ClipboardBridgeCommandResultParser.isAppWakeCommandSuccessful(0, activitySuccess))
         assertFalse(ClipboardBridgeCommandResultParser.isAppWakeCommandSuccessful(0, activityMissing))
     }
