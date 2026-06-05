@@ -83,8 +83,8 @@ android {
         applicationId = "com.cla.clip.master"
         minSdk = 24
         targetSdk = 36
-        versionCode = 30
-        versionName = "0.4.9"
+        versionCode = 32
+        versionName = "0.5.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
