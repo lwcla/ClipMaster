@@ -205,7 +205,12 @@ private class ProcessBackedShellProcess(
     }
 
     override fun destroyForcibly() {
-        process.destroyForcibly()
+        // Android 8 以下没有强制销毁 API；即使调用方遗漏版本门禁，也只能退回常规销毁来避免 minSdk 24 崩溃。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            process.destroyForcibly()
+        } else {
+            process.destroy()
+        }
     }
 }
 

@@ -192,6 +192,7 @@ app 探活和身份原因码：
 - 剪贴链路只允许记录 `eventId`、`clipNull`、payload 是否为空、item 数量、MIME 类型、text/html 长度、是否含 URI/Intent、写入字节数、exitCode、resultCode、clipStatus、异常类型和耗时。
 - 图标链路只记录 packageName、iconHash、图标尺寸、字节数、`iconDecisionReason`、缓存命中、是否上传、是否复用旧图标、timeout 和 resultCode。
 - app 主进程探活链路记录 `appPingResult`、`appWakeRequested`、`appWakeMode`、`appWakeResult`、`callbackRebound`、`wakeCooldownSkipped`、`appWakeElapsedMs`、`readyForProviderQuery` 和 `reasonCode`。
+- Shell 命令超时销毁在 Android 8/API 26 及以上使用 `destroyForcibly()`，Android 7.x/API 24-25 退回 `destroy()`；该分支只影响卡住进程的清理强度，不新增日志字段。
 - NoDisplay 唤醒页只记录 `entryReason`、`requested`、`expectedProcessName` 和 `reasonCode`。
 - Provider 默认不支持 method 分支只记录 method 名、callingUid 和 resultCode；禁止记录 extras 中可能包含的正文、HTML、URI 或 Intent。
 - 剪贴保存通知允许展示剪贴正文给用户本人，但日志仍禁止输出正文、HTML 原文、完整 URL 查询串、Token、Cookie、本地授权 URI、Intent 内容或完整用户输入。
@@ -248,6 +249,7 @@ app 探活和身份原因码：
 
 ## 变更记录
 
+- 2026-06-05：补齐 Shizuku shell 超时销毁的 Android 7.x 兼容分支；原因是 `Process.destroyForcibly()` 需要 API 26，当前模块 `minSdk 24` 必须避免低版本直接调用。
 - 2026-06-05：调整剪贴入库同内容来源判定规则；原因是同内容来自不同明确 App 时应保留为多条记录，但历史未知来源记录应被后续明确来源覆盖升级，且前台未知来源读取不能制造重复记录。
 - 2026-06-05：我的页权限分组独立并置顶，通知权限手动入口仍保留在“我的/权限”；原因是权限状态需要优先展示，且通知权限只影响提醒展示。
 - 2026-06-05：我的页权限入口改为固定展示 Shizuku 和通知两个权限项，移除“权限说明”标题行、展开箭头、展开/收起动画和 `permission_expanded` UI 偏好；原因是剪贴读取不再依赖旧悬浮窗/前台服务链路，通知权限也只作为提醒展示能力。
