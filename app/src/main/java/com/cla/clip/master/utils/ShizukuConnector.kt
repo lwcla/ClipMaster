@@ -56,7 +56,7 @@ class ShizukuConnector @Inject constructor(
          * shizuku的版本号，这个不要跟app的版本
          * 否则只是更新了app，但shizuku服务没有发生变化的情况下，也会重启shizuku进程
          */
-        const val VERSION = 16
+        const val VERSION = 17
 
         /**
          * 判断当前连接是否可以跳过重新 bind。
