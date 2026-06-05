@@ -188,6 +188,8 @@
     Restore[&quot;BackupSnapshotRestorer 事务合并写库&lt;br/&gt;编译验证&quot;]:::compile
     TimeNorm[&quot;剪贴时间轴归一化&lt;br/&gt;已单测&quot;]:::unit
     Report[&quot;恢复结果页展示新增 / 更新 / 跳过报告&lt;br/&gt;编译验证&quot;]:::compile
+    ReportDone[&quot;结果页底部完成&lt;br/&gt;关闭恢复页和备份页&lt;br/&gt;编译验证&quot;]:::compile
+    ReportBack[&quot;结果页顶部或系统返回&lt;br/&gt;回备份页&lt;br/&gt;人工验证&quot;]:::manual
     RestoreFailure[&quot;读取或恢复失败&lt;br/&gt;取消协程并清理临时文件&lt;br/&gt;人工验证&quot;]:::manual
   end
 
@@ -213,6 +215,8 @@
   Confirm --&gt;|&quot;取消&quot;| RestoreFailure
   Restore --&gt; TimeNorm
   TimeNorm --&gt; Report
+  Report --&gt;|&quot;底部完成&quot;| ReportDone
+  Report --&gt;|&quot;顶部或系统返回&quot;| ReportBack
   Restore --&gt; RestoreFailure
   Report --&gt; MediaEntry
   MediaEntry --&gt;|&quot;打开独立媒体关联页&quot;| MediaResult
@@ -244,7 +248,8 @@
     Scan[&quot;扫描 MediaStore / 公共目录候选&lt;br/&gt;人工验证&quot;]:::manual
     Relink[&quot;高可信唯一匹配后分批写回引用&lt;br/&gt;待补测&quot;]:::todo
     Terminal[&quot;完成 / 失败 / 权限不足 / 无需扫描&lt;br/&gt;生成结构化 summary&lt;br/&gt;编译验证&quot;]:::compile
-    SuccessBackMine[&quot;完成或无须处理后返回“我的”页&lt;br/&gt;关闭恢复链路&lt;br/&gt;编译验证&quot;]:::compile
+    SuccessCloseStack[&quot;完成或无须处理后点击底部完成&lt;br/&gt;关闭备份恢复链路&lt;br/&gt;编译验证&quot;]:::compile
+    BackOneLevel[&quot;顶部返回或系统返回&lt;br/&gt;回恢复结果页查看回显&lt;br/&gt;人工验证&quot;]:::manual
     Interrupted[&quot;onCleared 兜底 Interrupted&lt;br/&gt;避免恢复页永久 Running&lt;br/&gt;编译验证&quot;]:::compile
   end
 
@@ -266,7 +271,8 @@
   Relink --&gt; Terminal
   Scan --&gt; Terminal
   Running --&gt; Interrupted
-  Terminal --&gt;|&quot;完成或无须处理后返回&quot;| SuccessBackMine
+  Terminal --&gt;|&quot;完成或无须处理后返回&quot;| SuccessCloseStack
+  Terminal --&gt;|&quot;顶部或系统返回&quot;| BackOneLevel
   Estimate --&gt; BackToRestore
   Running --&gt; BackToRestore
   Terminal --&gt; BackToRestore

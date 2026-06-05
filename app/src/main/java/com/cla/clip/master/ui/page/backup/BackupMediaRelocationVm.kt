@@ -56,11 +56,11 @@ class BackupMediaRelocationVm @Inject constructor(
     private var estimateStarted = false
     private var terminalEventSent = false
     private var runningEventSent = false
-    private var closeRestoreFlowOnBack = false
+    private var closeRestoreFlowOnDone = false
 
-    /** 成功或无须处理终态后，返回动作应关闭恢复链路并回到“我的”页。 */
-    val shouldCloseRestoreFlowOnBack: Boolean
-        get() = closeRestoreFlowOnBack && !_uiState.value.isRunning
+    /** 成功或无须处理终态后，底部“完成”应只关闭备份、恢复和媒体关联链路。 */
+    val shouldCloseRestoreFlowOnDone: Boolean
+        get() = closeRestoreFlowOnDone && !_uiState.value.isRunning
 
     /**
      * 接收路由中的恢复任务 id，并在首次进入页面时启动一次预估。
@@ -86,7 +86,7 @@ class BackupMediaRelocationVm @Inject constructor(
     /** 用户手动重新预估；只允许在非运行态触发，避免重复扫描。 */
     fun restart() {
         if (_uiState.value.isRunning || mediaRelocationJob?.isActive == true) return
-        closeRestoreFlowOnBack = false
+        closeRestoreFlowOnDone = false
         terminalEventSent = false
         runningEventSent = false
         estimateStarted = true
@@ -110,7 +110,7 @@ class BackupMediaRelocationVm @Inject constructor(
     fun startScan(preparation: MediaRelocationPreparation) {
         if (mediaRelocationJob?.isActive == true || _uiState.value.isRunning) return
         val taskId = restoreTaskId ?: return
-        closeRestoreFlowOnBack = false
+        closeRestoreFlowOnDone = false
         terminalEventSent = false
         runningEventSent = false
         mediaRelocationJob = viewModelScope.launch {
@@ -156,7 +156,7 @@ class BackupMediaRelocationVm @Inject constructor(
     private fun estimateMediaRelocation() {
         if (mediaRelocationJob?.isActive == true) return
         val taskId = restoreTaskId ?: return
-        closeRestoreFlowOnBack = false
+        closeRestoreFlowOnDone = false
         terminalEventSent = false
         runningEventSent = false
         mediaRelocationJob = viewModelScope.launch {
@@ -290,7 +290,7 @@ class BackupMediaRelocationVm @Inject constructor(
     private fun sendTerminal(restoreTaskId: String, summary: MediaRelocationSummary) {
         if (terminalEventSent) return
         terminalEventSent = true
-        closeRestoreFlowOnBack = summary.type.shouldCloseRestoreFlowOnBack
+        closeRestoreFlowOnDone = summary.type.shouldCloseRestoreFlowOnDone
         viewModelScope.launch {
             events.emitTerminal(restoreTaskId, summary)
         }

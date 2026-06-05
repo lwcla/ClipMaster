@@ -36,10 +36,13 @@ private const val TAG = "BackupRestoreFlowPage"
  * 备份恢复流程页。
  *
  * 页面承载读取、预览、恢复中、结果和失败状态；文件读写、WebDAV 下载和 Room 恢复仍由 ViewModel 编排。
+ *
+ * @param onCloseRestoreFlow 恢复结果页底部“完成”的闭环出口，只关闭恢复页和备份页，不固定跳转首页 Tab。
  */
 @Composable
 internal fun BackupRestoreFlowPage(
     onBack: () -> Unit,
+    onCloseRestoreFlow: () -> Unit,
     onNavigate: (Route) -> Unit,
     magnetFeatures: Set<MagnetFeatureEntry> = emptySet(),
     modifier: Modifier = Modifier,
@@ -63,6 +66,10 @@ internal fun BackupRestoreFlowPage(
         onBack = {
             restoreVm.dismissRestoreFlow()
             onBack()
+        },
+        onDone = {
+            restoreVm.dismissRestoreFlow()
+            onCloseRestoreFlow()
         },
         onForceBack = {
             restoreVm.forceCloseRestoreFlow()
@@ -91,6 +98,7 @@ private fun BackupRestoreFlowScaffold(
     mediaRelocationEntryState: MediaRelocationEntryState,
     mediaRelocationSummary: MediaRelocationSummary?,
     onBack: () -> Unit,
+    onDone: () -> Unit,
     onForceBack: () -> Unit,
     onRestore: () -> Unit,
     onOpenMediaRelocation: () -> Unit,
@@ -100,6 +108,7 @@ private fun BackupRestoreFlowScaffold(
     var showExitConfirm by remember(state.logCode) { mutableStateOf(false) }
     var showMediaRunningNotice by remember { mutableStateOf(false) }
 
+    /** 处理顶部返回和系统返回；结果态只回备份页，读取/恢复中按原规则二次确认。 */
     fun requestBack() {
         if (mediaRelocationEntryState.isRunning) {
             showMediaRunningNotice = true
@@ -107,6 +116,22 @@ private fun BackupRestoreFlowScaffold(
             showExitConfirm = true
         } else {
             onBack()
+        }
+    }
+
+    /** 处理底部“完成”；结果态关闭恢复页和备份页，运行中的媒体关联仍拦截。 */
+    fun requestDone() {
+        /** 是否存在仍在运行的媒体关联任务，用于阻止恢复链路提前关闭。 */
+        val mediaRelocationRunning = mediaRelocationEntryState.isRunning
+        if (mediaRelocationRunning) {
+            showMediaRunningNotice = true
+        } else {
+            logD(TAG) {
+                "恢复流程完成并关闭备份恢复链路 state=${state.logCode} " +
+                    "mediaRelocationRunning=$mediaRelocationRunning " +
+                    "reasonCode=restore_flow_done_close_stack"
+            }
+            onDone()
         }
     }
 
@@ -123,6 +148,7 @@ private fun BackupRestoreFlowScaffold(
                 state = state,
                 mediaRelocationEntryState = mediaRelocationEntryState,
                 onBack = { requestBack() },
+                onDone = { requestDone() },
                 onRestore = onRestore,
                 onOpenMediaRelocation = onOpenMediaRelocation
             )

@@ -70,12 +70,17 @@ internal fun BackupRestoreFlowContent(
     }
 }
 
-/** 备份恢复流程页底部操作区。 */
+/**
+ * 备份恢复流程页底部操作区。
+ *
+ * @param onDone 恢复结果页底部“完成”的闭环回调，只在 Result 状态按钮触发。
+ */
 @Composable
 internal fun BackupRestoreFlowActions(
     state: BackupRestoreFlowState,
     mediaRelocationEntryState: MediaRelocationEntryState,
     onBack: () -> Unit,
+    onDone: () -> Unit,
     onRestore: () -> Unit,
     onOpenMediaRelocation: () -> Unit,
 ) {
@@ -104,7 +109,7 @@ internal fun BackupRestoreFlowActions(
                 )
                 Spacer(modifier = Modifier.size(8.dp))
                 Button(
-                    onClick = onBack,
+                    onClick = onDone,
                     enabled = !mediaRelocationEntryState.isRunning
                 ) {
                     Text(stringResource(R.string.base_general_backup_flow_done))

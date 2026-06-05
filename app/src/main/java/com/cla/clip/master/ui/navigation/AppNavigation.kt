@@ -11,7 +11,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import kotlinx.coroutines.flow.StateFlow
 import androidx.navigation.NavBackStackEntry
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -218,6 +217,7 @@ fun AppNavigation(
         composable<BackupRestoreRoute> {
             BackupRestoreFlowPage(
                 onBack = onBack,
+                onCloseRestoreFlow = { navController.closeBackupRestoreStack("restore_flow_done_close_stack") },
                 onNavigate = onNavigate,
                 magnetFeatures = magnetFeatures
             )
@@ -230,7 +230,7 @@ fun AppNavigation(
             BackupMediaRelocationPage(
                 restoreTaskId = route.restoreTaskId,
                 onBack = onBack,
-                onBackToMine = { navController.navigateToMineTabAfterMediaRelocation() }
+                onCloseRestoreFlow = { navController.closeBackupRestoreStack("media_relocation_done_close_stack") }
             )
         }
 
@@ -251,15 +251,22 @@ fun AppNavigation(
     }
 }
 
-/** 媒体关联正向终态后关闭恢复链路，直接回到首页“我的”Tab。 */
-private fun NavHostController.navigateToMineTabAfterMediaRelocation() {
-    navigate(MainRoute(initialTab = MainInitialTab.Mine)) {
-        popUpTo(graph.findStartDestination().id) {
-            inclusive = true
-        }
-        launchSingleTop = true
+/**
+ * 关闭备份、恢复和后续子页面链路，让用户回到进入备份前的页面状态。
+ *
+ * @param reasonCode 低敏关闭原因，用于区分恢复完成、媒体关联完成等不同入口来源。
+ */
+private fun NavHostController.closeBackupRestoreStack(reasonCode: String) {
+    /** 是否成功从导航栈中移除了备份与恢复整条链路。 */
+    val closedRestoreStack = popBackStack<BackupRoute>(inclusive = true)
+    if (!closedRestoreStack) {
+        // 异常栈或深链入口缺少 BackupRoute 时，至少关闭当前页，避免硬跳到固定首页 Tab。
+        popBackStack()
     }
-    logD(TAG) { "媒体关联成功终态返回我的页面 reasonCode=media_relocation_back_to_mine" }
+    logD(TAG) {
+        "备份恢复链路已关闭 closedRestoreStack=$closedRestoreStack " +
+            "reasonCode=$reasonCode"
+    }
 }
 
 /**

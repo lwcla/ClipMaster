@@ -12,17 +12,17 @@ import org.junit.Test
 
 class BackupRestoreStateTest {
     @Test
-    fun mediaRelocationSummaryTypeShouldCloseRestoreFlowOnlyForPositiveTerminalStates() {
-        assertTrue(MediaRelocationSummaryType.Completed.shouldCloseRestoreFlowOnBack)
-        assertTrue(MediaRelocationSummaryType.NoWork.shouldCloseRestoreFlowOnBack)
+    fun mediaRelocationSummaryTypeShouldCloseRestoreFlowOnDoneOnlyForPositiveTerminalStates() {
+        assertTrue(MediaRelocationSummaryType.Completed.shouldCloseRestoreFlowOnDone)
+        assertTrue(MediaRelocationSummaryType.NoWork.shouldCloseRestoreFlowOnDone)
 
-        assertFalse(MediaRelocationSummaryType.PermissionDenied.shouldCloseRestoreFlowOnBack)
-        assertFalse(MediaRelocationSummaryType.Failed.shouldCloseRestoreFlowOnBack)
-        assertFalse(MediaRelocationSummaryType.Interrupted.shouldCloseRestoreFlowOnBack)
+        assertFalse(MediaRelocationSummaryType.PermissionDenied.shouldCloseRestoreFlowOnDone)
+        assertFalse(MediaRelocationSummaryType.Failed.shouldCloseRestoreFlowOnDone)
+        assertFalse(MediaRelocationSummaryType.Interrupted.shouldCloseRestoreFlowOnDone)
     }
 
     @Test
-    fun mediaRelocationUiStateShouldReturnToMineOnlyForPositiveTerminalStates() {
+    fun mediaRelocationUiStateShouldCloseRestoreFlowOnDoneOnlyForPositiveTerminalStates() {
         val states = listOf(
             MediaRelocationUiState.Idle to false,
             MediaRelocationUiState.Estimating to false,
@@ -36,7 +36,7 @@ class BackupRestoreStateTest {
         )
 
         states.forEach { (state, expected) ->
-            assertEquals(state.backLogCode, expected, state.shouldReturnToMineAfterBack)
+            assertEquals(state.backLogCode, expected, state.shouldCloseRestoreFlowAfterDone)
         }
     }
 

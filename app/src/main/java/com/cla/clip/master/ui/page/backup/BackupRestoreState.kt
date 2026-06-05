@@ -188,7 +188,8 @@ enum class MediaRelocationSummaryType(val logCode: String) {
     Interrupted("interrupted"),
 }
 
-val MediaRelocationSummaryType.shouldCloseRestoreFlowOnBack: Boolean
+/** 媒体关联正向终态点击“完成”时需要关闭备份恢复链路，失败或中断仍回恢复页查看结果。 */
+val MediaRelocationSummaryType.shouldCloseRestoreFlowOnDone: Boolean
     get() = this == MediaRelocationSummaryType.Completed || this == MediaRelocationSummaryType.NoWork
 
 /**
@@ -231,7 +232,8 @@ sealed class MediaRelocationUiState {
 val MediaRelocationUiState.isRunning: Boolean
     get() = this is MediaRelocationUiState.Running
 
-val MediaRelocationUiState.shouldReturnToMineAfterBack: Boolean
+/** 媒体关联正向终态点击“完成”时需要关闭备份恢复链路，顶部返回仍只回上一层。 */
+val MediaRelocationUiState.shouldCloseRestoreFlowAfterDone: Boolean
     get() = this is MediaRelocationUiState.NoWork || this is MediaRelocationUiState.Result
 
 val MediaRelocationUiState.backLogCode: String

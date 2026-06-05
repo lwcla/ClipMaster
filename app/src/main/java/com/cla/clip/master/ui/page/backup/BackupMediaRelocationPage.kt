@@ -46,12 +46,14 @@ private const val TAG = "BackupMediaRelocationPage"
  * 恢复本地媒体关联独立页。
  *
  * 页面只承载当前媒体关联任务的交互和展示；扫描副作用由 `BackupMediaRelocationVm` 编排。
+ *
+ * @param onCloseRestoreFlow 正向终态点击“完成”时关闭备份页、恢复页和媒体关联页，保留用户进入备份前的导航位置。
  */
 @Composable
 internal fun BackupMediaRelocationPage(
     restoreTaskId: String,
     onBack: () -> Unit,
-    onBackToMine: () -> Unit,
+    onCloseRestoreFlow: () -> Unit,
     modifier: Modifier = Modifier,
     relocationVm: BackupMediaRelocationVm = hiltViewModel(),
 ) {
@@ -66,17 +68,36 @@ internal fun BackupMediaRelocationPage(
         relocationVm.start(restoreTaskId)
     }
 
+    /** 处理顶部返回和系统返回；除运行态拦截外始终只回上一层，方便用户回恢复页查看结果。 */
     fun requestBack() {
+        /** 当前 UI 状态对应的稳定日志 code，用于排查返回行为是否命中预期分支。 */
         val uiStateLogCode = state.backLogCode
-        val shouldCloseRestoreFlow = relocationVm.shouldCloseRestoreFlowOnBack || state.shouldReturnToMineAfterBack
+        /** 返回请求日志先在普通代码路径组装，避免日志惰性求值影响调试断点。 */
         val backRequestLog = "媒体关联返回请求 restoreTaskId=$restoreTaskId uiState=$uiStateLogCode " +
-            "shouldCloseRestoreFlow=$shouldCloseRestoreFlow"
+            "backTarget=restore_flow"
         logD(TAG) { backRequestLog }
         if (state.isRunning) {
             showRunningNotice = true
+        } else {
+            onBack()
+        }
+    }
+
+    /** 处理底部“完成”；正向终态关闭整条备份恢复链路，其他终态仍回恢复页保留重试入口。 */
+    fun requestDone() {
+        /** 当前 UI 状态对应的稳定日志 code，用于区分完成按钮和普通返回路径。 */
+        val uiStateLogCode = state.backLogCode
+        /** 正向终态完成需要关闭备份恢复链路；优先读取 ViewModel 终态标记，再用 UI state 兜底。 */
+        val shouldCloseRestoreFlow = relocationVm.shouldCloseRestoreFlowOnDone || state.shouldCloseRestoreFlowAfterDone
+        /** 完成请求日志先在普通代码路径组装，记录最终落点而不输出敏感媒体信息。 */
+        val doneRequestLog = "媒体关联完成请求 restoreTaskId=$restoreTaskId uiState=$uiStateLogCode " +
+            "shouldCloseRestoreFlow=$shouldCloseRestoreFlow"
+        logD(TAG) { doneRequestLog }
+        if (state.isRunning) {
+            showRunningNotice = true
         } else if (shouldCloseRestoreFlow) {
-            logD(TAG) { "媒体关联成功终态关闭恢复链路 restoreTaskId=$restoreTaskId reasonCode=success_back_to_mine" }
-            onBackToMine()
+            logD(TAG) { "媒体关联成功终态完成并关闭恢复链路 restoreTaskId=$restoreTaskId reasonCode=success_done_close_restore_flow" }
+            onCloseRestoreFlow()
         } else {
             onBack()
         }
@@ -98,6 +119,7 @@ internal fun BackupMediaRelocationPage(
             BackupMediaRelocationActions(
                 state = state,
                 onBack = { requestBack() },
+                onDone = { requestDone() },
                 onRestart = relocationVm::restart,
                 onRequestMediaPermission = { preparation ->
                     mediaPermissionLauncher.launch(preparation.requiredPermissions.toTypedArray())
@@ -200,6 +222,7 @@ private fun BackupMediaRelocationBody(state: MediaRelocationUiState) {
 private fun BackupMediaRelocationActions(
     state: MediaRelocationUiState,
     onBack: () -> Unit,
+    onDone: () -> Unit,
     onRestart: () -> Unit,
     onRequestMediaPermission: (MediaRelocationPreparation) -> Unit,
     onStartScan: (MediaRelocationPreparation) -> Unit,
@@ -241,7 +264,7 @@ private fun BackupMediaRelocationActions(
                     Text(stringResource(R.string.base_general_backup_media_relocation_restart))
                 }
                 Spacer(modifier = Modifier.size(8.dp))
-                Button(onClick = onBack) {
+                Button(onClick = onDone) {
                     Text(stringResource(R.string.base_general_backup_flow_done))
                 }
             }
