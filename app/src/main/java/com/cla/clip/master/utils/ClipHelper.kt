@@ -9,6 +9,8 @@ import com.cla.clip.base.general.R
 import com.cla.clip.base.general.entity.ClipCaptureEntity
 import com.cla.clip.base.general.entity.LiveEvent
 import com.cla.clip.base.general.repository.ClipRepository
+import com.cla.clip.base.general.repository.ClipSaveResult
+import com.cla.clip.base.general.repository.shouldSkipConsecutiveDuplicateClip
 import com.cla.clip.base.general.utils.ApplicationScope
 import com.cla.clip.base.general.utils.LinkUtils
 import com.cla.clip.base.general.utils.logD
@@ -180,15 +182,18 @@ class ClipHelper @Inject constructor(
 
         /** 数据库中最后一条剪贴记录，用于沿用现有“连续重复内容跳过保存”的语义。 */
         val lastClip = clipRepository.get().loadLastClip()
-        if (lastClip != null) {
-            /** 当前文本和来源是否命中连续重复规则；命中时不新增记录。 */
-            val duplicatedWithLast = clipContent == lastClip.content && (packageName == null || lastClip.sourceAppPackage == packageName)
-            if (duplicatedWithLast) {
-                logD(TAG) {
-                    "processClipText: 与上一条重复，跳过保存 textLength=${clipContent.length} packageName=${packageName}"
-                }
-                return@withContext ClipProcessResult.DuplicateOrEmpty
+        if (
+            shouldSkipConsecutiveDuplicateClip(
+                currentContent = clipContent,
+                currentSourcePackage = packageName,
+                currentSourceAppName = appName,
+                lastClip = lastClip
+            )
+        ) {
+            logD(TAG) {
+                "processClipText: 与上一条重复，跳过保存 textLength=${clipContent.length} packageName=${packageName}"
             }
+            return@withContext ClipProcessResult.DuplicateOrEmpty
         }
 
         /**
@@ -196,11 +201,12 @@ class ClipHelper @Inject constructor(
          *
          * 链接预览可能异步补齐，因此同一条剪贴内容可能先以无预览状态保存，再带着解析结果保存一次。
          */
-        suspend fun save(link: String?, linkMeta: LinkMeta?) {
+        suspend fun save(link: String?, linkMeta: LinkMeta?): ClipProcessResult {
             /** 入库使用的捕获时间；Shizuku Provider 会传入回调入口时间，前台读取则使用当前时间。 */
             val clipTimestamp = capturedAtMillis.takeIf { it > 0L } ?: System.currentTimeMillis()
             /** 链接预览是否存在，用于脱敏日志，不输出具体 URL 或标题。 */
             val hasLinkMeta = linkMeta != null
+            /** 本次传给 Repository 的剪贴捕获实体，包含内容、来源和链接预览摘要。 */
             val captureEntity = ClipCaptureEntity(
                 content = clipContent,
                 timestamp = clipTimestamp,
@@ -221,26 +227,37 @@ class ClipHelper @Inject constructor(
                     "packageName=${packageName} hasLink=${!link.isNullOrBlank()} hasLinkMeta=$hasLinkMeta"
             }
 
-            /** 保存或更新后的剪贴记录 ID；通知和日志只记录 ID，不输出剪贴正文。 */
-            val clipId = clipRepository.get().addNewClip(captureEntity)
-            BackupAutoScheduler.markDirtyAndSchedule(appContext)
-
-            logD(TAG) { "processClip: 保存到数据库 clipId=${clipId}" }
-            notificationHelper.get().notifyClipUpdate(
-                title = "$appName ${appContext.getString(R.string.base_general_it_was_written_into_the_clipboard)}",
-                content = "${appContext.getString(R.string.base_general_content)}${clipContent}",
-                clipId = clipId
-            )
+            /** 保存动作结果；只有真实写库时才发送通知和调度自动备份。 */
+            val saveResult = clipRepository.get().addNewClip(captureEntity)
+            return when (saveResult) {
+                is ClipSaveResult.Saved -> {
+                    BackupAutoScheduler.markDirtyAndSchedule(appContext)
+                    logD(TAG) { "processClip: 保存到数据库 clipId=${saveResult.clipId}" }
+                    notificationHelper.get().notifyClipUpdate(
+                        title = "$appName ${appContext.getString(R.string.base_general_it_was_written_into_the_clipboard)}",
+                        content = "${appContext.getString(R.string.base_general_content)}${clipContent}",
+                        clipId = saveResult.clipId
+                    )
+                    ClipProcessResult.Saved
+                }
+                is ClipSaveResult.SkippedDuplicate -> {
+                    logD(TAG) {
+                        "processClipText: Repository 判定重复跳过 textLength=${clipContent.length} " +
+                            "packageName=${packageName} existingClipId=${saveResult.clipId}"
+                    }
+                    ClipProcessResult.DuplicateOrEmpty
+                }
+            }
         }
 
+        /** 本次剪贴内容提取出的首个 URL；日志只记录长度，不输出完整链接。 */
         val extractedLink = LinkUtils.extractFirstUrl(clipContent)
         if (extractedLink.isNullOrBlank()) {
-            save(extractedLink, null)
-            return@withContext ClipProcessResult.Saved
+            return@withContext save(extractedLink, null)
         }
 
         if (LinkUtils.isImageUrl(extractedLink)) {
-            save(
+            return@withContext save(
                 extractedLink,
                 LinkMeta(
                     title = null,
@@ -249,13 +266,11 @@ class ClipHelper @Inject constructor(
                     siteName = null,
                 )
             )
-            return@withContext ClipProcessResult.Saved
         }
 
         if (LinkUtils.isDownloadableMediaUrl(clipContent)) {
             // 纯媒体直链通常拿不到 OpenGraph 预览图，跳过网络解析可以让记录更快出现在列表里。
-            save(extractedLink, null)
-            return@withContext ClipProcessResult.Saved
+            return@withContext save(extractedLink, null)
         }
 
         /** 历史链接预览数据；命中后复用已解析结果，避免重复网络请求。 */
@@ -264,13 +279,16 @@ class ClipHelper @Inject constructor(
             logD(TAG) { "processClipText 使用数据库中的链接数据 linkLength=${extractedLink.length}" }
             /** 数据库中已有的链接预览，避免重复解析链接。 */
             val linkMeta = LinkMeta(history.title, history.description, history.imageUrl, history.siteName)
-            save(extractedLink, linkMeta)
-            return@withContext ClipProcessResult.Saved
+            return@withContext save(extractedLink, linkMeta)
         }
 
         // 解析链接在网络比较差的情况下，耗时长，所以先保存一次剪贴数据，等到链接解析完成之后再更新一次剪贴数据，
         // 这样用户就能第一时间看到保存的剪贴数据了，而不是等链接解析完成之后才看到保存的剪贴数据
-        save(extractedLink, null)
+        /** 基础保存结果；如果 Repository 判定重复跳过，则不再继续解析链接预览。 */
+        val initialSaveResult = save(extractedLink, null)
+        if (initialSaveResult != ClipProcessResult.Saved) {
+            return@withContext initialSaveResult
+        }
 
         logD(TAG) { "processClipText 去解析链接 linkLength=${extractedLink.length}" }
         // 解析链接可能会比较慢，所以放在协程里，解析完成之后再保存数据
@@ -282,7 +300,6 @@ class ClipHelper @Inject constructor(
         }
 
         save(extractedLink, deferred.await())
-        ClipProcessResult.Saved
     }
 
     /**

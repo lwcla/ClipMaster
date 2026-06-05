@@ -12,7 +12,7 @@
 - AIDL callback 只保留无副作用 `pingAppProcess()` 探活；旧 `ShizukuCallback.onOpNoted(...)` 保存回调已删除，不保留旧版本兼容分支。
 - Provider 对外只保留 `commit_clip`、`query_icon_state`、`commit_icon`、`query_shizuku_process`。旧 `read_clip` method 已删除，外部继续调用时进入默认不支持分支，返回 `invalid_args` 并只记录 method 名、callingUid 等低敏信息。
 - app 侧 `ClipboardService`、`ClipboardBridgeReadCoordinator`、`SYSTEM_ALERT_WINDOW` 权限、悬浮窗权限 UI 和读取剪贴板前台服务通知已删除。
-- 剪贴保存后的通知保留：只有 `ClipHelper.processClipText(...)` 返回 `ClipProcessResult.Saved` 时才调用 `NotificationHelper.notifyClipUpdate(...)`；空内容或重复内容返回 `duplicate_or_empty`，不发送误导通知。
+- 剪贴保存后的通知保留：只有 `ClipHelper.processClipText(...)` 返回 `ClipProcessResult.Saved` 时才调用 `NotificationHelper.notifyClipUpdate(...)`；空内容、连续重复或本次未知来源命中已有明确来源时返回 `duplicate_or_empty`，不发送误导通知。
 - 下载 Worker 仍保留 `FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_DATA_SYNC` 和 WorkManager 前台服务声明，因为图片/视频下载进度与结果仍需要前台服务和通知系统。
 - `ShizukuConnector.VERSION` 已升级到 `18`，目的不是兼容旧协议，而是强制重建残留 Shizuku UserService，避免覆盖安装后旧进程继续运行过时代码。
 
@@ -20,10 +20,10 @@
 
 - 使用 Shizuku 进程 `IClipboard` 直读规避普通 app overlay 焦点不稳定和 MIUI 等系统上读空的风险。
 - 删除主进程透明悬浮窗、剪贴读取前台服务、旧 Provider `read_clip` 和旧 AIDL 保存回调，避免维护双链路和双写风险。
-- 保持现有剪贴去重语义：连续重复或空内容不新增记录，也不发送剪贴更新通知。
+- 保持剪贴去重语义可解释：空内容不新增记录；同内容同明确来源更新原记录；同内容不同明确来源新增记录；已有来源为空、`Unknown` 或“未知”时允许后续明确来源覆盖升级。
 - 保持剪贴保存通知、下载通知、下载 Worker 前台服务、Shizuku 状态通知等通知能力。
 - 让通知权限只影响提醒展示，不再作为连接 Shizuku 或剪贴读取的前置条件。
-- 保持来源图标异步补齐、`source_apps` 缓存、Room schema、备份协议和剪贴去重规则不变。
+- 保持来源图标异步补齐、`source_apps` 缓存、Room schema 和备份协议不变；本轮只调整剪贴入库的同内容来源判定规则。
 
 ## 范围
 
@@ -82,7 +82,7 @@
 12. `ShizukuProcessIdentity` 只比较完整进程名字符串：明确匹配才继续提交，明确不匹配时旧进程 `destroy()`，不确定时跳过本次提交。
 13. 身份匹配后，Shizuku 并行启动剪贴 payload 提交与来源图标同步。剪贴链路写入 `/clip/<eventId>` 后调用 `commit_clip`；图标链路继续使用 `query_icon_state`、`/icon/<eventId>` 和 `commit_icon`。
 14. `ClipboardBridgeClipCommitCoordinator` 读取 payload、校验版本和 eventId、解析文本或 HTML fallback，再委托 `ClipHelper.processClipText(...)`。
-15. `ClipHelper.processClipText(...)` 复用现有去重、链接解析、备份 dirty 标记和通知语义；只有保存或更新真实剪贴记录后才发送剪贴更新通知。
+15. `ClipHelper.processClipText(...)` 复用链接解析、备份 dirty 标记和通知语义，并通过 `ClipSaveResult` 区分真实写库与重复跳过；只有保存或更新真实剪贴记录后才发送剪贴更新通知。
 16. `commit_clip` 无论成功、失败或异常都会清理自己的 payload 临时文件；过期清理只删除超时 `.tmp`，不清空整个目录。
 
 ## Provider 接口与返回契约
@@ -124,7 +124,7 @@
 剪贴状态：
 
 - `saved`：本次剪贴文本已新增或更新到数据库。
-- `duplicate_or_empty`：文本为空白或命中连续重复规则；不会发送剪贴更新通知。
+- `duplicate_or_empty`：文本为空白、命中连续重复规则，或本次未知来源命中已有明确来源；不会发送剪贴更新通知。
 - `no_clip`：没有可读取的剪贴快照。
 - `unsupported_clip_type`：第一版不支持当前类型。
 - `payload_missing`：payload 文件缺失。
@@ -174,7 +174,8 @@ app 探活和身份原因码：
 - 身份查询发生在读取剪贴快照之后、提交 payload 之前；身份不确定时跳过本次提交，避免旧进程误写。
 - 剪贴内容失败不取消图标同步，图标失败不影响剪贴内容入库。
 - 系统剪贴板在 Shizuku 读取之前被下一次复制覆盖时，中间值无法由 app 恢复。
-- 本次不改 `source_apps` 表、不改 Room schema、不改 WebDAV/本地备份协议。
+- 本次不改 `source_apps` 表、不改 Room schema、不改 WebDAV/本地备份协议；同内容来源判定只改变后续入库时更新、插入或跳过的行为。
+- 来源未知判定统一为来源包名为空，或来源名称为空、`Unknown`、`未知`、关联缺失；已有未知来源记录遇到后续明确来源时会覆盖升级，同内容已有明确来源且本次也明确但包名不同则新增一条，本次未知来源遇到已有明确来源则跳过。
 - `files/clipboard_bridge_clip_payloads/` 与图标临时目录仍是短期临时数据；提交完成、失败或异常后清理，且继续按现有备份排除策略处理。
 - `AppSetting.shizukuSuffix` 属于本机运行态，不纳入备份。
 
@@ -194,6 +195,7 @@ app 探活和身份原因码：
 - NoDisplay 唤醒页只记录 `entryReason`、`requested`、`expectedProcessName` 和 `reasonCode`。
 - Provider 默认不支持 method 分支只记录 method 名、callingUid 和 resultCode；禁止记录 extras 中可能包含的正文、HTML、URI 或 Intent。
 - 剪贴保存通知允许展示剪贴正文给用户本人，但日志仍禁止输出正文、HTML 原文、完整 URL 查询串、Token、Cookie、本地授权 URI、Intent 内容或完整用户输入。
+- 剪贴入库去重日志只允许记录 `textLength`、`packageName`、`clipStatus`、`clipId`、是否命中重复和低敏 reasonCode；禁止输出剪贴正文、链接标题、完整 URL 或 HTML。
 - 本次不新增额外日志点的原因：删除的是旧前台服务/悬浮窗读取链路，权限区本轮只是静态 UI 形态收敛；正式 `commit_clip`、NoDisplay 唤醒、身份查询和通知保存路径已有低敏诊断覆盖。
 
 ## 实现步骤
@@ -246,6 +248,7 @@ app 探活和身份原因码：
 
 ## 变更记录
 
+- 2026-06-05：调整剪贴入库同内容来源判定规则；原因是同内容来自不同明确 App 时应保留为多条记录，但历史未知来源记录应被后续明确来源覆盖升级，且前台未知来源读取不能制造重复记录。
 - 2026-06-05：我的页权限分组独立并置顶，通知权限手动入口仍保留在“我的/权限”；原因是权限状态需要优先展示，且通知权限只影响提醒展示。
 - 2026-06-05：我的页权限入口改为固定展示 Shizuku 和通知两个权限项，移除“权限说明”标题行、展开箭头、展开/收起动画和 `permission_expanded` UI 偏好；原因是剪贴读取不再依赖旧悬浮窗/前台服务链路，通知权限也只作为提醒展示能力。
 - 2026-06-05：彻底移除剪贴读取的前台服务与悬浮窗旧链路，删除 `read_clip` Provider method、`ClipboardService`、`ClipboardBridgeReadCoordinator`、`ShizukuCallback.onOpNoted(...)`、`SYSTEM_ALERT_WINDOW`、读取剪贴板前台服务通知和通知自动弹窗；原因是正式链路已经是 Shizuku 进程直读 + `commit_clip` 入库，不再需要旧兼容入口。

@@ -10,5 +10,8 @@ data class LastClipData(
     val content: String,
 
     /** 最近记录的来源应用包名，可能为空；与 content 一起参与去重判断。 */
-    val sourceAppPackage: String?
+    val sourceAppPackage: String?,
+
+    /** 最近记录的来源应用名称，可能为空；名称为 Unknown/未知 时按不可信来源处理。 */
+    val sourceAppName: String?
 )

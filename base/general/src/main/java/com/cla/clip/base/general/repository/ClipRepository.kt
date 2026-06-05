@@ -36,9 +36,11 @@ interface ClipRepository {
     ): PagingSource<Int, ClipDetail>
 
     /**
-     * 新增一个全新的剪贴板条目。
+     * 保存一个新的剪贴板条目或更新已有条目。
+     *
+     * 返回值会区分真实写库和重复跳过，调用方据此决定是否发送通知和调度备份。
      */
-    suspend fun addNewClip(captureEntity: ClipCaptureEntity): Long
+    suspend fun addNewClip(captureEntity: ClipCaptureEntity): ClipSaveResult
 
     /** 将一个剪贴板内容移入回收站。 */
     suspend fun deleteClip(clip: ClipShowEntity): Boolean
@@ -126,4 +128,19 @@ interface ClipRepository {
 
     /** 获取最后保存的剪贴数据 */
     suspend fun loadLastClip(): LastClipData?
+}
+
+/** 剪贴保存结果，用于区分真实写库和按重复规则跳过。 */
+sealed interface ClipSaveResult {
+    /** 已新增或更新剪贴记录；clipId 是可进入详情页的稳定记录 id。 */
+    data class Saved(
+        /** 保存或更新后的剪贴记录 id。 */
+        val clipId: Long,
+    ) : ClipSaveResult
+
+    /** 本次内容按重复规则跳过；clipId 是被判定为重复的候选记录 id，可能为空。 */
+    data class SkippedDuplicate(
+        /** 被重复规则命中的已有剪贴记录 id；没有具体候选时为空。 */
+        val clipId: Long?,
+    ) : ClipSaveResult
 }

@@ -187,71 +187,109 @@ class ClipRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun addNewClip(captureEntity: ClipCaptureEntity) = withContext(Dispatchers.IO) {
-        // 拼接所有可能需要搜索的内容，用来后续做模糊搜索
-        val searchText = captureEntity.content
+    override suspend fun addNewClip(captureEntity: ClipCaptureEntity): ClipSaveResult = withContext(Dispatchers.IO) {
+        appDatabase.withTransaction {
+            /** 本次入库的来源包名；空字符串代表未知来源筛选键，继续沿用历史存储语义。 */
+            val sourcePackage = captureEntity.sourcePackage
+            /** 本次入库的来源应用名；空字符串或 Unknown 会被规则视为不可信来源。 */
+            val sourceAppName = captureEntity.sourceAppName
+            /** 与本次内容完全相同且未进入回收站的候选记录。 */
+            val candidates = clipDao.loadClipDetailsByContent(captureEntity.content)
+            /** 本次保存动作决策；只负责选目标，不执行任何副作用。 */
+            val saveAction = decideDuplicateClipSaveAction(
+                candidates = candidates,
+                incomingSourcePackage = sourcePackage,
+                incomingSourceAppName = sourceAppName
+            )
+
+            if (saveAction is DuplicateClipSaveAction.SkipDuplicate) {
+                return@withTransaction ClipSaveResult.SkippedDuplicate(saveAction.existingClip.clip.id)
+            }
+
+            /** 已存在的来源 App 缓存；本次没有新图标时需要保留旧图标，避免异步补图结果被空值覆盖。 */
+            val existingSourceApp = sourceAppDao.loadByPackageName(sourcePackage)
+            /** 本次写入数据库的来源 App；图标字段会合并旧缓存，避免异步补图被空值覆盖。 */
+            val sourceApp = buildSourceAppForClip(captureEntity, existingSourceApp)
+            sourceAppDao.upsert(sourceApp)
+            /** 本次剪贴记录的综合搜索字段，由用户可搜索的信息拼接生成。 */
+            val searchText = buildClipSearchText(captureEntity, sourceApp.appName)
+            /** 本次捕获构造出的剪贴数据库实体，id=0 表示新增候选。 */
+            val newClip = ClipData(
+                id = 0,
+                content = captureEntity.content,
+                timestamp = captureEntity.timestamp,
+                sourceAppPackage = sourcePackage,
+                pinnedTime = 0,
+                link = captureEntity.link,
+                searchText = searchText
+            )
+
+            if (!captureEntity.link.isNullOrBlank()) {
+                /** 本次捕获得到或待补全的链接预览缓存。 */
+                val linkPreviewData = LinkPreviewData(
+                    link = captureEntity.link,
+                    title = captureEntity.linkTitle,
+                    description = captureEntity.linkDescription,
+                    imageUrl = captureEntity.linkImageUrl,
+                    siteName = captureEntity.linkSiteName
+                )
+                linkPreviewDao.upsert(linkPreviewData)
+            }
+
+            /** 本次真实保存或更新后的剪贴记录 id。 */
+            val clipId = when (saveAction) {
+                DuplicateClipSaveAction.InsertNew -> insertNewClip(newClip, sourceApp.packageName)
+                is DuplicateClipSaveAction.UpdateExisting -> {
+                    /** 重复内容更新实体；保留用户状态并使用捕获时间刷新列表时间。 */
+                    val clipToUpdate = buildDuplicateClipUpdate(
+                        newClip = newClip,
+                        existingClip = saveAction.existingClip.clip,
+                        capturedAtMillis = captureEntity.timestamp
+                    )
+                    clipDao.upsertClip(clipToUpdate)
+                    saveAction.existingClip.clip.id
+                }
+                is DuplicateClipSaveAction.SkipDuplicate -> error("addNewClip: skip action should return before writing")
+            }
+            AppSetting.markBackupDirty()
+            ClipSaveResult.Saved(clipId)
+        }
+    }
+
+    /**
+     * 构建剪贴记录搜索字段。
+     *
+     * @param captureEntity 本次剪贴捕获实体，包含内容、来源和链接预览摘要。
+     */
+    private fun buildClipSearchText(
+        captureEntity: ClipCaptureEntity,
+        sourceAppName: String,
+    ): String {
+        return captureEntity.content
             .plus(captureEntity.link)
-            .plus(captureEntity.sourceAppName)
+            .plus(sourceAppName)
             .plus(captureEntity.sourcePackage)
             .plus(captureEntity.linkTitle)
             .plus(captureEntity.linkDescription)
             .plus(captureEntity.linkSiteName)
+    }
 
-        // 1. 在这里转成 DB 实体
-        val newClip = ClipData(
-            id = 0, // 只有 Repository 知道新建时这里填 0
-            content = captureEntity.content,
-            timestamp = captureEntity.timestamp,
-            sourceAppPackage = captureEntity.sourcePackage,
-            pinnedTime = 0,
-            link = captureEntity.link,
-            searchText = searchText
-        )
-
-        if (!captureEntity.link.isNullOrBlank()) {
-            val linkPreviewData = LinkPreviewData(
-                link = captureEntity.link,
-                title = captureEntity.linkTitle,
-                description = captureEntity.linkDescription,
-                imageUrl = captureEntity.linkImageUrl,
-                siteName = captureEntity.linkSiteName
-            )
-            linkPreviewDao.upsert(linkPreviewData)
-        }
-
-        /** 已存在的来源 App 缓存；本次没有新图标时需要保留旧图标，避免异步补图结果被空值覆盖。 */
-        val existingSourceApp = sourceAppDao.loadByPackageName(captureEntity.sourcePackage)
-
-        /** 本次写入数据库的来源 App；图标字段会合并旧缓存，避免异步补图被空值覆盖。 */
-        val sourceApp = buildSourceAppForClip(captureEntity, existingSourceApp)
-
-        sourceAppDao.upsert(sourceApp)
-
-        // 先根据content尝试查找旧数据
-        val existingClip = clipDao.loadClipDetail(newClip.content, sourceApp.packageName)
-        if (existingClip != null) {
-            // === 情况 A：数据库有相同 content ===
-            /** 重复内容更新实体；保留用户状态并使用捕获时间刷新列表时间。 */
-            val clipToUpdate = buildDuplicateClipUpdate(
-                newClip = newClip,
-                existingClip = existingClip.clip,
-                capturedAtMillis = captureEntity.timestamp
-            )
-            // 执行更新
-            clipDao.upsertClip(clipToUpdate)
-            AppSetting.markBackupDirty()
-            return@withContext existingClip.clip.id
-        } else {
-            // 插入数据
-            val rowId = clipDao.upsertClip(newClip.copy(id = 0))
-            // 关键：如果是更新旧任务，直接返回旧 id
-            val clipId = when {
-                rowId > 0L -> rowId
-                else -> clipDao.loadClipDetail(newClip.content, sourceApp.packageName)?.clip?.id
-                    ?: error("addNewClip: upsertClip 后未找到任务 contentLength=${newClip.content.length} packageName=${sourceApp.packageName}")
-            }
-            AppSetting.markBackupDirty()
-            return@withContext clipId
+    /**
+     * 插入全新的剪贴记录并返回主键。
+     *
+     * @param newClip 新剪贴数据库实体；调用方必须传入 id=0 的新增候选。
+     * @param sourcePackage 来源包名，用于极端情况下 Upsert 返回非正 id 后回查。
+     */
+    private suspend fun insertNewClip(
+        newClip: ClipData,
+        sourcePackage: String,
+    ): Long {
+        /** Room upsert 对新增行返回的 rowId；非正值时需要回查确认。 */
+        val rowId = clipDao.upsertClip(newClip.copy(id = 0))
+        return when {
+            rowId > 0L -> rowId
+            else -> clipDao.loadClipDetail(newClip.content, sourcePackage)?.clip?.id
+                ?: error("insertNewClip: upsertClip 后未找到记录 contentLength=${newClip.content.length} packageName=$sourcePackage")
         }
     }
 
@@ -450,13 +488,96 @@ internal fun buildSourceAppForClip(
     captureEntity: ClipCaptureEntity,
     existingSourceApp: SourceAppData?,
 ): SourceAppData {
+    /** 写入来源 App 的名称；本次名称不可信时保留已有真实名称，避免 Unknown 覆盖历史明确来源。 */
+    val mergedAppName = when {
+        !isUnknownClipSource(captureEntity.sourcePackage, captureEntity.sourceAppName) -> captureEntity.sourceAppName
+        existingSourceApp != null && !isUnknownClipSource(existingSourceApp.packageName, existingSourceApp.appName) -> existingSourceApp.appName
+        else -> captureEntity.sourceAppName
+    }
+
     return SourceAppData(
         packageName = captureEntity.sourcePackage,
-        appName = captureEntity.sourceAppName,
+        appName = mergedAppName,
         iconPath = captureEntity.sourceAppIconPath ?: existingSourceApp?.iconPath,
         primaryColor = captureEntity.sourcePrimaryColor ?: existingSourceApp?.primaryColor,
         iconHash = captureEntity.sourceAppIconHash ?: existingSourceApp?.iconHash
     )
+}
+
+/**
+ * 同内容剪贴入库决策。
+ *
+ * 决策本身不执行数据库写入，便于单元测试覆盖来源未知、同包名和跨 App 新增等规则。
+ */
+internal sealed interface DuplicateClipSaveAction {
+    /** 新增一条剪贴记录。 */
+    data object InsertNew : DuplicateClipSaveAction
+
+    /**
+     * 更新已有剪贴记录。
+     *
+     * @param existingClip 被选中的旧记录；调用方需要保留其用户状态并刷新来源/时间/searchText。
+     */
+    data class UpdateExisting(
+        /** 被选中的已有剪贴记录详情。 */
+        val existingClip: ClipDetail,
+    ) : DuplicateClipSaveAction
+
+    /**
+     * 跳过本次重复保存。
+     *
+     * @param existingClip 已有明确来源记录；本次未知来源不能覆盖它，也不应新增未知重复记录。
+     */
+    data class SkipDuplicate(
+        /** 被重复规则命中的已有剪贴记录详情。 */
+        val existingClip: ClipDetail,
+    ) : DuplicateClipSaveAction
+}
+
+/**
+ * 决定同内容剪贴应该更新、插入还是跳过。
+ *
+ * @param candidates 与本次内容相同且未进入回收站的已有候选。
+ * @param incomingSourcePackage 本次来源包名，空字符串代表未知来源。
+ * @param incomingSourceAppName 本次来源应用名，空字符串、Unknown 或“未知”代表不可信名称。
+ */
+internal fun decideDuplicateClipSaveAction(
+    candidates: List<ClipDetail>,
+    incomingSourcePackage: String?,
+    incomingSourceAppName: String?,
+): DuplicateClipSaveAction {
+    /** 本次来源包名的可比较形式；为空表示本次来源未知。 */
+    val incomingPackage = incomingSourcePackage.normalizedClipSourcePackage()
+    /** 本次来源是否未知；未知来源遇到明确来源候选时按重复跳过。 */
+    val incomingSourceUnknown = isUnknownClipSource(incomingSourcePackage, incomingSourceAppName)
+
+    /** 同包名候选优先，保证链接预览二次保存和同 App 重复复制更新同一条记录。 */
+    val samePackageCandidate = incomingPackage?.let { packageName ->
+        candidates.firstOrNull { candidate ->
+            candidate.clip.sourceAppPackage.normalizedClipSourcePackage() == packageName
+        }
+    }
+    if (samePackageCandidate != null) {
+        return DuplicateClipSaveAction.UpdateExisting(samePackageCandidate)
+    }
+
+    /** 已有明确来源候选；本次未知来源不新增重复记录，也不覆盖明确来源。 */
+    val knownSourceCandidate = candidates.firstOrNull { candidate ->
+        !isUnknownClipSource(candidate.clip.sourceAppPackage, candidate.sourceApp?.appName)
+    }
+    if (incomingSourceUnknown && knownSourceCandidate != null) {
+        return DuplicateClipSaveAction.SkipDuplicate(knownSourceCandidate)
+    }
+
+    /** 同内容下第一个未知来源候选；本次来源明确时承接来源升级，本次也未知时承接链接预览二次补全。 */
+    val unknownSourceCandidate = candidates.firstOrNull { candidate ->
+        isUnknownClipSource(candidate.clip.sourceAppPackage, candidate.sourceApp?.appName)
+    }
+    if (unknownSourceCandidate != null) {
+        return DuplicateClipSaveAction.UpdateExisting(unknownSourceCandidate)
+    }
+
+    return DuplicateClipSaveAction.InsertNew
 }
 
 /**

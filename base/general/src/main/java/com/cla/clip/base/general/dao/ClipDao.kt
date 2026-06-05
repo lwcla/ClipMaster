@@ -152,14 +152,23 @@ interface ClipDao {
     suspend fun loadClipsByIdsForBackup(ids: List<Long>): List<ClipData>
 
     /**
-     * Get 基础查询：查找是否存在相同内容的最新条目。这是去重逻辑的核心查询，必须高效。
+     * 按内容和来源包名查找未删除剪贴记录。
      *
-     * @param content 要查询的内容。FTS5会自动处理分词和匹配，所以这里直接传入原始内容即可。
-     * @return
+     * 这是链接预览二次补全和同来源重复复制的快速路径；未知来源用空字符串包名落库，因此这里按精确包名匹配即可。
      */
     @Transaction
     @Query("SELECT * FROM clips WHERE content = :content AND source_app_package=:packageName AND deleted_at = 0 LIMIT 1")
     suspend fun loadClipDetail(content: String, packageName: String): ClipDetail?
+
+    /**
+     * 按内容加载所有未删除候选记录。
+     *
+     * 新入库规则需要同时比较同内容下的明确来源、未知来源和同包名候选；按 id 倒序提供稳定顺序，
+     * 再由 Repository 里的纯决策函数决定更新、插入或跳过。
+     */
+    @Transaction
+    @Query("SELECT * FROM clips WHERE content = :content AND deleted_at = 0 ORDER BY id DESC")
+    suspend fun loadClipDetailsByContent(content: String): List<ClipDetail>
 
     /** 根据 id 查询正常剪贴数据；回收站数据不进入普通详情页，避免误展示删除和复制入口。 */
     @Transaction
@@ -505,11 +514,13 @@ interface ClipDao {
     @Query(
         """
     SELECT 
-        content,
-        source_app_package AS sourceAppPackage
-    FROM clips
-    WHERE deleted_at = 0
-    ORDER BY timestamp DESC
+        c.content,
+        c.source_app_package AS sourceAppPackage,
+        s.app_name AS sourceAppName
+    FROM clips c
+    LEFT JOIN source_apps s ON c.source_app_package = s.package_name
+    WHERE c.deleted_at = 0
+    ORDER BY c.timestamp DESC
     LIMIT 1
     """
     )
