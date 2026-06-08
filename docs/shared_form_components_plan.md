@@ -70,12 +70,13 @@
 - `SingleChoiceDialog`、`SingleChoiceOption` 和 `SingleChoiceRow` 承载单选弹窗/单选行，当前由我的页快捷动作设置和回收站保留天数选项复用。
 - `SearchInputField`、`HorizontalFilterChips` 和 `FilterChipOption` 承载搜索输入和横向互斥筛选；当前搜索页继续复用搜索输入，时间筛选改为复用 `SingleChoiceDialog`，页面层保留时间/来源等宽选择器和折叠语义。
 - `SelectableListBottomSheet`、`SelectableListItemState` 和 `SelectableListItem` 承载复选列表底部弹层，当前由搜索页来源 App 选择复用；搜索页继续保留“空集合表示全部来源”和临时 0 选中禁用确认的草稿契约。
-- `SelectionActionBar` 承载底部多选主操作条，当前由下载记录页多选删除复用；下载记录页继续保留删除方式弹窗和本地文件授权流程。
+- `SelectionActionBar` 承载底部多选主操作条，当前由下载记录页多选删除复用；左侧删除类图标接入 `DeleteActionIcon`，与列表菜单删除和其他执行删除入口共享同款图形，下载记录页继续保留删除方式弹窗和本地文件授权流程。
 - `PagingLoadingContent`、`PagingEmptyContent`、`PagingErrorContent` 和 `pagingAppendStateItem` 承载分页状态，当前由下载记录页和共享剪贴结果组件部分复用。
 - `ClipResultList`、`ClipCardContent` 和 `ClipCardGestures` 已从 `ui/page/list` 迁入 `ui/widget/clip`，列表页、搜索页、折叠页和回收站统一从共享包引用。
 
 ## 变更记录
 
+- 2026-06-08：`SelectionActionBar` 的删除图标接入共享 `DeleteActionIcon`；原因是底部多选删除条属于删除类入口，需要与列表菜单删除图形统一，同时保持文字和业务确认流程不变。
 - 2026-06-05：我的页权限适配层改为按单个权限项分别调用 `SettingSwitchListCard`；原因是 Shizuku 与通知需要像其他分类入口一样各自独立成卡。
 - 2026-06-05：`SettingSwitchRow` 移除单项标题字段和标题文本渲染；原因是我的页权限卡片外层已经有“权限”分类，内部只需要说明和开关。
 - 2026-06-05：`SettingSwitchRow` 的说明文本改为完整换行显示；原因是当前该共享行服务我的页权限项，权限说明包含用户必须看到的关键限制和取舍。

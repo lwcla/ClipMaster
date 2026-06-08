@@ -59,6 +59,7 @@ import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
+import com.cla.clip.base.general.R as BaseR
 import com.cla.clip.base.general.config.ClipItemQuickAction
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.master.R
@@ -524,7 +525,7 @@ fun ClipCard(
                             iconTint = MaterialTheme.colorScheme.error,
                             iconContentDescription = deleteDescription,
                             iconSize = actionIconSize,
-                            painterRes = R.drawable.host_icon_delete,
+                            painterRes = BaseR.drawable.base_general_ic_delete,
                             onClick = {
                                 offsetPx = 0f
                                 currentOnMenuInactive(clip.id)

@@ -13,12 +13,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -37,6 +35,7 @@ import com.cla.clip.feature.magnet.R
 import com.cla.clip.base.general.R as BaseR
 import com.cla.clip.feature.magnet.data.MagnetSearchHistoryData
 import com.cla.clip.feature.magnet.MagnetSearchHighlightFormatter
+import com.cla.clip.base.general.widget.DeleteIconButton
 
 /** 磁力搜索历史覆盖面板，语义独立于剪贴搜索历史，避免两个 DAO 类型相互耦合。 */
 @Composable
@@ -74,6 +73,7 @@ internal fun MagnetHistoryPanel(
                         Icon(
                             imageVector = Icons.Default.DeleteSweep,
                             contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
@@ -127,13 +127,10 @@ private fun MagnetHistoryRow(
                 .weight(1f)
                 .padding(horizontal = 12.dp)
         )
-        IconButton(onClick = onDelete) {
-            Icon(
-                imageVector = Icons.Default.Delete,
-                contentDescription = stringResource(BaseR.string.base_general_delete_search_history),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+        DeleteIconButton(
+            contentDescription = stringResource(BaseR.string.base_general_delete_search_history),
+            onClick = onDelete
+        )
     }
 }
 

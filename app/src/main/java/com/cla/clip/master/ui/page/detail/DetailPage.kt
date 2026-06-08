@@ -17,11 +17,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -48,6 +46,7 @@ import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.utils.LinkUtils
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logW
+import com.cla.clip.base.general.widget.DeleteIconButton
 import com.cla.clip.feature.ad.api.AdConsentState
 import com.cla.clip.feature.ad.api.AdPlacement
 import com.cla.clip.feature.ad.api.AdRuntimePolicy
@@ -166,17 +165,13 @@ fun DetailPage(
         onBack = onBack,
         actions = {
             loadedClip?.let { clip ->
-                IconButton(
+                DeleteIconButton(
+                    contentDescription = stringResource(R.string.base_general_delete),
                     onClick = {
                         // 标题栏删除入口只打开现有二次确认弹窗，不直接执行危险操作。
                         deleteClip = clip
                     }
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.DeleteOutline,
-                        contentDescription = stringResource(R.string.base_general_delete)
-                    )
-                }
+                )
             }
         }
     ) { paddingValues ->

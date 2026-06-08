@@ -13,13 +13,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.RadioButton
@@ -33,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.cla.clip.base.general.widget.DeleteActionIcon
 
 /**
  * 通用单选项模型。
@@ -342,6 +340,8 @@ internal fun SelectionActionBar(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
+    /** 主操作图标颜色跟随按钮可用性；禁用时降级，避免无选中项时仍像可执行删除。 */
+    val actionIconTint = if (enabled) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
     Box(
         // 作为 Scaffold.bottomBar 使用时不能再占满全高，否则会把主内容区全部挤没。
         modifier = modifier.fillMaxWidth(),
@@ -367,7 +367,7 @@ internal fun SelectionActionBar(
                     enabled = enabled,
                     onClick = onAction
                 ) {
-                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                    DeleteActionIcon(contentDescription = null, tint = actionIconTint, size = 18.dp)
                     Spacer(Modifier.width(6.dp))
                     Text(actionText)
                 }

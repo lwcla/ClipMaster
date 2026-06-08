@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -68,7 +69,11 @@ internal fun DownloadHistoryTitleBar(
                     Icon(Icons.Default.CheckCircle, contentDescription = stringResource(R.string.base_general_download_history_multi_select))
                 }
                 IconButton(onClick = onClearTab, enabled = state.currentItemsCount > 0) {
-                    Icon(Icons.Default.DeleteSweep, contentDescription = stringResource(R.string.base_general_download_history_clear_current_tab))
+                    Icon(
+                        imageVector = Icons.Default.DeleteSweep,
+                        contentDescription = stringResource(R.string.base_general_download_history_clear_current_tab),
+                        tint = MaterialTheme.colorScheme.error
+                    )
                 }
             }
         )

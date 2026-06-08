@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -46,6 +47,7 @@ import androidx.lifecycle.flowWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
 import com.cla.clip.base.general.config.AppSetting
 import com.cla.clip.base.general.entity.ClipShowEntity
+import com.cla.clip.base.general.widget.DeleteActionIcon
 import com.cla.clip.master.ui.widget.SecondaryPageScaffold
 import com.cla.clip.master.ui.widget.SingleChoiceRow
 import com.cla.clip.master.ui.widget.clip.ClipCardTimeMode
@@ -97,7 +99,8 @@ fun RecycleBinPage(
                 IconButton(onClick = { showClearConfirm = true }) {
                     Icon(
                         imageVector = Icons.Default.DeleteForever,
-                        contentDescription = stringResource(com.cla.clip.base.general.R.string.base_general_clear_recycle_bin)
+                        contentDescription = stringResource(com.cla.clip.base.general.R.string.base_general_clear_recycle_bin),
+                        tint = MaterialTheme.colorScheme.error
                     )
                 }
                 IconButton(onClick = { showSettingSheet = true }) {
@@ -196,6 +199,10 @@ private fun RecycleBinSelectionBar(
     selectedCount: Int,
     onDelete: () -> Unit,
 ) {
+    /** 多选彻底删除按钮的可用性，允许 0 选中停留多选态但不允许触发危险操作。 */
+    val deleteEnabled = selectedCount > 0
+    /** 多选彻底删除图标颜色跟随可用性，禁用时降级避免误导用户。 */
+    val deleteIconTint = if (deleteEnabled) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -208,9 +215,11 @@ private fun RecycleBinSelectionBar(
             style = MaterialTheme.typography.bodyMedium
         )
         Button(
-            enabled = selectedCount > 0,
+            enabled = deleteEnabled,
             onClick = onDelete
         ) {
+            DeleteActionIcon(contentDescription = null, tint = deleteIconTint, size = 18.dp)
+            Spacer(Modifier.width(6.dp))
             Text(stringResource(com.cla.clip.base.general.R.string.base_general_delete_permanently))
         }
     }

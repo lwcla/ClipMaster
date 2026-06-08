@@ -14,12 +14,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -36,6 +34,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.cla.clip.base.general.dao.SearchHistoryData
+import com.cla.clip.base.general.widget.DeleteIconButton
 import java.util.Locale
 
 /**
@@ -86,6 +85,7 @@ internal fun SearchHistoryPanel(
                             Icon(
                                 imageVector = Icons.Default.DeleteSweep,
                                 contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
@@ -159,13 +159,10 @@ private fun SearchHistoryRow(
                 .weight(1f)
                 .padding(horizontal = 12.dp)
         )
-        IconButton(onClick = onDelete) {
-            Icon(
-                imageVector = Icons.Default.Delete,
-                contentDescription = stringResource(com.cla.clip.base.general.R.string.base_general_delete_search_history),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+        DeleteIconButton(
+            contentDescription = stringResource(com.cla.clip.base.general.R.string.base_general_delete_search_history),
+            onClick = onDelete
+        )
     }
 }
 

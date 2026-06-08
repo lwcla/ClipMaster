@@ -195,9 +195,11 @@
 - 视频记录卡片和图片批次卡片已接入 `ClipMasterCard` 公共内容卡片外壳，点击和长按反馈被限制在圆角范围内。
 - 视频首帧框仍属于下载记录卡片局部 UI；图片缩略图、删除占位块和图片预览已接入共享媒体 UI，完整共享规则详见 `docs/shared_media_ui_plan.md`，公共卡片外壳规则详见 `docs/shared_card_component_plan.md`。
 - 分页加载、空态、首次失败和 append 状态复用 `PagingLoadingContent`、`PagingEmptyContent`、`PagingErrorContent` 与 `pagingAppendStateItem`；多选底部删除条复用 `SelectionActionBar`。本页面继续保留视频/图片记录卡片、删除方式弹窗、运行中任务提示和本地文件授权流程，完整共享表单规则见 `docs/shared_form_components_plan.md`。页面根布局已改为 `Scaffold(topBar/bottomBar/snackbarHost)`，顶部区域由“标题栏 + Tab”纵向组成，让三键导航和底部删除条自动参与内容区 padding。
+- 多选底部删除条的删除类图标通过 `SelectionActionBar` 接入 `DeleteActionIcon`，与列表菜单删除和详情页删除共用同款删除图形；“清空当前分类”继续使用 `DeleteSweep` 清空语义图标，仅统一为危险色。
 
 ## 变更记录
 
+- 2026-06-08：同步下载记录删除/清空入口视觉规则；原因是多选删除属于删除类入口需要统一图形，清空当前分类属于清空类入口应保留独立语义。
 - 2026-05-28：修正下载记录页底部多选条在 `Scaffold.bottomBar` 中的测量方式；原因是共享 `SelectionActionBar` 原本按 overlay 设计，内部使用 `fillMaxSize()`，迁入 `bottomBar` 后会把内容区高度错误吃掉，表现成一进入多选态列表就消失。
 - 2026-05-28：修正下载记录页 `Scaffold.topBar` 的标题栏与 Tab 重叠问题，并恢复 `busy` 遮罩的条件显示；原因是把 `TitleBar` 和 `TabRow` 直接并列塞进 `topBar` slot 会造成视觉重叠，且上一轮布局收口时遗漏了 `if (state.busy)` 判断，导致页面常驻 loading。
 - 2026-05-28：将下载记录页根布局切到标准 `Scaffold`；原因是三键导航下主内容仍可能被系统按键区和底部删除条遮挡，需要让 `topBar`、`bottomBar` 和系统导航区统一参与内容 padding，而不是继续手动补高度。
