@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -13,7 +14,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.cla.clip.master.ui.theme.ClipMasterThemeTokens
 
 /**
  * 开关设置行 UI state。
@@ -33,6 +36,82 @@ internal data class SettingSwitchRowState<Id>(
     /** 当前设置是否允许交互；禁用时保留展示但不触发回调。 */
     val enabled: Boolean = true,
 )
+
+/**
+ * 入口式开关卡片。
+ *
+ * 适用于“我的页权限项”这类需要和导航入口保持同一卡片节奏、但右侧仍展示开关状态的单项设置。
+ * 组件只展示图标、标题、说明和开关，不直接读取权限、不保存设置，也不执行系统跳转。
+ *
+ * @param title 设置项主标题，承担入口扫描语义。
+ * @param description 设置项说明，承担权限影响、偏好边界或状态解释。
+ * @param checked 当前开关展示状态，只用于 UI 展示和计算整卡点击目标状态。
+ * @param enabled 当前卡片和开关是否允许交互，禁用时保留说明但不触发回调。
+ * @param icon 左侧语义图标，由调用方决定具体业务含义和颜色。
+ * @param onCheckedChange 用户点击整卡或开关后的目标状态回调，具体授权、保存或跳转由调用方处理。
+ * @param modifier 调用方附加的布局修饰符，组件自身仍负责默认页面外边距。
+ */
+@Composable
+internal fun SettingSwitchEntryCard(
+    title: String,
+    description: String,
+    checked: Boolean,
+    enabled: Boolean,
+    icon: @Composable () -> Unit,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    /** 入口式设置卡片的页面外边距，复用我的页入口卡片的统一节奏。 */
+    val spacing = ClipMasterThemeTokens.tokens.spacing
+    /** 用户点击整卡时期望切换到的下一状态；具体是否真的变更由调用方业务决定。 */
+    val toggledChecked = !checked
+
+    ClipMasterCard(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = spacing.large, vertical = spacing.small),
+        enabled = enabled,
+        onClick = { onCheckedChange(toggledChecked) },
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                modifier = Modifier.size(32.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                icon()
+            }
+            Spacer(Modifier.width(spacing.medium))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            Spacer(modifier = Modifier.width(spacing.medium))
+
+            Switch(
+                checked = checked,
+                onCheckedChange = { requestedChecked ->
+                    /** Switch 原生回调给出的目标状态；传给调用方保持控件语义完整。 */
+                    val nextChecked = requestedChecked
+                    onCheckedChange(nextChecked)
+                },
+                enabled = enabled,
+            )
+        }
+    }
+}
 
 /**
  * 固定设置开关列表卡片。

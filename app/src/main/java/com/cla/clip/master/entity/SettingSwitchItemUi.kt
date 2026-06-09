@@ -9,6 +9,9 @@ data class SettingSwitchItemUi(
     /** 设置项稳定 id，用于区分点击后应进入哪一种权限或设置流程。 */
     val id: Id,
 
+    /** 用户可见主标题，用于入口式开关卡片的快速扫描。 */
+    val title: String,
+
     /** 用户可见说明文案，描述该开关或权限当前的作用。 */
     val description: String,
 

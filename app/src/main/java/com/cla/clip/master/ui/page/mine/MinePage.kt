@@ -229,11 +229,13 @@ private fun Permission(
         // 每次重组重新生成展示项，确保字符串资源、系统权限状态和开关状态保持同步。
         SettingSwitchItemUi(
             id = SettingSwitchItemUi.Id.Permission.Shizuku,
+            title = stringResource(com.cla.clip.master.R.string.host_shizuku_permission_title),
             description = stringResource(com.cla.clip.master.R.string.host_shizuku_service_require),
             checked = mineVm.shizukuChecked,
         ),
         SettingSwitchItemUi(
             id = SettingSwitchItemUi.Id.Permission.Notice,
+            title = stringResource(com.cla.clip.master.R.string.host_notification_permission_title),
             description = stringResource(mineVm.notificationStatus.descriptionRes),
             checked = mineVm.notificationChecked,
         ),
