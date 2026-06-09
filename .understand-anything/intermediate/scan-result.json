@@ -1,0 +1,3641 @@
+{
+  "name": "LwlDemo",
+  "description": "ClipMaster 是一个 Android/Kotlin 剪贴板管理项目，包含剪贴列表、搜索、下载、备份恢复、设置页以及磁力和广告等可插拔 feature 模块。 Note: this project has over 100 source files; consider scoping analysis to a subdirectory for faster results.",
+  "languages": [
+    "aar",
+    "aidl",
+    "batch",
+    "html",
+    "jar",
+    "java",
+    "jks",
+    "json",
+    "keystore",
+    "kotlin",
+    "markdown",
+    "pro",
+    "properties",
+    "python",
+    "sha256",
+    "shell",
+    "toml",
+    "txt",
+    "unknown",
+    "webp",
+    "xml",
+    "yaml"
+  ],
+  "frameworks": [
+    "Android",
+    "Gradle",
+    "Kotlin",
+    "Room"
+  ],
+  "files": [
+    {
+      "path": ".codex/skills/repo-architecture-boundaries/agents/openai.yaml",
+      "language": "yaml",
+      "sizeLines": 4,
+      "fileCategory": "config"
+    },
+    {
+      "path": ".codex/skills/repo-architecture-boundaries/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 54,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".codex/skills/repo-backup-coverage/agents/openai.yaml",
+      "language": "yaml",
+      "sizeLines": 4,
+      "fileCategory": "config"
+    },
+    {
+      "path": ".codex/skills/repo-backup-coverage/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 52,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".codex/skills/repo-coding-gate/agents/openai.yaml",
+      "language": "yaml",
+      "sizeLines": 4,
+      "fileCategory": "config"
+    },
+    {
+      "path": ".codex/skills/repo-coding-gate/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 62,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".codex/skills/repo-compose-discipline/agents/openai.yaml",
+      "language": "yaml",
+      "sizeLines": 4,
+      "fileCategory": "config"
+    },
+    {
+      "path": ".codex/skills/repo-compose-discipline/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 48,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".codex/skills/repo-doc-flow-html/agents/openai.yaml",
+      "language": "yaml",
+      "sizeLines": 4,
+      "fileCategory": "config"
+    },
+    {
+      "path": ".codex/skills/repo-doc-flow-html/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 59,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".codex/skills/repo-docs-logs/agents/openai.yaml",
+      "language": "yaml",
+      "sizeLines": 4,
+      "fileCategory": "config"
+    },
+    {
+      "path": ".codex/skills/repo-docs-logs/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 39,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".codex/skills/repo-final-self-check/agents/openai.yaml",
+      "language": "yaml",
+      "sizeLines": 4,
+      "fileCategory": "config"
+    },
+    {
+      "path": ".codex/skills/repo-final-self-check/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 56,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".codex/skills/repo-git-discipline/agents/openai.yaml",
+      "language": "yaml",
+      "sizeLines": 4,
+      "fileCategory": "config"
+    },
+    {
+      "path": ".codex/skills/repo-git-discipline/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 55,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".codex/skills/repo-unit-test-gate/agents/openai.yaml",
+      "language": "yaml",
+      "sizeLines": 4,
+      "fileCategory": "config"
+    },
+    {
+      "path": ".codex/skills/repo-unit-test-gate/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 143,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".understand-anything/.understandignore",
+      "language": "unknown",
+      "sizeLines": 49,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".understand-anything/config.json",
+      "language": "json",
+      "sizeLines": 2,
+      "fileCategory": "config"
+    },
+    {
+      "path": "AGENTS.md",
+      "language": "markdown",
+      "sizeLines": 239,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "app/build.gradle.kts",
+      "language": "kotlin",
+      "sizeLines": 273,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/proguard-rules.pro",
+      "language": "pro",
+      "sizeLines": 49,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/androidTest/java/com/cla/clip/master/ExampleInstrumentedTest.kt",
+      "language": "kotlin",
+      "sizeLines": 23,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/AndroidManifest.xml",
+      "language": "xml",
+      "sizeLines": 136,
+      "fileCategory": "config"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ad/DetailAdSensitivityPolicy.kt",
+      "language": "kotlin",
+      "sizeLines": 78,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/App.kt",
+      "language": "kotlin",
+      "sizeLines": 75,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/entity/ExtraData.kt",
+      "language": "kotlin",
+      "sizeLines": 13,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/entity/ImageFolderOpenData.kt",
+      "language": "kotlin",
+      "sizeLines": 15,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/entity/SettingSwitchItemUi.kt",
+      "language": "kotlin",
+      "sizeLines": 35,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/entity/VideoCandidate.kt",
+      "language": "kotlin",
+      "sizeLines": 80,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/image/download/DownloadedTempImage.kt",
+      "language": "kotlin",
+      "sizeLines": 30,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/image/download/FilteredImageException.kt",
+      "language": "kotlin",
+      "sizeLines": 8,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/image/download/ImageDownloadFileNames.kt",
+      "language": "kotlin",
+      "sizeLines": 13,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/image/download/ImageDownloadLogExtensions.kt",
+      "language": "kotlin",
+      "sizeLines": 12,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/image/download/ImageDownloadValidator.kt",
+      "language": "kotlin",
+      "sizeLines": 135,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/image/download/ImageMediaStorePublisher.kt",
+      "language": "kotlin",
+      "sizeLines": 110,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/image/download/ImagePublishResult.kt",
+      "language": "kotlin",
+      "sizeLines": 15,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/image/download/ImageRequestHeaderBuilder.kt",
+      "language": "kotlin",
+      "sizeLines": 29,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/image/download/ImageTempDownloadResult.kt",
+      "language": "kotlin",
+      "sizeLines": 32,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/image/download/ImageTempFileDownloader.kt",
+      "language": "kotlin",
+      "sizeLines": 134,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/image/format/ByteArrayImageHeaderExtensions.kt",
+      "language": "kotlin",
+      "sizeLines": 92,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/image/format/ImageAnimationMetadataReader.kt",
+      "language": "kotlin",
+      "sizeLines": 198,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/image/format/ImageFileFormat.kt",
+      "language": "kotlin",
+      "sizeLines": 21,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/image/format/ImageFormatSniffer.kt",
+      "language": "kotlin",
+      "sizeLines": 154,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/magnet/AppMagnetApiModule.kt",
+      "language": "kotlin",
+      "sizeLines": 30,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/MainActivity.kt",
+      "language": "kotlin",
+      "sizeLines": 189,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/MainVm.kt",
+      "language": "kotlin",
+      "sizeLines": 97,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/media/DownloadedMediaRelocator.kt",
+      "language": "kotlin",
+      "sizeLines": 948,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/processor/ClipboardDataProcessor.kt",
+      "language": "kotlin",
+      "sizeLines": 137,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/processor/VmScopeModule.kt",
+      "language": "kotlin",
+      "sizeLines": 37,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/provider/ClipboardBridgeCallerPolicy.kt",
+      "language": "kotlin",
+      "sizeLines": 19,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/provider/ClipboardBridgeClipCommitCoordinator.kt",
+      "language": "kotlin",
+      "sizeLines": 204,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/provider/ClipboardBridgeClipPayloadStore.kt",
+      "language": "kotlin",
+      "sizeLines": 227,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/provider/ClipboardBridgeEntryPoint.kt",
+      "language": "kotlin",
+      "sizeLines": 32,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/provider/ClipboardBridgeIconCommitter.kt",
+      "language": "kotlin",
+      "sizeLines": 128,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/provider/ClipboardBridgeIconQueryCoordinator.kt",
+      "language": "kotlin",
+      "sizeLines": 98,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/provider/ClipboardBridgeIconStore.kt",
+      "language": "kotlin",
+      "sizeLines": 302,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/provider/ClipboardBridgeIconSyncDecider.kt",
+      "language": "kotlin",
+      "sizeLines": 73,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/provider/ClipboardBridgeIconSyncDecision.kt",
+      "language": "kotlin",
+      "sizeLines": 15,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/provider/ClipboardBridgeProvider.kt",
+      "language": "kotlin",
+      "sizeLines": 226,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/provider/ClipboardBridgeRequest.kt",
+      "language": "kotlin",
+      "sizeLines": 64,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/provider/ClipboardBridgeResult.kt",
+      "language": "kotlin",
+      "sizeLines": 116,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/provider/ClipboardBridgeShizukuProcessCoordinator.kt",
+      "language": "kotlin",
+      "sizeLines": 134,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/provider/ShizukuConnectRequester.kt",
+      "language": "kotlin",
+      "sizeLines": 26,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/receiver/BootRebuildReceiver.kt",
+      "language": "kotlin",
+      "sizeLines": 35,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/dialog/DeleteDialog.kt",
+      "language": "kotlin",
+      "sizeLines": 94,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/navigation/AppNavigation.kt",
+      "language": "kotlin",
+      "sizeLines": 338,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/navigation/Routes.kt",
+      "language": "kotlin",
+      "sizeLines": 136,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/backup/BackupMediaRelocationContent.kt",
+      "language": "kotlin",
+      "sizeLines": 148,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/backup/BackupMediaRelocationEvents.kt",
+      "language": "kotlin",
+      "sizeLines": 94,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/backup/BackupMediaRelocationPage.kt",
+      "language": "kotlin",
+      "sizeLines": 294,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/backup/BackupMediaRelocationVm.kt",
+      "language": "kotlin",
+      "sizeLines": 340,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/backup/BackupPage.kt",
+      "language": "kotlin",
+      "sizeLines": 699,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/backup/BackupRestoreFlowContent.kt",
+      "language": "kotlin",
+      "sizeLines": 590,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/backup/BackupRestoreFlowPage.kt",
+      "language": "kotlin",
+      "sizeLines": 220,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/backup/BackupRestoreRequests.kt",
+      "language": "kotlin",
+      "sizeLines": 69,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/backup/BackupRestoreState.kt",
+      "language": "kotlin",
+      "sizeLines": 250,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/backup/BackupRestoreVm.kt",
+      "language": "kotlin",
+      "sizeLines": 627,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/backup/BackupVm.kt",
+      "language": "kotlin",
+      "sizeLines": 616,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/backup/LocalBackupDirectoryWriter.kt",
+      "language": "kotlin",
+      "sizeLines": 341,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/detail/DetailPage.kt",
+      "language": "kotlin",
+      "sizeLines": 908,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/detail/DetailViewModel.kt",
+      "language": "kotlin",
+      "sizeLines": 255,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/download/DownloadHistoryCards.kt",
+      "language": "kotlin",
+      "sizeLines": 408,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/download/DownloadHistoryChrome.kt",
+      "language": "kotlin",
+      "sizeLines": 195,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/download/DownloadHistoryContent.kt",
+      "language": "kotlin",
+      "sizeLines": 248,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/download/DownloadHistoryDialogs.kt",
+      "language": "kotlin",
+      "sizeLines": 109,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/download/DownloadHistoryPage.kt",
+      "language": "kotlin",
+      "sizeLines": 285,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/download/DownloadHistoryVm.kt",
+      "language": "kotlin",
+      "sizeLines": 1145,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/image/ImageExtractPage.kt",
+      "language": "kotlin",
+      "sizeLines": 1788,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/image/ImageExtractVm.kt",
+      "language": "kotlin",
+      "sizeLines": 871,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/image/ImagePreviewComponents.kt",
+      "language": "kotlin",
+      "sizeLines": 156,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/list/ClipListModel.kt",
+      "language": "kotlin",
+      "sizeLines": 68,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/list/ClipListPage.kt",
+      "language": "kotlin",
+      "sizeLines": 159,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/list/FoldedClipListModel.kt",
+      "language": "kotlin",
+      "sizeLines": 55,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/list/FoldedClipListPage.kt",
+      "language": "kotlin",
+      "sizeLines": 98,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/main/MainPage.kt",
+      "language": "kotlin",
+      "sizeLines": 178,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/mine/AppUpdateDialog.kt",
+      "language": "kotlin",
+      "sizeLines": 241,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/mine/AppUpdateUiState.kt",
+      "language": "kotlin",
+      "sizeLines": 44,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/mine/MineEntries.kt",
+      "language": "kotlin",
+      "sizeLines": 183,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/mine/MinePage.kt",
+      "language": "kotlin",
+      "sizeLines": 288,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/mine/MineSettingComponents.kt",
+      "language": "kotlin",
+      "sizeLines": 102,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/mine/MineVm.kt",
+      "language": "kotlin",
+      "sizeLines": 371,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/recycle/RecycleBinPage.kt",
+      "language": "kotlin",
+      "sizeLines": 377,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/recycle/RecycleBinVm.kt",
+      "language": "kotlin",
+      "sizeLines": 158,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/search/SearchControls.kt",
+      "language": "kotlin",
+      "sizeLines": 206,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/search/SearchHeaderCollapseState.kt",
+      "language": "kotlin",
+      "sizeLines": 47,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/search/SearchHistoryComponents.kt",
+      "language": "kotlin",
+      "sizeLines": 237,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/search/SearchPage.kt",
+      "language": "kotlin",
+      "sizeLines": 509,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/search/SearchViewModel.kt",
+      "language": "kotlin",
+      "sizeLines": 311,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/search/SourceAppPickerComponents.kt",
+      "language": "kotlin",
+      "sizeLines": 246,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/video/VIdeoDownloadPage.kt",
+      "language": "kotlin",
+      "sizeLines": 259,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/video/VideoDownloadVm.kt",
+      "language": "kotlin",
+      "sizeLines": 111,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/video/VideoExtractPage.kt",
+      "language": "kotlin",
+      "sizeLines": 211,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/video/VideoExtractStatusContent.kt",
+      "language": "kotlin",
+      "sizeLines": 117,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/video/VideoExtractVm.kt",
+      "language": "kotlin",
+      "sizeLines": 128,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/page/video/VideoProbeWebViewLayer.kt",
+      "language": "kotlin",
+      "sizeLines": 265,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/theme/Color.kt",
+      "language": "kotlin",
+      "sizeLines": 45,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/theme/Theme.kt",
+      "language": "kotlin",
+      "sizeLines": 205,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/theme/Type.kt",
+      "language": "kotlin",
+      "sizeLines": 91,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/widget/clip/ClipCardContent.kt",
+      "language": "kotlin",
+      "sizeLines": 391,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/widget/clip/ClipCardGestures.kt",
+      "language": "kotlin",
+      "sizeLines": 223,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/widget/clip/ClipPagingSnapshotDeduper.kt",
+      "language": "kotlin",
+      "sizeLines": 49,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/widget/clip/ClipResultList.kt",
+      "language": "kotlin",
+      "sizeLines": 780,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/widget/ClipMasterCard.kt",
+      "language": "kotlin",
+      "sizeLines": 200,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/widget/CollapsingTitle.kt",
+      "language": "kotlin",
+      "sizeLines": 62,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/widget/ListEntryCard.kt",
+      "language": "kotlin",
+      "sizeLines": 69,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/widget/MediaStateContent.kt",
+      "language": "kotlin",
+      "sizeLines": 140,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/widget/PageScaffold.kt",
+      "language": "kotlin",
+      "sizeLines": 106,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/widget/PagingStateContent.kt",
+      "language": "kotlin",
+      "sizeLines": 137,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/widget/ProbeWebView.kt",
+      "language": "kotlin",
+      "sizeLines": 134,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/widget/SearchFilterComponents.kt",
+      "language": "kotlin",
+      "sizeLines": 126,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/widget/SelectionComponents.kt",
+      "language": "kotlin",
+      "sizeLines": 377,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/widget/SettingsComponents.kt",
+      "language": "kotlin",
+      "sizeLines": 193,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/widget/SharedImagePreview.kt",
+      "language": "kotlin",
+      "sizeLines": 596,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/widget/ShizukuServiceUnavailableTip.kt",
+      "language": "kotlin",
+      "sizeLines": 163,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/widget/TitleBar.kt",
+      "language": "kotlin",
+      "sizeLines": 176,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/ui/widget/Tools.kt",
+      "language": "kotlin",
+      "sizeLines": 71,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/update/AppUpdateChecker.kt",
+      "language": "kotlin",
+      "sizeLines": 292,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/update/AppUpdateConfigFactory.kt",
+      "language": "kotlin",
+      "sizeLines": 89,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/update/AppUpdateLogger.kt",
+      "language": "kotlin",
+      "sizeLines": 122,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/update/AppUpdateManifestParser.kt",
+      "language": "kotlin",
+      "sizeLines": 157,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/update/AppUpdateModels.kt",
+      "language": "kotlin",
+      "sizeLines": 253,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/update/AppUpdateModule.kt",
+      "language": "kotlin",
+      "sizeLines": 26,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/utils/ClipHelper.kt",
+      "language": "kotlin",
+      "sizeLines": 352,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/utils/ImageFolderOpenHelper.kt",
+      "language": "kotlin",
+      "sizeLines": 91,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/utils/LinkMetaParser.kt",
+      "language": "kotlin",
+      "sizeLines": 453,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/utils/NotificationHelper.kt",
+      "language": "kotlin",
+      "sizeLines": 400,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/utils/ShizukuConnector.kt",
+      "language": "kotlin",
+      "sizeLines": 294,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/utils/WebViewLinkPreviewExtractor.kt",
+      "language": "kotlin",
+      "sizeLines": 288,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/wake/ShizukuWakeActivity.kt",
+      "language": "kotlin",
+      "sizeLines": 82,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/work/BackupAutoWorker.kt",
+      "language": "kotlin",
+      "sizeLines": 366,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/work/BackupTaskGate.kt",
+      "language": "kotlin",
+      "sizeLines": 20,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/work/Download.kt",
+      "language": "kotlin",
+      "sizeLines": 496,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/work/DownloadImagesWorker.kt",
+      "language": "kotlin",
+      "sizeLines": 312,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/work/DownloadVideoWorker.kt",
+      "language": "kotlin",
+      "sizeLines": 325,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/work/RecycleBinCleanupWorker.kt",
+      "language": "kotlin",
+      "sizeLines": 89,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/java/com/cla/clip/master/work/ShizukuStatusWorker.kt",
+      "language": "kotlin",
+      "sizeLines": 121,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/main/res/drawable/host_icon_copy.xml",
+      "language": "xml",
+      "sizeLines": 9,
+      "fileCategory": "config"
+    },
+    {
+      "path": "app/src/main/res/drawable/host_icon_pinned.xml",
+      "language": "xml",
+      "sizeLines": 11,
+      "fileCategory": "config"
+    },
+    {
+      "path": "app/src/main/res/drawable/host_icon_to_pinned.xml",
+      "language": "xml",
+      "sizeLines": 11,
+      "fileCategory": "config"
+    },
+    {
+      "path": "app/src/main/res/drawable/host_icon_unpinned.xml",
+      "language": "xml",
+      "sizeLines": 9,
+      "fileCategory": "config"
+    },
+    {
+      "path": "app/src/main/res/values/colors.xml",
+      "language": "xml",
+      "sizeLines": 8,
+      "fileCategory": "config"
+    },
+    {
+      "path": "app/src/main/res/values/strings.xml",
+      "language": "xml",
+      "sizeLines": 10,
+      "fileCategory": "config"
+    },
+    {
+      "path": "app/src/main/res/values/themes.xml",
+      "language": "xml",
+      "sizeLines": 12,
+      "fileCategory": "config"
+    },
+    {
+      "path": "app/src/main/res/xml/backup_rules.xml",
+      "language": "xml",
+      "sizeLines": 26,
+      "fileCategory": "config"
+    },
+    {
+      "path": "app/src/main/res/xml/data_extraction_rules.xml",
+      "language": "xml",
+      "sizeLines": 36,
+      "fileCategory": "config"
+    },
+    {
+      "path": "app/src/test/java/com/cla/clip/master/ad/DetailAdSensitivityPolicyTest.kt",
+      "language": "kotlin",
+      "sizeLines": 41,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/test/java/com/cla/clip/master/ExampleUnitTest.kt",
+      "language": "kotlin",
+      "sizeLines": 16,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/test/java/com/cla/clip/master/provider/ClipboardBridgeCallerPolicyTest.kt",
+      "language": "kotlin",
+      "sizeLines": 19,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/test/java/com/cla/clip/master/provider/ClipboardBridgeClipPayloadStoreTest.kt",
+      "language": "kotlin",
+      "sizeLines": 108,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/test/java/com/cla/clip/master/provider/ClipboardBridgeIconStoreTest.kt",
+      "language": "kotlin",
+      "sizeLines": 102,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/test/java/com/cla/clip/master/provider/ClipboardBridgeIconSyncDeciderTest.kt",
+      "language": "kotlin",
+      "sizeLines": 108,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/test/java/com/cla/clip/master/provider/ClipboardBridgeRequestTest.kt",
+      "language": "kotlin",
+      "sizeLines": 56,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/test/java/com/cla/clip/master/provider/ClipboardBridgeShizukuProcessQueryHandlerTest.kt",
+      "language": "kotlin",
+      "sizeLines": 71,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/test/java/com/cla/clip/master/ui/page/backup/BackupRestoreStateTest.kt",
+      "language": "kotlin",
+      "sizeLines": 98,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/test/java/com/cla/clip/master/ui/page/detail/DetailLinkFormatterTest.kt",
+      "language": "kotlin",
+      "sizeLines": 102,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/test/java/com/cla/clip/master/ui/page/search/SearchHeaderCollapseStateTest.kt",
+      "language": "kotlin",
+      "sizeLines": 74,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/test/java/com/cla/clip/master/ui/widget/clip/ClipCardContentTest.kt",
+      "language": "kotlin",
+      "sizeLines": 32,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/test/java/com/cla/clip/master/ui/widget/clip/ClipPagingSnapshotDeduperTest.kt",
+      "language": "kotlin",
+      "sizeLines": 85,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/test/java/com/cla/clip/master/update/AppUpdateCheckerTest.kt",
+      "language": "kotlin",
+      "sizeLines": 237,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/test/java/com/cla/clip/master/update/AppUpdateManifestParserTest.kt",
+      "language": "kotlin",
+      "sizeLines": 188,
+      "fileCategory": "code"
+    },
+    {
+      "path": "app/src/test/java/com/cla/clip/master/utils/ShizukuConnectorTest.kt",
+      "language": "kotlin",
+      "sizeLines": 45,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/build.gradle.kts",
+      "language": "kotlin",
+      "sizeLines": 125,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/consumer-rules.pro",
+      "language": "pro",
+      "sizeLines": 0,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/proguard-rules.pro",
+      "language": "pro",
+      "sizeLines": 20,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/schemas/com.cla.clip.base.general.dao.AppDatabase/1.json",
+      "language": "json",
+      "sizeLines": 363,
+      "fileCategory": "config"
+    },
+    {
+      "path": "base/general/schemas/com.cla.clip.base.general.dao.AppDatabase/10.json",
+      "language": "json",
+      "sizeLines": 883,
+      "fileCategory": "config"
+    },
+    {
+      "path": "base/general/schemas/com.cla.clip.base.general.dao.AppDatabase/11.json",
+      "language": "json",
+      "sizeLines": 732,
+      "fileCategory": "config"
+    },
+    {
+      "path": "base/general/schemas/com.cla.clip.base.general.dao.AppDatabase/2.json",
+      "language": "json",
+      "sizeLines": 368,
+      "fileCategory": "config"
+    },
+    {
+      "path": "base/general/schemas/com.cla.clip.base.general.dao.AppDatabase/3.json",
+      "language": "json",
+      "sizeLines": 595,
+      "fileCategory": "config"
+    },
+    {
+      "path": "base/general/schemas/com.cla.clip.base.general.dao.AppDatabase/4.json",
+      "language": "json",
+      "sizeLines": 602,
+      "fileCategory": "config"
+    },
+    {
+      "path": "base/general/schemas/com.cla.clip.base.general.dao.AppDatabase/5.json",
+      "language": "json",
+      "sizeLines": 602,
+      "fileCategory": "config"
+    },
+    {
+      "path": "base/general/schemas/com.cla.clip.base.general.dao.AppDatabase/6.json",
+      "language": "json",
+      "sizeLines": 617,
+      "fileCategory": "config"
+    },
+    {
+      "path": "base/general/schemas/com.cla.clip.base.general.dao.AppDatabase/7.json",
+      "language": "json",
+      "sizeLines": 642,
+      "fileCategory": "config"
+    },
+    {
+      "path": "base/general/schemas/com.cla.clip.base.general.dao.AppDatabase/8.json",
+      "language": "json",
+      "sizeLines": 668,
+      "fileCategory": "config"
+    },
+    {
+      "path": "base/general/schemas/com.cla.clip.base.general.dao.AppDatabase/9.json",
+      "language": "json",
+      "sizeLines": 732,
+      "fileCategory": "config"
+    },
+    {
+      "path": "base/general/src/androidTest/java/com/cla/clip/base/general/dao/ClipDaoPagingOrderTest.kt",
+      "language": "kotlin",
+      "sizeLines": 201,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/androidTest/java/com/cla/clip/base/general/ExampleInstrumentedTest.kt",
+      "language": "kotlin",
+      "sizeLines": 23,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/AndroidManifest.xml",
+      "language": "xml",
+      "sizeLines": 5,
+      "fileCategory": "config"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/backup/BackupEntityMappers.kt",
+      "language": "kotlin",
+      "sizeLines": 317,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/backup/BackupExportModels.kt",
+      "language": "kotlin",
+      "sizeLines": 59,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/backup/BackupFeatureContributor.kt",
+      "language": "kotlin",
+      "sizeLines": 40,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/backup/BackupJson.kt",
+      "language": "kotlin",
+      "sizeLines": 551,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/backup/BackupLog.kt",
+      "language": "kotlin",
+      "sizeLines": 86,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/backup/BackupModels.kt",
+      "language": "kotlin",
+      "sizeLines": 678,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/backup/BackupPackageIo.kt",
+      "language": "kotlin",
+      "sizeLines": 283,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/backup/BackupRepository.kt",
+      "language": "kotlin",
+      "sizeLines": 133,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/backup/BackupRestoreModels.kt",
+      "language": "kotlin",
+      "sizeLines": 17,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/backup/BackupRestoreTimeNormalizer.kt",
+      "language": "kotlin",
+      "sizeLines": 39,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/backup/BackupSnapshotExporter.kt",
+      "language": "kotlin",
+      "sizeLines": 402,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/backup/BackupSnapshotRestorer.kt",
+      "language": "kotlin",
+      "sizeLines": 625,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/backup/BackupTempFileStore.kt",
+      "language": "kotlin",
+      "sizeLines": 98,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/backup/BackupZipExtensions.kt",
+      "language": "kotlin",
+      "sizeLines": 15,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/backup/WebDavClient.kt",
+      "language": "kotlin",
+      "sizeLines": 419,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/backup/WebDavModels.kt",
+      "language": "kotlin",
+      "sizeLines": 108,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/BaseApplication.kt",
+      "language": "kotlin",
+      "sizeLines": 69,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt",
+      "language": "kotlin",
+      "sizeLines": 524,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/config/MmkvInitializer.kt",
+      "language": "kotlin",
+      "sizeLines": 52,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/config/NumericInstallIdGenerator.kt",
+      "language": "kotlin",
+      "sizeLines": 48,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/dao/AppDatabase.kt",
+      "language": "kotlin",
+      "sizeLines": 194,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/dao/ClipDao.kt",
+      "language": "kotlin",
+      "sizeLines": 528,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/dao/data/ClipDetail.kt",
+      "language": "kotlin",
+      "sizeLines": 53,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/dao/data/LastClipData.kt",
+      "language": "kotlin",
+      "sizeLines": 17,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/dao/DatabaseModule.kt",
+      "language": "kotlin",
+      "sizeLines": 112,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/dao/DownloadDao.kt",
+      "language": "kotlin",
+      "sizeLines": 278,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/dao/ImageExtractDao.kt",
+      "language": "kotlin",
+      "sizeLines": 546,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/dao/LinkPreviewDao.kt",
+      "language": "kotlin",
+      "sizeLines": 98,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/dao/SearchHistoryDao.kt",
+      "language": "kotlin",
+      "sizeLines": 162,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/dao/SourceAppDao.kt",
+      "language": "kotlin",
+      "sizeLines": 121,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/di/RepositoryModule.kt",
+      "language": "kotlin",
+      "sizeLines": 156,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/entity/ClipCaptureEntity.kt",
+      "language": "kotlin",
+      "sizeLines": 27,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/entity/ClipShowEntity.kt",
+      "language": "kotlin",
+      "sizeLines": 89,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/entity/ClipVisibilityScope.kt",
+      "language": "kotlin",
+      "sizeLines": 18,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/entity/LiveEvent.kt",
+      "language": "kotlin",
+      "sizeLines": 18,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/repository/ClipRepository.kt",
+      "language": "kotlin",
+      "sizeLines": 146,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/repository/ClipRepositoryImpl.kt",
+      "language": "kotlin",
+      "sizeLines": 634,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/repository/ClipSourceIdentity.kt",
+      "language": "kotlin",
+      "sizeLines": 75,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/repository/DownloadRepository.kt",
+      "language": "kotlin",
+      "sizeLines": 184,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/repository/ImageExtractRepository.kt",
+      "language": "kotlin",
+      "sizeLines": 232,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/repository/SearchHistoryRepository.kt",
+      "language": "kotlin",
+      "sizeLines": 141,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/utils/BitmapEx.kt",
+      "language": "kotlin",
+      "sizeLines": 58,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/utils/ColorEx.kt",
+      "language": "kotlin",
+      "sizeLines": 64,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/utils/DateUtils.kt",
+      "language": "kotlin",
+      "sizeLines": 25,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/utils/FileUtils.kt",
+      "language": "kotlin",
+      "sizeLines": 471,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/utils/LinkUtils.kt",
+      "language": "kotlin",
+      "sizeLines": 201,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/utils/Logcat.kt",
+      "language": "kotlin",
+      "sizeLines": 61,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/utils/PermissionUtils.kt",
+      "language": "kotlin",
+      "sizeLines": 117,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/utils/ScopeEx.kt",
+      "language": "kotlin",
+      "sizeLines": 28,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/utils/SourceAppDisplayUtils.kt",
+      "language": "kotlin",
+      "sizeLines": 49,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/utils/StringUtils.kt",
+      "language": "kotlin",
+      "sizeLines": 8,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/utils/ThreadUtils.kt",
+      "language": "kotlin",
+      "sizeLines": 5,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/utils/ToastUtils.kt",
+      "language": "kotlin",
+      "sizeLines": 88,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/widget/DeleteActionIcon.kt",
+      "language": "kotlin",
+      "sizeLines": 66,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/java/com/cla/clip/base/general/widget/RequestPermission.kt",
+      "language": "kotlin",
+      "sizeLines": 140,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/res/drawable/base_general_ic_delete.xml",
+      "language": "xml",
+      "sizeLines": 9,
+      "fileCategory": "config"
+    },
+    {
+      "path": "base/general/src/main/res/mipmap-xxhdpi/base_general_ic_app_round.webp",
+      "language": "webp",
+      "sizeLines": 77,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/res/mipmap-xxhdpi/base_general_ic_app.webp",
+      "language": "webp",
+      "sizeLines": 32,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/main/res/values/strings.xml",
+      "language": "xml",
+      "sizeLines": 439,
+      "fileCategory": "config"
+    },
+    {
+      "path": "base/general/src/test/java/com/cla/clip/base/general/backup/BackupPackageIoTest.kt",
+      "language": "kotlin",
+      "sizeLines": 124,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/test/java/com/cla/clip/base/general/backup/BackupRestoreTimeNormalizerTest.kt",
+      "language": "kotlin",
+      "sizeLines": 48,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/test/java/com/cla/clip/base/general/config/NumericInstallIdGeneratorTest.kt",
+      "language": "kotlin",
+      "sizeLines": 47,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/test/java/com/cla/clip/base/general/entity/ClipShowEntityTest.kt",
+      "language": "kotlin",
+      "sizeLines": 47,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/test/java/com/cla/clip/base/general/ExampleUnitTest.kt",
+      "language": "kotlin",
+      "sizeLines": 16,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/test/java/com/cla/clip/base/general/repository/ClipRepositorySourceAppMergeTest.kt",
+      "language": "kotlin",
+      "sizeLines": 475,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/general/src/test/java/com/cla/clip/base/general/utils/LinkUtilsTest.kt",
+      "language": "kotlin",
+      "sizeLines": 132,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/hidden-api/build.gradle.kts",
+      "language": "kotlin",
+      "sizeLines": 55,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/hidden-api/consumer-rules.pro",
+      "language": "pro",
+      "sizeLines": 0,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/hidden-api/proguard-rules.pro",
+      "language": "pro",
+      "sizeLines": 20,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/hidden-api/src/androidTest/java/com/cla/clip/base/hidden/api/ExampleInstrumentedTest.kt",
+      "language": "kotlin",
+      "sizeLines": 23,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/hidden-api/src/main/AndroidManifest.xml",
+      "language": "xml",
+      "sizeLines": 3,
+      "fileCategory": "config"
+    },
+    {
+      "path": "base/hidden-api/src/main/java/android/app/AppOpsManagerHidden.java",
+      "language": "java",
+      "sizeLines": 90,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/hidden-api/src/main/java/com/cla/clip/base/hidden/api/HiddenApiExemptions.kt",
+      "language": "kotlin",
+      "sizeLines": 37,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/hidden-api/src/main/java/com/cla/clip/base/hidden/api/SystemClipboardHiddenReader.kt",
+      "language": "kotlin",
+      "sizeLines": 99,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/hidden-api/src/test/java/com/cla/clip/base/hidden/api/ExampleUnitTest.kt",
+      "language": "kotlin",
+      "sizeLines": 16,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/hidden-api/src/test/java/com/cla/clip/base/hidden/api/HiddenApiExemptionsTest.kt",
+      "language": "kotlin",
+      "sizeLines": 31,
+      "fileCategory": "code"
+    },
+    {
+      "path": "base/hidden-api/src/test/java/com/cla/clip/base/hidden/api/SystemClipboardHiddenReaderTest.kt",
+      "language": "kotlin",
+      "sizeLines": 71,
+      "fileCategory": "code"
+    },
+    {
+      "path": "build.gradle.kts",
+      "language": "kotlin",
+      "sizeLines": 8,
+      "fileCategory": "code"
+    },
+    {
+      "path": "debug-internal.keystore",
+      "language": "keystore",
+      "sizeLines": 19,
+      "fileCategory": "code"
+    },
+    {
+      "path": "docs/ad_module_plan.md",
+      "language": "markdown",
+      "sizeLines": 156,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/app_navigation_plan.md",
+      "language": "markdown",
+      "sizeLines": 101,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/app_ui_refresh_plan.md",
+      "language": "markdown",
+      "sizeLines": 98,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/app_update_plan.md",
+      "language": "markdown",
+      "sizeLines": 182,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/clip_result_list_plan.md",
+      "language": "markdown",
+      "sizeLines": 232,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/detail_page_plan.md",
+      "language": "markdown",
+      "sizeLines": 130,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/doc_flow_diagram_plan.md",
+      "language": "markdown",
+      "sizeLines": 119,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/download_history_plan.md",
+      "language": "markdown",
+      "sizeLines": 237,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/flows/assets/mermaid.LICENSE.txt",
+      "language": "txt",
+      "sizeLines": 21,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/flows/WebDAV本地自动备份恢复流程.html",
+      "language": "html",
+      "sizeLines": 287,
+      "fileCategory": "markup"
+    },
+    {
+      "path": "docs/folded_clip_plan.md",
+      "language": "markdown",
+      "sizeLines": 152,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/image_extract_plan.md",
+      "language": "markdown",
+      "sizeLines": 340,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/list_page_plan.md",
+      "language": "markdown",
+      "sizeLines": 158,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/local_properties_ad_example.md",
+      "language": "markdown",
+      "sizeLines": 51,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/magnet_search_plan.md",
+      "language": "markdown",
+      "sizeLines": 440,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/main_page_plan.md",
+      "language": "markdown",
+      "sizeLines": 106,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/mine_page_plan.md",
+      "language": "markdown",
+      "sizeLines": 113,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/project_comment_completion_plan.md",
+      "language": "markdown",
+      "sizeLines": 60,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/recycle_bin_plan.md",
+      "language": "markdown",
+      "sizeLines": 111,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/repo_skill_rules_plan.md",
+      "language": "markdown",
+      "sizeLines": 63,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/search_page_plan.md",
+      "language": "markdown",
+      "sizeLines": 367,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/shared_card_component_plan.md",
+      "language": "markdown",
+      "sizeLines": 86,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/shared_form_components_plan.md",
+      "language": "markdown",
+      "sizeLines": 89,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/shared_media_ui_plan.md",
+      "language": "markdown",
+      "sizeLines": 76,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/shizuku_clipboard_service_plan.md",
+      "language": "markdown",
+      "sizeLines": 263,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/source_app_display_plan.md",
+      "language": "markdown",
+      "sizeLines": 80,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/unit_test_plan.md",
+      "language": "markdown",
+      "sizeLines": 424,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/video_extract_plan.md",
+      "language": "markdown",
+      "sizeLines": 162,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/webdav_backup_plan.md",
+      "language": "markdown",
+      "sizeLines": 676,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "feature/ad-api/build.gradle.kts",
+      "language": "kotlin",
+      "sizeLines": 45,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-api/src/main/AndroidManifest.xml",
+      "language": "xml",
+      "sizeLines": 1,
+      "fileCategory": "config"
+    },
+    {
+      "path": "feature/ad-api/src/main/java/com/cla/clip/feature/ad/api/AdContracts.kt",
+      "language": "kotlin",
+      "sizeLines": 166,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-api/src/main/java/com/cla/clip/feature/ad/api/AdFeatureApiModule.kt",
+      "language": "kotlin",
+      "sizeLines": 15,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-api/src/main/java/com/cla/clip/feature/ad/api/AdSessionFailureFuse.kt",
+      "language": "kotlin",
+      "sizeLines": 42,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-api/src/main/java/com/cla/clip/feature/ad/api/AdSourceSelector.kt",
+      "language": "kotlin",
+      "sizeLines": 106,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-api/src/test/java/com/cla/clip/feature/ad/api/AdSourceSelectorTest.kt",
+      "language": "kotlin",
+      "sizeLines": 269,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-csj/build.gradle.kts",
+      "language": "kotlin",
+      "sizeLines": 110,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-csj/consumer-rules.pro",
+      "language": "pro",
+      "sizeLines": 30,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-csj/proguard-rules.pro",
+      "language": "pro",
+      "sizeLines": 1,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-csj/src/main/AndroidManifest.xml",
+      "language": "xml",
+      "sizeLines": 15,
+      "fileCategory": "config"
+    },
+    {
+      "path": "feature/ad-csj/src/main/java/com/cla/clip/feature/ad/csj/CsjAdAvailabilityPolicy.kt",
+      "language": "kotlin",
+      "sizeLines": 65,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-csj/src/main/java/com/cla/clip/feature/ad/csj/CsjAdConfig.kt",
+      "language": "kotlin",
+      "sizeLines": 36,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-csj/src/main/java/com/cla/clip/feature/ad/csj/CsjAdConfigProvider.kt",
+      "language": "kotlin",
+      "sizeLines": 18,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-csj/src/main/java/com/cla/clip/feature/ad/csj/CsjAdConsentProvider.kt",
+      "language": "kotlin",
+      "sizeLines": 37,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-csj/src/main/java/com/cla/clip/feature/ad/csj/CsjAdConstants.kt",
+      "language": "kotlin",
+      "sizeLines": 13,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-csj/src/main/java/com/cla/clip/feature/ad/csj/CsjAdEventDeduplicator.kt",
+      "language": "kotlin",
+      "sizeLines": 30,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-csj/src/main/java/com/cla/clip/feature/ad/csj/CsjAdInitializer.kt",
+      "language": "kotlin",
+      "sizeLines": 115,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-csj/src/main/java/com/cla/clip/feature/ad/csj/CsjAdReason.kt",
+      "language": "kotlin",
+      "sizeLines": 55,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-csj/src/main/java/com/cla/clip/feature/ad/csj/CsjAdReleaseGuard.kt",
+      "language": "kotlin",
+      "sizeLines": 24,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-csj/src/main/java/com/cla/clip/feature/ad/csj/CsjAdSourceEntry.kt",
+      "language": "kotlin",
+      "sizeLines": 98,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-csj/src/main/java/com/cla/clip/feature/ad/csj/CsjNativeAdSlot.kt",
+      "language": "kotlin",
+      "sizeLines": 502,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-csj/src/main/java/com/cla/clip/feature/ad/csj/CsjSdkClient.kt",
+      "language": "kotlin",
+      "sizeLines": 96,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-csj/src/main/java/com/cla/clip/feature/ad/csj/CsjSdkDirectClient.kt",
+      "language": "kotlin",
+      "sizeLines": 220,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-csj/src/main/res/values/strings.xml",
+      "language": "xml",
+      "sizeLines": 4,
+      "fileCategory": "config"
+    },
+    {
+      "path": "feature/ad-csj/src/test/java/com/cla/clip/feature/ad/csj/CsjAdAvailabilityPolicyTest.kt",
+      "language": "kotlin",
+      "sizeLines": 150,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-csj/src/test/java/com/cla/clip/feature/ad/csj/CsjAdConfigTest.kt",
+      "language": "kotlin",
+      "sizeLines": 85,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-csj/src/test/java/com/cla/clip/feature/ad/csj/CsjAdEventDeduplicatorTest.kt",
+      "language": "kotlin",
+      "sizeLines": 49,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-csj/src/test/java/com/cla/clip/feature/ad/csj/CsjAdInitializerTest.kt",
+      "language": "kotlin",
+      "sizeLines": 170,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-csj/src/test/java/com/cla/clip/feature/ad/csj/CsjAdReleaseGuardTest.kt",
+      "language": "kotlin",
+      "sizeLines": 42,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-debug/build.gradle.kts",
+      "language": "kotlin",
+      "sizeLines": 54,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-debug/consumer-rules.pro",
+      "language": "pro",
+      "sizeLines": 1,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-debug/proguard-rules.pro",
+      "language": "pro",
+      "sizeLines": 1,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-debug/src/main/AndroidManifest.xml",
+      "language": "xml",
+      "sizeLines": 1,
+      "fileCategory": "config"
+    },
+    {
+      "path": "feature/ad-debug/src/main/java/com/cla/clip/feature/ad/debug/DebugAdSourceEntry.kt",
+      "language": "kotlin",
+      "sizeLines": 150,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-debug/src/main/res/values/strings.xml",
+      "language": "xml",
+      "sizeLines": 5,
+      "fileCategory": "config"
+    },
+    {
+      "path": "feature/ad-uniad/build.gradle.kts",
+      "language": "kotlin",
+      "sizeLines": 139,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-uniad/consumer-rules.pro",
+      "language": "pro",
+      "sizeLines": 18,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-uniad/proguard-rules.pro",
+      "language": "pro",
+      "sizeLines": 1,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-uniad/src/main/AndroidManifest.xml",
+      "language": "xml",
+      "sizeLines": 18,
+      "fileCategory": "config"
+    },
+    {
+      "path": "feature/ad-uniad/src/main/java/com/cla/clip/feature/ad/uniad/UniAdAvailabilityPolicy.kt",
+      "language": "kotlin",
+      "sizeLines": 68,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-uniad/src/main/java/com/cla/clip/feature/ad/uniad/UniAdConfig.kt",
+      "language": "kotlin",
+      "sizeLines": 38,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-uniad/src/main/java/com/cla/clip/feature/ad/uniad/UniAdConfigProvider.kt",
+      "language": "kotlin",
+      "sizeLines": 19,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-uniad/src/main/java/com/cla/clip/feature/ad/uniad/UniAdConsentProvider.kt",
+      "language": "kotlin",
+      "sizeLines": 37,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-uniad/src/main/java/com/cla/clip/feature/ad/uniad/UniAdConstants.kt",
+      "language": "kotlin",
+      "sizeLines": 16,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-uniad/src/main/java/com/cla/clip/feature/ad/uniad/UniAdEventDeduplicator.kt",
+      "language": "kotlin",
+      "sizeLines": 30,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-uniad/src/main/java/com/cla/clip/feature/ad/uniad/UniAdFeedAdSlot.kt",
+      "language": "kotlin",
+      "sizeLines": 563,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-uniad/src/main/java/com/cla/clip/feature/ad/uniad/UniAdInitializer.kt",
+      "language": "kotlin",
+      "sizeLines": 115,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-uniad/src/main/java/com/cla/clip/feature/ad/uniad/UniAdReason.kt",
+      "language": "kotlin",
+      "sizeLines": 73,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-uniad/src/main/java/com/cla/clip/feature/ad/uniad/UniAdReleaseGuard.kt",
+      "language": "kotlin",
+      "sizeLines": 24,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-uniad/src/main/java/com/cla/clip/feature/ad/uniad/UniAdSdkClient.kt",
+      "language": "kotlin",
+      "sizeLines": 105,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-uniad/src/main/java/com/cla/clip/feature/ad/uniad/UniAdSdkDirectClient.kt",
+      "language": "kotlin",
+      "sizeLines": 221,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-uniad/src/main/java/com/cla/clip/feature/ad/uniad/UniAdSourceEntry.kt",
+      "language": "kotlin",
+      "sizeLines": 98,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-uniad/src/main/res/values/strings.xml",
+      "language": "xml",
+      "sizeLines": 4,
+      "fileCategory": "config"
+    },
+    {
+      "path": "feature/ad-uniad/src/test/java/com/cla/clip/feature/ad/uniad/UniAdAvailabilityPolicyTest.kt",
+      "language": "kotlin",
+      "sizeLines": 152,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-uniad/src/test/java/com/cla/clip/feature/ad/uniad/UniAdConfigTest.kt",
+      "language": "kotlin",
+      "sizeLines": 88,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-uniad/src/test/java/com/cla/clip/feature/ad/uniad/UniAdEventDeduplicatorTest.kt",
+      "language": "kotlin",
+      "sizeLines": 49,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-uniad/src/test/java/com/cla/clip/feature/ad/uniad/UniAdFeedRequestSpecTest.kt",
+      "language": "kotlin",
+      "sizeLines": 22,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-uniad/src/test/java/com/cla/clip/feature/ad/uniad/UniAdInitializerTest.kt",
+      "language": "kotlin",
+      "sizeLines": 139,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-uniad/src/test/java/com/cla/clip/feature/ad/uniad/UniAdReleaseGuardTest.kt",
+      "language": "kotlin",
+      "sizeLines": 42,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/ad-uniad/src/test/java/com/cla/clip/feature/ad/uniad/UniAdSdkArtifactTest.kt",
+      "language": "kotlin",
+      "sizeLines": 72,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet-api/build.gradle.kts",
+      "language": "kotlin",
+      "sizeLines": 46,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet-api/src/main/java/com/cla/clip/feature/magnet/api/MagnetFeatureApiModule.kt",
+      "language": "kotlin",
+      "sizeLines": 14,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet-api/src/main/java/com/cla/clip/feature/magnet/api/MagnetFeatureEntry.kt",
+      "language": "kotlin",
+      "sizeLines": 114,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/build.gradle.kts",
+      "language": "kotlin",
+      "sizeLines": 67,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/consumer-rules.pro",
+      "language": "pro",
+      "sizeLines": 1,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/proguard-rules.pro",
+      "language": "pro",
+      "sizeLines": 1,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/schemas/com.cla.clip.feature.magnet.data.MagnetFeatureDatabase/1.json",
+      "language": "json",
+      "sizeLines": 163,
+      "fileCategory": "config"
+    },
+    {
+      "path": "feature/magnet/src/main/java/com/cla/clip/feature/magnet/backup/MagnetBackupContributorImpl.kt",
+      "language": "kotlin",
+      "sizeLines": 229,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/src/main/java/com/cla/clip/feature/magnet/backup/MagnetBackupModels.kt",
+      "language": "kotlin",
+      "sizeLines": 129,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/src/main/java/com/cla/clip/feature/magnet/data/MagnetDao.kt",
+      "language": "kotlin",
+      "sizeLines": 232,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/src/main/java/com/cla/clip/feature/magnet/data/MagnetDatabaseModule.kt",
+      "language": "kotlin",
+      "sizeLines": 33,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/src/main/java/com/cla/clip/feature/magnet/data/MagnetFeatureDatabase.kt",
+      "language": "kotlin",
+      "sizeLines": 21,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/src/main/java/com/cla/clip/feature/magnet/data/MagnetRepository.kt",
+      "language": "kotlin",
+      "sizeLines": 198,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetActionHandler.kt",
+      "language": "kotlin",
+      "sizeLines": 113,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetDownloadHistoryEntryImpl.kt",
+      "language": "kotlin",
+      "sizeLines": 277,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetFeatureEntryImpl.kt",
+      "language": "kotlin",
+      "sizeLines": 151,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetFeatureLocalWidgets.kt",
+      "language": "kotlin",
+      "sizeLines": 235,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetHistoryComponents.kt",
+      "language": "kotlin",
+      "sizeLines": 181,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetInfoHashNormalizer.kt",
+      "language": "kotlin",
+      "sizeLines": 20,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetResultComponents.kt",
+      "language": "kotlin",
+      "sizeLines": 155,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetSearchHighlightFormatter.kt",
+      "language": "kotlin",
+      "sizeLines": 89,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetSearchPage.kt",
+      "language": "kotlin",
+      "sizeLines": 304,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetSearchVm.kt",
+      "language": "kotlin",
+      "sizeLines": 209,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetSourceProvider.kt",
+      "language": "kotlin",
+      "sizeLines": 17,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetTextNormalizer.kt",
+      "language": "kotlin",
+      "sizeLines": 33,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetUiFormatters.kt",
+      "language": "kotlin",
+      "sizeLines": 60,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetUriBuilder.kt",
+      "language": "kotlin",
+      "sizeLines": 28,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/src/main/java/com/cla/clip/feature/magnet/source/cache/AcademicTorrentsSource.kt",
+      "language": "kotlin",
+      "sizeLines": 168,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/src/main/java/com/cla/clip/feature/magnet/source/cache/MagnetSourceCacheDao.kt",
+      "language": "kotlin",
+      "sizeLines": 240,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/src/main/java/com/cla/clip/feature/magnet/source/cache/MagnetSourceCacheModule.kt",
+      "language": "kotlin",
+      "sizeLines": 39,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/src/main/java/com/cla/clip/feature/magnet/source/cache/MagnetSourceModels.kt",
+      "language": "kotlin",
+      "sizeLines": 74,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/src/main/java/com/cla/clip/feature/magnet/source/cache/MagnetSourceSearchQueryFormatter.kt",
+      "language": "kotlin",
+      "sizeLines": 20,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/src/main/java/com/cla/clip/feature/magnet/source/cache/MagnetSourceSearchRepository.kt",
+      "language": "kotlin",
+      "sizeLines": 110,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/src/main/java/com/cla/clip/feature/magnet/source/cache/MagnetSourceSyncCoordinator.kt",
+      "language": "kotlin",
+      "sizeLines": 266,
+      "fileCategory": "code"
+    },
+    {
+      "path": "feature/magnet/src/main/res/values/strings.xml",
+      "language": "xml",
+      "sizeLines": 45,
+      "fileCategory": "config"
+    },
+    {
+      "path": "gradle.properties",
+      "language": "properties",
+      "sizeLines": 39,
+      "fileCategory": "config"
+    },
+    {
+      "path": "gradle/csj-ad-config.gradle.kts",
+      "language": "kotlin",
+      "sizeLines": 112,
+      "fileCategory": "code"
+    },
+    {
+      "path": "gradle/libs.versions.toml",
+      "language": "toml",
+      "sizeLines": 156,
+      "fileCategory": "config"
+    },
+    {
+      "path": "gradle/uniad-ad-config.gradle.kts",
+      "language": "kotlin",
+      "sizeLines": 194,
+      "fileCategory": "code"
+    },
+    {
+      "path": "gradle/wrapper/gradle-wrapper.jar",
+      "language": "jar",
+      "sizeLines": 159,
+      "fileCategory": "code"
+    },
+    {
+      "path": "gradle/wrapper/gradle-wrapper.properties",
+      "language": "properties",
+      "sizeLines": 8,
+      "fileCategory": "config"
+    },
+    {
+      "path": "gradlew",
+      "language": "unknown",
+      "sizeLines": 251,
+      "fileCategory": "code"
+    },
+    {
+      "path": "gradlew.bat",
+      "language": "batch",
+      "sizeLines": 94,
+      "fileCategory": "script"
+    },
+    {
+      "path": "keystore.jks",
+      "language": "jks",
+      "sizeLines": 11,
+      "fileCategory": "code"
+    },
+    {
+      "path": "keystore.properties",
+      "language": "properties",
+      "sizeLines": 4,
+      "fileCategory": "config"
+    },
+    {
+      "path": "README.md",
+      "language": "markdown",
+      "sizeLines": 97,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "scripts/publish_github_release_windows.cmd",
+      "language": "batch",
+      "sizeLines": 358,
+      "fileCategory": "script"
+    },
+    {
+      "path": "scripts/publish_github_release.sh",
+      "language": "shell",
+      "sizeLines": 1119,
+      "fileCategory": "script"
+    },
+    {
+      "path": "settings.gradle.kts",
+      "language": "kotlin",
+      "sizeLines": 35,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/build.gradle.kts",
+      "language": "kotlin",
+      "sizeLines": 101,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/consumer-rules.pro",
+      "language": "pro",
+      "sizeLines": 1,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/proguard-rules.pro",
+      "language": "pro",
+      "sizeLines": 20,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/src/androidTest/java/com/cla/clip/shizuku/ExampleInstrumentedTest.kt",
+      "language": "kotlin",
+      "sizeLines": 23,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/src/main/aidl/com/cla/clip/shizuku/IClipboardShizukuService.aidl",
+      "language": "aidl",
+      "sizeLines": 10,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/src/main/aidl/com/cla/clip/shizuku/ShizukuCallback.aidl",
+      "language": "aidl",
+      "sizeLines": 6,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/src/main/AndroidManifest.xml",
+      "language": "xml",
+      "sizeLines": 3,
+      "fileCategory": "config"
+    },
+    {
+      "path": "shizuku/src/main/java/com/cla/clip/shizuku/ClipboardBridgeClipPayload.kt",
+      "language": "kotlin",
+      "sizeLines": 109,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/src/main/java/com/cla/clip/shizuku/ClipboardBridgeContract.kt",
+      "language": "kotlin",
+      "sizeLines": 481,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/src/main/java/com/cla/clip/shizuku/ClipboardBridgeIconSyncCoordinator.kt",
+      "language": "kotlin",
+      "sizeLines": 140,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/src/main/java/com/cla/clip/shizuku/ClipboardBridgeProviderCommandClient.kt",
+      "language": "kotlin",
+      "sizeLines": 290,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/src/main/java/com/cla/clip/shizuku/ClipboardListener.kt",
+      "language": "kotlin",
+      "sizeLines": 42,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/src/main/java/com/cla/clip/shizuku/ClipboardShizukuService.kt",
+      "language": "kotlin",
+      "sizeLines": 505,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/src/main/java/com/cla/clip/shizuku/ShizukuAppProcessReadiness.kt",
+      "language": "kotlin",
+      "sizeLines": 428,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/src/main/java/com/cla/clip/shizuku/ShizukuAppWakeCommandRunner.kt",
+      "language": "kotlin",
+      "sizeLines": 69,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/src/main/java/com/cla/clip/shizuku/ShizukuClipboardReader.kt",
+      "language": "kotlin",
+      "sizeLines": 84,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/src/main/java/com/cla/clip/shizuku/ShizukuProcessIdentity.kt",
+      "language": "kotlin",
+      "sizeLines": 210,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/src/main/java/com/cla/clip/shizuku/ShizukuProcessName.kt",
+      "language": "kotlin",
+      "sizeLines": 58,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/src/main/java/com/cla/clip/shizuku/ShizukuShellCommandRunner.kt",
+      "language": "kotlin",
+      "sizeLines": 231,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/src/main/java/com/cla/clip/shizuku/ShizukuSourceAppResolver.kt",
+      "language": "kotlin",
+      "sizeLines": 109,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/src/main/java/com/cla/clip/shizuku/ShizukuStatus.kt",
+      "language": "kotlin",
+      "sizeLines": 24,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/src/main/java/com/cla/clip/shizuku/ShizukuUtils.kt",
+      "language": "kotlin",
+      "sizeLines": 79,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/src/test/java/com/cla/clip/shizuku/ClipboardBridgeClipPayloadTest.kt",
+      "language": "kotlin",
+      "sizeLines": 48,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/src/test/java/com/cla/clip/shizuku/ClipboardBridgeCommandResultParserTest.kt",
+      "language": "kotlin",
+      "sizeLines": 197,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/src/test/java/com/cla/clip/shizuku/ClipboardBridgeProviderCommandClientTest.kt",
+      "language": "kotlin",
+      "sizeLines": 183,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/src/test/java/com/cla/clip/shizuku/ExampleUnitTest.kt",
+      "language": "kotlin",
+      "sizeLines": 16,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/src/test/java/com/cla/clip/shizuku/ShizukuAppProcessReadinessTest.kt",
+      "language": "kotlin",
+      "sizeLines": 331,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/src/test/java/com/cla/clip/shizuku/ShizukuProcessIdentityTest.kt",
+      "language": "kotlin",
+      "sizeLines": 120,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/src/test/java/com/cla/clip/shizuku/ShizukuProcessNameTest.kt",
+      "language": "kotlin",
+      "sizeLines": 42,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/src/test/java/com/cla/clip/shizuku/ShizukuShellCommandRunnerTest.kt",
+      "language": "kotlin",
+      "sizeLines": 173,
+      "fileCategory": "code"
+    },
+    {
+      "path": "shizuku/src/test/java/com/cla/clip/shizuku/ShizukuSourceAppResolverTest.kt",
+      "language": "kotlin",
+      "sizeLines": 69,
+      "fileCategory": "code"
+    },
+    {
+      "path": "third_party/uniad/UNI_AD_android_5.5.2.0606/android-gif-drawable-1.2.29.aar",
+      "language": "aar",
+      "sizeLines": 505,
+      "fileCategory": "code"
+    },
+    {
+      "path": "third_party/uniad/UNI_AD_android_5.5.2.0606/checksums.sha256",
+      "language": "sha256",
+      "sizeLines": 6,
+      "fileCategory": "code"
+    },
+    {
+      "path": "third_party/uniad/UNI_AD_android_5.5.2.0606/Funlink_2.8.8_76006310_release.aar",
+      "language": "aar",
+      "sizeLines": 3926,
+      "fileCategory": "code"
+    },
+    {
+      "path": "third_party/uniad/UNI_AD_android_5.5.2.0606/Funlink_adapter_uniad_2.8.4_74659082_release.aar",
+      "language": "aar",
+      "sizeLines": 200,
+      "fileCategory": "code"
+    },
+    {
+      "path": "third_party/uniad/UNI_AD_android_5.5.2.0606/octopus_ad_sdk_2.5.10.5.aar",
+      "language": "aar",
+      "sizeLines": 3888,
+      "fileCategory": "code"
+    },
+    {
+      "path": "third_party/uniad/UNI_AD_android_5.5.2.0606/README.md",
+      "language": "markdown",
+      "sizeLines": 27,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "third_party/uniad/UNI_AD_android_5.5.2.0606/uniad-native-release.aar",
+      "language": "aar",
+      "sizeLines": 2601,
+      "fileCategory": "code"
+    },
+    {
+      "path": "third_party/uniad/UNI_AD_android_5.5.2.0606/uniad-zy-release.aar",
+      "language": "aar",
+      "sizeLines": 69,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tools/__init__.py",
+      "language": "python",
+      "sizeLines": 1,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tools/render_doc_flow_html.py",
+      "language": "python",
+      "sizeLines": 353,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tools/test_render_doc_flow_html.py",
+      "language": "python",
+      "sizeLines": 169,
+      "fileCategory": "code"
+    }
+  ],
+  "totalFiles": 460,
+  "filteredByIgnore": 0,
+  "estimatedComplexity": "large",
+  "importMap": {
+    ".codex/skills/repo-architecture-boundaries/agents/openai.yaml": [],
+    ".codex/skills/repo-architecture-boundaries/SKILL.md": [],
+    ".codex/skills/repo-backup-coverage/agents/openai.yaml": [],
+    ".codex/skills/repo-backup-coverage/SKILL.md": [],
+    ".codex/skills/repo-coding-gate/agents/openai.yaml": [],
+    ".codex/skills/repo-coding-gate/SKILL.md": [],
+    ".codex/skills/repo-compose-discipline/agents/openai.yaml": [],
+    ".codex/skills/repo-compose-discipline/SKILL.md": [],
+    ".codex/skills/repo-doc-flow-html/agents/openai.yaml": [],
+    ".codex/skills/repo-doc-flow-html/SKILL.md": [],
+    ".codex/skills/repo-docs-logs/agents/openai.yaml": [],
+    ".codex/skills/repo-docs-logs/SKILL.md": [],
+    ".codex/skills/repo-final-self-check/agents/openai.yaml": [],
+    ".codex/skills/repo-final-self-check/SKILL.md": [],
+    ".codex/skills/repo-git-discipline/agents/openai.yaml": [],
+    ".codex/skills/repo-git-discipline/SKILL.md": [],
+    ".codex/skills/repo-unit-test-gate/agents/openai.yaml": [],
+    ".codex/skills/repo-unit-test-gate/SKILL.md": [],
+    ".understand-anything/.understandignore": [],
+    ".understand-anything/config.json": [],
+    "AGENTS.md": [],
+    "app/build.gradle.kts": [],
+    "app/proguard-rules.pro": [],
+    "app/src/androidTest/java/com/cla/clip/master/ExampleInstrumentedTest.kt": [],
+    "app/src/main/AndroidManifest.xml": [],
+    "app/src/main/java/com/cla/clip/master/ad/DetailAdSensitivityPolicy.kt": [],
+    "app/src/main/java/com/cla/clip/master/App.kt": [
+      "app/src/main/java/com/cla/clip/master/utils/ShizukuConnector.kt",
+      "app/src/main/java/com/cla/clip/master/work/DownloadVideoWorker.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/backup/BackupTempFileStore.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/BaseApplication.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/entity/ExtraData.kt": [],
+    "app/src/main/java/com/cla/clip/master/entity/ImageFolderOpenData.kt": [],
+    "app/src/main/java/com/cla/clip/master/entity/SettingSwitchItemUi.kt": [],
+    "app/src/main/java/com/cla/clip/master/entity/VideoCandidate.kt": [],
+    "app/src/main/java/com/cla/clip/master/image/download/DownloadedTempImage.kt": [],
+    "app/src/main/java/com/cla/clip/master/image/download/FilteredImageException.kt": [],
+    "app/src/main/java/com/cla/clip/master/image/download/ImageDownloadFileNames.kt": [],
+    "app/src/main/java/com/cla/clip/master/image/download/ImageDownloadLogExtensions.kt": [],
+    "app/src/main/java/com/cla/clip/master/image/download/ImageDownloadValidator.kt": [],
+    "app/src/main/java/com/cla/clip/master/image/download/ImageMediaStorePublisher.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/repository/ImageExtractRepository.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/image/download/ImagePublishResult.kt": [],
+    "app/src/main/java/com/cla/clip/master/image/download/ImageRequestHeaderBuilder.kt": [],
+    "app/src/main/java/com/cla/clip/master/image/download/ImageTempDownloadResult.kt": [],
+    "app/src/main/java/com/cla/clip/master/image/download/ImageTempFileDownloader.kt": [
+      "app/src/main/java/com/cla/clip/master/image/format/ImageFormatSniffer.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/repository/ImageExtractRepository.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/image/format/ByteArrayImageHeaderExtensions.kt": [],
+    "app/src/main/java/com/cla/clip/master/image/format/ImageAnimationMetadataReader.kt": [],
+    "app/src/main/java/com/cla/clip/master/image/format/ImageFileFormat.kt": [],
+    "app/src/main/java/com/cla/clip/master/image/format/ImageFormatSniffer.kt": [],
+    "app/src/main/java/com/cla/clip/master/magnet/AppMagnetApiModule.kt": [],
+    "app/src/main/java/com/cla/clip/master/MainActivity.kt": [
+      "app/src/main/java/com/cla/clip/master/ad/DetailAdSensitivityPolicy.kt",
+      "app/src/main/java/com/cla/clip/master/ui/navigation/AppNavigation.kt",
+      "app/src/main/java/com/cla/clip/master/utils/ClipHelper.kt",
+      "app/src/main/java/com/cla/clip/master/utils/ImageFolderOpenHelper.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/BaseApplication.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt",
+      "feature/ad-api/src/main/java/com/cla/clip/feature/ad/api/AdSessionFailureFuse.kt",
+      "feature/ad-api/src/main/java/com/cla/clip/feature/ad/api/AdSourceSelector.kt",
+      "feature/magnet-api/src/main/java/com/cla/clip/feature/magnet/api/MagnetFeatureEntry.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/MainVm.kt": [
+      "app/src/main/java/com/cla/clip/master/entity/ExtraData.kt",
+      "app/src/main/java/com/cla/clip/master/entity/ImageFolderOpenData.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/media/DownloadedMediaRelocator.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/repository/DownloadRepository.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/repository/ImageExtractRepository.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/processor/ClipboardDataProcessor.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/entity/ClipShowEntity.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/repository/ClipRepository.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/processor/VmScopeModule.kt": [],
+    "app/src/main/java/com/cla/clip/master/provider/ClipboardBridgeCallerPolicy.kt": [],
+    "app/src/main/java/com/cla/clip/master/provider/ClipboardBridgeClipCommitCoordinator.kt": [
+      "app/src/main/java/com/cla/clip/master/utils/ClipHelper.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/repository/ClipRepository.kt",
+      "shizuku/src/main/java/com/cla/clip/shizuku/ClipboardBridgeClipPayload.kt",
+      "shizuku/src/main/java/com/cla/clip/shizuku/ClipboardBridgeContract.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/provider/ClipboardBridgeClipPayloadStore.kt": [
+      "shizuku/src/main/java/com/cla/clip/shizuku/ClipboardBridgeClipPayload.kt",
+      "shizuku/src/main/java/com/cla/clip/shizuku/ClipboardBridgeContract.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/provider/ClipboardBridgeEntryPoint.kt": [],
+    "app/src/main/java/com/cla/clip/master/provider/ClipboardBridgeIconCommitter.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/repository/ClipRepository.kt",
+      "shizuku/src/main/java/com/cla/clip/shizuku/ClipboardBridgeContract.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/provider/ClipboardBridgeIconQueryCoordinator.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/repository/ClipRepository.kt",
+      "shizuku/src/main/java/com/cla/clip/shizuku/ClipboardBridgeContract.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/provider/ClipboardBridgeIconStore.kt": [
+      "shizuku/src/main/java/com/cla/clip/shizuku/ClipboardBridgeContract.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/provider/ClipboardBridgeIconSyncDecider.kt": [
+      "shizuku/src/main/java/com/cla/clip/shizuku/ClipboardBridgeContract.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/provider/ClipboardBridgeIconSyncDecision.kt": [],
+    "app/src/main/java/com/cla/clip/master/provider/ClipboardBridgeProvider.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/config/MmkvInitializer.kt",
+      "shizuku/src/main/java/com/cla/clip/shizuku/ClipboardBridgeContract.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/provider/ClipboardBridgeRequest.kt": [
+      "shizuku/src/main/java/com/cla/clip/shizuku/ClipboardBridgeContract.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/provider/ClipboardBridgeResult.kt": [
+      "shizuku/src/main/java/com/cla/clip/shizuku/ClipboardBridgeContract.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/provider/ClipboardBridgeShizukuProcessCoordinator.kt": [
+      "app/src/main/java/com/cla/clip/master/utils/ShizukuConnector.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt",
+      "shizuku/src/main/java/com/cla/clip/shizuku/ClipboardBridgeContract.kt",
+      "shizuku/src/main/java/com/cla/clip/shizuku/ShizukuProcessName.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/provider/ShizukuConnectRequester.kt": [
+      "app/src/main/java/com/cla/clip/master/utils/ShizukuConnector.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/receiver/BootRebuildReceiver.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/dialog/DeleteDialog.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/entity/ClipShowEntity.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/navigation/AppNavigation.kt": [
+      "app/src/main/java/com/cla/clip/master/ad/DetailAdSensitivityPolicy.kt",
+      "app/src/main/java/com/cla/clip/master/ui/page/backup/BackupMediaRelocationPage.kt",
+      "app/src/main/java/com/cla/clip/master/ui/page/backup/BackupPage.kt",
+      "app/src/main/java/com/cla/clip/master/ui/page/backup/BackupRestoreFlowPage.kt",
+      "app/src/main/java/com/cla/clip/master/ui/page/detail/DetailPage.kt",
+      "app/src/main/java/com/cla/clip/master/ui/page/download/DownloadHistoryPage.kt",
+      "app/src/main/java/com/cla/clip/master/ui/page/image/ImageExtractPage.kt",
+      "app/src/main/java/com/cla/clip/master/ui/page/list/ClipListPage.kt",
+      "app/src/main/java/com/cla/clip/master/ui/page/list/FoldedClipListPage.kt",
+      "app/src/main/java/com/cla/clip/master/ui/page/main/MainPage.kt",
+      "app/src/main/java/com/cla/clip/master/ui/page/mine/MinePage.kt",
+      "app/src/main/java/com/cla/clip/master/ui/page/recycle/RecycleBinPage.kt",
+      "app/src/main/java/com/cla/clip/master/ui/page/search/SearchPage.kt",
+      "app/src/main/java/com/cla/clip/master/ui/page/video/VideoExtractPage.kt",
+      "feature/ad-api/src/main/java/com/cla/clip/feature/ad/api/AdSourceSelector.kt",
+      "feature/magnet-api/src/main/java/com/cla/clip/feature/magnet/api/MagnetFeatureEntry.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/navigation/Routes.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/page/backup/BackupMediaRelocationContent.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/page/backup/BackupMediaRelocationEvents.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/page/backup/BackupMediaRelocationPage.kt": [
+      "app/src/main/java/com/cla/clip/master/ui/widget/TitleBar.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/backup/BackupMediaRelocationVm.kt": [
+      "app/src/main/java/com/cla/clip/master/media/DownloadedMediaRelocator.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/backup/BackupPage.kt": [
+      "app/src/main/java/com/cla/clip/master/ui/widget/ClipMasterCard.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/backup/BackupRestoreFlowContent.kt": [
+      "feature/magnet-api/src/main/java/com/cla/clip/feature/magnet/api/MagnetFeatureEntry.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/backup/BackupRestoreFlowPage.kt": [
+      "feature/magnet-api/src/main/java/com/cla/clip/feature/magnet/api/MagnetFeatureEntry.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/backup/BackupRestoreRequests.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/page/backup/BackupRestoreState.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/page/backup/BackupRestoreVm.kt": [
+      "app/src/main/java/com/cla/clip/master/work/BackupTaskGate.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/backup/BackupRepository.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/backup/BackupTempFileStore.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/backup/WebDavClient.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/backup/BackupVm.kt": [
+      "app/src/main/java/com/cla/clip/master/work/BackupTaskGate.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/backup/BackupRepository.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/backup/BackupTempFileStore.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/backup/WebDavClient.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/backup/LocalBackupDirectoryWriter.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/backup/BackupJson.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/detail/DetailPage.kt": [
+      "app/src/main/java/com/cla/clip/master/ad/DetailAdSensitivityPolicy.kt",
+      "app/src/main/java/com/cla/clip/master/ui/widget/ClipMasterCard.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/entity/ClipShowEntity.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/utils/LinkUtils.kt",
+      "feature/ad-api/src/main/java/com/cla/clip/feature/ad/api/AdSourceSelector.kt",
+      "feature/magnet-api/src/main/java/com/cla/clip/feature/magnet/api/MagnetFeatureEntry.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/detail/DetailViewModel.kt": [
+      "app/src/main/java/com/cla/clip/master/processor/ClipboardDataProcessor.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/entity/ClipShowEntity.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/repository/ClipRepository.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/download/DownloadHistoryCards.kt": [
+      "app/src/main/java/com/cla/clip/master/ui/widget/ClipMasterCard.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/download/DownloadHistoryChrome.kt": [
+      "app/src/main/java/com/cla/clip/master/ui/widget/TitleBar.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/download/DownloadHistoryContent.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/page/download/DownloadHistoryDialogs.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/page/download/DownloadHistoryPage.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/page/download/DownloadHistoryVm.kt": [
+      "app/src/main/java/com/cla/clip/master/work/DownloadImagesWorker.kt",
+      "app/src/main/java/com/cla/clip/master/work/DownloadVideoWorker.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/repository/DownloadRepository.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/repository/ImageExtractRepository.kt",
+      "feature/magnet-api/src/main/java/com/cla/clip/feature/magnet/api/MagnetFeatureEntry.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/image/ImageExtractPage.kt": [
+      "app/src/main/java/com/cla/clip/master/ui/widget/ProbeWebView.kt",
+      "app/src/main/java/com/cla/clip/master/ui/widget/TitleBar.kt",
+      "app/src/main/java/com/cla/clip/master/utils/ImageFolderOpenHelper.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/image/ImageExtractVm.kt": [
+      "app/src/main/java/com/cla/clip/master/utils/WebViewLinkPreviewExtractor.kt",
+      "app/src/main/java/com/cla/clip/master/work/DownloadImagesWorker.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/repository/ImageExtractRepository.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/image/ImagePreviewComponents.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/page/list/ClipListModel.kt": [
+      "app/src/main/java/com/cla/clip/master/processor/ClipboardDataProcessor.kt",
+      "app/src/main/java/com/cla/clip/master/utils/ShizukuConnector.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/entity/ClipVisibilityScope.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/repository/ClipRepository.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/list/ClipListPage.kt": [
+      "app/src/main/java/com/cla/clip/master/ui/widget/clip/ClipResultList.kt",
+      "app/src/main/java/com/cla/clip/master/ui/widget/ShizukuServiceUnavailableTip.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/entity/ClipShowEntity.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/list/FoldedClipListModel.kt": [
+      "app/src/main/java/com/cla/clip/master/processor/ClipboardDataProcessor.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/entity/ClipVisibilityScope.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/repository/ClipRepository.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/list/FoldedClipListPage.kt": [
+      "app/src/main/java/com/cla/clip/master/ui/widget/clip/ClipResultList.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/entity/ClipShowEntity.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/main/MainPage.kt": [
+      "app/src/main/java/com/cla/clip/master/ui/page/list/ClipListPage.kt",
+      "app/src/main/java/com/cla/clip/master/ui/page/mine/MinePage.kt",
+      "feature/magnet-api/src/main/java/com/cla/clip/feature/magnet/api/MagnetFeatureEntry.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/mine/AppUpdateDialog.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/page/mine/AppUpdateUiState.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/page/mine/MineEntries.kt": [
+      "app/src/main/java/com/cla/clip/master/ui/widget/ListEntryCard.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/mine/MinePage.kt": [
+      "app/src/main/java/com/cla/clip/master/entity/SettingSwitchItemUi.kt",
+      "feature/magnet-api/src/main/java/com/cla/clip/feature/magnet/api/MagnetFeatureEntry.kt",
+      "shizuku/src/main/java/com/cla/clip/shizuku/ShizukuUtils.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/mine/MineSettingComponents.kt": [
+      "app/src/main/java/com/cla/clip/master/entity/SettingSwitchItemUi.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/mine/MineVm.kt": [
+      "app/src/main/java/com/cla/clip/master/entity/SettingSwitchItemUi.kt",
+      "app/src/main/java/com/cla/clip/master/update/AppUpdateChecker.kt",
+      "app/src/main/java/com/cla/clip/master/update/AppUpdateConfigFactory.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/repository/ClipRepository.kt",
+      "shizuku/src/main/java/com/cla/clip/shizuku/ShizukuStatus.kt",
+      "shizuku/src/main/java/com/cla/clip/shizuku/ShizukuUtils.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/recycle/RecycleBinPage.kt": [
+      "app/src/main/java/com/cla/clip/master/ui/widget/clip/ClipResultList.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/entity/ClipShowEntity.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/widget/DeleteActionIcon.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/recycle/RecycleBinVm.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/entity/ClipShowEntity.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/repository/ClipRepository.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/search/SearchControls.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/page/search/SearchHeaderCollapseState.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/page/search/SearchHistoryComponents.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/page/search/SearchPage.kt": [
+      "app/src/main/java/com/cla/clip/master/ui/widget/clip/ClipResultList.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/entity/ClipShowEntity.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/entity/ClipVisibilityScope.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/search/SearchViewModel.kt": [
+      "app/src/main/java/com/cla/clip/master/processor/ClipboardDataProcessor.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/entity/ClipVisibilityScope.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/repository/ClipRepository.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/repository/SearchHistoryRepository.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/search/SourceAppPickerComponents.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/page/video/VIdeoDownloadPage.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/page/video/VideoDownloadVm.kt": [
+      "app/src/main/java/com/cla/clip/master/work/DownloadVideoWorker.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/repository/DownloadRepository.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/video/VideoExtractPage.kt": [
+      "app/src/main/java/com/cla/clip/master/ui/widget/TitleBar.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/video/VideoExtractStatusContent.kt": [
+      "app/src/main/java/com/cla/clip/master/entity/VideoCandidate.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/video/VideoExtractVm.kt": [
+      "app/src/main/java/com/cla/clip/master/entity/VideoCandidate.kt",
+      "app/src/main/java/com/cla/clip/master/utils/WebViewLinkPreviewExtractor.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/repository/DownloadRepository.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/page/video/VideoProbeWebViewLayer.kt": [
+      "app/src/main/java/com/cla/clip/master/entity/VideoCandidate.kt",
+      "app/src/main/java/com/cla/clip/master/ui/widget/ProbeWebView.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/theme/Color.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/theme/Theme.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/theme/Type.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/widget/clip/ClipCardContent.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/entity/ClipShowEntity.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/widget/clip/ClipCardGestures.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/widget/clip/ClipPagingSnapshotDeduper.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/entity/ClipShowEntity.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/widget/clip/ClipResultList.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/entity/ClipShowEntity.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/widget/ClipMasterCard.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/widget/CollapsingTitle.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/widget/ListEntryCard.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/widget/MediaStateContent.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/widget/PageScaffold.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/widget/PagingStateContent.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/widget/ProbeWebView.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/widget/SearchFilterComponents.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/widget/SelectionComponents.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/widget/DeleteActionIcon.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/widget/SettingsComponents.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/widget/SharedImagePreview.kt": [
+      "app/src/main/java/com/cla/clip/master/image/download/ImageRequestHeaderBuilder.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/widget/ShizukuServiceUnavailableTip.kt": [
+      "app/src/main/java/com/cla/clip/master/ui/page/list/ClipListModel.kt",
+      "shizuku/src/main/java/com/cla/clip/shizuku/ShizukuStatus.kt",
+      "shizuku/src/main/java/com/cla/clip/shizuku/ShizukuUtils.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/ui/widget/TitleBar.kt": [],
+    "app/src/main/java/com/cla/clip/master/ui/widget/Tools.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/entity/ClipShowEntity.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/update/AppUpdateChecker.kt": [],
+    "app/src/main/java/com/cla/clip/master/update/AppUpdateConfigFactory.kt": [],
+    "app/src/main/java/com/cla/clip/master/update/AppUpdateLogger.kt": [],
+    "app/src/main/java/com/cla/clip/master/update/AppUpdateManifestParser.kt": [],
+    "app/src/main/java/com/cla/clip/master/update/AppUpdateModels.kt": [],
+    "app/src/main/java/com/cla/clip/master/update/AppUpdateModule.kt": [],
+    "app/src/main/java/com/cla/clip/master/utils/ClipHelper.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/entity/ClipCaptureEntity.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/entity/LiveEvent.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/repository/ClipRepository.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/utils/LinkUtils.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/utils/ImageFolderOpenHelper.kt": [],
+    "app/src/main/java/com/cla/clip/master/utils/LinkMetaParser.kt": [],
+    "app/src/main/java/com/cla/clip/master/utils/NotificationHelper.kt": [
+      "app/src/main/java/com/cla/clip/master/entity/ExtraData.kt",
+      "app/src/main/java/com/cla/clip/master/entity/ImageFolderOpenData.kt",
+      "app/src/main/java/com/cla/clip/master/MainActivity.kt",
+      "shizuku/src/main/java/com/cla/clip/shizuku/ShizukuStatus.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/utils/ShizukuConnector.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt",
+      "shizuku/src/main/java/com/cla/clip/shizuku/ClipboardShizukuService.kt",
+      "shizuku/src/main/java/com/cla/clip/shizuku/ShizukuProcessName.kt",
+      "shizuku/src/main/java/com/cla/clip/shizuku/ShizukuUtils.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/utils/WebViewLinkPreviewExtractor.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/repository/ClipRepository.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/wake/ShizukuWakeActivity.kt": [
+      "app/src/main/java/com/cla/clip/master/utils/ShizukuConnector.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/work/BackupAutoWorker.kt": [
+      "app/src/main/java/com/cla/clip/master/ui/page/backup/LocalBackupDirectoryWriter.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/backup/BackupRepository.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/backup/BackupTempFileStore.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/backup/WebDavClient.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/work/BackupTaskGate.kt": [],
+    "app/src/main/java/com/cla/clip/master/work/Download.kt": [],
+    "app/src/main/java/com/cla/clip/master/work/DownloadImagesWorker.kt": [
+      "app/src/main/java/com/cla/clip/master/image/download/DownloadedTempImage.kt",
+      "app/src/main/java/com/cla/clip/master/image/download/ImageMediaStorePublisher.kt",
+      "app/src/main/java/com/cla/clip/master/image/download/ImagePublishResult.kt",
+      "app/src/main/java/com/cla/clip/master/image/download/ImageTempDownloadResult.kt",
+      "app/src/main/java/com/cla/clip/master/image/download/ImageTempFileDownloader.kt",
+      "app/src/main/java/com/cla/clip/master/utils/NotificationHelper.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/repository/ImageExtractRepository.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/work/DownloadVideoWorker.kt": [
+      "app/src/main/java/com/cla/clip/master/utils/NotificationHelper.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/repository/DownloadRepository.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/work/RecycleBinCleanupWorker.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/repository/ClipRepository.kt"
+    ],
+    "app/src/main/java/com/cla/clip/master/work/ShizukuStatusWorker.kt": [
+      "app/src/main/java/com/cla/clip/master/utils/NotificationHelper.kt",
+      "shizuku/src/main/java/com/cla/clip/shizuku/ShizukuUtils.kt"
+    ],
+    "app/src/main/res/drawable/host_icon_copy.xml": [],
+    "app/src/main/res/drawable/host_icon_pinned.xml": [],
+    "app/src/main/res/drawable/host_icon_to_pinned.xml": [],
+    "app/src/main/res/drawable/host_icon_unpinned.xml": [],
+    "app/src/main/res/values/colors.xml": [],
+    "app/src/main/res/values/strings.xml": [],
+    "app/src/main/res/values/themes.xml": [],
+    "app/src/main/res/xml/backup_rules.xml": [],
+    "app/src/main/res/xml/data_extraction_rules.xml": [],
+    "app/src/test/java/com/cla/clip/master/ad/DetailAdSensitivityPolicyTest.kt": [],
+    "app/src/test/java/com/cla/clip/master/ExampleUnitTest.kt": [],
+    "app/src/test/java/com/cla/clip/master/provider/ClipboardBridgeCallerPolicyTest.kt": [],
+    "app/src/test/java/com/cla/clip/master/provider/ClipboardBridgeClipPayloadStoreTest.kt": [
+      "shizuku/src/main/java/com/cla/clip/shizuku/ClipboardBridgeClipPayload.kt",
+      "shizuku/src/main/java/com/cla/clip/shizuku/ClipboardBridgeContract.kt"
+    ],
+    "app/src/test/java/com/cla/clip/master/provider/ClipboardBridgeIconStoreTest.kt": [],
+    "app/src/test/java/com/cla/clip/master/provider/ClipboardBridgeIconSyncDeciderTest.kt": [
+      "shizuku/src/main/java/com/cla/clip/shizuku/ClipboardBridgeContract.kt"
+    ],
+    "app/src/test/java/com/cla/clip/master/provider/ClipboardBridgeRequestTest.kt": [],
+    "app/src/test/java/com/cla/clip/master/provider/ClipboardBridgeShizukuProcessQueryHandlerTest.kt": [
+      "shizuku/src/main/java/com/cla/clip/shizuku/ClipboardBridgeContract.kt"
+    ],
+    "app/src/test/java/com/cla/clip/master/ui/page/backup/BackupRestoreStateTest.kt": [],
+    "app/src/test/java/com/cla/clip/master/ui/page/detail/DetailLinkFormatterTest.kt": [],
+    "app/src/test/java/com/cla/clip/master/ui/page/search/SearchHeaderCollapseStateTest.kt": [],
+    "app/src/test/java/com/cla/clip/master/ui/widget/clip/ClipCardContentTest.kt": [],
+    "app/src/test/java/com/cla/clip/master/ui/widget/clip/ClipPagingSnapshotDeduperTest.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/entity/ClipShowEntity.kt"
+    ],
+    "app/src/test/java/com/cla/clip/master/update/AppUpdateCheckerTest.kt": [],
+    "app/src/test/java/com/cla/clip/master/update/AppUpdateManifestParserTest.kt": [],
+    "app/src/test/java/com/cla/clip/master/utils/ShizukuConnectorTest.kt": [],
+    "base/general/build.gradle.kts": [],
+    "base/general/consumer-rules.pro": [],
+    "base/general/proguard-rules.pro": [],
+    "base/general/schemas/com.cla.clip.base.general.dao.AppDatabase/1.json": [],
+    "base/general/schemas/com.cla.clip.base.general.dao.AppDatabase/10.json": [],
+    "base/general/schemas/com.cla.clip.base.general.dao.AppDatabase/11.json": [],
+    "base/general/schemas/com.cla.clip.base.general.dao.AppDatabase/2.json": [],
+    "base/general/schemas/com.cla.clip.base.general.dao.AppDatabase/3.json": [],
+    "base/general/schemas/com.cla.clip.base.general.dao.AppDatabase/4.json": [],
+    "base/general/schemas/com.cla.clip.base.general.dao.AppDatabase/5.json": [],
+    "base/general/schemas/com.cla.clip.base.general.dao.AppDatabase/6.json": [],
+    "base/general/schemas/com.cla.clip.base.general.dao.AppDatabase/7.json": [],
+    "base/general/schemas/com.cla.clip.base.general.dao.AppDatabase/8.json": [],
+    "base/general/schemas/com.cla.clip.base.general.dao.AppDatabase/9.json": [],
+    "base/general/src/androidTest/java/com/cla/clip/base/general/dao/ClipDaoPagingOrderTest.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/dao/data/ClipDetail.kt"
+    ],
+    "base/general/src/androidTest/java/com/cla/clip/base/general/ExampleInstrumentedTest.kt": [],
+    "base/general/src/main/AndroidManifest.xml": [],
+    "base/general/src/main/java/com/cla/clip/base/general/backup/BackupEntityMappers.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt"
+    ],
+    "base/general/src/main/java/com/cla/clip/base/general/backup/BackupExportModels.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/backup/BackupFeatureContributor.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/backup/BackupJson.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/backup/BackupLog.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/backup/BackupModels.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/backup/BackupPackageIo.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/backup/BackupRepository.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/backup/BackupRestoreModels.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/backup/BackupRestoreTimeNormalizer.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/backup/BackupSnapshotExporter.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/dao/AppDatabase.kt"
+    ],
+    "base/general/src/main/java/com/cla/clip/base/general/backup/BackupSnapshotRestorer.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/dao/AppDatabase.kt"
+    ],
+    "base/general/src/main/java/com/cla/clip/base/general/backup/BackupTempFileStore.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/backup/BackupZipExtensions.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/backup/WebDavClient.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/backup/WebDavModels.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/BaseApplication.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/config/MmkvInitializer.kt"
+    ],
+    "base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/backup/BackupJson.kt"
+    ],
+    "base/general/src/main/java/com/cla/clip/base/general/config/MmkvInitializer.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/config/NumericInstallIdGenerator.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/dao/AppDatabase.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/dao/ClipDao.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/dao/data/ClipDetail.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/dao/data/LastClipData.kt"
+    ],
+    "base/general/src/main/java/com/cla/clip/base/general/dao/data/ClipDetail.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/dao/data/LastClipData.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/dao/DatabaseModule.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/dao/DownloadDao.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/dao/ImageExtractDao.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/dao/LinkPreviewDao.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/dao/SearchHistoryDao.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/dao/SourceAppDao.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/di/RepositoryModule.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/repository/ClipRepository.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/repository/ClipRepositoryImpl.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/repository/SearchHistoryRepository.kt"
+    ],
+    "base/general/src/main/java/com/cla/clip/base/general/entity/ClipCaptureEntity.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/entity/ClipShowEntity.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/dao/data/ClipDetail.kt"
+    ],
+    "base/general/src/main/java/com/cla/clip/base/general/entity/ClipVisibilityScope.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/entity/LiveEvent.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/repository/ClipRepository.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/dao/data/ClipDetail.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/dao/data/LastClipData.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/entity/ClipCaptureEntity.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/entity/ClipShowEntity.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/entity/ClipVisibilityScope.kt"
+    ],
+    "base/general/src/main/java/com/cla/clip/base/general/repository/ClipRepositoryImpl.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/dao/AppDatabase.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/dao/ClipDao.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/dao/data/ClipDetail.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/dao/LinkPreviewDao.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/dao/SourceAppDao.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/entity/ClipCaptureEntity.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/entity/ClipShowEntity.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/entity/ClipVisibilityScope.kt"
+    ],
+    "base/general/src/main/java/com/cla/clip/base/general/repository/ClipSourceIdentity.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/dao/data/LastClipData.kt"
+    ],
+    "base/general/src/main/java/com/cla/clip/base/general/repository/DownloadRepository.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/dao/DownloadDao.kt"
+    ],
+    "base/general/src/main/java/com/cla/clip/base/general/repository/ImageExtractRepository.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/dao/ImageExtractDao.kt"
+    ],
+    "base/general/src/main/java/com/cla/clip/base/general/repository/SearchHistoryRepository.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/dao/AppDatabase.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/dao/SearchHistoryDao.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/entity/ClipVisibilityScope.kt"
+    ],
+    "base/general/src/main/java/com/cla/clip/base/general/utils/BitmapEx.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/utils/ColorEx.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/utils/DateUtils.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/utils/FileUtils.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/utils/LinkUtils.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/utils/Logcat.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/utils/PermissionUtils.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/utils/ScopeEx.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/utils/SourceAppDisplayUtils.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/utils/StringUtils.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/utils/ThreadUtils.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/utils/ToastUtils.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/widget/DeleteActionIcon.kt": [],
+    "base/general/src/main/java/com/cla/clip/base/general/widget/RequestPermission.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/utils/PermissionUtils.kt"
+    ],
+    "base/general/src/main/res/drawable/base_general_ic_delete.xml": [],
+    "base/general/src/main/res/mipmap-xxhdpi/base_general_ic_app_round.webp": [],
+    "base/general/src/main/res/mipmap-xxhdpi/base_general_ic_app.webp": [],
+    "base/general/src/main/res/values/strings.xml": [],
+    "base/general/src/test/java/com/cla/clip/base/general/backup/BackupPackageIoTest.kt": [],
+    "base/general/src/test/java/com/cla/clip/base/general/backup/BackupRestoreTimeNormalizerTest.kt": [],
+    "base/general/src/test/java/com/cla/clip/base/general/config/NumericInstallIdGeneratorTest.kt": [],
+    "base/general/src/test/java/com/cla/clip/base/general/entity/ClipShowEntityTest.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/dao/data/ClipDetail.kt"
+    ],
+    "base/general/src/test/java/com/cla/clip/base/general/ExampleUnitTest.kt": [],
+    "base/general/src/test/java/com/cla/clip/base/general/repository/ClipRepositorySourceAppMergeTest.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/dao/data/ClipDetail.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/dao/data/LastClipData.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/entity/ClipCaptureEntity.kt"
+    ],
+    "base/general/src/test/java/com/cla/clip/base/general/utils/LinkUtilsTest.kt": [],
+    "base/hidden-api/build.gradle.kts": [],
+    "base/hidden-api/consumer-rules.pro": [],
+    "base/hidden-api/proguard-rules.pro": [],
+    "base/hidden-api/src/androidTest/java/com/cla/clip/base/hidden/api/ExampleInstrumentedTest.kt": [],
+    "base/hidden-api/src/main/AndroidManifest.xml": [],
+    "base/hidden-api/src/main/java/android/app/AppOpsManagerHidden.java": [],
+    "base/hidden-api/src/main/java/com/cla/clip/base/hidden/api/HiddenApiExemptions.kt": [],
+    "base/hidden-api/src/main/java/com/cla/clip/base/hidden/api/SystemClipboardHiddenReader.kt": [],
+    "base/hidden-api/src/test/java/com/cla/clip/base/hidden/api/ExampleUnitTest.kt": [],
+    "base/hidden-api/src/test/java/com/cla/clip/base/hidden/api/HiddenApiExemptionsTest.kt": [],
+    "base/hidden-api/src/test/java/com/cla/clip/base/hidden/api/SystemClipboardHiddenReaderTest.kt": [],
+    "build.gradle.kts": [],
+    "debug-internal.keystore": [],
+    "docs/ad_module_plan.md": [],
+    "docs/app_navigation_plan.md": [],
+    "docs/app_ui_refresh_plan.md": [],
+    "docs/app_update_plan.md": [],
+    "docs/clip_result_list_plan.md": [],
+    "docs/detail_page_plan.md": [],
+    "docs/doc_flow_diagram_plan.md": [],
+    "docs/download_history_plan.md": [],
+    "docs/flows/assets/mermaid.LICENSE.txt": [],
+    "docs/flows/WebDAV本地自动备份恢复流程.html": [],
+    "docs/folded_clip_plan.md": [],
+    "docs/image_extract_plan.md": [],
+    "docs/list_page_plan.md": [],
+    "docs/local_properties_ad_example.md": [],
+    "docs/magnet_search_plan.md": [],
+    "docs/main_page_plan.md": [],
+    "docs/mine_page_plan.md": [],
+    "docs/project_comment_completion_plan.md": [],
+    "docs/recycle_bin_plan.md": [],
+    "docs/repo_skill_rules_plan.md": [],
+    "docs/search_page_plan.md": [],
+    "docs/shared_card_component_plan.md": [],
+    "docs/shared_form_components_plan.md": [],
+    "docs/shared_media_ui_plan.md": [],
+    "docs/shizuku_clipboard_service_plan.md": [],
+    "docs/source_app_display_plan.md": [],
+    "docs/unit_test_plan.md": [],
+    "docs/video_extract_plan.md": [],
+    "docs/webdav_backup_plan.md": [],
+    "feature/ad-api/build.gradle.kts": [],
+    "feature/ad-api/src/main/AndroidManifest.xml": [],
+    "feature/ad-api/src/main/java/com/cla/clip/feature/ad/api/AdContracts.kt": [],
+    "feature/ad-api/src/main/java/com/cla/clip/feature/ad/api/AdFeatureApiModule.kt": [],
+    "feature/ad-api/src/main/java/com/cla/clip/feature/ad/api/AdSessionFailureFuse.kt": [],
+    "feature/ad-api/src/main/java/com/cla/clip/feature/ad/api/AdSourceSelector.kt": [],
+    "feature/ad-api/src/test/java/com/cla/clip/feature/ad/api/AdSourceSelectorTest.kt": [],
+    "feature/ad-csj/build.gradle.kts": [],
+    "feature/ad-csj/consumer-rules.pro": [],
+    "feature/ad-csj/proguard-rules.pro": [],
+    "feature/ad-csj/src/main/AndroidManifest.xml": [],
+    "feature/ad-csj/src/main/java/com/cla/clip/feature/ad/csj/CsjAdAvailabilityPolicy.kt": [],
+    "feature/ad-csj/src/main/java/com/cla/clip/feature/ad/csj/CsjAdConfig.kt": [],
+    "feature/ad-csj/src/main/java/com/cla/clip/feature/ad/csj/CsjAdConfigProvider.kt": [],
+    "feature/ad-csj/src/main/java/com/cla/clip/feature/ad/csj/CsjAdConsentProvider.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt"
+    ],
+    "feature/ad-csj/src/main/java/com/cla/clip/feature/ad/csj/CsjAdConstants.kt": [],
+    "feature/ad-csj/src/main/java/com/cla/clip/feature/ad/csj/CsjAdEventDeduplicator.kt": [],
+    "feature/ad-csj/src/main/java/com/cla/clip/feature/ad/csj/CsjAdInitializer.kt": [],
+    "feature/ad-csj/src/main/java/com/cla/clip/feature/ad/csj/CsjAdReason.kt": [],
+    "feature/ad-csj/src/main/java/com/cla/clip/feature/ad/csj/CsjAdReleaseGuard.kt": [],
+    "feature/ad-csj/src/main/java/com/cla/clip/feature/ad/csj/CsjAdSourceEntry.kt": [],
+    "feature/ad-csj/src/main/java/com/cla/clip/feature/ad/csj/CsjNativeAdSlot.kt": [],
+    "feature/ad-csj/src/main/java/com/cla/clip/feature/ad/csj/CsjSdkClient.kt": [],
+    "feature/ad-csj/src/main/java/com/cla/clip/feature/ad/csj/CsjSdkDirectClient.kt": [],
+    "feature/ad-csj/src/main/res/values/strings.xml": [],
+    "feature/ad-csj/src/test/java/com/cla/clip/feature/ad/csj/CsjAdAvailabilityPolicyTest.kt": [],
+    "feature/ad-csj/src/test/java/com/cla/clip/feature/ad/csj/CsjAdConfigTest.kt": [],
+    "feature/ad-csj/src/test/java/com/cla/clip/feature/ad/csj/CsjAdEventDeduplicatorTest.kt": [],
+    "feature/ad-csj/src/test/java/com/cla/clip/feature/ad/csj/CsjAdInitializerTest.kt": [],
+    "feature/ad-csj/src/test/java/com/cla/clip/feature/ad/csj/CsjAdReleaseGuardTest.kt": [],
+    "feature/ad-debug/build.gradle.kts": [],
+    "feature/ad-debug/consumer-rules.pro": [],
+    "feature/ad-debug/proguard-rules.pro": [],
+    "feature/ad-debug/src/main/AndroidManifest.xml": [],
+    "feature/ad-debug/src/main/java/com/cla/clip/feature/ad/debug/DebugAdSourceEntry.kt": [],
+    "feature/ad-debug/src/main/res/values/strings.xml": [],
+    "feature/ad-uniad/build.gradle.kts": [],
+    "feature/ad-uniad/consumer-rules.pro": [],
+    "feature/ad-uniad/proguard-rules.pro": [],
+    "feature/ad-uniad/src/main/AndroidManifest.xml": [],
+    "feature/ad-uniad/src/main/java/com/cla/clip/feature/ad/uniad/UniAdAvailabilityPolicy.kt": [],
+    "feature/ad-uniad/src/main/java/com/cla/clip/feature/ad/uniad/UniAdConfig.kt": [],
+    "feature/ad-uniad/src/main/java/com/cla/clip/feature/ad/uniad/UniAdConfigProvider.kt": [],
+    "feature/ad-uniad/src/main/java/com/cla/clip/feature/ad/uniad/UniAdConsentProvider.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt"
+    ],
+    "feature/ad-uniad/src/main/java/com/cla/clip/feature/ad/uniad/UniAdConstants.kt": [],
+    "feature/ad-uniad/src/main/java/com/cla/clip/feature/ad/uniad/UniAdEventDeduplicator.kt": [],
+    "feature/ad-uniad/src/main/java/com/cla/clip/feature/ad/uniad/UniAdFeedAdSlot.kt": [],
+    "feature/ad-uniad/src/main/java/com/cla/clip/feature/ad/uniad/UniAdInitializer.kt": [],
+    "feature/ad-uniad/src/main/java/com/cla/clip/feature/ad/uniad/UniAdReason.kt": [],
+    "feature/ad-uniad/src/main/java/com/cla/clip/feature/ad/uniad/UniAdReleaseGuard.kt": [],
+    "feature/ad-uniad/src/main/java/com/cla/clip/feature/ad/uniad/UniAdSdkClient.kt": [],
+    "feature/ad-uniad/src/main/java/com/cla/clip/feature/ad/uniad/UniAdSdkDirectClient.kt": [],
+    "feature/ad-uniad/src/main/java/com/cla/clip/feature/ad/uniad/UniAdSourceEntry.kt": [],
+    "feature/ad-uniad/src/main/res/values/strings.xml": [],
+    "feature/ad-uniad/src/test/java/com/cla/clip/feature/ad/uniad/UniAdAvailabilityPolicyTest.kt": [],
+    "feature/ad-uniad/src/test/java/com/cla/clip/feature/ad/uniad/UniAdConfigTest.kt": [],
+    "feature/ad-uniad/src/test/java/com/cla/clip/feature/ad/uniad/UniAdEventDeduplicatorTest.kt": [],
+    "feature/ad-uniad/src/test/java/com/cla/clip/feature/ad/uniad/UniAdFeedRequestSpecTest.kt": [],
+    "feature/ad-uniad/src/test/java/com/cla/clip/feature/ad/uniad/UniAdInitializerTest.kt": [],
+    "feature/ad-uniad/src/test/java/com/cla/clip/feature/ad/uniad/UniAdReleaseGuardTest.kt": [],
+    "feature/ad-uniad/src/test/java/com/cla/clip/feature/ad/uniad/UniAdSdkArtifactTest.kt": [],
+    "feature/magnet-api/build.gradle.kts": [],
+    "feature/magnet-api/src/main/java/com/cla/clip/feature/magnet/api/MagnetFeatureApiModule.kt": [],
+    "feature/magnet-api/src/main/java/com/cla/clip/feature/magnet/api/MagnetFeatureEntry.kt": [],
+    "feature/magnet/build.gradle.kts": [],
+    "feature/magnet/consumer-rules.pro": [],
+    "feature/magnet/proguard-rules.pro": [],
+    "feature/magnet/schemas/com.cla.clip.feature.magnet.data.MagnetFeatureDatabase/1.json": [],
+    "feature/magnet/src/main/java/com/cla/clip/feature/magnet/backup/MagnetBackupContributorImpl.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/backup/BackupFeatureContributor.kt",
+      "base/general/src/main/java/com/cla/clip/base/general/backup/BackupJson.kt",
+      "feature/magnet/src/main/java/com/cla/clip/feature/magnet/data/MagnetDao.kt"
+    ],
+    "feature/magnet/src/main/java/com/cla/clip/feature/magnet/backup/MagnetBackupModels.kt": [
+      "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetInfoHashNormalizer.kt",
+      "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetSourceProvider.kt",
+      "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetTextNormalizer.kt",
+      "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetUriBuilder.kt"
+    ],
+    "feature/magnet/src/main/java/com/cla/clip/feature/magnet/data/MagnetDao.kt": [],
+    "feature/magnet/src/main/java/com/cla/clip/feature/magnet/data/MagnetDatabaseModule.kt": [],
+    "feature/magnet/src/main/java/com/cla/clip/feature/magnet/data/MagnetFeatureDatabase.kt": [],
+    "feature/magnet/src/main/java/com/cla/clip/feature/magnet/data/MagnetRepository.kt": [
+      "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetInfoHashNormalizer.kt",
+      "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetSourceProvider.kt",
+      "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetTextNormalizer.kt",
+      "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetUriBuilder.kt"
+    ],
+    "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetActionHandler.kt": [
+      "feature/magnet/src/main/java/com/cla/clip/feature/magnet/data/MagnetRepository.kt"
+    ],
+    "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetDownloadHistoryEntryImpl.kt": [
+      "feature/magnet/src/main/java/com/cla/clip/feature/magnet/data/MagnetRepository.kt"
+    ],
+    "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetFeatureEntryImpl.kt": [
+      "base/general/src/main/java/com/cla/clip/base/general/backup/BackupFeatureContributor.kt",
+      "feature/magnet-api/src/main/java/com/cla/clip/feature/magnet/api/MagnetFeatureEntry.kt",
+      "feature/magnet/src/main/java/com/cla/clip/feature/magnet/backup/MagnetBackupContributorImpl.kt"
+    ],
+    "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetFeatureLocalWidgets.kt": [],
+    "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetHistoryComponents.kt": [
+      "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetSearchHighlightFormatter.kt"
+    ],
+    "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetInfoHashNormalizer.kt": [],
+    "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetResultComponents.kt": [
+      "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetSearchHighlightFormatter.kt"
+    ],
+    "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetSearchHighlightFormatter.kt": [],
+    "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetSearchPage.kt": [
+      "feature/magnet/src/main/java/com/cla/clip/feature/magnet/source/cache/MagnetSourceSearchRepository.kt"
+    ],
+    "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetSearchVm.kt": [
+      "feature/magnet/src/main/java/com/cla/clip/feature/magnet/data/MagnetRepository.kt",
+      "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetTextNormalizer.kt",
+      "feature/magnet/src/main/java/com/cla/clip/feature/magnet/source/cache/MagnetSourceSearchRepository.kt"
+    ],
+    "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetSourceProvider.kt": [],
+    "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetTextNormalizer.kt": [],
+    "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetUiFormatters.kt": [],
+    "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetUriBuilder.kt": [],
+    "feature/magnet/src/main/java/com/cla/clip/feature/magnet/source/cache/AcademicTorrentsSource.kt": [],
+    "feature/magnet/src/main/java/com/cla/clip/feature/magnet/source/cache/MagnetSourceCacheDao.kt": [],
+    "feature/magnet/src/main/java/com/cla/clip/feature/magnet/source/cache/MagnetSourceCacheModule.kt": [],
+    "feature/magnet/src/main/java/com/cla/clip/feature/magnet/source/cache/MagnetSourceModels.kt": [],
+    "feature/magnet/src/main/java/com/cla/clip/feature/magnet/source/cache/MagnetSourceSearchQueryFormatter.kt": [],
+    "feature/magnet/src/main/java/com/cla/clip/feature/magnet/source/cache/MagnetSourceSearchRepository.kt": [
+      "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetTextNormalizer.kt",
+      "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetUriBuilder.kt"
+    ],
+    "feature/magnet/src/main/java/com/cla/clip/feature/magnet/source/cache/MagnetSourceSyncCoordinator.kt": [
+      "feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetInfoHashNormalizer.kt"
+    ],
+    "feature/magnet/src/main/res/values/strings.xml": [],
+    "gradle.properties": [],
+    "gradle/csj-ad-config.gradle.kts": [],
+    "gradle/libs.versions.toml": [],
+    "gradle/uniad-ad-config.gradle.kts": [],
+    "gradle/wrapper/gradle-wrapper.jar": [],
+    "gradle/wrapper/gradle-wrapper.properties": [],
+    "gradlew": [],
+    "gradlew.bat": [],
+    "keystore.jks": [],
+    "keystore.properties": [],
+    "README.md": [],
+    "scripts/publish_github_release_windows.cmd": [],
+    "scripts/publish_github_release.sh": [],
+    "settings.gradle.kts": [],
+    "shizuku/build.gradle.kts": [],
+    "shizuku/consumer-rules.pro": [],
+    "shizuku/proguard-rules.pro": [],
+    "shizuku/src/androidTest/java/com/cla/clip/shizuku/ExampleInstrumentedTest.kt": [],
+    "shizuku/src/main/aidl/com/cla/clip/shizuku/IClipboardShizukuService.aidl": [],
+    "shizuku/src/main/aidl/com/cla/clip/shizuku/ShizukuCallback.aidl": [],
+    "shizuku/src/main/AndroidManifest.xml": [],
+    "shizuku/src/main/java/com/cla/clip/shizuku/ClipboardBridgeClipPayload.kt": [],
+    "shizuku/src/main/java/com/cla/clip/shizuku/ClipboardBridgeContract.kt": [],
+    "shizuku/src/main/java/com/cla/clip/shizuku/ClipboardBridgeIconSyncCoordinator.kt": [],
+    "shizuku/src/main/java/com/cla/clip/shizuku/ClipboardBridgeProviderCommandClient.kt": [],
+    "shizuku/src/main/java/com/cla/clip/shizuku/ClipboardListener.kt": [],
+    "shizuku/src/main/java/com/cla/clip/shizuku/ClipboardShizukuService.kt": [
+      "base/hidden-api/src/main/java/com/cla/clip/base/hidden/api/HiddenApiExemptions.kt"
+    ],
+    "shizuku/src/main/java/com/cla/clip/shizuku/ShizukuAppProcessReadiness.kt": [],
+    "shizuku/src/main/java/com/cla/clip/shizuku/ShizukuAppWakeCommandRunner.kt": [],
+    "shizuku/src/main/java/com/cla/clip/shizuku/ShizukuClipboardReader.kt": [
+      "base/hidden-api/src/main/java/com/cla/clip/base/hidden/api/SystemClipboardHiddenReader.kt"
+    ],
+    "shizuku/src/main/java/com/cla/clip/shizuku/ShizukuProcessIdentity.kt": [],
+    "shizuku/src/main/java/com/cla/clip/shizuku/ShizukuProcessName.kt": [],
+    "shizuku/src/main/java/com/cla/clip/shizuku/ShizukuShellCommandRunner.kt": [],
+    "shizuku/src/main/java/com/cla/clip/shizuku/ShizukuSourceAppResolver.kt": [],
+    "shizuku/src/main/java/com/cla/clip/shizuku/ShizukuStatus.kt": [],
+    "shizuku/src/main/java/com/cla/clip/shizuku/ShizukuUtils.kt": [],
+    "shizuku/src/test/java/com/cla/clip/shizuku/ClipboardBridgeClipPayloadTest.kt": [],
+    "shizuku/src/test/java/com/cla/clip/shizuku/ClipboardBridgeCommandResultParserTest.kt": [],
+    "shizuku/src/test/java/com/cla/clip/shizuku/ClipboardBridgeProviderCommandClientTest.kt": [],
+    "shizuku/src/test/java/com/cla/clip/shizuku/ExampleUnitTest.kt": [],
+    "shizuku/src/test/java/com/cla/clip/shizuku/ShizukuAppProcessReadinessTest.kt": [],
+    "shizuku/src/test/java/com/cla/clip/shizuku/ShizukuProcessIdentityTest.kt": [],
+    "shizuku/src/test/java/com/cla/clip/shizuku/ShizukuProcessNameTest.kt": [],
+    "shizuku/src/test/java/com/cla/clip/shizuku/ShizukuShellCommandRunnerTest.kt": [],
+    "shizuku/src/test/java/com/cla/clip/shizuku/ShizukuSourceAppResolverTest.kt": [],
+    "third_party/uniad/UNI_AD_android_5.5.2.0606/android-gif-drawable-1.2.29.aar": [],
+    "third_party/uniad/UNI_AD_android_5.5.2.0606/checksums.sha256": [],
+    "third_party/uniad/UNI_AD_android_5.5.2.0606/Funlink_2.8.8_76006310_release.aar": [],
+    "third_party/uniad/UNI_AD_android_5.5.2.0606/Funlink_adapter_uniad_2.8.4_74659082_release.aar": [],
+    "third_party/uniad/UNI_AD_android_5.5.2.0606/octopus_ad_sdk_2.5.10.5.aar": [],
+    "third_party/uniad/UNI_AD_android_5.5.2.0606/README.md": [],
+    "third_party/uniad/UNI_AD_android_5.5.2.0606/uniad-native-release.aar": [],
+    "third_party/uniad/UNI_AD_android_5.5.2.0606/uniad-zy-release.aar": [],
+    "tools/__init__.py": [],
+    "tools/render_doc_flow_html.py": [],
+    "tools/test_render_doc_flow_html.py": [
+      "tools/__init__.py"
+    ]
+  }
+}

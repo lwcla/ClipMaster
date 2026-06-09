@@ -1,0 +1,49 @@
+# .understandignore - patterns for files/dirs to exclude from analysis
+# Syntax: same as .gitignore (globs, # comments, ! negation, trailing / for dirs)
+# Lines below are suggestions - uncomment to activate.
+# Use ! prefix to force-include something excluded by defaults.
+#
+# Built-in defaults (always excluded unless negated):
+#   node_modules/, .git/, dist/, build/, obj/, *.lock, *.min.js, etc.
+#
+# --- From .gitignore (uncomment to exclude) ---
+
+# *.iml
+# /local.properties
+# /.idea/caches
+# /.idea/libraries
+# /.idea/modules.xml
+# /.idea/workspace.xml
+# /.idea/navEditor.xml
+# /.idea/assetWizardSettings.xml
+# .DS_Store
+# /captures
+# .externalNativeBuild
+# .cxx
+# .gradle/
+# local.properties
+# *.py[cod]
+# captures/
+# .externalNativeBuild/
+# .cxx/
+# *.aab
+# *.apk
+# output-metadata.json
+# *.iml
+# misc.xml
+# deploymentTargetDropDown.xml
+# render.experimental.xml
+# google-services.json
+# *.hprof
+# /app/release/baselineProfiles/
+
+# --- Detected directories (uncomment to exclude) ---
+
+# docs/
+# scripts/
+
+# --- Test file patterns (uncomment to exclude) ---
+
+# *.test.*
+# *.spec.*
+# *.snap
