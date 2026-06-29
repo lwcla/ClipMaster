@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -152,6 +153,8 @@ fun DetailPage(
     val uiState = detailVm.clipFlow.collectAsStateWithLifecycle().value
     /** 当前已成功加载的剪贴详情；只有成功态才在标题栏展示低频删除入口。 */
     val loadedClip = (uiState as? DetailUiState.Success)?.clip
+    /** 当前来源过滤名单；外部设置页或备份恢复改变后，详情页动作文案会跟随刷新。 */
+    val blockedSourcePackages by detailVm.blockedClipSourcePackages.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) {
         detailVm.deleteSuccessFlow.collectLatest {
@@ -270,6 +273,7 @@ fun DetailPage(
                         isMainProcess = isMainProcess,
                         detailAdSensitivityPolicy = detailAdSensitivityPolicy,
                         onDisableAdSource = onDisableAdSource,
+                        blockedSourcePackages = blockedSourcePackages,
                     )
                 }
             }
@@ -427,6 +431,7 @@ private fun DetailActionSections(
     isMainProcess: Boolean,
     detailAdSensitivityPolicy: DetailAdSensitivityPolicy,
     onDisableAdSource: (String) -> Unit,
+    blockedSourcePackages: Set<String>,
 ) {
     /** 详情页操作区间距 token，确保正文、能力入口和普通操作区节奏一致。 */
     val spacing = ClipMasterThemeTokens.tokens.spacing
@@ -442,6 +447,8 @@ private fun DetailActionSections(
     var selectedLink by remember { mutableStateOf<DetailLinkUiState?>(null) }
     /** 是否显示全部链接选择弹层；只在链接数量超过默认预览数量时使用。 */
     var showAllLinks by remember { mutableStateOf(false) }
+    /** 待确认屏蔽或取消屏蔽的来源 App 动作；为 null 时不显示确认弹窗。 */
+    var sourceBlockAction by remember { mutableStateOf<DetailSourceBlockAction?>(null) }
 
     LaunchedEffect(clip.id) {
         // 剪贴记录切换时清空弹层状态，避免快速进入另一条详情后仍显示旧链接。
@@ -508,6 +515,12 @@ private fun DetailActionSections(
                 }
             }
         }
+
+        DetailSourceBlockSection(
+            clip = clip,
+            blockedSourcePackages = blockedSourcePackages,
+            onRequestAction = { action -> sourceBlockAction = action }
+        )
     }
 
     if (showAllLinks) {
@@ -543,6 +556,109 @@ private fun DetailActionSections(
             }
         )
     }
+
+    sourceBlockAction?.let { action ->
+        DetailSourceBlockConfirmDialog(
+            action = action,
+            onDismiss = { sourceBlockAction = null },
+            onConfirm = {
+                when (action) {
+                    is DetailSourceBlockAction.Block -> detailVm.blockSourceAppFromDetail(action.packageName)
+                    is DetailSourceBlockAction.Unblock -> detailVm.unblockSourceAppFromDetail(action.packageName)
+                }
+                sourceBlockAction = null
+            }
+        )
+    }
+}
+
+/**
+ * 详情页来源过滤快捷操作。
+ *
+ * 来源明确时提供屏蔽或取消屏蔽动作；未知来源不展示按钮，避免用户误以为普通 App 侧也能稳定识别来源。
+ */
+@Composable
+private fun DetailSourceBlockSection(
+    clip: ClipShowEntity,
+    blockedSourcePackages: Set<String>,
+    onRequestAction: (DetailSourceBlockAction) -> Unit,
+) {
+    /** 当前详情来源包名；为空时不展示上下文过滤动作。 */
+    val sourcePackageName = clip.sourceAppPackage?.takeIf { packageName -> packageName.isNotBlank() } ?: return
+    /** 当前来源是否已经在过滤名单中。 */
+    val blocked = sourcePackageName in blockedSourcePackages
+    Column(
+        verticalArrangement = Arrangement.spacedBy(ClipMasterThemeTokens.tokens.spacing.tiny)
+    ) {
+        Text(
+            text = stringResource(R.string.base_general_clip_source_block_detail_notice),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        DetailLinkTextAction(
+            label = if (blocked) {
+                stringResource(R.string.base_general_clip_source_block_detail_unblock_action)
+            } else {
+                stringResource(R.string.base_general_clip_source_block_detail_block_action)
+            },
+            onClick = {
+                if (blocked) {
+                    onRequestAction(DetailSourceBlockAction.Unblock(sourcePackageName))
+                } else {
+                    onRequestAction(DetailSourceBlockAction.Block(sourcePackageName))
+                }
+            }
+        )
+    }
+}
+
+/** 详情页来源过滤确认动作。 */
+private sealed interface DetailSourceBlockAction {
+    /** 确认加入来源过滤名单。 */
+    data class Block(
+        /** 来源 App 包名。 */
+        val packageName: String,
+    ) : DetailSourceBlockAction
+
+    /** 确认移出来源过滤名单。 */
+    data class Unblock(
+        /** 来源 App 包名。 */
+        val packageName: String,
+    ) : DetailSourceBlockAction
+}
+
+/** 详情页来源过滤二次确认弹窗。 */
+@Composable
+private fun DetailSourceBlockConfirmDialog(
+    action: DetailSourceBlockAction,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    /** 弹窗标题资源，按屏蔽或取消屏蔽动作切换。 */
+    val titleRes = when (action) {
+        is DetailSourceBlockAction.Block -> R.string.base_general_clip_source_block_detail_block_title
+        is DetailSourceBlockAction.Unblock -> R.string.base_general_clip_source_block_detail_unblock_title
+    }
+    /** 弹窗正文资源，必须强调只影响未来保存。 */
+    val messageRes = when (action) {
+        is DetailSourceBlockAction.Block -> R.string.base_general_clip_source_block_detail_block_message
+        is DetailSourceBlockAction.Unblock -> R.string.base_general_clip_source_block_detail_unblock_message
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(titleRes)) },
+        text = { Text(stringResource(messageRes)) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(stringResource(R.string.base_general_sure))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.base_general_cancel))
+            }
+        }
+    )
 }
 
 /**

@@ -28,6 +28,8 @@ data class ClipShowEntity(
     val formattedTime: String,
     /** 来源 App 展示名，可能为空；为空时 UI 会回退到未知来源文案。 */
     val appName: String?,
+    /** 来源 App 包名，可能为空；详情页按它执行后续剪贴过滤，不使用展示名做身份。 */
+    val sourceAppPackage: String?,
     /** 来源 App 图标缓存路径，可能为空；为空时 UI 使用兜底图标。 */
     val appIconPath: String?,
     /** 来源 App 图标内容 hash，作为同一路径图标覆盖后的 UI 刷新 key。 */
@@ -74,6 +76,7 @@ internal fun ClipDetail.toUiWithFormattedTime(formattedTime: String): ClipShowEn
         formattedTime = formattedTime,
         // 来源 App 可能已经无法关联或名称为空，UI 层会用统一未知来源文案兜底。
         appName = app?.appName?.takeIf { it.isNotBlank() },
+        sourceAppPackage = clip.sourceAppPackage?.takeIf { it.isNotBlank() },
         appIconPath = app?.iconPath,
         appIconHash = app?.iconHash,
         appColor = appColor?.let { Color(it.red, it.green, it.blue) },

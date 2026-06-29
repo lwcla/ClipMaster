@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- API 27 起才支持浅色导航栏，避免 minSdk 24 在基础 values 中触发 NewApi。 -->
+    <style name="Theme.ClipMaster" parent="Theme.ClipMaster.Base" tools:ignore="ResourceName">
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+</resources>

@@ -157,6 +157,91 @@ object AppSetting {
             markBackupDirty()
         }
 
+    /** 来源 App 剪贴保存过滤名单 key；值为换行分隔包名，包名本身会拒绝换行等危险字符。 */
+    private const val KEY_BLOCKED_CLIP_SOURCE_PACKAGES = "blocked_clip_source_packages"
+
+    /** 来源过滤名单状态流；设置页、详情页和保存链路通过它拿到同一份规则快照。 */
+    private val _blockedClipSourcePackagesFlow by lazy {
+        MutableStateFlow(blockedClipSourcePackages)
+    }
+
+    /** 来源 App 剪贴保存过滤名单流；只包含规范化后的包名集合，不包含 App 名称或图标。 */
+    val blockedClipSourcePackagesFlow: StateFlow<Set<String>>
+        get() = _blockedClipSourcePackagesFlow.asStateFlow()
+
+    /** 来源 App 剪贴保存过滤名单；读取时也会规范化，兼容旧值或异常写入。 */
+    val blockedClipSourcePackages: Set<String>
+        get() = decodeBlockedClipSourcePackages(mmkv.getString(KEY_BLOCKED_CLIP_SOURCE_PACKAGES, null))
+
+    /**
+     * 原子加入一个来源包名。
+     *
+     * 返回 true 表示名单发生变化；重复、非法或超过上限时返回 false，调用方可据此决定是否提示用户。
+     */
+    @Synchronized
+    fun addBlockedPackage(packageName: String): Boolean {
+        /** 待加入的规范化包名；无效输入不会写入 MMKV。 */
+        val normalizedPackageName = ClipSourceBlockRules.normalizeSinglePackage(packageName) ?: return false
+        /** 当前名单快照；在同步块中读取，避免连续 add/remove 时互相覆盖。 */
+        val currentPackages = blockedClipSourcePackages
+        if (normalizedPackageName in currentPackages || currentPackages.size >= ClipSourceBlockRules.MAX_PACKAGE_COUNT) {
+            return false
+        }
+        return writeBlockedClipSourcePackages(currentPackages + normalizedPackageName)
+    }
+
+    /**
+     * 原子移除一个来源包名。
+     *
+     * 返回 true 表示名单发生变化；未知或非法包名返回 false。
+     */
+    @Synchronized
+    fun removeBlockedPackage(packageName: String): Boolean {
+        /** 待移除的规范化包名；无效输入不影响当前名单。 */
+        val normalizedPackageName = ClipSourceBlockRules.normalizeSinglePackage(packageName) ?: return false
+        /** 当前名单快照；移除后仍走统一写入，确保排序和 Flow 同步。 */
+        val currentPackages = blockedClipSourcePackages
+        if (normalizedPackageName !in currentPackages) {
+            return false
+        }
+        return writeBlockedClipSourcePackages(currentPackages - normalizedPackageName)
+    }
+
+    /**
+     * 原子替换来源过滤名单。
+     *
+     * 输入会按统一规则 trim、去空、去重、排序并裁剪到上限；用于设置页确认和备份恢复并集落盘。
+     */
+    @Synchronized
+    fun replaceBlockedPackages(packages: Iterable<String?>): Boolean {
+        /** 规范化后的目标名单；与当前一致时不重复写入，减少不必要的备份 dirty。 */
+        val normalizedPackages = ClipSourceBlockRules.normalizePackageSet(packages)
+        if (normalizedPackages == blockedClipSourcePackages) {
+            return false
+        }
+        return writeBlockedClipSourcePackages(normalizedPackages)
+    }
+
+    /** 将换行分隔的持久化字符串恢复为规范化包名集合。 */
+    private fun decodeBlockedClipSourcePackages(value: String?): Set<String> {
+        /** 按行拆开的原始包名列表；空值恢复为空集合。 */
+        val rawPackages = value
+            ?.lineSequence()
+            ?.toList()
+            .orEmpty()
+        return ClipSourceBlockRules.normalizePackageSet(rawPackages)
+    }
+
+    /** 写入规范化后的过滤名单，并同步 Flow 与备份 dirty。 */
+    private fun writeBlockedClipSourcePackages(packages: Iterable<String?>): Boolean {
+        /** 最终落盘名单；这里再次规范化，保证所有调用路径遵守同一规则。 */
+        val normalizedPackages = ClipSourceBlockRules.normalizePackageSet(packages)
+        mmkv.putString(KEY_BLOCKED_CLIP_SOURCE_PACKAGES, normalizedPackages.joinToString(separator = "\n"))
+        _blockedClipSourcePackagesFlow.value = normalizedPackages
+        markBackupDirty()
+        return true
+    }
+
     /** App 自升级自动检查的 24 小时限频窗口。 */
     const val APP_UPDATE_AUTO_CHECK_INTERVAL_MILLIS = 24L * 60L * 60L * 1000L
 

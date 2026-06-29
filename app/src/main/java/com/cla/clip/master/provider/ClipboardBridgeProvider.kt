@@ -94,12 +94,11 @@ class ClipboardBridgeProvider : ContentProvider() {
             return ClipboardBridgeResult.of(ClipboardBridgeContract.CODE_INVALID_ARGS).toBundle()
         }
 
-        /** 解析后的 Provider 请求参数；无效时不进入任何桥接方法。 */
-        val request = ClipboardBridgeRequest.fromExtras(extras)
-            ?: return ClipboardBridgeResult.of(ClipboardBridgeContract.CODE_INVALID_ARGS).toBundle()
-
         return when (method) {
             ClipboardBridgeContract.METHOD_COMMIT_CLIP -> {
+                /** 解析后的剪贴/来源图标请求参数；无效时不进入桥接方法。 */
+                val request = ClipboardBridgeRequest.fromExtras(extras)
+                    ?: return ClipboardBridgeResult.of(ClipboardBridgeContract.CODE_INVALID_ARGS).toBundle()
                 /** 应用 Context；提交剪贴 payload 前清理过期临时文件。 */
                 val appContext = requireNotNull(context).applicationContext
                 iconStore.cleanupExpired(appContext)
@@ -113,6 +112,9 @@ class ClipboardBridgeProvider : ContentProvider() {
                 }
             }
             ClipboardBridgeContract.METHOD_QUERY_ICON_STATE -> {
+                /** 解析后的剪贴/来源图标请求参数；无效时不进入桥接方法。 */
+                val request = ClipboardBridgeRequest.fromExtras(extras)
+                    ?: return ClipboardBridgeResult.of(ClipboardBridgeContract.CODE_INVALID_ARGS).toBundle()
                 /** 应用 Context；图标预判前清理过期图标半文件，避免旧 eventId 干扰。 */
                 val appContext = requireNotNull(context).applicationContext
                 iconStore.cleanupExpired(appContext)
@@ -126,6 +128,9 @@ class ClipboardBridgeProvider : ContentProvider() {
                 }
             }
             ClipboardBridgeContract.METHOD_COMMIT_ICON -> {
+                /** 解析后的剪贴/来源图标请求参数；无效时不进入桥接方法。 */
+                val request = ClipboardBridgeRequest.fromExtras(extras)
+                    ?: return ClipboardBridgeResult.of(ClipboardBridgeContract.CODE_INVALID_ARGS).toBundle()
                 /** 应用 Context；提交图标前清理过期图标半文件。 */
                 val appContext = requireNotNull(context).applicationContext
                 iconStore.cleanupExpired(appContext)
@@ -139,6 +144,9 @@ class ClipboardBridgeProvider : ContentProvider() {
                 }
             }
             ClipboardBridgeContract.METHOD_QUERY_SHIZUKU_PROCESS -> {
+                /** 解析后的身份查询请求参数；只需要 eventId 串联日志。 */
+                val request = ClipboardBridgeRequest.fromExtras(extras)
+                    ?: return ClipboardBridgeResult.of(ClipboardBridgeContract.CODE_INVALID_ARGS).toBundle()
                 logD(TAG) { "Provider 收到 query_shizuku_process eventId=${request.eventId}" }
                 shizukuProcessCoordinator.query(request).toBundle()
             }

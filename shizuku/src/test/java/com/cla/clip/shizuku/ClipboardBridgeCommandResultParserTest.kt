@@ -88,17 +88,22 @@ class ClipboardBridgeCommandResultParserTest {
     }
 
     @Test
-    /** commit_clip 接受真实保存和重复跳过两种已处理完成状态。 */
-    fun isCommitClipSuccessfulAcceptsSavedAndDuplicateStatus() {
+    /** commit_clip 接受真实保存、重复跳过和来源过滤三种已处理完成状态。 */
+    fun isCommitClipSuccessfulAcceptsSavedDuplicateAndBlockedStatus() {
         /** 模拟新剪贴记录已经保存成功的 Provider 输出。 */
         val savedOutput = "Result: Bundle[{resultCode=ok, clipCommitted=true, clipStatus=saved}]"
         /** 模拟命中现有去重语义的 Provider 输出。 */
         val duplicateOutput = "Result: Bundle[{clipStatus=duplicate_or_empty, resultCode=ok, clipCommitted=false}]"
+        /** 模拟来源 App 命中过滤名单的 Provider 输出。 */
+        val blockedOutput = "Result: Bundle[{clipStatus=source_app_blocked, resultCode=ok, clipCommitted=false}]"
 
         assertTrue(ClipboardBridgeCommandResultParser.isCommitClipSuccessful(0, savedOutput))
         assertTrue(ClipboardBridgeCommandResultParser.isCommitClipSuccessful(0, duplicateOutput))
+        assertTrue(ClipboardBridgeCommandResultParser.isCommitClipSuccessful(0, blockedOutput))
         assertEquals(true, ClipboardBridgeCommandResultParser.parseClipCommitted(savedOutput))
+        assertEquals(false, ClipboardBridgeCommandResultParser.parseClipCommitted(blockedOutput))
         assertEquals(ClipboardBridgeContract.CLIP_STATUS_DUPLICATE_OR_EMPTY, ClipboardBridgeCommandResultParser.parseClipStatus(duplicateOutput))
+        assertEquals(ClipboardBridgeContract.CLIP_STATUS_SOURCE_APP_BLOCKED, ClipboardBridgeCommandResultParser.parseClipStatus(blockedOutput))
     }
 
     @Test

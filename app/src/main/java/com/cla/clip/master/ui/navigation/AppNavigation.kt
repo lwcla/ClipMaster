@@ -30,6 +30,7 @@ import com.cla.clip.master.ui.page.list.ClipListPage
 import com.cla.clip.master.ui.page.list.FoldedClipListPage
 import com.cla.clip.master.ui.page.main.MainPage
 import com.cla.clip.master.ui.page.mine.MinePage
+import com.cla.clip.master.ui.page.mine.ClipSourceBlockSettingPage
 import com.cla.clip.master.ui.page.recycle.RecycleBinPage
 import com.cla.clip.master.ui.page.search.SearchPage
 import com.cla.clip.master.ui.page.video.VideoDownloadPage
@@ -240,6 +241,13 @@ fun AppNavigation(
                 magnetFeatures = magnetFeatures,
                 onOpenMagnetSearch = { feature -> feature.openSearch(navController) },
                 visibleToUser = true,
+            )
+        }
+
+        // 剪贴来源过滤设置页
+        composable<ClipSourceBlockSettingRoute> {
+            ClipSourceBlockSettingPage(
+                onBack = onBack,
             )
         }
 

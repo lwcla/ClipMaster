@@ -43,6 +43,7 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindSearchHistoryRepository(repository: SearchHistoryRepositoryImpl): SearchHistoryRepository
+
 }
 
 @Qualifier

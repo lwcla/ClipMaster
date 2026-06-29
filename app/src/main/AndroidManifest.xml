@@ -39,6 +39,10 @@
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
     <!-- 开机广播需要 -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- 自用/私有分发取舍：来源过滤页需要直接读取本机安装应用名称与图标；如未来上架 Google Play 必须重新评估。 -->
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
 
 
     <!-- 添加 queries 标签 -->

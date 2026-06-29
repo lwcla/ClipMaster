@@ -1,6 +1,7 @@
 package com.cla.clip.master.ui.page.mine
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Download
@@ -96,6 +97,34 @@ internal fun ClipItemActionSettingEntry(
         },
         title = stringResource(R.string.base_general_clip_item_quick_action_setting),
         description = stringResource(R.string.base_general_current_option, action.labelText()),
+        onClick = onClick
+    )
+}
+
+/**
+ * 剪贴来源 App 过滤设置入口。
+ *
+ * 入口只展示当前过滤数量；具体多选、手动添加和本机应用读取在独立设置页完成。
+ */
+@Composable
+internal fun ClipSourceBlockSettingEntry(
+    blockedCount: Int,
+    onClick: () -> Unit,
+) {
+    ListEntryCard(
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Block,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+        },
+        title = stringResource(R.string.base_general_clip_source_block_setting),
+        description = if (blockedCount > 0) {
+            stringResource(R.string.base_general_clip_source_block_setting_enabled_desc, blockedCount)
+        } else {
+            stringResource(R.string.base_general_clip_source_block_setting_empty_desc)
+        },
         onClick = onClick
     )
 }

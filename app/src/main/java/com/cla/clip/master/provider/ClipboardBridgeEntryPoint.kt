@@ -29,4 +29,5 @@ interface ClipboardBridgeEntryPoint {
 
     /** Provider Shizuku 进程身份查询协调器。 */
     fun clipboardBridgeShizukuProcessCoordinator(): ClipboardBridgeShizukuProcessCoordinator
+
 }

@@ -1,6 +1,7 @@
 package com.cla.clip.base.general.backup
 
 import com.cla.clip.base.general.config.AppSetting
+import com.cla.clip.base.general.config.ClipSourceBlockRules
 import com.cla.clip.base.general.dao.ClipData
 import com.cla.clip.base.general.dao.DownloadTaskData
 import com.cla.clip.base.general.dao.ImageExtractBatchData
@@ -170,7 +171,8 @@ internal fun SearchHistoryData.sameBackupContent(other: SearchHistoryData): Bool
 internal fun AppSetting.toBackupSettings(): BackupSettings {
     return BackupSettings(
         clipItemQuickAction = clipItemQuickAction.storageValue,
-        recycleBinRetentionDays = recycleBinRetentionDays
+        recycleBinRetentionDays = recycleBinRetentionDays,
+        blockedClipSourcePackages = ClipSourceBlockRules.normalizePackageSet(blockedClipSourcePackages).toList()
     )
 }
 

@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-项目当前数据主要存放在 Room 数据库和 MMKV 中：剪贴数据、来源 App、链接预览、搜索历史、视频下载记录、图片下载记录由 base 主库承载；磁力搜索历史和磁力复制/打开记录在启用 `:feature:magnet` 时由磁力模块独立数据库承载；剪贴快捷动作、回收站保留天数等轻量设置由 `AppSetting` 承载。当前已接入统一备份恢复能力，支持本地手动导出/导入预检恢复，以及 WebDAV 手动测试、上传、列表、预览和恢复；新导出使用 `schemaVersion = 4` 的 zip + JSONL 流式协议，schemaVersion 3 曾把磁力 JSONL 作为必需 entry，schemaVersion 2 不包含磁力用户数据但继续兼容导入，旧 v1 JSON 数组 zip 只读兼容导入。
+项目当前数据主要存放在 Room 数据库和 MMKV 中：剪贴数据、来源 App、链接预览、搜索历史、视频下载记录、图片下载记录由 base 主库承载；磁力搜索历史和磁力复制/打开记录在启用 `:feature:magnet` 时由磁力模块独立数据库承载；剪贴快捷动作、回收站保留天数、剪贴来源 App 过滤名单等轻量设置由 `AppSetting` 承载。当前已接入统一备份恢复能力，支持本地手动导出/导入预检恢复，以及 WebDAV 手动测试、上传、列表、预览和恢复；新导出使用 `schemaVersion = 4` 的 zip + JSONL 流式协议，schemaVersion 3 曾把磁力 JSONL 作为必需 entry，schemaVersion 2 不包含磁力用户数据但继续兼容导入，旧 v1 JSON 数组 zip 只读兼容导入。
 
 本方案新增统一 `BackupSnapshot` 备份包，同一套导出、预检、恢复和报告逻辑同时服务本地文件备份与 WebDAV 备份。第一版定位是“备份/恢复”，不是多设备实时同步；多个设备可以共用同一 WebDAV 目录并看到彼此备份，但不保证自动双向同步或冲突同步。
 
@@ -30,7 +30,7 @@
 - 链接预览缓存。
 - 搜索历史。
 - 启用 `:feature:magnet` 时，磁力搜索历史和磁力复制/打开记录由磁力模块作为可选功能数据参与备份。
-- 核心用户偏好，包括剪贴快捷动作和回收站保留天数。
+- 核心用户偏好，包括剪贴快捷动作、回收站保留天数和剪贴来源 App 过滤包名名单。
 - 下载记录元数据，包括视频下载任务和图片提取/下载批次、图片项。
 
 第一版不备份：
@@ -357,6 +357,7 @@ flowchart TD
 
 - `manifest.json`：格式标识、schemaVersion、应用版本、创建时间、总摘要、每个业务数据文件的大小和 checksum。
 - `data/settings.json`：跨安装有意义的用户偏好。
+- `data/settings.json` 中的 `blocked_clip_source_packages` 只保存规范化包名，不保存 App 名称、图标、安装列表或拦截次数；恢复时与本机已有名单取并集，不覆盖本机新增规则，并按同一规则裁剪到 500 个。
 - `data/clips.json`、`data/source_apps.json`、`data/link_previews.json`、`data/search_histories.json`：核心剪贴与检索数据。
 - `data/video_downloads.json`、`data/image_batches.json`、`data/image_items.json`：下载记录元数据。
 - `schemaVersion = 4` 起 base 必需 JSONL entry 不再包含磁力文件；启用 `:feature:magnet` 时，磁力模块通过可选 `BackupFeatureContributor` 追加 `data/magnet_search_histories.jsonl` 和 `data/magnet_download_records.jsonl`。`schemaVersion = 3` 历史协议曾把这两个磁力 JSONL 作为必需 entry，继续兼容校验和恢复。
@@ -364,6 +365,8 @@ flowchart TD
 当前 base 新导出实际使用 JSONL 文件名：`data/clips.jsonl`、`data/source_apps.jsonl`、`data/link_previews.jsonl`、`data/search_histories.jsonl`、`data/video_downloads.jsonl`、`data/image_batches.jsonl` 和 `data/image_items.jsonl`；磁力模块启用时额外写入 `data/magnet_search_histories.jsonl` 和 `data/magnet_download_records.jsonl`；v1 JSON 数组文件名仅用于旧包兼容导入。
 
 当前 `source_apps` 的语义已经扩展为“来源展示缓存 + 图标预热缓存”：Shizuku Provider 双协程链路允许图标同步先独立写入 `source_apps`，即使当前还没有对应到一条现存剪贴记录。该行为不新增字段、不改变 JSONL 结构，但意味着备份和恢复后，来源筛选可能会看到仅由图标预热链路生成的来源缓存。这被视为可接受的缓存级可见性，而不是脏数据，不额外做过滤或清洗。
+
+剪贴保存过滤选择页使用主进程 `QUERY_ALL_PACKAGES` + `PackageManager` 在页面可见或用户刷新时直读当前安装应用；当前安装应用列表、读取状态和图标不写 Room、不写文件、不进入 `source_apps`、`data/settings.json`、JSONL、WebDAV/本地备份或系统 Auto Backup。卸载重装或换设备后重新读取本机安装应用即可，真正需要迁移的是 `blocked_clip_source_packages` 包名名单。
 
 manifest 简化示例：
 
@@ -430,7 +433,7 @@ manifest 简化示例：
 - 日志和 UI 不输出剪贴内容、账号、密码、Cookie 或完整 URL 查询参数。
 - WebDAV 密码只保存在本机独立加密 MMKV 中，不进入备份包；后续如接入 Android Keystore，必须同步验证系统恢复后旧密文不可解时的提示和清理策略。
 - 系统 Auto Backup 需要排除 WebDAV 密码、备份目录 URI、健康状态等敏感或设备绑定配置。
-- 系统 Auto Backup 和设备迁移规则额外排除 `clipboard_bridge_icons/` 和 `clipboard_bridge_clip_payloads/`；前者只用于 Shizuku Provider 图标传输，后者只用于 Shizuku 直读剪贴板后的敏感 payload 传输，都不是正式来源图标缓存或可恢复剪贴数据，恢复后继续保留反而可能让旧事件临时文件被误用。
+- 系统 Auto Backup 和设备迁移规则额外排除 `clipboard_bridge_icons/` 和 `clipboard_bridge_clip_payloads/`；这些目录只用于 Shizuku Provider 来源图标和剪贴 payload 临时传输，都不是可跨安装恢复的剪贴数据，恢复后继续保留反而可能让旧事件临时文件被误用。
 - 文件名使用脱敏短标识，例如 `clip_master_backup_<installId8>_<yyyyMMdd_HHmmss>.zip`；真实设备名只放备份元信息，不直接暴露在文件名中。
 
 ## 日志与诊断计划
@@ -443,6 +446,7 @@ manifest 简化示例：
 - 手动本地备份记录开始、快照生成和成功；手动 WebDAV 备份记录开始、本地镜像写入、WebDAV 上传和成功；字段包括文件名、文件大小、条目数量、耗时和目标状态，不记录用户选择文件 URI、WebDAV endpoint、用户名或密码。
 - 备份 zip 组装阶段不再把真实 `fileSize` 写回包内 manifest；包内 manifest 固定 `fileSize = 0`，避免 fileSize 字段改变 JSON 长度后影响 zip 压缩结果并产生大小震荡。真实文件大小只写入本地目录/WebDAV sidecar manifest、`latest.json`、导出摘要和阶段日志；日志字段包含 `taskId`、文件名、真实文件大小、包内 manifest fileSize 和 entry 数量，不输出临时目录绝对路径和备份内容。
 - 恢复流程记录 `restore start/success/failed`，字段包括备份类型、文件大小、预检数量摘要、新增/更新/跳过数量、未来时间归一化字段数、正向时钟偏移毫秒数和耗时；失败日志输出 reasonCode 和异常类型，不输出备份内容。
+- 来源过滤名单恢复裁剪时记录 `reasonCode=backup_blocked_packages_trimmed`、本机数量、备份数量和合并后数量；禁止记录具体包名列表、App 名称或拦截次数。
 - 备份恢复流程页状态切换记录 `restore_flow_state_change`，字段包括 `taskId`、`fromState`、`toState`、`sourceType` 和 `reasonCode`；feature 内部恢复请求流只记录 `requestId`、请求类型和消费/清理时机，不记录本地 URI、WebDAV 地址或远端路径；读取/恢复中二次确认退出记录 `flow_closed` 或用户确认退出日志；恢复结果页底部“完成”记录低敏完成关闭链路日志，字段只包含当前状态、是否存在运行中的媒体关联和 reasonCode；不记录剪贴内容、搜索词、完整 URL 或备份包内容。
 - 媒体重新定位准备阶段记录低敏诊断摘要：API level、缺失图片/视频权限布尔值、旧引用不可读视频数、不可读图片批次数和图片项数、无权限可见唯一候选数、需要授权后继续扫描的数量、缺少搜索线索数量和多候选/元数据不符等授权不可恢复数量；Android 14+ 权限回调后重新执行同一准备探测，用于识别部分媒体访问不足；不输出 URI、路径、文件名、目录名、页面标题或 URL。
 - 媒体关联独立页和恢复页之间的 feature 事件流只记录低敏状态转换：`restoreTaskId`、事件类型、是否匹配当前恢复任务、summary 类型、数量摘要和 reasonCode；不输出文件名、路径、URI、目录名、页面标题或 URL。正常事件发送失败不应静默吞掉；`onCleared()` 中 `tryEmit(Interrupted)` 失败时记录 `reasonCode=event_emit_failed` 和当前入口状态，便于排查恢复页“完成”按钮异常禁用。
@@ -610,6 +614,10 @@ manifest 简化示例：
 
 ## 变更记录
 
+- 2026-06-29：来源过滤页改为主进程 `QUERY_ALL_PACKAGES` + `PackageManager` 直读当前安装应用，删除未发布的安装应用缓存表、安装图标目录和相关 no-backup 排除说明；原因是当前安装列表只服务本机展示，真正参与备份恢复的仍只有 `blocked_clip_source_packages` 包名名单。
+- 2026-06-18：废弃前方案曾补充 `installed_app_icon_state_batch_payloads/` 和安装应用缓存相关 no-backup 目录的备份排除说明；本轮已删除可执行链路和资源排除项，仅保留为历史取舍记录。
+- 2026-06-17：补充剪贴保存过滤选择页按需 App 图标的备份排除边界；原因是图标只服务当前设备页面识别，可由 Shizuku 重新查询，备份仍只保存过滤包名。
+- 2026-06-17：`data/settings.json` 新增 `blocked_clip_source_packages` 来源过滤包名名单，并规定恢复时与本机名单取并集；原因是用户期望屏蔽来源规则可随 WebDAV/本地备份恢复，但不能覆盖当前设备新增规则。
 - 2026-06-05：补充剪贴入库同内容来源判定对备份恢复后的影响；原因是该规则只影响后续写库时覆盖、插入或跳过以及 dirty 标记触发，不改变剪贴、来源 App 或备份协议字段，也不需要提升 schemaVersion。
 - 2026-06-05：记录历史 `permission_expanded` 为已废弃 UI-only 偏好，不纳入备份恢复协议；原因是我的页权限区改为固定展示 Shizuku 和通知两条权限项，不再存在展开状态。
 - 2026-06-01：补充广告源选择、广告总开关、广告同意状态、广告隐私政策版本、广告会话保险丝和后续本地广告事件缓存不纳入备份；原因是这些状态只影响本机广告展示、隐私同意门禁和运行时降级，不属于用户生成数据或跨安装恢复价值数据，也不应触发备份 dirty。

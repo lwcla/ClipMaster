@@ -1,5 +1,6 @@
 package com.cla.clip.master.utils
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -41,5 +42,11 @@ class ShizukuConnectorTest {
                 expectedProcessName = expectedProcessName
             )
         )
+    }
+
+    @Test
+    /** UserService tag 必须携带协议版本，避免 Shizuku SDK 按旧安装级 tag 复用旧连接对象。 */
+    fun buildUserServiceTagIncludesProtocolVersion() {
+        assertEquals("001234_v28", ShizukuConnector.buildUserServiceTag(installId = "001234", version = 28))
     }
 }

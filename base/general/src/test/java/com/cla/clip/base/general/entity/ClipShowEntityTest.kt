@@ -43,5 +43,6 @@ class ClipShowEntityTest {
 
         assertEquals("/icons/example.png", ui.appIconPath)
         assertEquals("stable-hash", ui.appIconHash)
+        assertEquals("com.example", ui.sourceAppPackage)
     }
 }

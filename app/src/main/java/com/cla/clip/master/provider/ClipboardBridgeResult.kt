@@ -87,7 +87,7 @@ data class ClipboardBridgeResult(
                 shizukuProcessName = shizukuProcessName,
                 connectRequested = connectRequested,
                 connectSkipReason = connectSkipReason,
-                reasonCode = reasonCode
+                reasonCode = reasonCode,
             )
         }
     }

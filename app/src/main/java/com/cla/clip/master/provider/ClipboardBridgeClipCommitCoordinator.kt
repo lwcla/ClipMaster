@@ -153,10 +153,10 @@ class ClipboardBridgeClipCommitCoordinator @Inject constructor(
         /** 本次是否真实写入或更新数据库剪贴记录。 */
         val clipCommitted = processResult == ClipProcessResult.Saved
         /** 对外暴露的剪贴处理状态，不包含剪贴正文。 */
-        val clipStatus = if (clipCommitted) {
-            ClipboardBridgeContract.CLIP_STATUS_SAVED
-        } else {
-            ClipboardBridgeContract.CLIP_STATUS_DUPLICATE_OR_EMPTY
+        val clipStatus = when (processResult) {
+            ClipProcessResult.Saved -> ClipboardBridgeContract.CLIP_STATUS_SAVED
+            ClipProcessResult.FilteredBySourceApp -> ClipboardBridgeContract.CLIP_STATUS_SOURCE_APP_BLOCKED
+            ClipProcessResult.DuplicateOrEmpty -> ClipboardBridgeContract.CLIP_STATUS_DUPLICATE_OR_EMPTY
         }
 
         logI(TAG) {

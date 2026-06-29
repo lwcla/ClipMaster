@@ -44,7 +44,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
-import coil3.request.ImageRequest
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.utils.toSourceAppDisplayName
 import com.cla.clip.master.ui.widget.rememberDeletedFormattedTime
@@ -141,41 +140,6 @@ internal fun SourceAppNameWithTime(
             }
         }
     }
-}
-
-/**
- * 构建来源 App 图标的 Coil 请求模型。
- *
- * @param appIconPath 来源 App 图标缓存路径；为空时返回 null 让 AsyncImage 显示兜底图标。
- * @param appIconHash 来源 App 图标内容 hash；同一路径被覆盖时用它打散 Coil 缓存。
- */
-@Composable
-private fun rememberSourceAppIconModel(appIconPath: String?, appIconHash: String?): Any? {
-    /** 当前 Compose Context，用于构建 Coil ImageRequest。 */
-    val context = LocalContext.current
-    return remember(appIconPath, appIconHash, context) {
-        if (appIconPath.isNullOrBlank()) {
-            null
-        } else {
-            /** 同一路径图标被覆盖时用于刷新 Coil 记忆和磁盘缓存的稳定 key。 */
-            val cacheKey = buildSourceAppIconCacheKey(appIconPath, appIconHash)
-            ImageRequest.Builder(context)
-                .data(appIconPath)
-                .memoryCacheKey(cacheKey)
-                .diskCacheKey(cacheKey)
-                .build()
-        }
-    }
-}
-
-/**
- * 构建来源 App 图标的 Coil 缓存 key。
- *
- * @param appIconPath 来源 App 图标缓存路径。
- * @param appIconHash 来源 App 图标内容 hash；同一路径被覆盖后它会变化并触发 UI 刷新。
- */
-internal fun buildSourceAppIconCacheKey(appIconPath: String, appIconHash: String?): String {
-    return "$appIconPath:${appIconHash.orEmpty()}"
 }
 
 /**

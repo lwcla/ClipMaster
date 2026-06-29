@@ -134,3 +134,8 @@ data class BackupMediaRelocationRoute(
 @Keep
 @Serializable
 data object MineRoute : Route()
+
+/** 剪贴来源过滤设置页 */
+@Keep
+@Serializable
+data object ClipSourceBlockSettingRoute : Route()

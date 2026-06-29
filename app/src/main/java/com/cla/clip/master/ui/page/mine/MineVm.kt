@@ -138,6 +138,9 @@ class MineVm @Inject constructor(
      */
     val clipItemQuickAction = AppSetting.clipItemQuickActionFlow
 
+    /** 剪贴来源 App 过滤名单；详情页和保存链路也读取同一份 AppSetting 状态。 */
+    val blockedClipSourcePackages = AppSetting.blockedClipSourcePackagesFlow
+
     init {
         // 初始化时读取一次系统权限状态，确保页面首次展示的开关状态准确。
         refreshPermissionStatus()

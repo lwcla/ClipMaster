@@ -5,12 +5,17 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cla.clip.base.general.R
+import com.cla.clip.base.general.config.AppSetting
+import com.cla.clip.base.general.config.ClipSourceBlockRules
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
+import com.cla.clip.base.general.utils.logI
+import com.cla.clip.base.general.utils.toast
 import com.cla.clip.master.processor.ClipboardDataProcessor
 import com.cla.clip.master.processor.DefaultClipboardDataProcessor
+import com.cla.clip.master.work.BackupAutoScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -97,6 +102,9 @@ class DetailViewModel @Inject constructor(
         DetailUiState.Loading
     )
 
+    /** 详情页订阅的来源过滤名单；从“我的”页或备份恢复改变后，详情动作会自动刷新。 */
+    val blockedClipSourcePackages = AppSetting.blockedClipSourcePackagesFlow
+
     /**
      * 提交需要展示的剪贴 ID。
      *
@@ -104,6 +112,40 @@ class DetailViewModel @Inject constructor(
      */
     fun loadClip(id: Long) {
         _clipIdFlow.update { id }
+    }
+
+    /**
+     * 从详情页屏蔽当前来源 App 的后续剪贴。
+     *
+     * 只影响未来保存，不删除当前记录或历史记录；来源未知时直接忽略。
+     */
+    fun blockSourceAppFromDetail(packageName: String) {
+        /** 规范化后的来源包名；为空或非法时不写入过滤名单。 */
+        val normalizedPackageName = ClipSourceBlockRules.normalizeSinglePackage(packageName) ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            if (AppSetting.addBlockedPackage(normalizedPackageName)) {
+                logI(TAG) { "详情页加入来源过滤名单 reasonCode=detail_block_source_added" }
+                BackupAutoScheduler.markDirtyAndSchedule(appContext)
+            }
+            appContext.toast(R.string.base_general_clip_source_block_detail_added)
+        }
+    }
+
+    /**
+     * 从详情页取消屏蔽当前来源 App 的后续剪贴。
+     *
+     * 只移除过滤规则，当前详情记录保留在页面上。
+     */
+    fun unblockSourceAppFromDetail(packageName: String) {
+        /** 规范化后的来源包名；为空或非法时不写入过滤名单。 */
+        val normalizedPackageName = ClipSourceBlockRules.normalizeSinglePackage(packageName) ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            if (AppSetting.removeBlockedPackage(normalizedPackageName)) {
+                logI(TAG) { "详情页移除来源过滤名单 reasonCode=detail_block_source_removed" }
+                BackupAutoScheduler.markDirtyAndSchedule(appContext)
+            }
+            appContext.toast(R.string.base_general_clip_source_block_detail_removed)
+        }
     }
 
     /** 详情页早期视频解析实验共用的 OkHttpClient，懒加载以避免无网络操作时创建连接池。 */

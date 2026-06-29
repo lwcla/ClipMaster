@@ -363,8 +363,12 @@ data class BackupSearchHistory(
 @Keep
 @Serializable
 data class BackupSettings(
+    /** 普通剪贴 item 快捷动作稳定值；未知值恢复时由 AppSetting 回退默认值。 */
     @SerialName("clip_item_quick_action") val clipItemQuickAction: String? = null,
+    /** 回收站保留天数；恢复时由 AppSetting 继续裁剪到安全范围。 */
     @SerialName("recycle_bin_retention_days") val recycleBinRetentionDays: Int? = null,
+    /** 剪贴来源 App 过滤包名名单；只保存包名，不保存 App 名称、图标或安装列表。 */
+    @SerialName("blocked_clip_source_packages") val blockedClipSourcePackages: List<String> = emptyList(),
 )
 
 /** 视频下载记录备份字段；敏感请求头和 pending 输出不会进入备份包。 */

@@ -147,6 +147,9 @@ object ClipboardBridgeContract {
     /** 剪贴 payload 状态：内容为空或命中现有去重规则，没有新增记录。 */
     const val CLIP_STATUS_DUPLICATE_OR_EMPTY = "duplicate_or_empty"
 
+    /** 剪贴 payload 状态：来源 App 命中过滤名单，没有新增记录。 */
+    const val CLIP_STATUS_SOURCE_APP_BLOCKED = "source_app_blocked"
+
     /** 剪贴 payload 状态：系统剪贴板为空或没有 item。 */
     const val CLIP_STATUS_NO_CLIP = "no_clip"
 
@@ -276,15 +279,14 @@ object ClipboardBridgeCommandResultParser {
         if (!commandSucceeded) {
             return false
         }
-
         /** Provider 必须明确返回 ok，避免把参数错误或 payload 错误误判为完成。 */
         val resultCode = parseResultCode(output)
-
-        /** duplicate_or_empty 是已按去重语义处理完成的状态，不需要 Shizuku 再做兜底读取。 */
+        /** duplicate_or_empty 和 source_app_blocked 都是已按 app 侧规则处理完成的状态，不需要 Shizuku 再做兜底读取。 */
         val clipStatus = parseClipStatus(output)
         return resultCode == ClipboardBridgeContract.CODE_OK &&
             (clipStatus == ClipboardBridgeContract.CLIP_STATUS_SAVED ||
-                clipStatus == ClipboardBridgeContract.CLIP_STATUS_DUPLICATE_OR_EMPTY)
+                clipStatus == ClipboardBridgeContract.CLIP_STATUS_DUPLICATE_OR_EMPTY ||
+                clipStatus == ClipboardBridgeContract.CLIP_STATUS_SOURCE_APP_BLOCKED)
     }
 
     /**
@@ -299,7 +301,6 @@ object ClipboardBridgeCommandResultParser {
         if (!commandSucceeded) {
             return false
         }
-
         /** Provider 必须明确返回 ok，才能把后续 shouldSyncIcon 当作有效决策。 */
         return parseResultCode(output) == ClipboardBridgeContract.CODE_OK &&
             parseShouldSyncIcon(output) != null &&
@@ -318,10 +319,8 @@ object ClipboardBridgeCommandResultParser {
         if (!commandSucceeded) {
             return false
         }
-
         /** Provider 必须明确返回 ok，不能把任意 Bundle 输出都当图标补齐成功。 */
         val resultCode = parseResultCode(output)
-
         /** Provider 必须明确返回 saved 或 reused，表示图标缓存已可复用。 */
         val iconStatus = parseIconStatus(output)
         return resultCode == ClipboardBridgeContract.CODE_OK &&
@@ -340,7 +339,6 @@ object ClipboardBridgeCommandResultParser {
         if (!commandSucceeded) {
             return false
         }
-
         /** Provider 必须明确返回 ok、非空完整进程名、连接请求状态和原因码，才能作为身份判断依据。 */
         return parseResultCode(output) == ClipboardBridgeContract.CODE_OK &&
             !parseShizukuProcessName(output).isNullOrBlank() &&
@@ -380,102 +378,36 @@ object ClipboardBridgeCommandResultParser {
         return authorityMatched && (providerMissing || providerAccessFailed)
     }
 
-    /**
-     * 从 `content call` 输出中提取 Provider resultCode。
-     *
-     * @param output `content call` 打印出的 Bundle 文本。
-     */
-    fun parseResultCode(output: String): String? {
-        return resultCodeRegex.find(output)?.groupValues?.getOrNull(1)
-    }
+    /** 从 `content call` 输出中提取 Provider resultCode。 */
+    fun parseResultCode(output: String): String? = resultCodeRegex.find(output)?.groupValues?.getOrNull(1)
 
-    /**
-     * 从 `content call` 输出中提取 saved 布尔值。
-     *
-     * @param output `content call` 打印出的 Bundle 文本。
-     */
-    fun parseSaved(output: String): Boolean? {
-        return savedRegex.find(output)?.groupValues?.getOrNull(1)?.toBooleanStrictOrNull()
-    }
+    /** 从 `content call` 输出中提取 saved 布尔值。 */
+    fun parseSaved(output: String): Boolean? = savedRegex.find(output)?.groupValues?.getOrNull(1)?.toBooleanStrictOrNull()
 
-    /**
-     * 从 `content call` 输出中提取 clipCommitted 布尔值。
-     *
-     * @param output `content call` 打印出的 Bundle 文本。
-     */
-    fun parseClipCommitted(output: String): Boolean? {
-        return clipCommittedRegex.find(output)?.groupValues?.getOrNull(1)?.toBooleanStrictOrNull()
-    }
+    /** 从 `content call` 输出中提取 clipCommitted 布尔值。 */
+    fun parseClipCommitted(output: String): Boolean? = clipCommittedRegex.find(output)?.groupValues?.getOrNull(1)?.toBooleanStrictOrNull()
 
-    /**
-     * 从 `content call` 输出中提取 Provider clipStatus。
-     *
-     * @param output `content call` 打印出的 Bundle 文本。
-     */
-    fun parseClipStatus(output: String): String? {
-        return clipStatusRegex.find(output)?.groupValues?.getOrNull(1)
-    }
+    /** 从 `content call` 输出中提取 Provider clipStatus。 */
+    fun parseClipStatus(output: String): String? = clipStatusRegex.find(output)?.groupValues?.getOrNull(1)
 
-    /**
-     * 从 `content call` 输出中提取 Provider iconStatus。
-     *
-     * @param output `content call` 打印出的 Bundle 文本。
-     */
-    fun parseIconStatus(output: String): String? {
-        return iconStatusRegex.find(output)?.groupValues?.getOrNull(1)
-    }
+    /** 从 `content call` 输出中提取 Provider iconStatus。 */
+    fun parseIconStatus(output: String): String? = iconStatusRegex.find(output)?.groupValues?.getOrNull(1)
 
-    /**
-     * 从 `content call` 输出中提取 shouldSyncIcon 布尔值。
-     *
-     * @param output `content call` 打印出的 Bundle 文本。
-     */
-    fun parseShouldSyncIcon(output: String): Boolean? {
-        return shouldSyncIconRegex.find(output)?.groupValues?.getOrNull(1)?.toBooleanStrictOrNull()
-    }
+    /** 从 `content call` 输出中提取 shouldSyncIcon 布尔值。 */
+    fun parseShouldSyncIcon(output: String): Boolean? = shouldSyncIconRegex.find(output)?.groupValues?.getOrNull(1)?.toBooleanStrictOrNull()
 
-    /**
-     * 从 `content call` 输出中提取图标同步决策原因。
-     *
-     * @param output `content call` 打印出的 Bundle 文本。
-     */
-    fun parseIconDecisionReason(output: String): String? {
-        return iconDecisionReasonRegex.find(output)?.groupValues?.getOrNull(1)
-    }
+    /** 从 `content call` 输出中提取图标同步决策原因。 */
+    fun parseIconDecisionReason(output: String): String? = iconDecisionReasonRegex.find(output)?.groupValues?.getOrNull(1)
 
-    /**
-     * 从 `content call` 输出中提取期望 Shizuku 完整进程名。
-     *
-     * @param output `content call` 打印出的 Bundle 文本。
-     */
-    fun parseShizukuProcessName(output: String): String? {
-        return shizukuProcessNameRegex.find(output)?.groupValues?.getOrNull(1)
-    }
+    /** 从 `content call` 输出中提取期望 Shizuku 完整进程名。 */
+    fun parseShizukuProcessName(output: String): String? = shizukuProcessNameRegex.find(output)?.groupValues?.getOrNull(1)
 
-    /**
-     * 从 `content call` 输出中提取 connectRequested 布尔值。
-     *
-     * @param output `content call` 打印出的 Bundle 文本。
-     */
-    fun parseConnectRequested(output: String): Boolean? {
-        return connectRequestedRegex.find(output)?.groupValues?.getOrNull(1)?.toBooleanStrictOrNull()
-    }
+    /** 从 `content call` 输出中提取 connectRequested 布尔值。 */
+    fun parseConnectRequested(output: String): Boolean? = connectRequestedRegex.find(output)?.groupValues?.getOrNull(1)?.toBooleanStrictOrNull()
 
-    /**
-     * 从 `content call` 输出中提取连接跳过原因。
-     *
-     * @param output `content call` 打印出的 Bundle 文本。
-     */
-    fun parseConnectSkipReason(output: String): String? {
-        return connectSkipReasonRegex.find(output)?.groupValues?.getOrNull(1)
-    }
+    /** 从 `content call` 输出中提取连接跳过原因。 */
+    fun parseConnectSkipReason(output: String): String? = connectSkipReasonRegex.find(output)?.groupValues?.getOrNull(1)
 
-    /**
-     * 从 `content call` 输出中提取通用 reasonCode。
-     *
-     * @param output `content call` 打印出的 Bundle 文本。
-     */
-    fun parseReasonCode(output: String): String? {
-        return reasonCodeRegex.find(output)?.groupValues?.getOrNull(1)
-    }
+    /** 从 `content call` 输出中提取通用 reasonCode。 */
+    fun parseReasonCode(output: String): String? = reasonCodeRegex.find(output)?.groupValues?.getOrNull(1)
 }

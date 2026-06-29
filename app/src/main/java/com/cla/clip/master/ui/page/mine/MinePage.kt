@@ -35,6 +35,7 @@ import com.cla.clip.base.general.utils.toPermissionSetting
 import com.cla.clip.base.general.utils.toast
 import com.cla.clip.feature.magnet.api.MagnetFeatureEntry
 import com.cla.clip.master.entity.SettingSwitchItemUi
+import com.cla.clip.master.ui.navigation.ClipSourceBlockSettingRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.theme.ClipMasterThemeTokens
 import com.cla.clip.master.ui.widget.TopLevelPageScaffold
@@ -61,6 +62,8 @@ fun MinePage(
     val recycleBinCount by mineVm.recycleBinCount.collectAsStateWithLifecycle()
     /** 普通剪贴 item 快捷动作当前设置。 */
     val clipItemQuickAction by mineVm.clipItemQuickAction.collectAsStateWithLifecycle()
+    /** 当前剪贴来源过滤名单。 */
+    val blockedClipSourcePackages by mineVm.blockedClipSourcePackages.collectAsStateWithLifecycle()
     /** 更新入口当前展示状态。 */
     val appUpdateUiState by mineVm.appUpdateUiState.collectAsStateWithLifecycle()
     /** 当前页面 Context；只用于系统跳转和 toast。 */
@@ -139,6 +142,12 @@ fun MinePage(
                 ClipItemActionSettingEntry(
                     action = clipItemQuickAction,
                     onClick = { showClipItemActionDialog = true }
+                )
+            }
+            item {
+                ClipSourceBlockSettingEntry(
+                    blockedCount = blockedClipSourcePackages.size,
+                    onClick = { onNavigate(ClipSourceBlockSettingRoute) }
                 )
             }
         }

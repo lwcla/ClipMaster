@@ -6,6 +6,8 @@ import android.content.Context
 import android.net.Uri
 import androidx.core.content.FileProvider
 import com.cla.clip.base.general.R
+import com.cla.clip.base.general.config.AppSetting
+import com.cla.clip.base.general.config.ClipSourceBlockRules
 import com.cla.clip.base.general.entity.ClipCaptureEntity
 import com.cla.clip.base.general.entity.LiveEvent
 import com.cla.clip.base.general.repository.ClipRepository
@@ -180,6 +182,16 @@ class ClipHelper @Inject constructor(
             return@withContext ClipProcessResult.DuplicateOrEmpty
         }
 
+        /** 本次处理开始时的来源过滤名单快照；后续用户修改名单不会回溯影响已经开始的保存流程。 */
+        val blockedSourcePackages = AppSetting.blockedClipSourcePackages
+        if (ClipSourceBlockRules.isSourceBlocked(packageName, blockedSourcePackages)) {
+            logI(TAG) {
+                "processClipText: 来源 App 命中过滤名单，跳过保存 reasonCode=source_app_blocked " +
+                    "packageName=$packageName textLength=${clipContent.length}"
+            }
+            return@withContext ClipProcessResult.FilteredBySourceApp
+        }
+
         /** 数据库中最后一条剪贴记录，用于沿用现有“连续重复内容跳过保存”的语义。 */
         val lastClip = clipRepository.get().loadLastClip()
         if (
@@ -346,6 +358,9 @@ class ClipHelper @Inject constructor(
 enum class ClipProcessResult {
     /** 本次剪贴内容已经保存或更新到数据库。 */
     Saved,
+
+    /** 本次剪贴来源 App 命中过滤名单，未来保存被拦截但历史记录不受影响。 */
+    FilteredBySourceApp,
 
     /** 本次剪贴内容为空或命中连续重复规则，没有新增记录。 */
     DuplicateOrEmpty,

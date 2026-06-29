@@ -22,7 +22,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ImageExtractItemData::class,
         SearchHistoryData::class
     ],
-    version = 11, // 版本11：磁力用户数据迁移到可选 feature 独立数据库，主库不再声明磁力表。
+    version = 11, // 版本11：主库不再包含安装应用缓存表，过滤页改为 PackageManager 直读。
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
@@ -190,5 +190,6 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("DROP TABLE IF EXISTS `magnet_download_records`")
             }
         }
+
     }
 }

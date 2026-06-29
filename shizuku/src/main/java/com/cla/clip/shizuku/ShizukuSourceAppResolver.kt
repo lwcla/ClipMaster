@@ -87,8 +87,10 @@ private class AndroidShizukuSourceAppReader(
         val packageInfo = packageManager.getPackageInfo(clipPackageName, 0)
         /** 来源应用展示名；为空时由上层 resolver 回退 Unknown。 */
         val appName = packageInfo.applicationInfo?.loadLabel(packageManager)?.toString()
-        /** 来源应用图标 Drawable；为空或转换失败时由 `iconBitmap()` 返回空。 */
-        val bitmap = packageInfo.applicationInfo?.loadIcon(packageManager).iconBitmap()
+        /** 来源应用图标 Drawable；优先读取桌面入口图标，避免历史来源回退继续保存系统默认图标。 */
+        val bitmap = ShizukuAppIconLoader
+            .loadBestIcon(packageManager, clipPackageName)
+            .iconBitmap()
         return ShizukuSourceAppReadResult(appName = appName, bitmap = bitmap)
     }
 }

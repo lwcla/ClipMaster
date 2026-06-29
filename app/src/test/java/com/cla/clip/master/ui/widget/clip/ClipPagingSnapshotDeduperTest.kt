@@ -72,6 +72,7 @@ class ClipPagingSnapshotDeduperTest {
             deletedAt = 0L,
             formattedTime = "just now",
             appName = null,
+            sourceAppPackage = null,
             appIconPath = null,
             appIconHash = null,
             appColor = null,

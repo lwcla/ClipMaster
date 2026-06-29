@@ -3,6 +3,7 @@ package com.cla.clip.base.general.backup
 import androidx.room.withTransaction
 import com.cla.clip.base.general.config.AppSetting
 import com.cla.clip.base.general.config.ClipItemQuickAction
+import com.cla.clip.base.general.config.ClipSourceBlockRules
 import com.cla.clip.base.general.dao.AppDatabase
 import com.cla.clip.base.general.dao.ClipData
 import com.cla.clip.base.general.dao.DownloadTaskData
@@ -619,6 +620,21 @@ class BackupSnapshotRestorer @Inject constructor(
         }
         settings.recycleBinRetentionDays?.let { days ->
             AppSetting.recycleBinRetentionDays = days
+        }
+        if (settings.blockedClipSourcePackages.isNotEmpty()) {
+            /** 恢复前本机已经保存的来源过滤名单；恢复只能并集，不能覆盖本机新增规则。 */
+            val localBlockedPackages = AppSetting.blockedClipSourcePackages
+            /** 备份中规范化后的来源过滤名单；异常、空白和超长包名会被过滤。 */
+            val backupBlockedPackages = ClipSourceBlockRules.normalizePackageSet(settings.blockedClipSourcePackages)
+            /** 本机与备份取并集后的最终名单；超量时按同一规则排序裁剪到上限。 */
+            val mergedBlockedPackages = ClipSourceBlockRules.normalizePackageSet(localBlockedPackages + backupBlockedPackages)
+            if (mergedBlockedPackages.size < localBlockedPackages.size + backupBlockedPackages.minus(localBlockedPackages).size) {
+                logD(TAG) {
+                    "恢复来源过滤名单发生裁剪 reasonCode=backup_blocked_packages_trimmed " +
+                        "localCount=${localBlockedPackages.size} backupCount=${backupBlockedPackages.size} mergedCount=${mergedBlockedPackages.size}"
+                }
+            }
+            AppSetting.replaceBlockedPackages(mergedBlockedPackages)
         }
     }
 
