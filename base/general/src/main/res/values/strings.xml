@@ -8,6 +8,8 @@
     <string name="base_general_to_authorize">去授权</string>
     <string name="base_general_sure">确定</string>
     <string name="base_general_cancel">取消</string>
+    <string name="base_general_select">选中</string>
+    <string name="base_general_unselect">取消选中</string>
     <string name="base_general_back">返回</string>
     <string name="base_general_to_authorize_again">重新授权</string>
     <string name="base_general_pinned">置顶</string>
@@ -186,11 +188,14 @@
     <string name="base_general_sure_to_delete">确定要删除 %1$s 吗？</string>
     <string name="base_general_delete_clip_title">删除剪贴数据</string>
     <string name="base_general_delete_clip_choice_message">要删除 %1$s 吗？可以先移入回收站；彻底删除后不可恢复。</string>
+    <string name="base_general_delete_selected_clip_choice_message">将处理已选的 %1$d 条剪贴数据。可以先移入回收站；彻底删除后不可恢复。</string>
     <string name="base_general_move_to_recycle_bin">移入回收站</string>
     <string name="base_general_moved_to_recycle_bin">已移入回收站</string>
+    <string name="base_general_moved_count_to_recycle_bin">已将 %1$d 条数据移入回收站</string>
     <string name="base_general_delete_permanently">彻底删除</string>
     <string name="base_general_deleted_permanently">已彻底删除</string>
     <string name="base_general_deleted_count_permanently">已彻底删除 %1$d 条数据</string>
+    <string name="base_general_no_processable_clips">没有可处理的剪贴</string>
     <string name="base_general_recycle_bin">回收站</string>
     <string name="base_general_recycle_bin_entry_desc">回收站内有 %1$d 条剪贴数据</string>
     <string name="base_general_recycle_bin_empty">回收站是空的</string>
@@ -223,6 +228,7 @@
     <string name="base_general_clip_item_quick_action_setting_desc">普通列表和普通搜索结果的快捷动作区执行所选动作，其余区域进入详情。</string>
     <string name="base_general_current_option">当前：%1$s</string>
     <string name="base_general_fold_clip">折叠</string>
+    <string name="base_general_folded_clip_count">已折叠 %1$d 条</string>
     <string name="base_general_no_quick_action">无（整卡进入详情）</string>
     <string name="base_general_clip_source_block_setting">剪贴保存过滤</string>
     <string name="base_general_clip_source_block_setting_empty_desc">未设置，所有可识别来源 App 的新剪贴都会保存</string>

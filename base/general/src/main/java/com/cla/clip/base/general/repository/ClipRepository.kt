@@ -66,6 +66,9 @@ interface ClipRepository {
     /** 更新折叠状态；折叠时记录折叠时间，取消折叠时清空折叠时间。 */
     suspend fun updateFoldStatus(clipId: Long, isFolded: Boolean)
 
+    /** 批量折叠指定正常剪贴记录；已删除、已折叠或不存在的 id 会被忽略，并返回实际折叠数量。 */
+    suspend fun foldVisibleClips(ids: Set<Long>): Int
+
     /** 更新时间戳 */
     suspend fun updateTimestamp(clipId: Long)
 

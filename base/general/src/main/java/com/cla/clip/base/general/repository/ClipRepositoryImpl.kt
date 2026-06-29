@@ -354,6 +354,22 @@ class ClipRepositoryImpl @Inject constructor(
         AppSetting.markBackupDirty()
     }
 
+    override suspend fun foldVisibleClips(ids: Set<Long>): Int = withContext(Dispatchers.IO) {
+        /** 本次批量折叠的有效 id；过滤无效值并去重，避免 Room IN 参数浪费和重复计数误导调用方。 */
+        val normalizedIds = ids.filter { it > 0L }.distinct()
+        if (normalizedIds.isEmpty()) return@withContext 0
+        /** 同一批次共享的折叠时间，保证折叠列表排序和卡片展示时间不会因循环更新而分散。 */
+        val foldedAt = System.currentTimeMillis()
+        /** 实际被折叠的行数；DAO 会跳过回收站、已折叠和不存在的数据。 */
+        val folded = appDatabase.withTransaction {
+            normalizedIds.chunked(ID_BATCH_SIZE).sumOf { chunk ->
+                clipDao.foldVisibleClips(chunk, foldedAt)
+            }
+        }
+        if (folded > 0) AppSetting.markBackupDirty()
+        folded
+    }
+
     override suspend fun updateTimestamp(clipId: Long) {
         val currentTime = System.currentTimeMillis()
         // 这里直接调用 upsertClip 来更新 timestamp，保持逻辑一致性

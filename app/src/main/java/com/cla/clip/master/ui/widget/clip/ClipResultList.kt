@@ -47,6 +47,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
@@ -126,6 +127,8 @@ fun ClipResultList(
     swipePastActionText: String? = null,
     timeMode: ClipCardTimeMode = ClipCardTimeMode.ClipTime,
     selectedIds: Set<Long> = emptySet(),
+    selectionMode: Boolean = false,
+    onToggleSelection: (ClipShowEntity) -> Unit = {},
     quickAction: ClipItemQuickAction = ClipItemQuickAction.None,
     enableQuickAction: Boolean = false,
 ) {
@@ -133,6 +136,13 @@ fun ClipResultList(
     var pendingPinScrollRestore by remember { mutableStateOf<PendingPinScrollRestore?>(null) }
     // 共享列表只允许一个右滑菜单保持展开；新 item 开始右滑时写入该 id，其他 item 会观察到并自动收回。
     var openedMenuClipId by rememberSaveable { mutableStateOf<Long?>(null) }
+
+    LaunchedEffect(selectionMode) {
+        if (selectionMode) {
+            // 进入多选时清空父层菜单归属，避免底部批量栏出现后列表仍认为某个 item 处于展开状态。
+            openedMenuClipId = null
+        }
+    }
 
     LaunchedEffect(pagedClips, listState) {
         snapshotFlow {
@@ -196,6 +206,8 @@ fun ClipResultList(
                                 onClick = onClick,
                                 onLongClick = onLongClick,
                                 selected = clip.id in selectedIds,
+                                selectionMode = selectionMode,
+                                onToggleSelection = onToggleSelection,
                                 timeMode = timeMode,
                                 quickAction = quickAction,
                                 enableQuickAction = enableQuickAction,
@@ -262,6 +274,8 @@ fun ClipCard(
     highlightQuery: String? = null,
     swipePastActionText: String? = null,
     selected: Boolean = false,
+    selectionMode: Boolean = false,
+    onToggleSelection: (ClipShowEntity) -> Unit = {},
     timeMode: ClipCardTimeMode = ClipCardTimeMode.ClipTime,
     quickAction: ClipItemQuickAction = ClipItemQuickAction.None,
     enableQuickAction: Boolean = false,
@@ -281,9 +295,9 @@ fun ClipCard(
     val actionIconSize = 24.dp
     val dividerWidth = 0.5.dp
     val dividerHeight = actionIconSize + 10.dp
-    val showCopyAction = onCopy != null
-    val showPinAction = onPinToggle != null
-    val showDeleteAction = onDelete != null
+    val showCopyAction = !selectionMode && onCopy != null
+    val showPinAction = !selectionMode && onPinToggle != null
+    val showDeleteAction = !selectionMode && onDelete != null
     val actionCount = listOf(showCopyAction, showPinAction, showDeleteAction).count { it }
     val showActionMenu = actionCount > 0
     val actionAreaWidth = if (actionCount > 0) {
@@ -320,7 +334,8 @@ fun ClipCard(
     val deleteDescription = stringResource(com.cla.clip.base.general.R.string.base_general_delete)
     val copyDescription = stringResource(com.cla.clip.base.general.R.string.base_general_copy)
     val detailDescription = stringResource(com.cla.clip.base.general.R.string.base_general_clip_detail)
-    val canRunQuickAction = enableQuickAction &&
+    val canRunQuickAction = !selectionMode &&
+        enableQuickAction &&
         quickAction != ClipItemQuickAction.None &&
         when (quickAction) {
             ClipItemQuickAction.Copy -> onCopy != null
@@ -339,6 +354,7 @@ fun ClipCard(
     val currentOnSwipePastAction by rememberUpdatedState(onSwipePastAction)
     val currentOnClick by rememberUpdatedState(onClick)
     val currentOnLongClick by rememberUpdatedState(onLongClick)
+    val currentOnToggleSelection by rememberUpdatedState(onToggleSelection)
     val currentOnKeepCurrentScrollPosition by rememberUpdatedState(onKeepCurrentScrollPosition)
     val currentOnMenuActive by rememberUpdatedState(onMenuActive)
     val currentOnMenuInactive by rememberUpdatedState(onMenuInactive)
@@ -346,6 +362,16 @@ fun ClipCard(
     var pressedZone by remember(clip.id) { mutableStateOf<ClipCardPressedZone?>(null) }
     // 外层 Card、侧滑内容和边框共用同一个圆角，保证阴影、水波纹和裁剪视觉一致。
     val cardShape = ClipMasterCardDefaults.shape
+    /** 多选态点击语义文案，TalkBack 会据此说明当前点击是选中或取消选中，而不是查看详情。 */
+    val selectionClickDescription = stringResource(
+        if (selected) {
+            com.cla.clip.base.general.R.string.base_general_unselect
+        } else {
+            com.cla.clip.base.general.R.string.base_general_select
+        }
+    )
+    /** 多选态是否允许第二段右滑；选择状态下必须关闭，避免批量管理和折叠/删除手势互相冲突。 */
+    val effectiveSwipePastActionText = if (selectionMode) null else swipePastActionText
 
     /** 执行普通列表/普通搜索快捷动作区动作，具体业务仍由页面层回调决定。 */
     fun runQuickAction() {
@@ -419,6 +445,17 @@ fun ClipCard(
     LaunchedEffect(shouldCloseForOtherMenu, isSwipeOffsetAnimating) {
         if (shouldCloseForOtherMenu && !isSwipeOffsetAnimating) {
             // 父层已经把菜单归属切到其他 item，本 item 如果还展开着，需要自动收回，保证列表里最多只有一个菜单可见。
+            animateOffsetTo(
+                targetOffsetPx = 0f,
+                durationMillis = swipeSettleAnimationMs,
+                onFinished = { currentOnMenuInactive(clip.id) }
+            )
+        }
+    }
+
+    LaunchedEffect(selectionMode) {
+        if (selectionMode && offsetPx != 0f && !isSwipeOffsetAnimating) {
+            // 进入多选时主动收回已经展开的右滑菜单，避免菜单按钮和底部批量操作同时出现在屏幕上。
             animateOffsetTo(
                 targetOffsetPx = 0f,
                 durationMillis = swipeSettleAnimationMs,
@@ -537,7 +574,7 @@ fun ClipCard(
             }
         }
 
-        if (swipePastActionText != null) {
+        if (effectiveSwipePastActionText != null) {
             Box(
                 modifier = Modifier
                     .matchParentSize()
@@ -557,7 +594,7 @@ fun ClipCard(
                         ?.coerceIn(0f, 1f)
                         ?: if (offsetPx >= swipePastTriggerPx) 1f else 0f
                     Text(
-                        text = swipePastActionText,
+                        text = effectiveSwipePastActionText,
                         modifier = Modifier
                             .padding(horizontal = 12.dp)
                             .alpha(progress),
@@ -578,24 +615,36 @@ fun ClipCard(
                 .fillMaxWidth()
                 .offset(x = offsetDp)
                 .semantics {
-                    // 自定义几何热区不自带可访问性语义；默认无障碍点击先保持进入详情，快捷动作留给后续自定义语义动作补充。
-                    onClick(label = detailDescription) {
-                        currentOnClick(currentClip)
-                        true
+                    if (selectionMode) {
+                        // 多选态点击语义必须与实际行为一致：点击只切换选中，不进入详情。
+                        this.selected = selected
+                        onClick(label = selectionClickDescription) {
+                            currentOnToggleSelection(currentClip)
+                            true
+                        }
+                    } else {
+                        // 自定义几何热区不自带可访问性语义；默认无障碍点击先保持进入详情，快捷动作留给后续自定义语义动作补充。
+                        onClick(label = detailDescription) {
+                            currentOnClick(currentClip)
+                            true
+                        }
                     }
                     onLongClick {
                         currentOnLongClick(currentClip)
                         true
                     }
                 }
-                .pointerInput(clip.id, maxOffsetPx, swipePastDragMaxPx, swipePastTriggerPx, swipePastActionText, canRunQuickAction) {
+                .pointerInput(clip.id, maxOffsetPx, swipePastDragMaxPx, swipePastTriggerPx, effectiveSwipePastActionText, canRunQuickAction, selectionMode) {
                     detectClipCardGestures(
                         isMenuOpened = { offsetPx > 0f },
                         isAnimating = { isSwipeOffsetAnimating },
                         isQuickActionEnabled = { canRunQuickAction },
+                        isSwipeEnabled = { !selectionMode },
                         onPressZoneChanged = { pressedZone = it },
                         onTap = { _, isQuickActionTap ->
-                            if (isQuickActionTap) {
+                            if (selectionMode) {
+                                currentOnToggleSelection(currentClip)
+                            } else if (isQuickActionTap) {
                                 runQuickAction()
                             } else {
                                 currentOnClick(currentClip)
@@ -610,13 +659,13 @@ fun ClipCard(
                                     currentOnMenuActive(clip.id)
                                 }
                                 // 只允许向右展开、向左收回；存在继续滑动动作时允许进入第二段提示区，但仍限制最大距离避免 item 被拖离过远。
-                                val dragMaxOffset = if (swipePastActionText == null) maxOffsetPx else swipePastDragMaxPx
+                                val dragMaxOffset = if (effectiveSwipePastActionText == null) maxOffsetPx else swipePastDragMaxPx
                                 offsetPx = nextOffset.coerceIn(0f, dragMaxOffset)
                             }
                         },
                         onDragEnd = {
                             // 第二段继续右滑只在松手且超过阈值时触发，避免用户只是查看菜单时误折叠、误取消折叠或误彻底删除。
-                            val shouldRunSwipePastAction = onSwipePastAction != null && swipePastActionText != null && offsetPx >= swipePastTriggerPx
+                            val shouldRunSwipePastAction = onSwipePastAction != null && effectiveSwipePastActionText != null && offsetPx >= swipePastTriggerPx
                             if (shouldRunSwipePastAction && !isSwipeOffsetAnimating) {
                                 val targetOffsetPx = swipePastDragMaxPx
                                 // 先让卡片完整滑出当前 item，动画结束后再更新折叠状态，避免 Paging 立刻刷新造成半途消失。

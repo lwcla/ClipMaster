@@ -1,5 +1,6 @@
 package com.cla.clip.master.ui.page.search
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -53,10 +54,12 @@ import com.cla.clip.base.general.config.ClipItemQuickAction
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.entity.ClipVisibilityScope
 import com.cla.clip.base.general.utils.displayName
+import com.cla.clip.master.ui.dialog.ClipBatchDeleteChoiceDialog
 import com.cla.clip.master.ui.dialog.ClipDeleteChoiceDialog
 import com.cla.clip.master.ui.navigation.DetailRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.navigation.SearchScope
+import com.cla.clip.master.ui.widget.ClipBatchSelectionActionBar
 import com.cla.clip.master.ui.widget.SingleChoiceDialog
 import com.cla.clip.master.ui.widget.SingleChoiceOption
 import com.cla.clip.master.ui.widget.clip.ClipCardTimeMode
@@ -138,6 +141,14 @@ fun SearchPage(
     var headerSnapJob by remember { mutableStateOf<Job?>(null) }
     /** 待删除的剪贴记录；非空时展示统一删除选择弹窗。 */
     var deleteClip by remember { mutableStateOf<ClipShowEntity?>(null) }
+    /** 当前普通搜索结果选中的剪贴 id；折叠搜索第一版不读取该集合。 */
+    var selectedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    /** 当前是否处于搜索结果批量多选态；允许 0 选中时继续停留，方便用户重新选择。 */
+    var selectionMode by remember { mutableStateOf(false) }
+    /** 批量动作执行中标记；执行期间禁用底部按钮，避免重复弹窗或重复写库。 */
+    var isBatchActionRunning by remember { mutableStateOf(false) }
+    /** 是否显示批量删除选择弹窗；弹窗只展示数量，不展示搜索词或剪贴内容。 */
+    var showBatchDeleteDialog by remember { mutableStateOf(false) }
     /** 来源选择弹窗显示状态，弹窗内部继续维护草稿选择。 */
     var showSourcePicker by remember { mutableStateOf(false) }
     /** 时间筛选单选弹窗显示状态；打开和取消都不改变历史/结果模式和列表滚动位置。 */
@@ -160,6 +171,41 @@ fun SearchPage(
     val contentTopPaddingDp = with(density) {
         max(statusBarTopPx, headerHeightPx + headerOffsetPx).toDp()
     }
+    /** 当前选中数量；底部栏、批量弹窗和按钮可用性共用同一份派生值。 */
+    val selectedCount = selectedIds.size
+    /** 普通搜索结果是否正在展示多选态；折叠搜索第一版不接入批量删除和批量折叠。 */
+    val clipSelectionMode = isVisibleSearch && selectionMode
+    /** 批量操作按钮是否可用；0 选中或执行中都不能触发删除/折叠。 */
+    val batchActionsEnabled = clipSelectionMode && selectedCount > 0 && !isBatchActionRunning
+
+    /** 退出多选态并清空选择；返回键、查询条件变化和批量动作完成都复用这个出口。 */
+    fun clearSelection() {
+        selectionMode = false
+        selectedIds = emptySet()
+        isBatchActionRunning = false
+        showBatchDeleteDialog = false
+    }
+
+    /** 长按普通搜索结果进入多选态，并把当前记录加入选中集合。 */
+    fun enterSelection(clip: ClipShowEntity) {
+        if (!isVisibleSearch) {
+            return
+        }
+        selectionMode = true
+        selectedIds = selectedIds + clip.id
+    }
+
+    /** 多选态点击 item 时切换选中状态；非普通搜索范围不会触发该选择语义。 */
+    fun toggleSelection(clip: ClipShowEntity) {
+        if (!isVisibleSearch) {
+            return
+        }
+        selectedIds = if (clip.id in selectedIds) {
+            selectedIds - clip.id
+        } else {
+            selectedIds + clip.id
+        }
+    }
 
     /**
      * 切到历史模式并展开搜索头。
@@ -167,6 +213,9 @@ fun SearchPage(
      * 用户进入搜索页、重新聚焦输入框、编辑关键词或清空关键词时调用；不依赖历史是否为空，保证空历史也覆盖结果。
      */
     fun showHistoryMode() {
+        if (selectionMode) {
+            clearSelection()
+        }
         pageMode = SearchPageMode.History
         headerCollapseState = SearchHeaderCollapseState.Expanded
         headerOffsetPx = 0f
@@ -186,6 +235,10 @@ fun SearchPage(
             focusManager.clearFocus()
             keyboardController?.hide()
         }
+    }
+
+    BackHandler(enabled = clipSelectionMode) {
+        clearSelection()
     }
 
     /**
@@ -306,6 +359,12 @@ fun SearchPage(
         }
     }
 
+    LaunchedEffect(visibilityScope, filterState.query, filterState.timeFilter, filterState.sourceAppPackages) {
+        if (selectionMode) {
+            clearSelection()
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -365,7 +424,7 @@ fun SearchPage(
                     start = 10.dp,
                     top = contentTopPaddingDp + 10.dp,
                     end = 10.dp,
-                    bottom = navigationBarBottomPadding + 12.dp,
+                    bottom = navigationBarBottomPadding + if (clipSelectionMode) 96.dp else 12.dp,
                 ),
                 // 折叠搜索保留置顶操作能力；数据层会先排置顶数据，再在分组内按 foldedAt 倒序。
                 onPinToggle = { clip -> viewModel.updatePinStatus(clip, !clip.isPinned) },
@@ -380,11 +439,18 @@ fun SearchPage(
                 swipePastActionText = stringResource(scope.swipePastTextRes),
                 timeMode = if (isVisibleSearch) ClipCardTimeMode.ClipTime else ClipCardTimeMode.FoldedTime,
                 quickAction = quickAction,
-                enableQuickAction = isVisibleSearch && quickAction != ClipItemQuickAction.None,
-                onClick = { onNavigate(DetailRoute(it.id)) },
-                onLongClick = {
-                    // 搜索页暂不提供长按动作，保留共享列表回调契约即可。
-                }
+                enableQuickAction = isVisibleSearch && !clipSelectionMode && quickAction != ClipItemQuickAction.None,
+                selectedIds = if (clipSelectionMode) selectedIds else emptySet(),
+                selectionMode = clipSelectionMode,
+                onToggleSelection = ::toggleSelection,
+                onClick = { clip ->
+                    if (clipSelectionMode) {
+                        toggleSelection(clip)
+                    } else {
+                        onNavigate(DetailRoute(clip.id))
+                    }
+                },
+                onLongClick = { clip -> enterSelection(clip) }
             )
         }
 
@@ -421,6 +487,25 @@ fun SearchPage(
                 showSourcePicker = true
             }
         )
+
+        if (clipSelectionMode) {
+            ClipBatchSelectionActionBar(
+                selectedText = stringResource(com.cla.clip.base.general.R.string.base_general_selected_count, selectedCount),
+                deleteText = stringResource(com.cla.clip.base.general.R.string.base_general_delete),
+                foldText = stringResource(com.cla.clip.base.general.R.string.base_general_fold_clip),
+                enabled = batchActionsEnabled,
+                modifier = Modifier.align(Alignment.BottomCenter),
+                onDelete = { showBatchDeleteDialog = true },
+                onFold = {
+                    /** 本次要折叠的 id 快照；执行期间 UI 可退出多选，但数据库仍按这份快照处理。 */
+                    val idsToFold = selectedIds
+                    isBatchActionRunning = true
+                    viewModel.foldVisibleClips(idsToFold) {
+                        clearSelection()
+                    }
+                }
+            )
+        }
     }
 
     ClipDeleteChoiceDialog(
@@ -428,6 +513,28 @@ fun SearchPage(
         onDismiss = { deleteClip = null },
         onMoveToRecycleBin = viewModel::deleteClip,
         onDeletePermanently = viewModel::deleteClipPermanently
+    )
+
+    ClipBatchDeleteChoiceDialog(
+        selectedCount = selectedCount,
+        visible = showBatchDeleteDialog,
+        onDismiss = { showBatchDeleteDialog = false },
+        onMoveToRecycleBin = {
+            /** 本次要移入回收站的 id 快照；弹窗不会读取或展示任何剪贴正文。 */
+            val idsToDelete = selectedIds
+            isBatchActionRunning = true
+            viewModel.moveClipsToRecycleBin(idsToDelete) {
+                clearSelection()
+            }
+        },
+        onDeletePermanently = {
+            /** 本次要彻底删除的 id 快照；Repository 会过滤无效、重复或已不可处理的记录。 */
+            val idsToDelete = selectedIds
+            isBatchActionRunning = true
+            viewModel.deleteClipsPermanently(idsToDelete) {
+                clearSelection()
+            }
+        }
     )
 
     if (showTimeFilterDialog) {
@@ -442,6 +549,7 @@ fun SearchPage(
             },
             selectedValue = filterState.timeFilter,
             onSelect = { selectedFilter ->
+                clearSelection()
                 viewModel.updateTimeFilter(selectedFilter)
                 showTimeFilterDialog = false
             },
@@ -456,6 +564,7 @@ fun SearchPage(
             selectedPackageNames = filterState.sourceAppPackages,
             onDismiss = { showSourcePicker = false },
             onConfirm = { selectedPackageNames ->
+                clearSelection()
                 viewModel.updateSourceApps(selectedPackageNames)
                 showSourcePicker = false
             }

@@ -19,6 +19,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -370,6 +371,64 @@ internal fun SelectionActionBar(
                     DeleteActionIcon(contentDescription = null, tint = actionIconTint, size = 18.dp)
                     Spacer(Modifier.width(6.dp))
                     Text(actionText)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 剪贴批量选择底部操作栏。
+ *
+ * 第一版只承载“删除”和“折叠”两个批量动作；调用方负责决定按钮可用性和执行中的防连点状态。
+ */
+@Composable
+internal fun ClipBatchSelectionActionBar(
+    selectedText: String,
+    deleteText: String,
+    foldText: String,
+    onDelete: () -> Unit,
+    onFold: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    /** 删除图标颜色跟随可用性；禁用时降级，避免 0 选中时误导用户可以执行危险操作。 */
+    val deleteIconTint = if (enabled) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    Box(
+        // 作为 Scaffold.bottomBar 使用时只占据底部实际高度，列表额外 bottom padding 由调用方负责。
+        modifier = modifier.fillMaxWidth(),
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        Surface(
+            tonalElevation = 8.dp,
+            shadowElevation = 8.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = selectedText,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                OutlinedButton(
+                    enabled = enabled,
+                    onClick = onFold
+                ) {
+                    Text(foldText)
+                }
+                Spacer(Modifier.width(8.dp))
+                Button(
+                    enabled = enabled,
+                    onClick = onDelete
+                ) {
+                    DeleteActionIcon(contentDescription = null, tint = deleteIconTint, size = 18.dp)
+                    Spacer(Modifier.width(6.dp))
+                    Text(deleteText)
                 }
             }
         }

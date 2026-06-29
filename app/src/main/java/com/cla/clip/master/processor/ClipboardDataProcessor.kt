@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -44,11 +45,20 @@ interface ClipboardDataProcessor {
     /** 彻底删除剪贴 item，不进入回收站。 */
     fun deleteClipPermanently(clip: ClipShowEntity, sendEvent: Boolean = false)
 
+    /** 将指定剪贴记录批量移入回收站，完成后通过回调返回实际处理数量。 */
+    fun moveClipsToRecycleBin(ids: Set<Long>, onComplete: (Int) -> Unit = {})
+
+    /** 批量彻底删除指定剪贴记录，完成后通过回调返回实际处理数量。 */
+    fun deleteClipsPermanently(ids: Set<Long>, onComplete: (Int) -> Unit = {})
+
     /** 更新置顶状态；true 会写入当前时间，false 会清零置顶时间。 */
     fun updatePinStatus(clip: ClipShowEntity, isPinned: Boolean)
 
     /** 更新折叠状态；折叠会记录折叠时间，取消折叠会清空折叠时间，不改变剪贴内容本身。 */
     fun updateFoldStatus(clip: ClipShowEntity, isFolded: Boolean)
+
+    /** 批量折叠普通剪贴记录，完成后通过回调返回实际折叠数量。 */
+    fun foldVisibleClips(ids: Set<Long>, onComplete: (Int) -> Unit = {})
 }
 
 /**
@@ -121,6 +131,38 @@ class DefaultClipboardDataProcessor @Inject constructor(
         }
     }
 
+    override fun moveClipsToRecycleBin(ids: Set<Long>, onComplete: (Int) -> Unit) {
+        scope.launch(Dispatchers.IO) {
+            /** 实际移入回收站数量；Repository 会过滤无效、重复和已删除 id。 */
+            val count = clipRepository.get().moveClipsToRecycleBin(ids)
+            if (count > 0) {
+                BackupAutoScheduler.markDirtyAndSchedule(appContext)
+                appContext.toast(appContext.getString(R.string.base_general_moved_count_to_recycle_bin, count))
+            } else {
+                appContext.toast(R.string.base_general_no_processable_clips)
+            }
+            withContext(Dispatchers.Main) {
+                onComplete(count)
+            }
+        }
+    }
+
+    override fun deleteClipsPermanently(ids: Set<Long>, onComplete: (Int) -> Unit) {
+        scope.launch(Dispatchers.IO) {
+            /** 实际彻底删除数量；Repository 会过滤无效、重复和不存在的 id。 */
+            val count = clipRepository.get().deleteClipsPermanently(ids)
+            if (count > 0) {
+                BackupAutoScheduler.markDirtyAndSchedule(appContext)
+                appContext.toast(appContext.getString(R.string.base_general_deleted_count_permanently, count))
+            } else {
+                appContext.toast(R.string.base_general_no_processable_clips)
+            }
+            withContext(Dispatchers.Main) {
+                onComplete(count)
+            }
+        }
+    }
+
     override fun updatePinStatus(clip: ClipShowEntity, isPinned: Boolean) {
         scope.launch(Dispatchers.IO) {
             clipRepository.get().updatePinStatus(clip.id, isPinned)
@@ -132,6 +174,22 @@ class DefaultClipboardDataProcessor @Inject constructor(
         scope.launch(Dispatchers.IO) {
             clipRepository.get().updateFoldStatus(clip.id, isFolded)
             BackupAutoScheduler.markDirtyAndSchedule(appContext)
+        }
+    }
+
+    override fun foldVisibleClips(ids: Set<Long>, onComplete: (Int) -> Unit) {
+        scope.launch(Dispatchers.IO) {
+            /** 实际折叠数量；Repository/DAO 会跳过已删除、已折叠和不存在的记录。 */
+            val count = clipRepository.get().foldVisibleClips(ids)
+            if (count > 0) {
+                BackupAutoScheduler.markDirtyAndSchedule(appContext)
+                appContext.toast(appContext.getString(R.string.base_general_folded_clip_count, count))
+            } else {
+                appContext.toast(R.string.base_general_no_processable_clips)
+            }
+            withContext(Dispatchers.Main) {
+                onComplete(count)
+            }
         }
     }
 }

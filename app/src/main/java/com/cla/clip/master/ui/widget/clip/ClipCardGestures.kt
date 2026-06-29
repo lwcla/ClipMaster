@@ -91,6 +91,7 @@ internal fun fullCardPath(width: Float, height: Float): Path {
  * @param isMenuOpened 当前 item 菜单是否已经露出，决定左滑是否由 item 优先消费。
  * @param isAnimating 偏移动画是否正在执行，动画中继续消费横向手势，避免父级 Pager 抢占。
  * @param isQuickActionEnabled 是否启用斜向快捷动作区，未启用时整卡点击进入详情。
+ * @param isSwipeEnabled 当前 item 是否允许接管右滑；多选态会关闭它，让批量管理不再触发或消费侧滑。
  * @param onPressZoneChanged 按压反馈区域变化回调；所有取消路径都必须传 null 清理反馈。
  * @param onTap 未被拖动/长按取消时的点击回调，第二个参数表示是否命中快捷动作区。
  * @param onLongPress 长按回调，任意位置长按都交给页面层处理。
@@ -102,6 +103,7 @@ internal suspend fun PointerInputScope.detectClipCardGestures(
     isMenuOpened: () -> Boolean,
     isAnimating: () -> Boolean,
     isQuickActionEnabled: () -> Boolean,
+    isSwipeEnabled: () -> Boolean,
     onPressZoneChanged: (ClipCardPressedZone?) -> Unit,
     onTap: (Offset, Boolean) -> Unit,
     onLongPress: () -> Unit,
@@ -159,6 +161,7 @@ internal suspend fun PointerInputScope.detectClipCardGestures(
                     val horizontalPastSlop = abs(totalDelta.x) > touchSlop &&
                         abs(totalDelta.x) >= abs(totalDelta.y)
                     val shouldHandleSwipe = horizontalPastSlop &&
+                        isSwipeEnabled() &&
                         (isMenuOpened() || isAnimating() || totalDelta.x > 0f)
                     if (shouldHandleSwipe) {
                         val overSlopX = totalDelta.x - touchSlop * sign(totalDelta.x)

@@ -59,6 +59,56 @@ fun ClipDeleteChoiceDialog(
 }
 
 /**
+ * 批量剪贴删除选择弹窗。
+ *
+ * 批量场景只展示数量，不展示任何剪贴内容，避免弹窗泄露隐私或被长文本撑开。
+ */
+@Composable
+fun ClipBatchDeleteChoiceDialog(
+    selectedCount: Int,
+    visible: Boolean,
+    onDismiss: () -> Unit,
+    onMoveToRecycleBin: () -> Unit,
+    onDeletePermanently: () -> Unit,
+) {
+    if (!visible) {
+        return
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(com.cla.clip.base.general.R.string.base_general_delete_clip_title)) },
+        text = {
+            Text(
+                stringResource(
+                    com.cla.clip.base.general.R.string.base_general_delete_selected_clip_choice_message,
+                    selectedCount
+                )
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onDismiss()
+                onMoveToRecycleBin()
+            }) {
+                Text(stringResource(com.cla.clip.base.general.R.string.base_general_move_to_recycle_bin))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = {
+                onDismiss()
+                onDeletePermanently()
+            }) {
+                Text(
+                    text = stringResource(com.cla.clip.base.general.R.string.base_general_delete_permanently),
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+    )
+}
+
+/**
  * 兼容旧调用点的单动作删除弹窗。
  *
  * 新剪贴页面应优先使用 `ClipDeleteChoiceDialog`；该组件保留给尚未迁移或非回收站语义的简单确认场景。

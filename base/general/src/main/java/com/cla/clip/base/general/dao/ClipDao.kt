@@ -466,6 +466,10 @@ interface ClipDao {
     @Query("UPDATE clips SET is_folded = :isFolded, folded_at = :foldedAt WHERE id = :id")
     suspend fun updateFoldStatus(id: Long, isFolded: Boolean, foldedAt: Long)
 
+    /** 批量折叠正常未折叠记录；回收站和已折叠记录不更新，保证批量入口不会污染其他数据范围。 */
+    @Query("UPDATE clips SET is_folded = 1, folded_at = :foldedAt WHERE id IN (:ids) AND deleted_at = 0 AND is_folded = 0")
+    suspend fun foldVisibleClips(ids: List<Long>, foldedAt: Long): Int
+
     /** 更新时间戳 */
     @Query("UPDATE clips SET timestamp = :timestamp WHERE id = :id")
     suspend fun updateTimestamp(id: Long, timestamp: Long)

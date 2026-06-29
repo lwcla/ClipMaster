@@ -160,6 +160,39 @@ class ClipDaoPagingOrderTest {
         assertEquals(listOf(62L, 57L, 41L), ids)
     }
 
+    @Test
+    /** 批量折叠只应更新正常未折叠记录，并为同一批次写入相同 foldedAt，避免回收站或已折叠数据被误改。 */
+    fun foldVisibleClipsOnlyUpdatesVisibleUnfoldedRows() = runBlocking {
+        dao.upsertClipsForBackup(
+            listOf(
+                clip(id = 11, content = "visible-11", timestamp = 1_000),
+                clip(id = 12, content = "visible-12", timestamp = 1_100),
+                clip(id = 13, content = "already-folded", timestamp = 1_200, isFolded = true, foldedAt = 8_000),
+                clip(id = 14, content = "deleted-visible", timestamp = 1_300, deletedAt = 9_000),
+            )
+        )
+
+        /** 本批次折叠时间戳，所有被折叠记录必须写入同一个值来保证折叠列表排序稳定。 */
+        val foldedAt = 12_345L
+        /** 本批次实际折叠数量；已折叠、回收站、无效 id 和重复 id 都不应计入。 */
+        val updatedCount = dao.foldVisibleClips(
+            ids = listOf(11L, 12L, 12L, 13L, 14L, -1L),
+            foldedAt = foldedAt,
+        )
+        /** 按 id 回读的剪贴记录，方便逐条断言折叠状态和边界记录是否被保留。 */
+        val clipsById = dao.loadClipsByIdsForBackup(listOf(11L, 12L, 13L, 14L)).associateBy { it.id }
+
+        assertEquals(2, updatedCount)
+        assertEquals(true, clipsById.getValue(11L).isFolded)
+        assertEquals(foldedAt, clipsById.getValue(11L).foldedAt)
+        assertEquals(true, clipsById.getValue(12L).isFolded)
+        assertEquals(foldedAt, clipsById.getValue(12L).foldedAt)
+        assertEquals(true, clipsById.getValue(13L).isFolded)
+        assertEquals(8_000L, clipsById.getValue(13L).foldedAt)
+        assertEquals(false, clipsById.getValue(14L).isFolded)
+        assertEquals(0L, clipsById.getValue(14L).foldedAt)
+    }
+
     /** 构造最小剪贴记录样本；只设置与排序相关的字段，避免无关字段干扰断言。 */
     private fun clip(
         id: Long,
