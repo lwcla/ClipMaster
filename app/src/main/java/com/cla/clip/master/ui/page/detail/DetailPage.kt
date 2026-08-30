@@ -57,7 +57,7 @@ import com.cla.clip.feature.ad.api.AdSlotRequest
 import com.cla.clip.feature.ad.api.AdSourceEntry
 import com.cla.clip.feature.ad.api.AdSourceSelection
 import com.cla.clip.feature.ad.api.AdSourceSelector
-import com.cla.clip.feature.magnet.api.MagnetFeatureEntry
+import com.cla.clip.feature.torrent.search.api.TorrentSearchFeatureEntry
 import com.cla.clip.master.ad.DetailAdSensitivityPolicy
 import com.cla.clip.master.ui.dialog.ClipDeleteChoiceDialog
 import com.cla.clip.master.ui.navigation.ImageExtractRoute
@@ -124,6 +124,9 @@ internal enum class DetailLinkType {
  *
  * 页面根据路由传入的 `clipId` 加载单条剪贴记录，点击正文卡片复制内容，并提供删除以及跳转到图片/视频提取的入口。
  * 数据读取和剪贴操作放在 ViewModel 中，Composable 只负责生命周期触发和状态渲染。
+ *
+ * @param torrentSearchFeatures 可选 TorrentSearch 操作集合；关闭实现模块时为空，不渲染快捷按钮。
+ * @param onLaunchTorrentSearch 用户点击快捷按钮后的回调，携带入口实现和当前剪贴候选查询文本。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -132,8 +135,8 @@ fun DetailPage(
     clipId: Long,
     onBack: () -> Unit,
     onNavigate: (Route) -> Unit,  // 跳转页面
-    magnetFeatures: Set<MagnetFeatureEntry> = emptySet(),
-    onOpenMagnetSearch: (MagnetFeatureEntry, String) -> Unit = { _, _ -> },
+    torrentSearchFeatures: Set<TorrentSearchFeatureEntry> = emptySet(),
+    onLaunchTorrentSearch: (TorrentSearchFeatureEntry, String) -> Unit = { _, _ -> },
     adSources: Set<AdSourceEntry> = emptySet(),
     adSourceSelector: AdSourceSelector = remember { AdSourceSelector() },
     activeAdSourceIdFlow: StateFlow<String> = remember { MutableStateFlow("auto") },
@@ -260,8 +263,8 @@ fun DetailPage(
                     DetailActionSections(
                         detailVm = detailVm,
                         onNavigate = onNavigate,
-                        magnetFeatures = magnetFeatures,
-                        onOpenMagnetSearch = onOpenMagnetSearch,
+                        torrentSearchFeatures = torrentSearchFeatures,
+                        onLaunchTorrentSearch = onLaunchTorrentSearch,
                         clip = clip,
                         adSources = adSources,
                         adSourceSelector = adSourceSelector,
@@ -410,16 +413,19 @@ private fun logDetailAdEvent(event: AdSlotEvent) {
 /**
  * 详情页操作分区。
  *
- * 当剪贴内容识别出链接时额外展示图片/视频提取入口；磁力搜索会用标题或正文作为初始关键词，不读取系统剪贴板。
+ * 当剪贴内容识别出链接时额外展示图片/视频提取入口；TorrentSearch 会用标题或正文作为初始关键词，不读取系统剪贴板。
  * 复制入口由正文卡片点击承载；删除入口保留在标题栏右侧低频操作位，降低正文底部干扰。
+ *
+ * @param torrentSearchFeatures 按稳定功能 ID 排序后渲染的可选操作集合。
+ * @param onLaunchTorrentSearch 把入口与候选查询文本交还导航层的启动回调。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DetailActionSections(
     detailVm: DetailViewModel,
     onNavigate: (Route) -> Unit,
-    magnetFeatures: Set<MagnetFeatureEntry>,
-    onOpenMagnetSearch: (MagnetFeatureEntry, String) -> Unit,
+    torrentSearchFeatures: Set<TorrentSearchFeatureEntry>,
+    onLaunchTorrentSearch: (TorrentSearchFeatureEntry, String) -> Unit,
     clip: ClipShowEntity,
     adSources: Set<AdSourceEntry>,
     adSourceSelector: AdSourceSelector,
@@ -441,8 +447,8 @@ private fun DetailActionSections(
     val isSensitiveAdContext = remember(clip.id, clip.content) {
         detailAdSensitivityPolicy.shouldHideAds(clip.content)
     }
-    /** 是否存在磁力扩展动作；没有动作时不渲染空操作行，避免移除复制按钮后留下无意义间距。 */
-    val hasMagnetActions = magnetFeatures.isNotEmpty()
+    /** 是否存在 TorrentSearch 扩展动作；没有动作时不渲染空操作行。 */
+    val hasTorrentSearchActions = torrentSearchFeatures.isNotEmpty()
     /** 当前被用户选中并准备操作的链接；为 null 时不显示链接操作弹层。 */
     var selectedLink by remember { mutableStateOf<DetailLinkUiState?>(null) }
     /** 是否显示全部链接选择弹层；只在链接数量超过默认预览数量时使用。 */
@@ -499,17 +505,19 @@ private fun DetailActionSections(
             )
         }
 
-        if (hasMagnetActions) {
+        if (hasTorrentSearchActions) {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(spacing.small)
             ) {
-                /** 磁力扩展动作的初始关键词，优先使用网页标题，缺失时回退到剪贴正文。 */
-                val magnetInitialQuery = clip.linkTitle ?: clip.content
-                magnetFeatures.sortedBy { it.featureId }.forEach { feature ->
+                /** TorrentSearch 的候选关键词，优先使用网页标题，缺失时回退到剪贴正文。 */
+                val torrentSearchInitialQuery = clip.linkTitle ?: clip.content
+                /** 可选详情动作按稳定功能 ID 排序，保证按钮顺序跨进程一致。 */
+                torrentSearchFeatures.sortedBy { it.featureId }.forEach { feature ->
                     with(feature) {
                         DetailAction(
-                            initialQuery = magnetInitialQuery,
-                            onOpenSearch = { query -> onOpenMagnetSearch(feature, query) }
+                            initialQuery = torrentSearchInitialQuery,
+                            /** 实现组件只回传候选文本，页面再连同入口交给导航层。 */
+                            onLaunch = { query -> onLaunchTorrentSearch(feature, query) },
                         )
                     }
                 }

@@ -40,30 +40,32 @@ import com.cla.clip.base.general.backup.BackupProgressPhase
 import com.cla.clip.base.general.backup.BackupRestoreCategoryReport
 import com.cla.clip.base.general.backup.BackupSummary
 import com.cla.clip.base.general.backup.reportCode
-import com.cla.clip.feature.magnet.api.MagnetFeatureEntry
+import com.cla.clip.feature.torrent.search.api.TorrentSearchFeatureEntry
 
 /**
  * 备份恢复流程页内容区。
  *
  * 只负责把恢复流程状态和媒体关联回显渲染为摘要、进度和报告，不启动文件、网络或数据库副作用。
+ *
+ * @param torrentSearchFeatures 可选功能的计数与分类文案映射；为空时仅渲染宿主内建分类。
  */
 @Composable
 internal fun BackupRestoreFlowContent(
     state: BackupRestoreFlowState,
     mediaRelocationEntryState: MediaRelocationEntryState,
     mediaRelocationSummary: MediaRelocationSummary?,
-    magnetFeatures: Set<MagnetFeatureEntry> = emptySet(),
+    torrentSearchFeatures: Set<TorrentSearchFeatureEntry> = emptySet(),
 ) {
     FlowHeader(state = state)
     when (state) {
         is BackupRestoreFlowState.Reading -> ReadingContent(state)
-        is BackupRestoreFlowState.Preview -> PreviewContent(state, magnetFeatures)
+        is BackupRestoreFlowState.Preview -> PreviewContent(state, torrentSearchFeatures)
         is BackupRestoreFlowState.Restoring -> RestoringContent(state)
         is BackupRestoreFlowState.Result -> ResultContent(
             state = state,
             mediaRelocationEntryState = mediaRelocationEntryState,
             mediaRelocationSummary = mediaRelocationSummary,
-            magnetFeatures = magnetFeatures
+            torrentSearchFeatures = torrentSearchFeatures,
         )
         is BackupRestoreFlowState.Error -> ErrorContent(state)
         BackupRestoreFlowState.Hidden -> Unit
@@ -198,10 +200,11 @@ private fun ProgressRow(text: String) {
     }
 }
 
+/** 渲染恢复预览，并在内建计数后追加已启用 TorrentSearch 的稳定计数行。 */
 @Composable
 private fun PreviewContent(
     state: BackupRestoreFlowState.Preview,
-    magnetFeatures: Set<MagnetFeatureEntry>,
+    torrentSearchFeatures: Set<TorrentSearchFeatureEntry>,
 ) {
     val preview = state.preview
     FlowSection(title = stringResource(R.string.base_general_backup_section_info)) {
@@ -223,7 +226,7 @@ private fun PreviewContent(
         )
     }
     FlowSection(title = stringResource(R.string.base_general_backup_section_counts)) {
-        BackupCountRows(summary = preview.summary, magnetFeatures = magnetFeatures)
+        BackupCountRows(summary = preview.summary, torrentSearchFeatures = torrentSearchFeatures)
     }
     FlowSection(title = stringResource(R.string.base_general_backup_section_restore_note)) {
         Text(
@@ -234,12 +237,13 @@ private fun PreviewContent(
     }
 }
 
+/** 渲染恢复结果，并按宿主与已启用 TorrentSearch 的分类顺序输出报告。 */
 @Composable
 private fun ResultContent(
     state: BackupRestoreFlowState.Result,
     mediaRelocationEntryState: MediaRelocationEntryState,
     mediaRelocationSummary: MediaRelocationSummary?,
-    magnetFeatures: Set<MagnetFeatureEntry>,
+    torrentSearchFeatures: Set<TorrentSearchFeatureEntry>,
 ) {
     val report = state.report
     FlowSection(title = stringResource(R.string.base_general_backup_section_info)) {
@@ -263,7 +267,7 @@ private fun ResultContent(
         )
     }
     FlowSection(title = stringResource(R.string.base_general_backup_section_counts)) {
-        RestoreCategoryRows(report.categoryReports, magnetFeatures)
+        RestoreCategoryRows(report.categoryReports, torrentSearchFeatures)
     }
     Text(
         text = stringResource(R.string.base_general_backup_restore_skip_hint),
@@ -337,10 +341,11 @@ private fun InfoRow(label: String, value: String, keepEnd: Boolean = false) {
     }
 }
 
+/** 渲染宿主固定计数后，按功能 ID 顺序追加可选 TorrentSearch 计数。 */
 @Composable
 private fun BackupCountRows(
     summary: BackupSummary,
-    magnetFeatures: Set<MagnetFeatureEntry>,
+    torrentSearchFeatures: Set<TorrentSearchFeatureEntry>,
 ) {
     BackupCountRow(stringResource(R.string.base_general_backup_count_clips), summary.clipCount)
     BackupCountRow(stringResource(R.string.base_general_backup_count_source_apps), summary.sourceAppCount)
@@ -349,27 +354,35 @@ private fun BackupCountRows(
     BackupCountRow(stringResource(R.string.base_general_backup_count_video_downloads), summary.videoDownloadCount)
     BackupCountRow(stringResource(R.string.base_general_backup_count_image_batches), summary.imageBatchCount)
     BackupCountRow(stringResource(R.string.base_general_backup_count_image_items), summary.imageItemCount)
-    magnetFeatures.sortedBy { it.featureId }.forEach { feature ->
+    /** 可选功能按稳定 ID 排序，保证预览计数行次序可预测。 */
+    torrentSearchFeatures.sortedBy { it.featureId }.forEach { feature ->
+        /** 当前功能返回的轻量展示行；宿主继续复用现有 BackupCountRow。 */
         feature.backupCountItems(summary.featureCounts).forEach { item ->
             BackupCountRow(stringResource(item.labelRes), item.count)
         }
     }
 }
 
+/** 按稳定分类 code 渲染宿主和可选 TorrentSearch 的恢复统计行。 */
 @Composable
 private fun RestoreCategoryRows(
     reports: List<BackupRestoreCategoryReport>,
-    magnetFeatures: Set<MagnetFeatureEntry>,
+    torrentSearchFeatures: Set<TorrentSearchFeatureEntry>,
 ) {
+    /** 按稳定分类 code 索引的恢复报告，便于宿主和可选功能统一查找。 */
     val byCategory = reports.associateBy { it.category }
-    val featureCategoryCodes = magnetFeatures
+    /** TorrentSearch 实现声明的分类顺序；关闭构建集合为空，不追加任何行。 */
+    val featureCategoryCodes = torrentSearchFeatures
         .sortedBy { it.featureId }
         .flatMap { it.restoreReportCategoryCodes }
+    /** 宿主内建分类与可选功能分类合并后的最终展示顺序。 */
     val categoryCodes = restoreReportCategoryOrder + featureCategoryCodes
+    /** 当前待渲染的稳定分类 code，未知分类仍生成零值兜底行。 */
     categoryCodes.forEach { category ->
+        /** 当前分类对应的恢复报告；缺失时按全零展示，避免隐藏契约分类。 */
         val report = byCategory[category]
         BackupCountRow(
-            label = restoreCategoryLabel(category, magnetFeatures),
+            label = restoreCategoryLabel(category, torrentSearchFeatures),
             value = stringResource(
                 R.string.base_general_backup_restore_result_summary,
                 report?.insertedCount ?: 0,
@@ -560,14 +573,17 @@ private fun BackupRestoreFlowState.previewOrNull(): BackupPreview? {
     }
 }
 
+/** 优先解析宿主分类文案，再查询可选功能映射，未知 code 使用统一兜底。 */
 @Composable
 private fun restoreCategoryLabel(
     category: String,
-    magnetFeatures: Set<MagnetFeatureEntry>,
+    torrentSearchFeatures: Set<TorrentSearchFeatureEntry>,
 ): String {
+    /** 与分类 code 匹配的宿主内建分类；优先使用宿主已有文案。 */
     val builtIn = BackupProgressCategory.entries.firstOrNull { it.reportCode() == category }
     if (builtIn != null) return builtIn.labelText()
-    val featureLabelRes = magnetFeatures
+    /** 可选 TorrentSearch 实现提供的分类文案资源；未知 code 继续走宿主兜底。 */
+    val featureLabelRes = torrentSearchFeatures
         .firstNotNullOfOrNull { feature -> feature.restoreCategoryLabelRes(category) }
     return featureLabelRes?.let { stringResource(it) } ?: stringResource(R.string.base_general_unknow)
 }

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="torrent_search_title">Torrent Search</string>
+    <string name="torrent_search_entry_description">Search torrent sources in one place</string>
+    <string name="torrent_search_placeholder_message">TorrentSearch integration is in progress</string>
+    <string name="torrent_search_backup_bookmarks">TorrentSearch bookmarks</string>
+    <string name="torrent_search_backup_search_histories">TorrentSearch search history</string>
+    <string name="torrent_search_backup_viewed_items">TorrentSearch viewed items</string>
+    <string name="torrent_search_backup_settings">TorrentSearch settings</string>
+</resources>

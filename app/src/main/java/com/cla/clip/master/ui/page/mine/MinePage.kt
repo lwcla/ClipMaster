@@ -33,7 +33,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.utils.toPermissionSetting
 import com.cla.clip.base.general.utils.toast
-import com.cla.clip.feature.magnet.api.MagnetFeatureEntry
+import com.cla.clip.feature.torrent.search.api.TorrentSearchFeatureEntry
 import com.cla.clip.master.entity.SettingSwitchItemUi
 import com.cla.clip.master.ui.navigation.ClipSourceBlockSettingRoute
 import com.cla.clip.master.ui.navigation.Route
@@ -47,13 +47,16 @@ import rikka.shizuku.Shizuku
  * 我的页面。
  *
  * 当前承载权限项和授权入口，后续增加设置项时也应保持 ViewModel 只发动作、页面执行系统跳转的边界。
+ *
+ * @param torrentSearchFeatures 可选入口集合；关闭实现模块时为空，因此页面不会留下占位项。
+ * @param onLaunchTorrentSearch 用户点击入口后的无副作用回调；页面不持有 Context 或启动来源。
  */
 @Composable
 fun MinePage(
     mineVm: MineVm = hiltViewModel(),
     onNavigate: (route: Route) -> Unit,
-    magnetFeatures: Set<MagnetFeatureEntry> = emptySet(),
-    onOpenMagnetSearch: (MagnetFeatureEntry) -> Unit = {},
+    torrentSearchFeatures: Set<TorrentSearchFeatureEntry> = emptySet(),
+    onLaunchTorrentSearch: (TorrentSearchFeatureEntry) -> Unit = {},
     visibleToUser: Boolean = true,
 ) {
     /** 折叠数据入口展示的轻量数量。 */
@@ -131,9 +134,14 @@ fun MinePage(
                     onClick = mineVm::checkUpdateManually,
                 )
             }
-            magnetFeatures.sortedBy { it.featureId }.forEach { feature ->
-                item(key = "magnet_feature_${feature.featureId}") {
-                    feature.MineEntry(onOpenSearch = { onOpenMagnetSearch(feature) })
+            /** 可选入口按稳定功能 ID 排序，避免 Hilt Set 的无序性造成列表跳动。 */
+            torrentSearchFeatures.sortedBy { it.featureId }.forEach { feature ->
+                item(key = "torrent_search_feature_${feature.featureId}") {
+                    feature.MineEntry(
+                        /** 当前入口点击只回传所属实现，具体 Activity 启动由导航层完成。 */
+                        onLaunch = { onLaunchTorrentSearch(feature) },
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
                 }
             }
 

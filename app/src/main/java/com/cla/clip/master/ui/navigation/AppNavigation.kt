@@ -9,6 +9,7 @@ import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.flow.StateFlow
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
@@ -18,7 +19,8 @@ import androidx.navigation.toRoute
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.feature.ad.api.AdSourceEntry
 import com.cla.clip.feature.ad.api.AdSourceSelector
-import com.cla.clip.feature.magnet.api.MagnetFeatureEntry
+import com.cla.clip.feature.torrent.search.api.TorrentSearchFeatureEntry
+import com.cla.clip.feature.torrent.search.api.TorrentSearchLaunchSource
 import com.cla.clip.master.ad.DetailAdSensitivityPolicy
 import com.cla.clip.master.ui.page.backup.BackupMediaRelocationPage
 import com.cla.clip.master.ui.page.backup.BackupPage
@@ -49,11 +51,13 @@ private const val TAG = "AppNavigation"
  *
  * 统一注册首页、列表、搜索、详情、视频/图片提取、视频下载和我的页面的路由，并为子页面提供通用的返回和跳转回调。
  * 下载页返回时会特殊处理导航栈，避免用户从下载完成页返回到已经完成使命的视频提取页。
+ *
+ * @param torrentSearchFeatures 可选 TorrentSearch 入口集合；关闭实现模块时为空，导航图不注册功能内路由。
  */
 @Composable
 fun AppNavigation(
     navController: NavHostController,
-    magnetFeatures: Set<MagnetFeatureEntry>,
+    torrentSearchFeatures: Set<TorrentSearchFeatureEntry>,
     adSources: Set<AdSourceEntry>,
     adSourceSelector: AdSourceSelector,
     activeAdSourceIdFlow: StateFlow<String>,
@@ -65,6 +69,8 @@ fun AppNavigation(
     detailAdSensitivityPolicy: DetailAdSensitivityPolicy,
     onDisableAdSource: (String) -> Unit,
 ) {
+    /** 当前 Activity Context；只在用户点击宿主入口时交给可选功能启动独立 Activity。 */
+    val context = LocalContext.current
     /** 子页面统一使用的跳转回调，保持所有页面都通过类型安全 Route 导航。 */
     val onNavigate = { route: Route ->
         navController.navigate(route) {
@@ -95,8 +101,11 @@ fun AppNavigation(
             MainPage(
                 initialTab = route.initialTab,
                 onNavigate = onNavigate,
-                magnetFeatures = magnetFeatures,
-                onOpenMagnetSearch = { feature, query -> feature.openSearch(navController, query) }
+                torrentSearchFeatures = torrentSearchFeatures,
+                /** “我的”入口不携带查询文本，并写入稳定 Mine 来源 code。 */
+                onLaunchTorrentSearch = { feature ->
+                    feature.launch(context, "", TorrentSearchLaunchSource.Mine)
+                },
             )
         }
 
@@ -125,8 +134,11 @@ fun AppNavigation(
                 clipId = route.clipId,
                 onBack = onBack,
                 onNavigate = onNavigate,
-                magnetFeatures = magnetFeatures,
-                onOpenMagnetSearch = { feature, query -> feature.openSearch(navController, query) },
+                torrentSearchFeatures = torrentSearchFeatures,
+                /** 详情入口传递页面提供的候选文本，并写入稳定 ClipDetail 来源 code。 */
+                onLaunchTorrentSearch = { feature, query ->
+                    feature.launch(context, query, TorrentSearchLaunchSource.ClipDetail)
+                },
                 adSources = adSources,
                 adSourceSelector = adSourceSelector,
                 activeAdSourceIdFlow = activeAdSourceIdFlow,
@@ -220,7 +232,7 @@ fun AppNavigation(
                 onBack = onBack,
                 onCloseRestoreFlow = { navController.closeBackupRestoreStack("restore_flow_done_close_stack") },
                 onNavigate = onNavigate,
-                magnetFeatures = magnetFeatures
+                torrentSearchFeatures = torrentSearchFeatures,
             )
         }
 
@@ -238,8 +250,11 @@ fun AppNavigation(
         composable<MineRoute> {
             MinePage(
                 onNavigate = onNavigate,
-                magnetFeatures = magnetFeatures,
-                onOpenMagnetSearch = { feature -> feature.openSearch(navController) },
+                torrentSearchFeatures = torrentSearchFeatures,
+                /** 独立“我的”路由与首页内同页签保持一致的启动来源。 */
+                onLaunchTorrentSearch = { feature ->
+                    feature.launch(context, "", TorrentSearchLaunchSource.Mine)
+                },
                 visibleToUser = true,
             )
         }
@@ -250,12 +265,6 @@ fun AppNavigation(
                 onBack = onBack,
             )
         }
-
-        magnetFeatures
-            .sortedBy { it.featureId }
-            .forEach { feature ->
-                feature.registerNavigation(this, onBack)
-            }
     }
 }
 

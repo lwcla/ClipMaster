@@ -22,7 +22,7 @@ import com.cla.clip.base.general.utils.toast
 import com.cla.clip.feature.ad.api.AdSessionFailureFuse
 import com.cla.clip.feature.ad.api.AdSourceEntry
 import com.cla.clip.feature.ad.api.AdSourceSelector
-import com.cla.clip.feature.magnet.api.MagnetFeatureEntry
+import com.cla.clip.feature.torrent.search.api.TorrentSearchFeatureEntry
 import com.cla.clip.master.ad.DetailAdSensitivityPolicy
 import com.cla.clip.master.ui.navigation.AppNavigation
 import com.cla.clip.master.ui.navigation.DetailRoute
@@ -56,9 +56,9 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var clipHelper: dagger.Lazy<ClipHelper>
 
-    /** 可选磁力功能入口；默认构建集合为空，启用 feature 模块时由 Hilt multibinding 注入。 */
+    /** 可选 TorrentSearch 入口；默认构建集合为空，启用实现模块时由 Hilt multibinding 注入。 */
     @Inject
-    lateinit var magnetFeatures: Set<@JvmSuppressWildcards MagnetFeatureEntry>
+    lateinit var torrentSearchFeatures: Set<@JvmSuppressWildcards TorrentSearchFeatureEntry>
 
     /** 可选广告源入口；默认 release 构建集合为空，debug 构建可由调试广告模块注入。 */
     @Inject
@@ -141,7 +141,7 @@ class MainActivity : ComponentActivity() {
 
                         AppNavigation(
                             navController = navController,
-                            magnetFeatures = magnetFeatures,
+                            torrentSearchFeatures = torrentSearchFeatures,
                             adSources = adSources,
                             adSourceSelector = adSourceSelector,
                             activeAdSourceIdFlow = AppSetting.activeAdSourceIdFlow,

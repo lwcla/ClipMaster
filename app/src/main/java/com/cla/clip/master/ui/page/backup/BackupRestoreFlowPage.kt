@@ -24,7 +24,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.utils.logD
-import com.cla.clip.feature.magnet.api.MagnetFeatureEntry
+import com.cla.clip.feature.torrent.search.api.TorrentSearchFeatureEntry
 import com.cla.clip.master.ui.navigation.BackupMediaRelocationRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.widget.SecondaryPageScaffold
@@ -38,13 +38,14 @@ private const val TAG = "BackupRestoreFlowPage"
  * 页面承载读取、预览、恢复中、结果和失败状态；文件读写、WebDAV 下载和 Room 恢复仍由 ViewModel 编排。
  *
  * @param onCloseRestoreFlow 恢复结果页底部“完成”的闭环出口，只关闭恢复页和备份页，不固定跳转首页 Tab。
+ * @param torrentSearchFeatures 可选功能的备份展示契约；关闭实现模块时为空，不改变宿主恢复流程。
  */
 @Composable
 internal fun BackupRestoreFlowPage(
     onBack: () -> Unit,
     onCloseRestoreFlow: () -> Unit,
     onNavigate: (Route) -> Unit,
-    magnetFeatures: Set<MagnetFeatureEntry> = emptySet(),
+    torrentSearchFeatures: Set<TorrentSearchFeatureEntry> = emptySet(),
     modifier: Modifier = Modifier,
     restoreVm: BackupRestoreVm = hiltViewModel(),
 ) {
@@ -87,11 +88,12 @@ internal fun BackupRestoreFlowPage(
             onNavigate(BackupMediaRelocationRoute(result.taskId))
             logD(TAG) { "打开媒体关联页 restoreTaskId=${result.taskId}" }
         },
-        magnetFeatures = magnetFeatures,
+        torrentSearchFeatures = torrentSearchFeatures,
         modifier = modifier
     )
 }
 
+/** 连接恢复页外壳与内容区，并把可选功能展示契约原样透传给纯渲染内容。 */
 @Composable
 private fun BackupRestoreFlowScaffold(
     state: BackupRestoreFlowState,
@@ -102,7 +104,7 @@ private fun BackupRestoreFlowScaffold(
     onForceBack: () -> Unit,
     onRestore: () -> Unit,
     onOpenMediaRelocation: () -> Unit,
-    magnetFeatures: Set<MagnetFeatureEntry>,
+    torrentSearchFeatures: Set<TorrentSearchFeatureEntry>,
     modifier: Modifier = Modifier,
 ) {
     var showExitConfirm by remember(state.logCode) { mutableStateOf(false) }
@@ -166,7 +168,7 @@ private fun BackupRestoreFlowScaffold(
                 state = state,
                 mediaRelocationEntryState = mediaRelocationEntryState,
                 mediaRelocationSummary = mediaRelocationSummary,
-                magnetFeatures = magnetFeatures
+                torrentSearchFeatures = torrentSearchFeatures,
             )
         }
     }

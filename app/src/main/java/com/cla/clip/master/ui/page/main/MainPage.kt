@@ -27,7 +27,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cla.clip.base.general.R
-import com.cla.clip.feature.magnet.api.MagnetFeatureEntry
+import com.cla.clip.feature.torrent.search.api.TorrentSearchFeatureEntry
 import com.cla.clip.master.ui.navigation.MainInitialTab
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.page.list.ClipListPage
@@ -69,14 +69,17 @@ private sealed class TabPage {
  *
  * 使用 HorizontalPager 承载剪贴列表和我的页，底部 Tab 控制页面切换；
  * 列表页的竖向列表状态放在主页面持有，便于重复点击列表 Tab 时滚回顶部。
+ *
+ * @param torrentSearchFeatures 可选功能入口集合；只透传给“我的”页，不在首页启动功能内任务。
+ * @param onLaunchTorrentSearch 用户点击可选入口后的启动回调；Context 和来源由导航层统一提供。
  */
 @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
 @Composable
 fun MainPage(
     initialTab: MainInitialTab = MainInitialTab.List,
     onNavigate: (Route) -> Unit,
-    magnetFeatures: Set<MagnetFeatureEntry> = emptySet(),
-    onOpenMagnetSearch: (MagnetFeatureEntry, String) -> Unit = { _, _ -> },
+    torrentSearchFeatures: Set<TorrentSearchFeatureEntry> = emptySet(),
+    onLaunchTorrentSearch: (TorrentSearchFeatureEntry) -> Unit = {},
 ) {
     /** 首页底部导航间距 token，统一底部栏安全区和内容节奏。 */
     val spacing = ClipMasterThemeTokens.tokens.spacing
@@ -160,8 +163,8 @@ fun MainPage(
                 TabPage.List -> ClipListPage(listState = listState, onNavigate = onNavigate)
                 TabPage.Mine -> MinePage(
                     onNavigate = onNavigate,
-                    magnetFeatures = magnetFeatures,
-                    onOpenMagnetSearch = { feature -> onOpenMagnetSearch(feature, "") },
+                    torrentSearchFeatures = torrentSearchFeatures,
+                    onLaunchTorrentSearch = onLaunchTorrentSearch,
                     visibleToUser = pagerState.currentPage == index,
                 )
             }

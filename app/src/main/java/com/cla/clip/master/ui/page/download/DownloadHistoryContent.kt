@@ -20,8 +20,6 @@ import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import com.cla.clip.base.general.R
-import com.cla.clip.feature.magnet.api.MagnetDownloadHistoryCallbacks
-import com.cla.clip.feature.magnet.api.MagnetDownloadSelectionState
 import com.cla.clip.master.ui.widget.PagingEmptyContent
 import com.cla.clip.master.ui.widget.PagingErrorContent
 import com.cla.clip.master.ui.widget.PagingLoadingContent
@@ -42,10 +40,9 @@ internal fun DownloadHistoryContent(
     onOpenVideo: (DownloadHistoryVideoItem) -> Unit,
     onRetryVideo: (Long) -> Unit,
     onRetryImage: (Long) -> Unit,
-    onShowMessage: (String) -> Unit,
     onPreviewImage: (String) -> Unit,
 ) {
-    when (val tab = tabSpec.tab) {
+    when (tabSpec.tab) {
         DownloadHistoryTab.Video -> {
             if (state.selectedTab == DownloadHistoryTab.Video) {
                 val pagedVideos = videoPagingFlow.collectAsLazyPagingItems()
@@ -72,23 +69,6 @@ internal fun DownloadHistoryContent(
                     onEnterSelection = onEnterSelection,
                     onRetryImage = onRetryImage,
                     onPreviewImage = onPreviewImage
-                )
-            }
-        }
-
-        is DownloadHistoryTab.Extension -> {
-            if (state.selectedTab == tab) {
-                tabSpec.extensionEntry?.Content(
-                    selectionState = MagnetDownloadSelectionState(
-                        selectedIds = state.selectedIds,
-                        selectionMode = state.selectionMode
-                    ),
-                    callbacks = MagnetDownloadHistoryCallbacks(
-                        onToggleSelected = onToggleSelected,
-                        onEnterSelection = onEnterSelection,
-                        onShowMessage = onShowMessage
-                    ),
-                    modifier = Modifier.fillMaxSize()
                 )
             }
         }

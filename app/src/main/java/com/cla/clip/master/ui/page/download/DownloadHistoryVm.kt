@@ -28,8 +28,6 @@ import com.cla.clip.base.general.repository.ImageExtractRepository
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
 import com.cla.clip.base.general.utils.normalizeImageOutputDir
-import com.cla.clip.feature.magnet.api.MagnetDownloadHistoryEntry
-import com.cla.clip.feature.magnet.api.MagnetFeatureEntry
 import com.cla.clip.master.work.DownloadImagesWorker
 import com.cla.clip.master.work.DownloadVideoWorker
 import com.cla.clip.master.work.BackupAutoScheduler
@@ -41,7 +39,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -70,7 +67,7 @@ private const val LEGACY_IMAGE_PARENT_DIR = "clipMaster"
 /**
  * 下载记录页 Tab。
  *
- * 页面在内置视频/图片和可选功能扩展历史之间切换；选中状态只对当前 Tab 生效，切换时会清空选择，避免误删另一类记录。
+ * 页面只在内建视频和图片历史之间切换；TorrentSearch 的历史由独立 Activity 管理。
  */
 sealed class DownloadHistoryTab {
     /** 视频下载任务历史，对应 `download_tasks` 表。 */
@@ -78,9 +75,6 @@ sealed class DownloadHistoryTab {
 
     /** 图片批量下载历史，对应 `image_extract_batches` 和其级联图片项。 */
     data object Image : DownloadHistoryTab()
-
-    /** 可选功能扩展历史；默认构建没有扩展 Tab。 */
-    data class Extension(val tabId: String) : DownloadHistoryTab()
 }
 
 /**
@@ -97,9 +91,6 @@ data class DownloadHistoryUiState(
 
     /** 图片批次历史总数，只通过 COUNT 查询获得，用于标题栏动作和清空确认数量。 */
     val imageCount: Int = 0,
-
-    /** 可选扩展记录总数，只通过扩展 COUNT 查询获得，用于标题栏动作和清空确认数量。 */
-    val extensionCounts: Map<String, Int> = emptyMap(),
 
     /** 仍在下载或合并的视频记录数量，用于清空确认时提示会停止后台任务。 */
     val videoRunningCount: Int = 0,
@@ -283,9 +274,6 @@ private data class DownloadHistoryCounts(
     /** 图片历史总数。 */
     val imageCount: Int,
 
-    /** 扩展记录总数。 */
-    val extensionCounts: Map<String, Int>,
-
     /** 仍在下载或合并的视频任务数量。 */
     val videoRunningCount: Int,
 
@@ -295,14 +283,17 @@ private data class DownloadHistoryCounts(
 
 /** 历史总数分组，避免多路 Flow 组合时把运行中数量和记录数量混在同一个 lambda。 */
 private data class DownloadHistoryRecordCounts(
+    /** 视频历史总数，只由轻量 COUNT 流提供。 */
     val videoCount: Int,
+    /** 图片批次历史总数，只由轻量 COUNT 流提供。 */
     val imageCount: Int,
-    val extensionCounts: Map<String, Int>,
 )
 
-/** 仍在后台执行的下载数量；磁力记录没有 App 内下载任务，因此不在这里计数。 */
+/** 仍在后台执行的宿主下载数量，只覆盖视频和图片 Worker。 */
 private data class DownloadHistoryRunningCounts(
+    /** 仍在下载或合并的视频任务数量。 */
     val videoRunningCount: Int,
+    /** 仍在下载的图片批次数量。 */
     val imageRunningCount: Int,
 )
 
@@ -312,6 +303,7 @@ private data class DownloadHistoryRunningCounts(
  * 负责提供视频/图片分页历史流、读取分页项的本地媒体元信息、处理多选删除、清空当前分类和重新下载。
  * 分页流是冷流，只有页面在 STARTED 生命周期内收集当前 Tab 时才会触发数据库分页加载，避免 ViewModel 初始化时抢先扫描媒体。
  * 文件删除严格按数据库保存的 URI/路径执行，不做同名反查，避免误删公共目录里的其他媒体。
+ * 构造函数只注入宿主视频和图片仓库；TorrentSearch 历史迁出后不再建立可选功能依赖。
  */
 @HiltViewModel
 class DownloadHistoryVm @Inject constructor(
@@ -323,14 +315,7 @@ class DownloadHistoryVm @Inject constructor(
 
     /** 图片提取仓库，提供批次历史、批次克隆和精确删除接口。 */
     private val imageExtractRepository: ImageExtractRepository,
-
-    /** 可选功能入口；默认构建集合为空。 */
-    private val magnetFeatures: Set<@JvmSuppressWildcards MagnetFeatureEntry>,
 ) : ViewModel() {
-
-    private val downloadExtensions: Map<String, MagnetDownloadHistoryEntry> = magnetFeatures
-        .mapNotNull { it.downloadHistoryEntry }
-        .associateBy { it.tabId }
 
     /** 当前选中的下载记录分类。 */
     private val selectedTab = MutableStateFlow<DownloadHistoryTab>(DownloadHistoryTab.Video)
@@ -398,33 +383,18 @@ class DownloadHistoryVm @Inject constructor(
         }
     }.cachedIn(viewModelScope)
 
-    /** 可选功能下载记录 Tab，由页面层渲染标签和内容。 */
-    val extensionEntries: List<MagnetDownloadHistoryEntry> = downloadExtensions.values.sortedBy { it.tabId }
-
-    private fun observeExtensionCounts() = if (extensionEntries.isEmpty()) {
-        flowOf(emptyMap<String, Int>())
-    } else {
-        combine(extensionEntries.map { entry ->
-            entry.observeCount().map { count -> entry.tabId to count }
-        }) { pairs ->
-            pairs.toMap()
-        }
-    }
-
     /** 历史总数和运行中数量；只做 COUNT 级查询，不加载完整记录。 */
     private val recordCounts = combine(
         downloadRepository.observeHistoryCount(),
         imageExtractRepository.observeHistoryCount(),
-        observeExtensionCounts()
-    ) { videoCount, imageCount, extensionCounts ->
+    ) { videoCount, imageCount ->
         DownloadHistoryRecordCounts(
             videoCount = videoCount,
             imageCount = imageCount,
-            extensionCounts = extensionCounts
         )
     }
 
-    /** 运行中数量只来自视频和图片 Worker；磁力记录没有后台下载任务。 */
+    /** 运行中数量只来自视频和图片 Worker。 */
     private val runningCounts = combine(
         downloadRepository.observeRunningHistoryCount(),
         imageExtractRepository.observeRunningHistoryCount()
@@ -440,7 +410,6 @@ class DownloadHistoryVm @Inject constructor(
         DownloadHistoryCounts(
             videoCount = records.videoCount,
             imageCount = records.imageCount,
-            extensionCounts = records.extensionCounts,
             videoRunningCount = running.videoRunningCount,
             imageRunningCount = running.imageRunningCount
         )
@@ -456,7 +425,6 @@ class DownloadHistoryVm @Inject constructor(
                     when (tab) {
                         DownloadHistoryTab.Video -> downloadRepository.countRunningTasks(ids) > 0
                         DownloadHistoryTab.Image -> imageExtractRepository.countRunningBatches(ids) > 0
-                        is DownloadHistoryTab.Extension -> false
                     }
                 }
             }
@@ -474,7 +442,6 @@ class DownloadHistoryVm @Inject constructor(
             selectedTab = tab,
             videoCount = counts.videoCount,
             imageCount = counts.imageCount,
-            extensionCounts = counts.extensionCounts,
             videoRunningCount = counts.videoRunningCount,
             imageRunningCount = counts.imageRunningCount,
             selectionMode = inSelection,
@@ -534,7 +501,6 @@ class DownloadHistoryVm @Inject constructor(
             val ids = when (tab) {
                 DownloadHistoryTab.Video -> downloadRepository.getHistoryIds()
                 DownloadHistoryTab.Image -> imageExtractRepository.getHistoryIds()
-                is DownloadHistoryTab.Extension -> downloadExtensions[tab.tabId]?.getRecordIds().orEmpty()
             }.toSet()
             if (selectedTab.value != tab) return@launch
             selectedIds.value = ids
@@ -593,7 +559,6 @@ class DownloadHistoryVm @Inject constructor(
             val ids = when (tab) {
                 DownloadHistoryTab.Video -> downloadRepository.getHistoryIds()
                 DownloadHistoryTab.Image -> imageExtractRepository.getHistoryIds()
-                is DownloadHistoryTab.Extension -> downloadExtensions[tab.tabId]?.getRecordIds().orEmpty()
             }.toSet()
             if (ids.isEmpty() || selectedTab.value != tab) return@launch
             deleteRecords(tab, ids, deleteFiles)
@@ -635,9 +600,8 @@ class DownloadHistoryVm @Inject constructor(
     private fun deleteRecords(tab: DownloadHistoryTab, ids: Set<Long>, deleteFiles: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
             busy.value = true
-            val shouldDeleteFiles = deleteFiles && tab !is DownloadHistoryTab.Extension
             val mediaRefs = collectMediaRefsAndCancelRunning(tab, ids)
-            if (!shouldDeleteFiles) {
+            if (!deleteFiles) {
                 finishDeleteRecords(tab, ids, failedFileCount = 0, deletedFiles = false)
                 busy.value = false
                 return@launch
@@ -688,8 +652,6 @@ class DownloadHistoryVm @Inject constructor(
                     collectImageMediaRefs(batch, items)
                 }
             }
-
-            is DownloadHistoryTab.Extension -> emptyList()
         }.distinct()
     }
 
@@ -745,7 +707,6 @@ class DownloadHistoryVm @Inject constructor(
         when (tab) {
             DownloadHistoryTab.Video -> downloadRepository.deleteTasks(ids)
             DownloadHistoryTab.Image -> imageExtractRepository.deleteBatches(ids)
-            is DownloadHistoryTab.Extension -> downloadExtensions[tab.tabId]?.deleteRecords(ids) ?: 0
         }
         exitSelection()
         message.value = when {

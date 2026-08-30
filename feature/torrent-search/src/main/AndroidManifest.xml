@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <activity
+            android:name=".TorrentSearchActivity"
+            android:exported="false"
+            android:label="@string/torrent_search_title"
+            android:launchMode="singleTop" />
+
+        <activity-alias
+            android:name=".TorrentSearchActionSearchAlias"
+            android:enabled="true"
+            android:exported="true"
+            android:label="@string/torrent_search_title"
+            android:targetActivity=".TorrentSearchActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.SEARCH" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".TorrentSearchSendAlias"
+            android:enabled="true"
+            android:exported="true"
+            android:label="@string/torrent_search_title"
+            android:targetActivity=".TorrentSearchActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".TorrentSearchProcessTextAlias"
+            android:enabled="true"
+            android:exported="true"
+            android:label="@string/torrent_search_title"
+            android:targetActivity=".TorrentSearchActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity-alias>
+    </application>
+
+</manifest>

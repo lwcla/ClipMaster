@@ -196,17 +196,17 @@ android {
 
 dependencies {
     implementation(project(":base:general"))
-    implementation(project(":feature:magnet-api"))
+    implementation(project(":feature:torrent-search-api"))
     implementation(project(":feature:ad-api"))
     implementation(project(":shizuku"))
     debugImplementation(project(":feature:ad-debug"))
 
-    /** 是否按 Gradle 属性编译进磁力模块；默认关闭，避免宿主强依赖可选特性。 */
+    /** 是否按既有 Gradle 属性编译进 TorrentSearch 实现；属性名保持兼容，默认关闭。 */
     val enableMagnetFeature = providers.gradleProperty("enableMagnetFeature")
         .map(String::toBoolean)
         .getOrElse(false)
     if (enableMagnetFeature) {
-        implementation(project(":feature:magnet"))
+        implementation(project(":feature:torrent-search"))
     }
 
     /** 是否按 debug/internal 广告参数编译进穿山甲广告模块；默认关闭，避免无配置 debug 包误带国内广告 SDK。 */

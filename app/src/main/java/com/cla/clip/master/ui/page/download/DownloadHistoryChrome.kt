@@ -20,16 +20,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.paging.PagingData
 import com.cla.clip.base.general.R
-import com.cla.clip.feature.magnet.api.MagnetDownloadHistoryEntry
 import com.cla.clip.master.ui.widget.TitleBar
 import com.cla.clip.master.ui.widget.TitleBarText
 import kotlinx.coroutines.flow.Flow
 
 /** 下载记录页 Tab 展示配置。 */
 internal data class DownloadHistoryTabSpec(
+    /** 内建下载历史分类；TorrentSearch 不再扩展宿主下载记录。 */
     val tab: DownloadHistoryTab,
+    /** 当前 Tab 的资源化标题在页面层解析后的展示文本。 */
     val title: String,
-    val extensionEntry: MagnetDownloadHistoryEntry? = null,
 )
 
 /** 标题栏区域，复用通用插槽标题栏统一状态栏、安全高度和按钮垂直对齐规则。 */
@@ -117,7 +117,6 @@ internal fun DownloadHistoryPager(
     onOpenVideo: (DownloadHistoryVideoItem) -> Unit,
     onRetryVideo: (Long) -> Unit,
     onRetryImage: (Long) -> Unit,
-    onShowMessage: (String) -> Unit,
     onPreviewImage: (String) -> Unit,
 ) {
     HorizontalPager(
@@ -138,7 +137,6 @@ internal fun DownloadHistoryPager(
             onOpenVideo = onOpenVideo,
             onRetryVideo = onRetryVideo,
             onRetryImage = onRetryImage,
-            onShowMessage = onShowMessage,
             onPreviewImage = onPreviewImage
         )
     }
@@ -183,7 +181,6 @@ internal val DownloadHistoryUiState.currentItemsCount: Int
     get() = when (selectedTab) {
         DownloadHistoryTab.Video -> videoCount
         DownloadHistoryTab.Image -> imageCount
-        is DownloadHistoryTab.Extension -> extensionCounts[selectedTab.tabId] ?: 0
     }
 
 /** 当前 Tab 是否包含进行中记录，用于清空确认文案。 */
@@ -191,5 +188,4 @@ internal val DownloadHistoryUiState.currentTabHasRunning: Boolean
     get() = when (selectedTab) {
         DownloadHistoryTab.Video -> videoRunningCount > 0
         DownloadHistoryTab.Image -> imageRunningCount > 0
-        is DownloadHistoryTab.Extension -> false
     }

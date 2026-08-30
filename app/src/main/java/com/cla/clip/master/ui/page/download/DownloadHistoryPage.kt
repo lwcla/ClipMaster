@@ -66,19 +66,11 @@ fun DownloadHistoryPage(
     val snackbarHostState = remember { SnackbarHostState() }
     var pendingDelete by remember { mutableStateOf<DeleteRequestUi?>(null) }
     var previewImageUri by remember { mutableStateOf<String?>(null) }
-    val historyTabs = buildList {
-        add(DownloadHistoryTabSpec(DownloadHistoryTab.Video, stringResource(R.string.base_general_video)))
-        add(DownloadHistoryTabSpec(DownloadHistoryTab.Image, stringResource(R.string.base_general_image)))
-        viewModel.extensionEntries.forEach { entry ->
-            add(
-                DownloadHistoryTabSpec(
-                    tab = DownloadHistoryTab.Extension(entry.tabId),
-                    title = stringResource(entry.tabTitleRes),
-                    extensionEntry = entry
-                )
-            )
-        }
-    }
+    /** 宿主下载记录只保留视频和图片；TorrentSearch 的下载历史由其独立 Activity 自行管理。 */
+    val historyTabs = listOf(
+        DownloadHistoryTabSpec(DownloadHistoryTab.Video, stringResource(R.string.base_general_video)),
+        DownloadHistoryTabSpec(DownloadHistoryTab.Image, stringResource(R.string.base_general_image)),
+    )
     // Pager 状态放在页面层持有，避免 ViewModel 依赖 Compose 类型；初始页跟随 ViewModel 当前分类。
     val pagerState = rememberPagerState(
         initialPage = historyTabs.indexOfFirst { it.tab == state.selectedTab }.coerceAtLeast(0),
@@ -143,12 +135,11 @@ fun DownloadHistoryPage(
                         kind = DeleteRequestKind.ClearTab,
                         count = state.currentItemsCount,
                         hasRunning = state.currentTabHasRunning,
-                        allowDeleteFiles = state.selectedTab !is DownloadHistoryTab.Extension,
+                        allowDeleteFiles = true,
                         message = state.deleteConfirmMessage(
                             context = context,
                             kind = DeleteRequestKind.ClearTab,
                             count = state.currentItemsCount,
-                            tabs = historyTabs
                         )
                     )
                 },
@@ -172,12 +163,11 @@ fun DownloadHistoryPage(
                             kind = DeleteRequestKind.Selected,
                             count = selectedCount,
                             hasRunning = state.selectedHasRunning,
-                            allowDeleteFiles = state.selectedTab !is DownloadHistoryTab.Extension,
+                            allowDeleteFiles = true,
                             message = state.deleteConfirmMessage(
                                 context = context,
                                 kind = DeleteRequestKind.Selected,
                                 count = selectedCount,
-                                tabs = historyTabs
                             )
                         )
                     },
@@ -215,9 +205,6 @@ fun DownloadHistoryPage(
                 },
                 onRetryVideo = viewModel::retryVideo,
                 onRetryImage = viewModel::retryImageBatch,
-                onShowMessage = { message ->
-                    scope.launch { snackbarHostState.showSnackbar(message) }
-                },
                 onPreviewImage = { previewImageUri = it }
             )
 
@@ -263,23 +250,14 @@ fun DownloadHistoryPage(
     }
 }
 
+/** 根据宿主视频或图片删除范围生成确认文案；TorrentSearch 不再参与本页分支。 */
 private fun DownloadHistoryUiState.deleteConfirmMessage(
     context: android.content.Context,
     kind: DeleteRequestKind,
     count: Int,
-    tabs: List<DownloadHistoryTabSpec>,
 ): String {
-    val extensionEntry = (selectedTab as? DownloadHistoryTab.Extension)
-        ?.let { extensionTab -> tabs.firstOrNull { it.tab == extensionTab }?.extensionEntry }
-    return when {
-        extensionEntry != null -> {
-            val resId = when (kind) {
-                DeleteRequestKind.Selected -> extensionEntry.deleteSelectedMessageRes
-                DeleteRequestKind.ClearTab -> extensionEntry.clearTabMessageRes
-            }
-            context.getString(resId, count)
-        }
-        kind == DeleteRequestKind.Selected -> context.getString(R.string.base_general_download_history_delete_selected_message, count)
-        else -> context.getString(R.string.base_general_download_history_clear_message, count)
+    return when (kind) {
+        DeleteRequestKind.Selected -> context.getString(R.string.base_general_download_history_delete_selected_message, count)
+        DeleteRequestKind.ClearTab -> context.getString(R.string.base_general_download_history_clear_message, count)
     }
 }

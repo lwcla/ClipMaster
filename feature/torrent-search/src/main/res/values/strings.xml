@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="torrent_search_title">Torrent 搜索</string>
+    <string name="torrent_search_entry_description">聚合搜索种子资源</string>
+    <string name="torrent_search_placeholder_message">TorrentSearch 正在接入中</string>
+    <string name="torrent_search_backup_bookmarks">TorrentSearch 书签</string>
+    <string name="torrent_search_backup_search_histories">TorrentSearch 搜索历史</string>
+    <string name="torrent_search_backup_viewed_items">TorrentSearch 已查看</string>
+    <string name="torrent_search_backup_settings">TorrentSearch 设置</string>
+</resources>
