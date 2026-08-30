@@ -147,6 +147,10 @@
 8. 补充字符串资源和简体中文注释。
 9. 运行 `./gradlew :app:compileDebugKotlin` 验证编译。
 
+## TorrentSearch 接入影响（待实施）
+
+宿主下载历史恢复为内建视频/图片职责，不再通过可选扩展 Tab 展示旧磁力复制/打开记录；旧 `MagnetDownloadHistoryEntry`、删除确认和分页入口随模块移除。TorrentSearch 的下载与历史由独立 Activity 内部维护，因此本页不读取其数据库、不参与其删除副作用，也不统计其条目。完整职责、数据与备份边界以 [TorrentSearch 主方案](magnet_search_plan.md) 为准。
+
 ## 测试验证
 
 - 视频重新下载创建新记录，旧记录和旧公共文件仍保留，新记录指向新下载文件。
@@ -199,6 +203,7 @@
 
 ## 变更记录
 
+- 2026-08-30：同步移除宿主下载历史的旧磁力 Tab 接入；原因是 TorrentSearch 以独立 Activity 管理下载和历史，不再复用宿主媒体下载记录页。
 - 2026-06-08：同步下载记录删除/清空入口视觉规则；原因是多选删除属于删除类入口需要统一图形，清空当前分类属于清空类入口应保留独立语义。
 - 2026-05-28：修正下载记录页底部多选条在 `Scaffold.bottomBar` 中的测量方式；原因是共享 `SelectionActionBar` 原本按 overlay 设计，内部使用 `fillMaxSize()`，迁入 `bottomBar` 后会把内容区高度错误吃掉，表现成一进入多选态列表就消失。
 - 2026-05-28：修正下载记录页 `Scaffold.topBar` 的标题栏与 Tab 重叠问题，并恢复 `busy` 遮罩的条件显示；原因是把 `TitleBar` 和 `TabRow` 直接并列塞进 `topBar` slot 会造成视觉重叠，且上一轮布局收口时遗漏了 `if (state.busy)` 判断，导致页面常驻 loading。

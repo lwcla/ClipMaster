@@ -387,6 +387,12 @@ fake、builder、fixture factory 和 assert helper 应保持小而清楚，只�
 - 先运行受影响模块的 `testDebugUnitTest` 和 `compileDebugKotlin`。
 - 如涉及 `@Keep`、序列化字段、枚举协议、导航参数或 R8 规则，再运行 `./gradlew :app:minifyReleaseWithR8`。
 
+## TorrentSearch 测试接入影响（待实施）
+
+TorrentSearch 进入 P0/P1 测试清单：先以失败测试固定“恰好 43 个”内置 Provider 注册快照、唯一稳定 ID 和 manifest 元数据；再覆盖并发调度、渐进结果、45 秒超时、失败隔离、取消和最大结果数。输入与协议测试覆盖控制字符清理、512 字符、scheme 白名单、5/20/10 MiB 限制、Bencode 顶层/`info` 字典、逐项容错导入、稳定 code/ID 与 Keystore fake。
+
+数据测试覆盖 Room v1、DataStore、备份字段白名单、infoHash/规范化查询幂等恢复、旧磁力备份“不兼容并跳过”、旧数据检测与精确清理。发布测试覆盖功能关闭/开启的编译与 R8 两条路径、Intent alias、可见生命周期取消、Cloudflare WebView 安全边界及日志敏感字段扫描。fixture 必须是最小合成数据，禁止真实 Provider URL、查询、Cookie、Key、磁力 URI 或备份内容。完整验收矩阵以 [TorrentSearch 主方案](magnet_search_plan.md) 为准。
+
 ## 日志与诊断计划
 
 单元测试建设本身不新增运行时日志。测试失败应通过断言名称、失败消息、固定 fixture 和 Gradle 测试报告定位，不在生产代码里为了测试额外打印日志。
@@ -412,6 +418,7 @@ fake、builder、fixture factory 和 assert helper 应保持小而清楚，只�
 
 ## 变更记录
 
+- 2026-08-30：补充 TorrentSearch 固定快照、43 Provider、输入安全、协议、备份恢复和双构建路径测试矩阵；原因是旧 Academic Torrents 磁力测试将随替换方案废弃。
 - 2026-05-24：补充“可从 UI/导航问题中抽出的纯规则、状态机、mapper、formatter、predicate 或派生状态判断必须先写失败测试”的选择性 TDD 细则，并同步更新 `AGENTS.md` 与 `$repo-unit-test-gate`；原因是避免把可单测的状态派生规则误归类为薄导航接线。
 - 2026-05-24：补充选择性 TDD 规则，并同步要求更新 `AGENTS.md` 与 `$repo-unit-test-gate`；原因是明确高风险逻辑和 bug 修复默认测试先行，纯 UI、文案、薄导航和已覆盖等价重构不机械强制 TDD，但必须记录原因、风险和验证方式。
 - 2026-05-23：补充测试维护收敛规范，并同步要求更新 `AGENTS.md` 与 `$repo-unit-test-gate`；原因是将测试存在原因、测试工具复杂度控制、测试债清单审查、核心协议反向兼容样本和失败测试优先修复纳入后续维护标准。

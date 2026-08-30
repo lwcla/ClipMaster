@@ -99,6 +99,10 @@
 - 我的页入口项复用 `ListEntryCard`；快捷动作设置弹窗复用 `SingleChoiceDialog`；权限项复用 `SettingSwitchEntryCard`，分别渲染 Shizuku 与通知两张入口式开关卡片。`SettingSwitchListCard` 继续作为表单式多项设置列表保留在共享组件中。本页面保留权限动作消费、系统跳转、Shizuku 回调监听和快捷动作枚举到资源文案的映射。
 - 自更新能力以 `docs/app_update_plan.md` 作为主文档；我的页只记录入口展示、用户触发和页面可见时的轻量检查边界，避免重复维护 GitHub/Gitee 发布契约。
 
+## TorrentSearch 接入影响（待实施）
+
+我的页只通过 `TorrentSearchFeatureEntry` 的可发现启动能力提供轻量入口；点击以空查询和 `mine` 稳定启动来源打开独立 Activity，不在 Mine ViewModel 预热 Provider、读取数据库或发起网络。关闭 `enableMagnetFeature` 时入口完全隐藏；旧 Academic Torrents 磁力入口随旧模块移除。搜索、安全提示、Provider 和数据规则以 [TorrentSearch 主方案](magnet_search_plan.md) 为准。
+
 ## 日志与诊断计划
 
 - 本轮只调整我的页权限单项卡片的入口式视觉表达，不新增权限请求、系统跳转、数据库写入、网络、文件 IO 或后台任务副作用。
@@ -107,6 +111,7 @@
 
 ## 变更记录
 
+- 2026-08-30：同步我的页改为 TorrentSearch 独立 Activity 轻量入口及关闭构建隐藏规则；原因是旧磁力模块将被固定快照实现完整替换。
 - 2026-06-29：来源过滤选择页改为主进程 `QUERY_ALL_PACKAGES` + `PackageManager` 直读安装应用，并按可见行懒加载当前安装图标；原因是旧安装缓存同步方案未发布且实现复杂，当前自用/私有分发可以接受包可见性权限。
 - 2026-06-17：废弃前方案曾让来源过滤选择页观察 `installed_app_cache`，并由 Shizuku 通过 Provider 同步安装应用元数据和图标；本轮已删除可执行链路，仅保留为历史取舍记录。
 - 2026-06-17：新增“剪贴保存过滤”设置入口和独立二级选择页接入说明，并补充 App 图标 + App 名展示和页面草稿保存边界；原因是用户需要从我的页集中管理按来源 App 屏蔽后续剪贴保存，且只看包名难以识别 App。

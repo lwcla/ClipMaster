@@ -436,6 +436,12 @@ manifest 简化示例：
 - 系统 Auto Backup 和设备迁移规则额外排除 `clipboard_bridge_icons/` 和 `clipboard_bridge_clip_payloads/`；这些目录只用于 Shizuku Provider 来源图标和剪贴 payload 临时传输，都不是可跨安装恢复的剪贴数据，恢复后继续保留反而可能让旧事件临时文件被误用。
 - 文件名使用脱敏短标识，例如 `clip_master_backup_<installId8>_<yyyyMMdd_HHmmss>.zip`；真实设备名只放备份元信息，不直接暴露在文件名中。
 
+## TorrentSearch 备份接入影响（待实施）
+
+备份协议将升级为 `schemaVersion = 4`。启用 TorrentSearch 实现时，`BackupFeatureContributor` 仅以字段白名单导出版本 1 的书签、搜索历史、已查看和非敏感设置，并在预检、`feature_counts` 与恢复报告中单列该分类；恢复按 infoHash、规范化查询等稳定键幂等合并。Torznab/API Key、Cookie、NSFW、SAF URI、Provider 健康、缓存、临时文件、新数据库、DataStore 和 WebView 数据均不导出，并由系统 Auto Backup 排除。
+
+旧磁力备份在预检与报告中应标为“不兼容并跳过”，不得迁移或计为成功；首次手动备份或开启自动备份前披露未加密 ZIP/WebDAV 风险。完整数据字段、旧数据清理和日志脱敏规则以 [TorrentSearch 主方案](magnet_search_plan.md) 为准。本次只补充文字接入说明，现有 Mermaid 的备份/恢复节点语义未改变，故不重新生成 `docs/flows` HTML。
+
 ## 日志与诊断计划
 
 - 自动备份、手动本地备份、手动 WebDAV 备份、恢复、保留清理和 WebDAV 健康检查都生成短 `taskId`，同一次流程的开始、关键阶段、成功、失败、跳过和重试日志必须带同一个 `taskId`。
@@ -614,6 +620,7 @@ manifest 简化示例：
 
 ## 变更记录
 
+- 2026-08-30：同步 TorrentSearch schemaVersion 4、备份白名单、旧磁力备份跳过和 Auto Backup 排除边界；原因是固定快照功能将替换旧磁力数据协议。本次未改 Mermaid，流程图语义不变，未重新生成 HTML。
 - 2026-06-29：来源过滤页改为主进程 `QUERY_ALL_PACKAGES` + `PackageManager` 直读当前安装应用，删除未发布的安装应用缓存表、安装图标目录和相关 no-backup 排除说明；原因是当前安装列表只服务本机展示，真正参与备份恢复的仍只有 `blocked_clip_source_packages` 包名名单。
 - 2026-06-18：废弃前方案曾补充 `installed_app_icon_state_batch_payloads/` 和安装应用缓存相关 no-backup 目录的备份排除说明；本轮已删除可执行链路和资源排除项，仅保留为历史取舍记录。
 - 2026-06-17：补充剪贴保存过滤选择页按需 App 图标的备份排除边界；原因是图标只服务当前设备页面识别，可由 Shizuku 重新查询，备份仍只保存过滤包名。

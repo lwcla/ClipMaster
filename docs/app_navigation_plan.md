@@ -60,6 +60,10 @@
 6. 媒体关联页成功完成或无须处理后，底部“完成”只收起备份、恢复和媒体关联链路；顶部返回和系统返回只退回恢复结果页。
 7. 更新方案文档并运行 `./gradlew :app:compileDebugKotlin` 验证编译。
 
+## TorrentSearch 接入影响（待实施）
+
+TorrentSearch 将替换旧磁力模块，宿主不再注册 `MagnetSearchRoute` 或由 `NavHost` 承载磁力页面；通过 `TorrentSearchFeatureEntry.launch(context, initialQuery, launchSource)` 打开独立 `TorrentSearchActivity`。我的页传空查询、详情页传候选关键词，关闭 `enableMagnetFeature` 时发现集合为空且入口/Activity 不可达。外部 `ACTION_SEARCH`、`SEND` 与 `PROCESS_TEXT` alias 由 Activity 内部统一处理，不新增 launcher。完整 API、输入规范化、安全和生命周期要求以 [TorrentSearch 主方案](magnet_search_plan.md) 为准。
+
 ## 测试验证
 
 - 从“我的 > 回收站”进入和返回时，应表现为完整左进右出动画。
@@ -82,6 +86,7 @@
 
 ## 变更记录
 
+- 2026-08-30：同步 TorrentSearch 独立 Activity 的导航接入边界，并废弃旧磁力 route 注册说明；原因是新功能不再作为宿主 NavHost 的可选页面实现。
 - 2026-06-05：将媒体关联成功或无须处理后的底部“完成”从硬编码进入首页固定 Tab 改为只关闭 `BackupRoute` / `BackupRestoreRoute` / `BackupMediaRelocationRoute` 链路，顶部返回和系统返回保持一级返回；原因是“完成”表示闭环退出，“返回”表示回上一层查看恢复结果，二者不应混用。
 - 2026-05-25：磁力搜索导航改为通过 `Set<MagnetFeatureEntry>` 注册可选目的地；原因是磁力搜索已独立为编译期可选模块，默认构建不能在 app 路由表中保留磁力 route 或页面实现引用。
 - 2026-05-24：媒体关联正向终态返回判断改为优先读取 ViewModel 终态标记；原因是页面返回时可能没有进入 `Result/NoWork` UI state 分支，导航层需要消费更稳定的业务终态语义。

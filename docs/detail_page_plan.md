@@ -96,6 +96,10 @@
 - 手动验证点：在 `local.properties` 或 CI Gradle 属性配置 `uniadDebugAppId`/`uniadDebugUnionId`/`uniadDebugDetailNativeAdpid` 或 `uniadReleaseAppId`/`uniadReleaseUnionId`/`uniadReleaseDetailNativeAdpid` 后，对应 debug/release 构建会携带 uni-ad 详情页广告模块；CSJ 与 uni-ad 同一 buildType 同时配置时构建失败。隐私未同意或敏感详情不初始化 uni-ad，同意后广告异步展示，离开详情页释放，弱网、无网、超时和无填充不占空白。
 - 手动验证点：来源包名明确的详情页显示屏蔽或取消屏蔽动作，确认后轻提示且页面保留当前记录；未知来源不展示该动作；从我的页修改名单后返回详情页，动作文案刷新。
 
+## TorrentSearch 接入影响（待实施）
+
+详情页的旧磁力动作改为可发现的 `TorrentSearchFeatureEntry` 动作：仅传入从当前详情提取的候选关键词与 `detail` 稳定启动来源，不能写剪贴板、写 TorrentSearch 历史或预先发起搜索。关闭构建时不展示该动作。详情页继续只承担候选文本和启动回调，输入限制、第三方披露、外链安全和 TorrentSearch 生命周期均以 [TorrentSearch 主方案](magnet_search_plan.md) 为准。
+
 ## 日志与诊断计划
 
 - 链接提取本身不新增运行时日志；复制动作复用 `DefaultClipboardDataProcessor` 的现有 Toast 反馈，提取动作复用既有导航入口。
@@ -123,6 +127,7 @@
 
 ## 变更记录
 
+- 2026-08-30：同步详情页改接 TorrentSearch 候选关键词启动动作；原因是旧 Academic Torrents 磁力页面及其 route 将被移除。
 - 2026-06-17：详情页新增“屏蔽此应用后续剪贴/取消屏蔽此应用”上下文动作接入说明；原因是用户希望从单条历史记录快速维护来源过滤名单，同时历史记录本身不受影响。
 - 2026-06-01：详情页新增模块化原生广告位，位于正文卡片和底部操作区之间，并接入 `:feature:ad-api` 的选择器、请求去重和会话保险丝；原因是详情页需要先用调试广告源验证广告模块边界、隐私边界和页面布局。
 - 2026-06-01：详情页广告位补充穿山甲 CSJ 国内 adapter 接入边界、隐私同意流、敏感详情保护、低敏 sdkVersion 日志和人工验证点；原因是国内渠道包开始接入真实信息流广告，页面文档需要记录详情页自身受影响的体验与生命周期约束。
