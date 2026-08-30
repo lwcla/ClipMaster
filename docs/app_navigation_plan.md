@@ -4,11 +4,11 @@
 
 ## 当前状态
 
-应用通过 `AppNavigation` 注册首页、剪贴搜索、详情、下载记录、折叠数据、回收站、视频/图片提取等内建路由，子页面统一通过 `onBack` 调用 `NavHostController.popBackStack()` 返回上一层，通过 `onNavigate` 跳转到目标路由。磁力搜索已改为编译期可选模块：`AppNavigation` 注入 `Set<MagnetFeatureEntry>`，集合非空时由 `:feature:magnet` 自行注册私有磁力 route，集合为空时不注册磁力目的地。
+应用通过 `AppNavigation` 注册首页、剪贴搜索、详情、下载记录、折叠数据、回收站、视频/图片提取等内建路由，子页面统一通过 `onBack` 调用 `NavHostController.popBackStack()` 返回上一层，通过 `onNavigate` 跳转到目标路由。TorrentSearch 作为编译期可选能力由 `TorrentSearchFeatureEntry` 发现并启动独立 `TorrentSearchActivity`；宿主 `NavHost` 不注册 TorrentSearch 或已废弃的磁力 route，关闭构建时入口和 Activity 均不可达。
 
 本次只增加 Compose Navigation 官方页面级左进右出动画：前进时新页面从右侧进入、当前页向左退出；返回时上一层从左侧进入、当前页向右退出。页面转场只负责视觉效果，不额外处理点击穿透，不关闭退出页动画，也不在具体页面里增加为了动画服务的点击拦截逻辑。
 
-当前 release/R8 导航协议约束：`Routes.kt` 中所有类型安全路由、`SearchScope` 和 `MainInitialTab` 都通过 `@Keep` 保留默认完整类名，避免 `composable<T>`、`toRoute<T>` 或返回栈恢复在混淆包中按默认 serialName 找不到路由参数类型。磁力模块内部的 `MagnetSearchRoute(initialQuery)` 只保存磁力搜索页首帧需要的轻量字符串参数，由 `:feature:magnet` 自行 `@Keep` / `@Serializable` 维护；app 不在 `Routes.kt` 暴露磁力 route，也不在路由里传递磁力结果、数据库实体或剪贴板内容。`MainRoute(initialTab)` 只保存首页初始底部 Tab，用于需要显式指定首页首帧 Tab 的入口；媒体关联成功闭环不再创建新的首页路由，而是只关闭备份、恢复和媒体关联链路。
+当前 release/R8 导航协议约束：`Routes.kt` 中所有类型安全路由、`SearchScope` 和 `MainInitialTab` 都通过 `@Keep` 保留默认完整类名，避免 `composable<T>`、`toRoute<T>` 或返回栈恢复在混淆包中按默认 serialName 找不到路由参数类型。TorrentSearch 不向 `Routes.kt` 暴露 route；`TorrentSearchFeatureEntry.launch(context, initialQuery, launchSource)` 只传递轻量候选查询和稳定启动来源，Activity 自行维护其内部状态，宿主不传递结果、数据库实体或剪贴板内容。`MainRoute(initialTab)` 只保存首页初始底部 Tab，用于需要显式指定首页首帧 Tab 的入口；媒体关联成功闭环不再创建新的首页路由，而是只关闭备份、恢复和媒体关联链路。
 
 ## 目标
 
@@ -27,7 +27,7 @@
 ## 用户体验
 
 - 从“我的”页进入回收站、折叠数据、下载记录等二级页时，新页面从右侧滑入，当前页面向左滑出。
-- 启用磁力模块后，从“我的”页进入磁力搜索页，或从详情页带候选关键词进入磁力搜索页时，同样使用页面级左进右出转场；默认禁用构建不展示这些入口，也不注册磁力目的地。
+- 启用 TorrentSearch 后，从“我的”页或详情页启动独立 Activity；其内部转场由功能模块维护，宿主不注册目的地。默认关闭构建不展示入口，且 Activity 不可达。
 - 从二级页返回时，上一层从左侧滑入，当前二级页向右滑出。
 - 我的页入口只保留普通卡片点击反馈，不做导航前缩放或延迟。
 
@@ -46,8 +46,8 @@
 - `app/src/main/java/com/cla/clip/master/ui/page/main/MainPage.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/backup/BackupMediaRelocationPage.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/backup/BackupRestoreState.kt`
-- `feature/magnet-api/src/main/java/com/cla/clip/feature/magnet/api/MagnetFeatureEntry.kt`
-- `feature/magnet/src/main/java/com/cla/clip/feature/magnet/MagnetFeatureEntryImpl.kt`
+- `feature/torrent-search-api/src/main/**/TorrentSearchFeatureEntry.kt`
+- `feature/torrent-search/src/main/**/TorrentSearchActivity.kt`
 - `docs/app_navigation_plan.md`
 
 ## 实现步骤
@@ -73,7 +73,7 @@ TorrentSearch 将替换旧磁力模块，宿主不再注册 `MagnetSearchRoute` 
 - 媒体关联完成或无须处理后点击底部“完成”，应退出媒体关联页、恢复页和备份页，回到进入备份与恢复前的页面状态；点击顶部返回或系统返回应只回恢复页；失败、权限不足、预估、权限请求和待确认阶段返回仍回到恢复页。
 - release 混淆包进入普通搜索和折叠搜索时，`SearchRoute.scope` 应能正常解析，不再因 `SearchScope` 类名被混淆而崩溃。
 - release 混淆包通过媒体关联正向终态关闭备份恢复链路时，不应依赖新建带“我的”初始 Tab 的首页路由；进入备份前的页面状态应保持。
-- 启用磁力模块的 release 混淆包进入磁力搜索页时，模块内部 `MagnetSearchRoute.initialQuery` 应能正常解析；初始关键词不应因为导航恢复被重复覆盖用户正在编辑的输入。
+- 启用 TorrentSearch 的 release 混淆包应能通过 `TorrentSearchFeatureEntry.launch(...)` 打开独立 Activity，并正确接收候选查询和稳定启动来源；关闭构建不得暴露入口、Activity 或旧 route。
 
 ## 已知取舍
 
@@ -86,6 +86,7 @@ TorrentSearch 将替换旧磁力模块，宿主不再注册 `MagnetSearchRoute` 
 
 ## 变更记录
 
+- 2026-08-31：清理当前状态、R8 约束、文件清单和验收中的旧 `:feature:magnet` / `MagnetSearchRoute` 现行表述；原因是这些契约已删除，宿主当前只通过 `TorrentSearchFeatureEntry` 启动独立 Activity。
 - 2026-08-30：同步 TorrentSearch 独立 Activity 的导航接入边界，并废弃旧磁力 route 注册说明；原因是新功能不再作为宿主 NavHost 的可选页面实现。
 - 2026-06-05：将媒体关联成功或无须处理后的底部“完成”从硬编码进入首页固定 Tab 改为只关闭 `BackupRoute` / `BackupRestoreRoute` / `BackupMediaRelocationRoute` 链路，顶部返回和系统返回保持一级返回；原因是“完成”表示闭环退出，“返回”表示回上一层查看恢复结果，二者不应混用。
 - 2026-05-25：磁力搜索导航改为通过 `Set<MagnetFeatureEntry>` 注册可选目的地；原因是磁力搜索已独立为编译期可选模块，默认构建不能在 app 路由表中保留磁力 route 或页面实现引用。

@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-我的页是首页底部 Tab 的一级页面，依次展示权限项、备份与恢复、下载记录、折叠数据、回收站和检查更新入口；当 `:feature:magnet` 通过 `-PenableMagnetFeature=true` 编译进应用时，页面通过 `MagnetFeatureEntry.MineEntry` 追加磁力搜索入口，完整磁力模块化规则以 `docs/magnet_search_plan.md` 为准。磁力搜索、下载记录、折叠数据和回收站只在入口处展示轻量说明或统计，不在我的页同步源索引、执行搜索或加载对应分页数据。检查更新入口只负责触发轻量版本检查、展示结果和打开外部发布链接，完整自更新规则以 `docs/app_update_plan.md` 为准。本轮 UI 刷新后，我的页通过 `TopLevelPageScaffold` 接入统一一级页骨架，并按“权限”“数据管理”“功能入口”“设置”分组展示入口。
+我的页是首页底部 Tab 的一级页面，依次展示权限项、备份与恢复、下载记录、折叠数据、回收站和检查更新入口；启用 TorrentSearch 时，页面通过可发现的 `TorrentSearchFeatureEntry` 追加轻量入口，以空查询和 `mine` 稳定启动来源打开独立 Activity。TorrentSearch、下载记录、折叠数据和回收站只在入口处展示轻量说明或统计，不在我的页预热 Provider、同步索引、执行搜索或加载对应分页数据。检查更新入口只负责触发轻量版本检查、展示结果和打开外部发布链接，完整自更新规则以 `docs/app_update_plan.md` 为准。本轮 UI 刷新后，我的页通过 `TopLevelPageScaffold` 接入统一一级页骨架，并按“权限”“数据管理”“功能入口”“设置”分组展示入口。
 
 本文记录我的页自身的入口、设置项和页面级交互；首页 Pager、底部 Tab 和一级标题详见 `docs/main_page_plan.md`，共享剪贴 item 的斜向快捷动作区、右滑菜单和回调规则详见 `docs/clip_result_list_plan.md`。
 
@@ -23,8 +23,8 @@
 
 - 我的页继续使用单列卡片入口，顶部显示固定标题“我的”，入口按权限、数据管理、功能入口、设置分组。
 - 权限分组固定放在我的页最上面，只展示 Shizuku 和通知两个权限项；两个权限项各自独立成卡，方便用户先看到影响剪贴读取和提醒展示的系统能力状态。
-- 备份与恢复、下载记录、折叠数据、回收站以及可选磁力搜索这类页面导航入口只保留卡片自身点击反馈，页面切换动画统一交给 `AppNavigation` 的 Compose Navigation 官方左进右出转场。
-- 磁力搜索入口只在磁力模块启用时出现，并且只负责进入磁力搜索页；Academic Torrents 索引状态、同步动作、搜索历史和结果分页都在磁力搜索页按生命周期启动。
+- 备份与恢复、下载记录、折叠数据、回收站以及可选 TorrentSearch 入口只保留卡片自身点击反馈；TorrentSearch 启动独立 Activity，其内部转场不由宿主导航负责。
+- TorrentSearch 入口只在实现启用时出现，并且只负责以空查询启动 Activity；Provider、搜索历史和结果分页均在功能内部按生命周期启动。
 - 检查更新入口展示当前 App 版本，点击后执行手动版本检查；Gitee 与 GitHub 更新源均不可达时展示“暂时无法检查更新，可稍后重试或前往发布页查看”，并提供可配置发布页入口。
 - “剪贴快捷操作”作为普通设置行展示当前选项摘要，例如“当前：复制”。
 - 点击该设置行打开单选弹窗，选项顺序为复制、置顶、删除、折叠、无（整卡进入详情）。
@@ -58,7 +58,7 @@
 - `app/src/main/java/com/cla/clip/master/ui/page/mine/MineEntries.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/mine/MineSettingComponents.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/mine/MineVm.kt`
-- `feature/magnet-api/src/main/java/com/cla/clip/feature/magnet/api/MagnetFeatureEntry.kt`
+- `feature/torrent-search-api/src/main/**/TorrentSearchFeatureEntry.kt`
 - `base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt`
 - `base/general/src/main/res/values/strings.xml`
 - `docs/mine_page_plan.md`
@@ -76,7 +76,7 @@
 - 切回普通列表和普通搜索后，快捷动作立即生效；重启应用后设置保留。
 - 选择“无（整卡进入详情）”后普通列表和普通搜索不显示斜向背景，整卡点击进入详情。
 - 点击下载记录、折叠数据和回收站入口时应正常进入目标页面，并由 `AppNavigation` 呈现左进右出页面切换。
-- 启用磁力模块时，点击磁力搜索入口应进入磁力搜索页；默认禁用构建不展示该入口。我的页不应提前下载源索引或读取磁力记录分页。
+- 启用 TorrentSearch 时，点击入口应以空查询和 `mine` 来源打开独立 Activity；关闭构建不展示该入口。我的页不应预热 Provider、读取 TorrentSearch 数据库或加载历史分页。
 - 点击“剪贴快捷操作”设置行应立即打开弹窗，不触发页面级导航转场。
 - 点击“检查更新”入口时应触发手动检查；无更新、有更新、Gitee 优先、GitHub 兜底和发布页入口均按 `docs/app_update_plan.md` 验证。
 - “设置”分组下只展示剪贴快捷操作，不再混入 Shizuku 或通知权限项。
@@ -95,7 +95,7 @@
 
 ## 本次同步
 
-- 我的页入口卡片和权限设置项列表已接入 `ClipMasterCard` 公共内容卡片外壳；外边距和页面入口语义仍由本页面维护，公共外壳只负责圆角、阴影、边框和触摸裁剪规则，完整规则详见 `docs/shared_card_component_plan.md`。磁力入口卡片由 `:feature:magnet` 自己渲染，宿主只提供打开动作。
+- 我的页入口卡片和权限设置项列表已接入 `ClipMasterCard` 公共内容卡片外壳；外边距和页面入口语义仍由本页面维护，公共外壳只负责圆角、阴影、边框和触摸裁剪规则，完整规则详见 `docs/shared_card_component_plan.md`。TorrentSearch 入口由功能 API 提供可发现启动能力，宿主只提供打开动作。
 - 我的页入口项复用 `ListEntryCard`；快捷动作设置弹窗复用 `SingleChoiceDialog`；权限项复用 `SettingSwitchEntryCard`，分别渲染 Shizuku 与通知两张入口式开关卡片。`SettingSwitchListCard` 继续作为表单式多项设置列表保留在共享组件中。本页面保留权限动作消费、系统跳转、Shizuku 回调监听和快捷动作枚举到资源文案的映射。
 - 自更新能力以 `docs/app_update_plan.md` 作为主文档；我的页只记录入口展示、用户触发和页面可见时的轻量检查边界，避免重复维护 GitHub/Gitee 发布契约。
 
@@ -111,6 +111,7 @@
 
 ## 变更记录
 
+- 2026-08-31：移除当前状态、交互、文件清单、验收和组件同步中的 `MagnetFeatureEntry` / Academic Torrents 现行表述；原因是旧磁力契约已废弃，仅保留历史变更记录。
 - 2026-08-30：同步我的页改为 TorrentSearch 独立 Activity 轻量入口及关闭构建隐藏规则；原因是旧磁力模块将被固定快照实现完整替换。
 - 2026-06-29：来源过滤选择页改为主进程 `QUERY_ALL_PACKAGES` + `PackageManager` 直读安装应用，并按可见行懒加载当前安装图标；原因是旧安装缓存同步方案未发布且实现复杂，当前自用/私有分发可以接受包可见性权限。
 - 2026-06-17：废弃前方案曾让来源过滤选择页观察 `installed_app_cache`，并由 Shizuku 通过 Provider 同步安装应用元数据和图标；本轮已删除可执行链路，仅保留为历史取舍记录。

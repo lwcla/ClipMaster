@@ -4,12 +4,12 @@
 
 ## 当前状态
 
-详情页按路由传入的 `clipId` 加载单条剪贴记录，展示正文内容，并通过点击正文卡片复制剪贴数据；页面继续提供删除、链接复制、图片提取和视频提取入口。当 `:feature:magnet` 通过 `-PenableMagnetFeature=true` 编译进应用时，页面通过 `MagnetFeatureEntry.DetailAction` 追加磁力搜索动作，完整磁力模块化规则以 `docs/magnet_search_plan.md` 为准。页面入口 `DetailPage` 负责触发加载、收集详情状态、处理删除成功后返回和接入统一删除选择弹窗；详情页已接入 `SecondaryPageScaffold` 和 `ClipMasterCard`，正文卡片点击复用已有复制能力，删除入口位于标题栏右侧低频危险操作位，底部链接区从正文实时识别全部链接并以紧凑入口展示。详情页新增一个信息流/原生广告位，位于正文卡片和底部链接/磁力操作区之间；广告模块化、运行时选择、隐私边界和 adapter 验收规则以 `docs/ad_module_plan.md` 为准，当前真实 adapter 包含 CSJ 与 uni-ad。完整卡片规则以 `docs/shared_card_component_plan.md` 为准。详情页已接入来源 App 后续剪贴过滤快捷动作，完整过滤规则、本地安装应用读取边界和备份恢复边界以 `docs/clip_source_app_filter_plan.md` 为准。
+详情页按路由传入的 `clipId` 加载单条剪贴记录，展示正文内容，并通过点击正文卡片复制剪贴数据；页面继续提供删除、链接复制、图片提取和视频提取入口。启用 TorrentSearch 时，页面通过 `TorrentSearchFeatureEntry` 追加动作，只传入候选关键词和 `detail` 稳定启动来源以打开独立 Activity，不预热搜索、不写剪贴板或 TorrentSearch 历史。页面入口 `DetailPage` 负责触发加载、收集详情状态、处理删除成功后返回和接入统一删除选择弹窗；详情页已接入 `SecondaryPageScaffold` 和 `ClipMasterCard`，正文卡片点击复用已有复制能力，删除入口位于标题栏右侧低频危险操作位，底部链接区从正文实时识别全部链接并以紧凑入口展示。详情页新增一个信息流/原生广告位，位于正文卡片和底部链接/TorrentSearch 操作区之间；广告模块化、运行时选择、隐私边界和 adapter 验收规则以 `docs/ad_module_plan.md` 为准，当前真实 adapter 包含 CSJ 与 uni-ad。完整卡片规则以 `docs/shared_card_component_plan.md` 为准。详情页已接入来源 App 后续剪贴过滤快捷动作，完整过滤规则、本地安装应用读取边界和备份恢复边界以 `docs/clip_source_app_filter_plan.md` 为准。
 
 ## 目标
 
 - 保持详情页作为单条剪贴记录的阅读和操作页面。
-- 保持可选磁力搜索、删除、复制、图片提取和视频提取的既有行为边界清晰，其中整条剪贴复制由正文卡片点击触发。
+- 保持可选 TorrentSearch、删除、复制、图片提取和视频提取的既有行为边界清晰，其中整条剪贴复制由正文卡片点击触发。
 - 普通内容卡片复用公共卡片外壳，避免详情页继续手写独立 `Card` 视觉。
 - 底部链接区从 `clip.content` 实时识别全部 URL，历史剪贴无需迁移即可支持多链接。
 - 长链接只展示摘要，完整 URL 只用于复制、跳转和提取参数，避免底部区域挤压正文阅读空间。
@@ -36,13 +36,13 @@
 - 底部链接区域限制最大高度并在区域内部滚动，长链接或大量链接不会挤压正文卡片出屏幕。
 - 点击链接打开的操作弹层以链接类型作为标题，直接展示可滚动的完整 URL，不再展示摘要版或限制完整 URL 的显示行数；复制、打开视频提取和打开图片提取始终使用完整 URL。
 - `file://`、`ftp://`、`localhost`、内网地址和其他非公网 http/https 链接仍可复制，但不会进入 WebView 或下载提取流程，弹层提示该链接不支持提取。
-- 底部不再展示普通复制按钮；如果没有链接提取入口且没有磁力扩展动作，则不渲染空操作区。
+- 底部不再展示普通复制按钮；如果没有链接提取入口且没有 TorrentSearch 动作，则不渲染空操作区。
 - 详情页成功态会在正文和底部操作区之间尝试渲染一个原生广告位；无广告源、广告关闭、隐私未同意、敏感详情、无填充、加载失败或保险丝禁用时直接隐藏，不占空白。
 - 国内广告包启用 `:feature:ad-csj` 后可展示穿山甲模板信息流广告；广告异步加载，成功后才插入容器，容器保留“广告”标识且最大高度由 adapter 限制。
 - 国内广告包启用 `:feature:ad-uniad` 后可展示 uni-ad 信息流广告；广告通过 `DCFeedAdLoader` 异步加载，渲染成功后才插入容器，找不到 Activity、无网、无填充、加载失败或超时时直接隐藏。
 - 详情页广告不做用户可感知频控；同一个 `clipId` 在一次详情页生命周期内最多创建一次广告请求，切换剪贴记录后生成新的低敏 request nonce。
 - 删除作为低频危险操作放在标题栏右上角图标按钮中，点击后仍进入统一删除选择弹窗。
-- 磁力搜索按钮只在磁力模块启用时出现，点击后通过 `MagnetFeatureEntry.openSearch(initialQuery = clip.linkTitle ?: clip.content)` 进入磁力搜索页；该动作只传内部路由参数，不读取或写入系统剪贴板，也不保存磁力搜索历史。
+- TorrentSearch 动作只在实现启用时出现，点击后通过 `TorrentSearchFeatureEntry.launch(context, initialQuery = clip.linkTitle ?: clip.content, launchSource = detail)` 打开独立 Activity；该动作只传候选查询和稳定来源，不读取或写入系统剪贴板，也不保存 TorrentSearch 历史或预先发起搜索。
 - 来源包名明确时，底部操作区展示来源过滤说明和快捷动作。点击动作先弹出确认框，文案说明只影响以后保存，不删除当前记录或历史记录。
 - 详情页加入或移除过滤名单后只显示轻提示，当前详情页继续停留，不自动删除当前记录。
 
@@ -54,7 +54,7 @@
 - `LinkUtils.extractUrls` 复用既有 URL 正则和尾部标点清理规则，并按清理后的完整 URL 顺序去重；同 host 但 query 不同的链接不会被误合并。
 - `extractFirstUrl`、`extractFirstPreviewableUrl` 和 `extractFirstDownloadableMediaUrl` 委托 `extractUrls`，多候选场景仍按原文顺序选择第一条满足条件的链接。
 - 详情页内部将完整 URL 转为 `DetailLinkUiState`，记录摘要、类型提示和是否允许提取；该模型保持 feature-local，不作为跨页面公共契约。
-- 链接复制只调用 `copyToClipboard(link)`，不刷新整条剪贴记录时间戳；图片/视频提取和磁力搜索仍走各自导航回调。
+- 链接复制只调用 `copyToClipboard(link)`，不刷新整条剪贴记录时间戳；图片/视频提取和 TorrentSearch 仍走各自启动回调。
 - 详情页通过 `LaunchedEffect(clip.id)` 在剪贴切换时清空已选链接和底部弹层状态，避免 A 剪贴的旧链接残留到 B 剪贴。
 - 详情页先用本地 `DetailAdSensitivityPolicy` 判断剪贴内容是否明显像验证码、密码、Token、密钥或银行卡号，只把敏感布尔值传给广告选择器和 adapter，不记录原文或命中片段。
 - 详情页通过 `AdSourceSelector` 选择当前可用广告源，并向 adapter 传入 `AdSlotRequest(placement = DetailNative, requestNonce, isDebugRequest, isSensitiveContext)`；请求对象不包含剪贴正文、完整 URL 或搜索词。
@@ -90,7 +90,7 @@
 - 本次验证命令：`./gradlew :base:general:testDebugUnitTest --tests "com.cla.clip.base.general.utils.LinkUtilsTest" --console=plain`、`./gradlew :app:testDebugUnitTest --tests "com.cla.clip.master.ui.page.detail.*" --console=plain`、`./gradlew :app:compileDebugKotlin --console=plain` 和 `git diff --check`。
 - 手动验证点：A 剪贴打开链接 Sheet 后切换到 B 剪贴，不显示 A 的旧链接；长链接和很多链接都不会把正文挤出屏幕。
 - 手动验证点：详情页加载态、错误态、正文滚动、点击正文卡片复制、底部复制按钮已移除、右上角删除入口、删除选择弹窗、图片提取和视频提取入口行为正确。
-- 手动验证点：启用磁力模块时，点击磁力搜索按钮后进入磁力搜索页并带入标题或正文作为初始关键词，不写入剪贴板；默认禁用构建不展示该按钮。
+- 手动验证点：启用 TorrentSearch 时，点击动作后独立 Activity 应带入标题或正文作为候选关键词和 `detail` 来源，不写入剪贴板、历史或发起预热；默认关闭构建不展示该动作。
 - 手动验证点：debug 构建显示调试广告占位，release 默认无真实广告源时不显示广告；同一详情页重组不重复创建请求，切换到另一条剪贴记录后生成新的请求。
 - 手动验证点：在 `local.properties` 或 CI Gradle 属性配置 `csjDebugAppId`/`csjDebugDetailNativeAdSlotId` 或 `csjReleaseAppId`/`csjReleaseDetailNativeAdSlotId` 后，对应 debug/release 构建会携带穿山甲详情页广告模块；debug 包使用项目固定 internal keystore，release 包使用正式 release keystore。隐私未同意或敏感详情不初始化穿山甲，同意后广告异步展示，离开详情页释放，弱网、无网、超时和无填充不占空白。
 - 手动验证点：在 `local.properties` 或 CI Gradle 属性配置 `uniadDebugAppId`/`uniadDebugUnionId`/`uniadDebugDetailNativeAdpid` 或 `uniadReleaseAppId`/`uniadReleaseUnionId`/`uniadReleaseDetailNativeAdpid` 后，对应 debug/release 构建会携带 uni-ad 详情页广告模块；CSJ 与 uni-ad 同一 buildType 同时配置时构建失败。隐私未同意或敏感详情不初始化 uni-ad，同意后广告异步展示，离开详情页释放，弱网、无网、超时和无填充不占空白。
@@ -116,7 +116,7 @@
 - 不修改 `ClipData`、`ClipCaptureEntity`、DAO、Room schema、备份协议或链接预览缓存；详情页实时从正文提取全部链接，列表页和搜索页继续使用 `clip.link` 展示主链接预览。
 - 不为本次新增数据迁移或备份覆盖，因为没有新增持久化字段、设置项、跨安装状态或备份协议。
 - 不新增 R8/release 验证，因为新增模型和 formatter 均为详情页内部纯 UI/纯 Kotlin 能力，不参与序列化、反射、Intent、通知或跨模块稳定协议。
-- 不把底部磁力搜索按钮抽成 app 共享操作区，因为它现在由磁力模块通过 `MagnetFeatureEntry.DetailAction` 提供，宿主只负责传入候选关键词和打开回调。
+- 不把底部 TorrentSearch 动作抽成 app 共享操作区，因为它由功能 API 的可发现入口提供，宿主只负责传入候选关键词和打开回调。
 - 不把广告位写成详情页私有 SDK 逻辑，因为广告源需要独立模块热插拔；详情页只保留广告位插槽和低敏事件处理。
 - 多链接摘要默认隐藏 query，牺牲部分可见精确度换取紧凑性和隐私；实际复制和提取始终使用完整 URL，摘要冲突不再通过序号补偿，用户进入弹层后核对完整 URL。
 
@@ -127,6 +127,7 @@
 
 ## 变更记录
 
+- 2026-08-31：清理当前状态、交互、验收和取舍中的 `MagnetFeatureEntry` 现行规则；原因是详情页已只保留 TorrentSearch 候选关键词启动边界，旧契约仅作历史记录。
 - 2026-08-30：同步详情页改接 TorrentSearch 候选关键词启动动作；原因是旧 Academic Torrents 磁力页面及其 route 将被移除。
 - 2026-06-17：详情页新增“屏蔽此应用后续剪贴/取消屏蔽此应用”上下文动作接入说明；原因是用户希望从单条历史记录快速维护来源过滤名单，同时历史记录本身不受影响。
 - 2026-06-01：详情页新增模块化原生广告位，位于正文卡片和底部操作区之间，并接入 `:feature:ad-api` 的选择器、请求去重和会话保险丝；原因是详情页需要先用调试广告源验证广告模块边界、隐私边界和页面布局。
