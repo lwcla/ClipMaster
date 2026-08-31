@@ -1,11 +1,14 @@
 package com.cla.clip.feature.torrent.search.search
 
 import com.cla.clip.feature.torrent.search.logging.ProviderLogEvent
+import com.cla.clip.feature.torrent.search.logging.ProviderLogStage
 import com.cla.clip.feature.torrent.search.logging.ProviderLogger
+import com.cla.clip.feature.torrent.search.model.contract.Category
 import com.cla.clip.feature.torrent.search.model.contract.ProviderSafetyLevel
 import com.cla.clip.feature.torrent.search.model.contract.Torrent
 import com.cla.clip.feature.torrent.search.network.HttpDeniedException
 import com.cla.clip.feature.torrent.search.provider.ProviderDescriptor
+import com.cla.clip.feature.torrent.search.provider.ProviderId
 import com.cla.clip.feature.torrent.search.provider.ProviderParseException
 import com.cla.clip.feature.torrent.search.provider.SearchProvider
 import kotlinx.coroutines.CompletableDeferred
@@ -42,12 +45,13 @@ class SearchCoordinatorTest {
         /** 被测聚合器，超时值由测试传入以避免依赖真实时间。 */
         val coordinator = SearchCoordinator(providerTimeoutMs = 1_000L)
         /** 在独立协程收集事件，避免主测试协程被 Flow 阻塞。 */
-        val eventsDeferred = async { coordinator.search("ignored", providers, safeModeEnabled = true, maxResults = 10).toList() }
+        val eventsDeferred = async { coordinator.search("ignored", Category.ALL, providers, safeModeEnabled = true, maxResults = 10).toList() }
 
         advanceUntilIdle()
         assertEquals(setOf("first", "second"), startedProviders.toSet())
         releaseResults.complete(Unit)
         advanceUntilIdle()
+        // event 是等待确认正常收口的单个搜索事件。
         assertTrue(eventsDeferred.await().any { event -> event is SearchEvent.Completed })
     }
 
@@ -61,10 +65,12 @@ class SearchCoordinatorTest {
         /** 被测聚合器，使用足够大的虚拟超时避免测试关注超时逻辑。 */
         val coordinator = SearchCoordinator(providerTimeoutMs = 1_000L)
         /** 全部事件用于断言失败分类和成功结果可以共存。 */
-        val events = coordinator.search("ignored", listOf(failingProvider, successfulProvider), true, 10).toList()
+        val events = coordinator.search("ignored", Category.ALL, listOf(failingProvider, successfulProvider), true, 10).toList()
 
-        assertTrue(events.any { event -> event is SearchEvent.Failed && event.providerId == "failing" })
-        assertTrue(events.any { event -> event is SearchEvent.Results && event.providerId == "working" })
+        // event 是等待匹配失败来源的单个搜索事件。
+        assertTrue(events.any { event -> event is SearchEvent.Failed && event.providerId.value == "failing" })
+        // event 是等待匹配成功来源的单个搜索事件。
+        assertTrue(events.any { event -> event is SearchEvent.Results && event.providerId.value == "working" })
     }
 
     /** 快速来源的结果必须在慢来源完成前渐进发射，不能等所有 Provider 后一次性返回。 */
@@ -84,11 +90,12 @@ class SearchCoordinatorTest {
         /** 渐进收集的事件缓冲，仅记录合成事件而不包含用户数据。 */
         val events = mutableListOf<SearchEvent>()
         /** 独立收集任务允许测试在慢来源完成前检查快速结果。 */
-        val collectionJob = launch { coordinator.search("ignored", providers, true, 10).collect { event -> events += event } }
+        val collectionJob = launch { coordinator.search("ignored", Category.ALL, providers, true, 10).collect { event -> events += event } }
 
         runCurrent()
         assertEquals(listOf("slow"), startedProviders)
-        assertTrue(events.any { event -> event is SearchEvent.Results && event.providerId == "fast" })
+        // event 是等待匹配快速来源结果的单个搜索事件。
+        assertTrue(events.any { event -> event is SearchEvent.Results && event.providerId.value == "fast" })
         assertTrue(collectionJob.isActive)
         releaseSlowProvider.complete(Unit)
         advanceUntilIdle()
@@ -103,9 +110,10 @@ class SearchCoordinatorTest {
         /** 被测聚合器，安全模式规则由它统一执行而不是散落在 Provider 内。 */
         val coordinator = SearchCoordinator(providerTimeoutMs = 1_000L)
         /** 全部事件用来验证跳过信号及其稳定 reasonCode。 */
-        val events = coordinator.search("ignored", listOf(unsafeProvider), true, 10).toList()
+        val events = coordinator.search("ignored", Category.ALL, listOf(unsafeProvider), true, 10).toList()
 
         assertEquals(0, unsafeProvider.invocationCount)
+        // event 是等待匹配安全模式跳过原因的单个搜索事件。
         assertTrue(events.any { event -> event is SearchEvent.Skipped && event.reason.code == "safe_mode_disabled" })
     }
 
@@ -123,6 +131,7 @@ class SearchCoordinatorTest {
         val eventsDeferred = async {
             coordinator.search(
                 query = "ignored",
+                category = Category.ALL,
                 providers = listOf(resultProvider, pendingProvider),
                 safeModeEnabled = true,
                 maxResults = 1,
@@ -147,7 +156,7 @@ class SearchCoordinatorTest {
         /** 不传超时参数的被测协调器，确保测试保护默认 45 秒契约。 */
         val coordinator = SearchCoordinator()
         /** 收集任务在虚拟时间到达超时前保持活动。 */
-        val eventsDeferred = async { coordinator.search("ignored", listOf(blockingProvider), true, 10).toList() }
+        val eventsDeferred = async { coordinator.search("ignored", Category.ALL, listOf(blockingProvider), true, 10).toList() }
 
         runCurrent()
         blockingProvider.started.await()
@@ -160,6 +169,7 @@ class SearchCoordinatorTest {
         val events = eventsDeferred.await()
 
         assertTrue(blockingProvider.cancellationObserved)
+        // event 是等待匹配 Provider 总超时的单个搜索事件。
         assertTrue(events.any { event -> event is SearchEvent.Failed && event.reason.code == "timeout" })
         assertTrue(events.last() is SearchEvent.Completed)
     }
@@ -175,7 +185,8 @@ class SearchCoordinatorTest {
         val events = mutableListOf<SearchEvent>()
         /** 独立 collector 任务模拟页面生命周期结束。 */
         val collectionJob = launch {
-            coordinator.search("ignored", listOf(blockingProvider), true, 10).collect { event -> events += event }
+            /** event 是 collector 取消前收到的单个搜索事件。 */
+            coordinator.search("ignored", Category.ALL, listOf(blockingProvider), true, 10).collect { event -> events += event }
         }
 
         runCurrent()
@@ -183,6 +194,7 @@ class SearchCoordinatorTest {
         collectionJob.cancelAndJoin()
 
         assertTrue(blockingProvider.cancellationObserved)
+        // event 是等待确认没有伪造完成信号的单个搜索事件。
         assertTrue(events.none { event -> event is SearchEvent.Completed })
     }
 
@@ -196,13 +208,14 @@ class SearchCoordinatorTest {
         /** 被测协调器注入捕获 Logger，避免调用 Android Log。 */
         val coordinator = SearchCoordinator(providerTimeoutMs = 1_000L, logger = logger)
         /** 全部搜索事件用于断言稳定失败分类。 */
-        val events = coordinator.search("ignored", listOf(deniedProvider), true, 10).toList()
+        val events = coordinator.search("ignored", Category.ALL, listOf(deniedProvider), true, 10).toList()
         /** 唯一失败日志用于断言可行动状态码。 */
-        val failureLog = logger.events.single { event -> event.stage == "failed" }
+        val failureLog = logger.events.single { event -> event.stage == ProviderLogStage.FAILED }
 
+        // event 是等待匹配 HTTP 拒绝的单个搜索事件。
         assertTrue(events.any { event -> event is SearchEvent.Failed && event.reason.code == "http_denied" })
         assertEquals(451, failureLog.httpStatusCode)
-        assertEquals("http_denied", failureLog.reasonCode)
+        assertEquals("http_denied", failureLog.reason?.code)
     }
 
     /** Provider parser 的稳定异常必须映射 parse_failure，不能退化为 unknown。 */
@@ -213,8 +226,9 @@ class SearchCoordinatorTest {
         /** 被测协调器使用短虚拟超时，当前测试只覆盖失败分类。 */
         val coordinator = SearchCoordinator(providerTimeoutMs = 1_000L)
         /** 全部事件用于断言稳定解析失败协议。 */
-        val events = coordinator.search("ignored", listOf(parseProvider), true, 10).toList()
+        val events = coordinator.search("ignored", Category.ALL, listOf(parseProvider), true, 10).toList()
 
+        // event 是等待匹配解析失败的单个搜索事件。
         assertTrue(events.any { event -> event is SearchEvent.Failed && event.reason.code == "parse_failure" })
     }
 }
@@ -231,13 +245,13 @@ private class FakeProvider(
     private val releaseResults: CompletableDeferred<Unit>,
 ) : SearchProvider {
     /** Provider 描述符，生产聚合器只消费稳定 ID 与安全等级。 */
-    override val descriptor: ProviderDescriptor = ProviderDescriptor(id, id, safetyLevel)
+    override val descriptor: ProviderDescriptor = testDescriptor(id, safetyLevel)
 
     /** 记录启动后等待测试释放，返回一个不包含真实内容的合成 Torrent。 */
-    override suspend fun search(query: String): List<Torrent> {
+    override suspend fun search(query: String, category: Category): List<Torrent> {
         startedProviders += id
         releaseResults.await()
-        return listOf(Torrent(providerId = id, title = id, detailsUrl = "https://example.invalid/$id"))
+        return listOf(fixtureTorrent(id))
     }
 }
 
@@ -247,10 +261,10 @@ private class ThrowingProvider(
     id: String,
 ) : SearchProvider {
     /** Provider 描述符固定安全，以便测试只覆盖失败隔离。 */
-    override val descriptor: ProviderDescriptor = ProviderDescriptor(id, id, ProviderSafetyLevel.SAFE)
+    override val descriptor: ProviderDescriptor = testDescriptor(id, ProviderSafetyLevel.SAFE)
 
     /** 直接抛出异常，验证聚合器负责映射且不会把异常泄出 Flow。 */
-    override suspend fun search(query: String): List<Torrent> = error("synthetic network failure")
+    override suspend fun search(query: String, category: Category): List<Torrent> = error("synthetic network failure")
 }
 
 /** 测试专用成功 Provider，公开调用次数以验证安全模式跳过不触发请求。 */
@@ -261,15 +275,15 @@ private class ResultProvider(
     safetyLevel: ProviderSafetyLevel = ProviderSafetyLevel.SAFE,
 ) : SearchProvider {
     /** 生产聚合器消费的稳定描述符。 */
-    override val descriptor: ProviderDescriptor = ProviderDescriptor(id, id, safetyLevel)
+    override val descriptor: ProviderDescriptor = testDescriptor(id, safetyLevel)
     /** 搜索调用次数，只在测试断言中读取。 */
     var invocationCount: Int = 0
         private set
 
     /** 增加调用计数并返回一个无敏感内容的合成结果。 */
-    override suspend fun search(query: String): List<Torrent> {
+    override suspend fun search(query: String, category: Category): List<Torrent> {
         invocationCount += 1
-        return listOf(Torrent(providerId = descriptor.id, title = descriptor.id, detailsUrl = "https://example.invalid/${descriptor.id}"))
+        return listOf(fixtureTorrent(descriptor.id.value))
     }
 }
 
@@ -284,10 +298,10 @@ private class CancellationTrackingProvider(
     var cancellationObserved: Boolean = false
         private set
     /** 生产协调器消费的安全 Provider 描述符。 */
-    override val descriptor: ProviderDescriptor = ProviderDescriptor(id, id, ProviderSafetyLevel.SAFE)
+    override val descriptor: ProviderDescriptor = testDescriptor(id, ProviderSafetyLevel.SAFE)
 
     /** 持续等待取消；没有结果时不会自行结束或触发真实网络。 */
-    override suspend fun search(query: String): List<Torrent> {
+    override suspend fun search(query: String, category: Category): List<Torrent> {
         started.complete(Unit)
         try {
             awaitCancellation()
@@ -305,10 +319,10 @@ private class HttpDeniedProvider(
     private val statusCode: Int,
 ) : SearchProvider {
     /** 生产协调器消费的安全 Provider 描述符。 */
-    override val descriptor: ProviderDescriptor = ProviderDescriptor(id, id, ProviderSafetyLevel.SAFE)
+    override val descriptor: ProviderDescriptor = testDescriptor(id, ProviderSafetyLevel.SAFE)
 
     /** 抛出不带响应正文的稳定拒绝异常，证明协调器不依赖异常 message。 */
-    override suspend fun search(query: String): List<Torrent> = throw HttpDeniedException(statusCode)
+    override suspend fun search(query: String, category: Category): List<Torrent> = throw HttpDeniedException(statusCode)
 }
 
 /** 测试专用结构化 Logger，只在内存中保留字段白名单事件。 */
@@ -328,8 +342,27 @@ private class ParseFailureProvider(
     id: String,
 ) : SearchProvider {
     /** 生产协调器消费的安全 Provider 描述符。 */
-    override val descriptor: ProviderDescriptor = ProviderDescriptor(id, id, ProviderSafetyLevel.SAFE)
+    override val descriptor: ProviderDescriptor = testDescriptor(id, ProviderSafetyLevel.SAFE)
 
     /** 抛出无正文的稳定解析异常，避免异常 message 泄漏站点内容。 */
-    override suspend fun search(query: String): List<Torrent> = throw ProviderParseException()
+    override suspend fun search(query: String, category: Category): List<Torrent> = throw ProviderParseException()
 }
+
+/** 构造完整测试描述符，集中避免 fake Provider 重复无关元数据。 */
+private fun testDescriptor(id: String, safetyLevel: ProviderSafetyLevel): ProviderDescriptor = ProviderDescriptor(
+    id = ProviderId(id),
+    displayName = id,
+    baseUrl = "https://example.invalid",
+    supportedCategories = Category.entries.toSet(),
+    safetyLevel = safetyLevel,
+    enabledByDefault = safetyLevel == ProviderSafetyLevel.SAFE,
+)
+
+/** 构造完整合成 Torrent，测试仅关心来源和事件调度。 */
+private fun fixtureTorrent(providerId: String): Torrent = Torrent(
+    infoHash = providerId.padEnd(40, '0').take(40),
+    name = providerId,
+    providerId = ProviderId(providerId),
+    providerName = providerId,
+    descriptionPageUrl = "https://example.invalid/$providerId",
+)

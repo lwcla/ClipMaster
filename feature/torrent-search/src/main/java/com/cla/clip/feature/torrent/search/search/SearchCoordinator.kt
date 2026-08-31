@@ -1,13 +1,16 @@
 package com.cla.clip.feature.torrent.search.search
 
 import com.cla.clip.feature.torrent.search.logging.ProviderLogEvent
+import com.cla.clip.feature.torrent.search.logging.ProviderLogStage
 import com.cla.clip.feature.torrent.search.logging.ProviderLogger
+import com.cla.clip.feature.torrent.search.model.contract.Category
 import com.cla.clip.feature.torrent.search.model.contract.ProviderFailureReason
 import com.cla.clip.feature.torrent.search.model.contract.ProviderSafetyLevel
 import com.cla.clip.feature.torrent.search.model.contract.Torrent
 import com.cla.clip.feature.torrent.search.network.toProviderFailureReason
 import com.cla.clip.feature.torrent.search.network.toProviderHttpStatusCode
 import com.cla.clip.feature.torrent.search.provider.ProviderParseException
+import com.cla.clip.feature.torrent.search.provider.ProviderId
 import com.cla.clip.feature.torrent.search.provider.SearchProvider
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
@@ -33,6 +36,7 @@ class SearchCoordinator(
     /** 对全部已启用 Provider 执行一次搜索，返回可渐进收集的事件流。 */
     fun search(
         query: String,
+        category: Category,
         providers: List<SearchProvider>,
         safeModeEnabled: Boolean,
         maxResults: Int,
@@ -53,6 +57,7 @@ class SearchCoordinator(
         supervisorScope {
             /** 已实际进入 search 的 Provider 执行集合；快源结果先缓存，不能抢先取消尚未启动的来源。 */
             val providerExecutions = mutableListOf<ProviderExecution>()
+            /** provider 是当前立即启动或按安全模式跳过的来源。 */
             providers.forEach { provider ->
                 /** 当前 Provider 描述符只用于稳定 ID 与安全等级，日志不含展示名或请求信息。 */
                 val descriptor = provider.descriptor
@@ -62,12 +67,12 @@ class SearchCoordinator(
                     logger.log(
                         ProviderLogEvent(
                             providerId = descriptor.id,
-                            stage = "skipped",
+                            stage = ProviderLogStage.SKIPPED,
                             resultCount = null,
                             durationMs = null,
                             httpStatusCode = null,
-                            retryable = false,
-                            reasonCode = ProviderFailureReason.SAFE_MODE_DISABLED.code,
+                            retried = false,
+                            reason = ProviderFailureReason.SAFE_MODE_DISABLED,
                         ),
                     )
                     return@forEach
@@ -79,17 +84,17 @@ class SearchCoordinator(
                 logger.log(
                     ProviderLogEvent(
                         providerId = descriptor.id,
-                        stage = "started",
+                        stage = ProviderLogStage.STARTED,
                         resultCount = null,
                         durationMs = null,
                         httpStatusCode = null,
-                        retryable = null,
-                        reasonCode = null,
+                        retried = null,
+                        reason = null,
                     ),
                 )
                 /** UNDIDSPATCHED 保证当前 Provider 立即进入 search；同步快源只完成 Deferred，不会阻止后续来源启动。 */
                 val resultDeferred = async(start = CoroutineStart.UNDISPATCHED) {
-                    withTimeout(providerTimeoutMs) { provider.search(query) }
+                    withTimeout(providerTimeoutMs) { provider.search(query, category) }
                 }
                 providerExecutions += ProviderExecution(
                     providerId = descriptor.id,
@@ -108,28 +113,42 @@ class SearchCoordinator(
                         val acceptedResults = providerResults.takeRemainingResults(emittedResultCount, effectiveMaxResults)
                         if (acceptedResults.isNotEmpty()) {
                             send(SearchEvent.Results(execution.providerId, acceptedResults))
+                            logger.log(
+                                ProviderLogEvent(
+                                    providerId = execution.providerId,
+                                    stage = ProviderLogStage.RESULTS,
+                                    resultCount = acceptedResults.size,
+                                    durationMs = null,
+                                    httpStatusCode = null,
+                                    retried = null,
+                                    reason = null,
+                                ),
+                            )
                         }
                         /** 本 Provider 结束耗时，避免记录搜索关键词和结果正文。 */
                         val durationMs = System.currentTimeMillis() - execution.startTimeMs
                         logger.log(
                             ProviderLogEvent(
                                 providerId = execution.providerId,
-                                stage = "completed",
+                                stage = ProviderLogStage.COMPLETED,
                                 resultCount = acceptedResults.size,
                                 durationMs = durationMs,
                                 httpStatusCode = null,
-                                retryable = null,
-                                reasonCode = null,
+                                retried = null,
+                                reason = null,
                             ),
                         )
                         if (emittedResultCount.get() >= effectiveMaxResults && reachedResultLimit.compareAndSet(false, true)) {
                             /** 首次达到共享上限时只取消其他执行；当前快源保留已发事件并让 Flow 正常收口。 */
                             providerExecutions
+                                // candidate 是待比较的其他 Provider 执行，当前执行必须保留。
                                 .filter { candidate -> candidate !== execution }
+                                // candidate 是达到结果上限后需要取消的未完成执行。
                                 .forEach { candidate ->
                                     candidate.resultDeferred.cancel(CancellationException("max_results_reached"))
                                 }
                         }
+                    // cancelled 区分 Provider 总超时、结果上限和父级/collector 取消。
                     } catch (cancelled: CancellationException) {
                         /** TimeoutCancellationException 属于超时失败，普通取消必须重新抛出以传播到网络 Call。 */
                         if (cancelled is TimeoutCancellationException) {
@@ -140,6 +159,7 @@ class SearchCoordinator(
                             emitFailure(execution.providerId, ProviderFailureReason.CANCELLED, execution.startTimeMs)
                             throw cancelled
                         }
+                    // failure 是当前 Provider 的隔离失败，不得终止其他来源。
                     } catch (failure: Throwable) {
                         /** 非取消异常被隔离成稳定事件，绝不终止其他 Provider 子协程。 */
                         val failureReason = if (failure is ProviderParseException) {
@@ -164,7 +184,7 @@ class SearchCoordinator(
 
     /** 发送失败事件并记录低敏结构化诊断；异常 message 和正文永远不进入日志。 */
     private suspend fun kotlinx.coroutines.channels.ProducerScope<SearchEvent>.emitFailure(
-        providerId: String,
+        providerId: ProviderId,
         reason: ProviderFailureReason,
         startTimeMs: Long,
         /** 只允许传入响应状态码；网络异常、超时和取消保持为空。 */
@@ -176,12 +196,12 @@ class SearchCoordinator(
         logger.log(
             ProviderLogEvent(
                 providerId = providerId,
-                stage = "failed",
+                stage = ProviderLogStage.FAILED,
                 resultCount = null,
                 durationMs = durationMs,
                 httpStatusCode = httpStatusCode,
-                retryable = reason == ProviderFailureReason.NETWORK || reason == ProviderFailureReason.TIMEOUT,
-                reasonCode = reason.code,
+                retried = false,
+                reason = reason,
             ),
         )
     }
@@ -193,6 +213,7 @@ class SearchCoordinator(
     ): List<Torrent> {
         /** 接收当前 Provider 可安全发出的结果，保持 Provider 返回顺序。 */
         val acceptedResults = mutableListOf<Torrent>()
+        /** torrent 是当前批次内等待争取全局结果额度的单条结果。 */
         forEach { torrent ->
             /** 原子递增前检查保证并发批次不能同时超过全局上限。 */
             val nextIndex = emittedResultCount.incrementAndGet()
@@ -213,7 +234,7 @@ class SearchCoordinator(
 /** 单 Provider 的结构化执行句柄；把实际搜索生命周期与渐进结果处理阶段明确分开。 */
 private data class ProviderExecution(
     /** 稳定 Provider ID，仅供事件和低敏日志关联。 */
-    val providerId: String,
+    val providerId: ProviderId,
     /** 执行开始毫秒时间，用于计算诊断耗时。 */
     val startTimeMs: Long,
     /** 已实际进入 Provider.search 的独立结果任务，取消会向下传播到网络 Call。 */
@@ -225,13 +246,13 @@ sealed interface SearchEvent {
     /** 某 Provider 已启动独立任务。 */
     data class Started(
         /** 稳定 Provider ID。 */
-        val providerId: String,
+        val providerId: ProviderId,
     ) : SearchEvent
 
     /** 某 Provider 产生的一批结果。 */
     data class Results(
         /** 稳定 Provider ID。 */
-        val providerId: String,
+        val providerId: ProviderId,
         /** 已受 maxResults 限制的领域结果，不得写入日志。 */
         val torrents: List<Torrent>,
     ) : SearchEvent
@@ -239,7 +260,7 @@ sealed interface SearchEvent {
     /** 某 Provider 的隔离失败。 */
     data class Failed(
         /** 稳定 Provider ID。 */
-        val providerId: String,
+        val providerId: ProviderId,
         /** 可跨层显示与统计的稳定失败原因。 */
         val reason: ProviderFailureReason,
     ) : SearchEvent
@@ -247,7 +268,7 @@ sealed interface SearchEvent {
     /** 因安全模式未启动的 Provider。 */
     data class Skipped(
         /** 稳定 Provider ID。 */
-        val providerId: String,
+        val providerId: ProviderId,
         /** 当前只能为 safe_mode_disabled 的稳定原因。 */
         val reason: ProviderFailureReason,
     ) : SearchEvent

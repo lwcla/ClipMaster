@@ -52,6 +52,7 @@ class TorrentSearchBackupDisplayMapperTest {
 
         assertEquals(
             expectedCounts,
+            // item 是当前备份分类展示项，只提取计数验证缺省值。
             TorrentSearchBackupDisplayMapper.backupCountItems(emptyFeatureCounts).map { item -> item.count },
         )
     }
@@ -67,6 +68,7 @@ class TorrentSearchBackupDisplayMapperTest {
             "torrent_search_settings" to R.string.torrent_search_backup_settings,
         )
 
+        // categoryCode 是备份分类 code，expectedLabelRes 是对应展示资源。
         expectedLabels.forEach { (categoryCode, expectedLabelRes) ->
             assertEquals(
                 expectedLabelRes,

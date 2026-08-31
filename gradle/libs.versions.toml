@@ -115,6 +115,8 @@ okhttp-client = { group = "com.squareup.okhttp3", name = "okhttp", version.ref =
 okhttp-logger = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
 # 搜索内核仅通过直接 OkHttp 实现网络边界，避免引入 Ktor 或其他 HTTP 栈。
 okhttp-mockwebserver = { group = "com.squareup.okhttp3", name = "mockwebserver3", version.ref = "okhttp" }
+# HTTPS MockWebServer fixture 使用 OkHttp 官方证书工具，生产代码不依赖该测试组件。
+okhttp-tls = { group = "com.squareup.okhttp3", name = "okhttp-tls", version.ref = "okhttp" }
 # Provider 调度器使用协程，测试使用虚拟调度器验证超时和取消边界。
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }

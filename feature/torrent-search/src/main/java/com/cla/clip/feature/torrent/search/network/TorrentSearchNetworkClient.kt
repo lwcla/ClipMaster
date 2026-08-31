@@ -3,6 +3,7 @@ package com.cla.clip.feature.torrent.search.network
 import com.cla.clip.feature.torrent.search.model.contract.ProviderFailureReason
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.Dispatcher
 import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -14,136 +15,155 @@ import okhttp3.Response
 import okhttp3.ResponseBody
 import okio.Buffer
 import java.io.IOException
+import java.net.SocketTimeoutException
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-/** Provider 唯一可依赖的网络接口；调用方不能通过此接口取得或记录原始请求/响应对象。 */
+/** Provider 唯一可依赖的网络接口，禁止向调用方暴露原始请求或响应对象。 */
 interface TorrentSearchNetworkClient {
-    /** HTTPS GET 文本；透明解压后超过 5 MiB 会抛 ResponseTooLargeException。 */
+    /** HTTPS GET 文本；解压后超过 5 MiB 抛出 ResponseTooLargeException。 */
     suspend fun getText(url: String): String
 
-    /** HTTPS GET JSON；当前与文本读取共用严格大小限制。 */
+    /** HTTPS GET JSON；与文本共用严格大小和取消边界。 */
     suspend fun getJson(url: String): String
 
-    /** HTTPS POST JSON；请求内容不得被网络层日志记录。 */
+    /** HTTPS POST JSON；正文不得进入日志。 */
     suspend fun postJson(url: String, json: String): String
 
-    /** HTTPS 表单提交；字段内容不得被网络层日志记录。 */
+    /** HTTPS 表单提交；字段不得进入日志。 */
     suspend fun submitForm(url: String, fields: Map<String, String>): String
 
-    /** 获取必要的重定向地址；不存在时返回 null，且地址不得写日志。 */
+    /** 获取合法重定向的 Location；不存在时为空。 */
     suspend fun redirectLocation(url: String): String?
 }
 
-/** 网络边界稳定异常基类，聚合器据此映射可测试的 ProviderFailureReason。 */
+/** 网络边界稳定异常基类，聚合器据此映射失败原因。 */
 sealed class TorrentSearchNetworkException : IOException()
 
-/** HTTPS-only 策略或非成功 HTTP 状态的稳定异常。 */
+/** HTTPS 策略或 HTTP 状态拒绝。 */
 class HttpDeniedException(
-    /** 可安全记录的 HTTP 状态码；HTTPS 策略拒绝时为空。 */
+    /** 可进入低敏日志的状态码；scheme 或地址解析拒绝时为空。 */
     val statusCode: Int? = null,
 ) : TorrentSearchNetworkException()
 
-/** 透明解压后的文本大小超过固定 5 MiB 上限。 */
+/** 解压后的响应文本超过固定 5 MiB 上限。 */
 class ResponseTooLargeException : TorrentSearchNetworkException()
 
-/** Cloudflare 挑战响应；当前阶段不接入 WebView 求解。 */
+/** Cloudflare 挑战响应，当前内核只分类而不启动 WebView。 */
 class CloudflareLockedException(
-    /** 可安全记录的 HTTP 状态码；没有响应时为空。 */
+    /** 可进入低敏日志的挑战状态码。 */
     val statusCode: Int? = null,
 ) : TorrentSearchNetworkException()
 
-/** 直接 OkHttp 网络实现，所有构造参数只配置客户端，不会在构造期间发起请求。 */
+/** 直接 OkHttp 网络实现；构造只接收共享客户端且不会发起请求。 */
 class OkHttpTorrentSearchNetworkClient internal constructor(
-    /** 共享 OkHttp 实例，由 Hilt 单例提供以统一 Dispatcher 限流。 */
+    /** 功能内共享 OkHttp 客户端，由 Hilt 限定符隔离宿主全局绑定。 */
     private val client: OkHttpClient,
-    /** 仅模块内 JVM 测试允许回环 HTTP fixture；公开构造与 Hilt 永远固定为 false。 */
-    private val allowHttpForLocalTests: Boolean = false,
 ) : TorrentSearchNetworkClient {
-    /** 读取 HTTPS 文本响应；响应体在解析器之前按解压后字节数限制。 */
+    /** 在 OkHttp callback 线程完成状态校验与限量 body 读取。 */
     override suspend fun getText(url: String): String = executeText(newRequest(url))
 
-    /** JSON 与文本使用同一安全读取边界，避免内容类型伪装绕过大小限制。 */
+    /** JSON 与文本共用相同网络安全边界。 */
     override suspend fun getJson(url: String): String = executeText(newRequest(url))
 
-    /** 提交 JSON；内容类型固定为 UTF-8 JSON，正文永不写日志。 */
+    /** 构造 JSON 请求并在同一 Call 生命周期读取有上限响应。 */
     override suspend fun postJson(url: String, json: String): String {
-        /** JSON 媒体类型是稳定协议常量，不含用户或 Provider 数据。 */
+        /** 固定 JSON 媒体类型不含用户数据。 */
         val jsonMediaType = "application/json; charset=utf-8".toMediaType()
-        /** 仅交给 OkHttp 的请求体，日志层无法获取该实例。 */
+        /** 请求体只交给 OkHttp，日志层无法访问。 */
         val requestBody = json.toRequestBody(jsonMediaType)
         return executeText(newRequest(url).newBuilder().post(requestBody).build())
     }
 
-    /** 提交 application/x-www-form-urlencoded 数据；字段由 OkHttp 编码且不会被记录。 */
+    /** 由 OkHttp 编码表单字段并读取有上限响应。 */
     override suspend fun submitForm(url: String, fields: Map<String, String>): String {
-        /** OkHttp 表单构造器负责标准编码，避免在本模块自行拼接或泄漏字段内容。 */
+        /** 表单构造器避免本模块自行拼接敏感字段。 */
         val formBuilder = FormBody.Builder()
+        /** 解构字段只用于即时加入请求体，不进入日志或异常。 */
         fields.forEach { (name, value) -> formBuilder.add(name, value) }
-        /** 不可变表单请求体只交给 OkHttp，日志层无法取得字段原文。 */
+        /** 不可变请求体只交给 OkHttp。 */
         val requestBody = formBuilder.build()
         return executeText(newRequest(url).newBuilder().post(requestBody).build())
     }
 
-    /** 读取必要的 Location 响应头；不跟随重定向以保留调用方所需地址。 */
+    /** 不跟随重定向并复用统一状态校验，挑战和普通拒绝不能绕过分类。 */
     override suspend fun redirectLocation(url: String): String? {
-        /** 禁止自动跟随的派生客户端，不创建网络调用直到 execute 时。 */
+        /** 派生客户端只关闭自动重定向，保留共享 Dispatcher、TLS 和超时。 */
         val redirectClient = client.newBuilder().followRedirects(false).build()
-        /** 由 suspendCancellableCoroutine 包装的 Call，取消时会取消底层请求。 */
-        val response = execute(redirectClient.newCall(newRequest(url)))
-        response.use { managedResponse ->
-            return managedResponse.header("Location")
+        /** 独立 Call 的取消、响应关闭和恢复竞争由 executeInCallback 统一处理。 */
+        val call = redirectClient.newCall(newRequest(url))
+        /** response 只在 callback 线程读取允许公开的 Location。 */
+        return executeInCallback(call) { response ->
+            response.requireAcceptedStatus(allowRedirect = true)
+            response.header("Location")
         }
     }
 
-    /** 创建仅允许 HTTPS 的 GET 请求，HTTP 在进入 OkHttp 前稳定拒绝。 */
+    /** 创建严格 HTTPS 请求；无效或明文地址在创建 Call 前拒绝。 */
     private fun newRequest(url: String): Request {
-        /** 解析后的地址用于检查协议；无效地址按 HTTP 拒绝而非泄漏原始 URL。 */
+        /** 解析结果仅用于 scheme 校验，不进入日志。 */
         val parsedUrl = runCatching { url.toHttpUrl() }.getOrElse { throw HttpDeniedException() }
-        if (!parsedUrl.isHttps && !allowHttpForLocalTests) throw HttpDeniedException()
+        if (!parsedUrl.isHttps) throw HttpDeniedException()
         return Request.Builder().url(parsedUrl).build()
     }
 
-    /** 执行请求并在成功状态下读取有上限的解压后文本。 */
+    /** 在 OkHttp callback 线程校验状态并完整读取有上限文本，调用方线程保持挂起不阻塞。 */
     private suspend fun executeText(request: Request): String {
-        /** 独立 Call 仅在该请求作用域内存在，协程取消会取消该 Call。 */
-        val response = execute(client.newCall(request))
-        response.use { managedResponse ->
-            if (!managedResponse.isSuccessful) {
-                if (managedResponse.isCloudflareChallenge()) throw CloudflareLockedException(managedResponse.code)
-                throw HttpDeniedException(managedResponse.code)
-            }
-            /** 非空响应体才可读取；空体按空文本交给 Provider 的解析策略。 */
-            val responseBody = managedResponse.body ?: return ""
-            return responseBody.readLimitedText()
+        /** 当前请求唯一 Call，协程取消会在 body 读取期间继续调用 cancel。 */
+        val call = client.newCall(request)
+        /** response 只在 callback 线程完成状态校验和限量读取。 */
+        return executeInCallback(call) { response ->
+            response.requireAcceptedStatus(allowRedirect = false)
+            /** 空 body 按空字符串交给 Provider 决定解析语义。 */
+            val body = response.body ?: return@executeInCallback ""
+            body.readLimitedText()
         }
     }
 
-    /** 把 OkHttp 异步 Call 桥接为可取消挂起点，保证外层取消立即传给底层网络请求。 */
-    private suspend fun execute(call: Call): Response = suspendCancellableCoroutine { continuation ->
+    /**
+     * 将 Call 全生命周期桥接到可取消协程：transform 始终在 OkHttp callback/IO 线程执行，
+     * response 在恢复调用方前关闭；prompt cancellation 保证取消与恢复竞争不会交付过期结果。
+     */
+    private suspend fun <T> executeInCallback(
+        call: Call,
+        /** 只在 callback 线程、response.use 作用域内执行的响应转换。 */
+        transform: (Response) -> T,
+    /** continuation 连接协程取消与唯一 OkHttp Call，不向调用方暴露 response。 */
+    ): T = suspendCancellableCoroutine { continuation ->
+        /** 任意时点取消都会打断连接或正在阻塞读取的 body。 */
         continuation.invokeOnCancellation { call.cancel() }
-        call.enqueue(object : okhttp3.Callback {
-            /** 网络层失败直接交回协程；聚合器负责稳定分类且不记录异常 message。 */
+        call.enqueue(object : Callback {
+            /** 连接、TLS、读取或取消失败只恢复异常，不读取异常 message。 */
             override fun onFailure(call: Call, e: IOException) {
-                if (continuation.isActive) continuation.resumeWithException(e)
+                /** CancellableContinuation 原子协调取消与异常恢复；取消先发生时不会交付该异常。 */
+                continuation.resumeWithException(e)
             }
 
-            /** 网络层成功时返回 Response 所有权，由上层 use 负责关闭。 */
+            /** 在 callback 线程完成状态校验和 body 消费，并保证所有路径关闭 response。 */
             override fun onResponse(call: Call, response: Response) {
-                if (continuation.isActive) continuation.resume(response) else response.close()
+                try {
+                    /** 转换结果在 response 关闭前完全生成，调用方不会持有底层流。 */
+                    val result = response.use(transform)
+                    /** CancellableContinuation 的 prompt cancellation 保证取消先发生时不会交付结果。 */
+                    continuation.resume(result)
+                // failure 表示状态校验或 body 读取失败，只按类型恢复且不读取 message。
+                } catch (failure: Exception) {
+                    /** body 读取或状态校验失败只按类型恢复，绝不拼接 message。 */
+                    continuation.resumeWithException(failure)
+                }
             }
         })
     }
 
-    /** 网络配置与响应大小的统一常量入口，供 Hilt 和测试复用同一安全边界。 */
+    /** 网络配置和响应上限的统一常量入口。 */
     companion object {
-        /** 透明解压后的文本最大字节数，固定 5 MiB，达到上限即拒绝进入 parser。 */
+        /** 透明解压后的文本最大字节数，固定 5 MiB。 */
         const val MAX_TEXT_RESPONSE_BYTES: Long = 5L * 1024L * 1024L
 
-        /** 建立全局共享 OkHttp 客户端；仅配置 Dispatcher 与超时，不执行网络。 */
+        /** 建立共享客户端，只配置 Dispatcher 和超时且不执行网络。 */
         fun createOkHttpClient(): OkHttpClient {
-            /** Dispatcher 限制整个功能模块最大并发，Provider 不得自行覆盖。 */
+            /** Dispatcher 固定整个功能最大并发 64、同 host 5。 */
             val dispatcher = Dispatcher().apply {
                 maxRequests = 64
                 maxRequestsPerHost = 5
@@ -157,27 +177,38 @@ class OkHttpTorrentSearchNetworkClient internal constructor(
     }
 }
 
-/** 只依据低敏 HTTP 状态和固定响应头识别 Cloudflare 挑战，不读取或记录响应正文。 */
-private fun Response.isCloudflareChallenge(): Boolean {
-    /** 固定服务端标识；仅用于内存分类，绝不进入日志事件。 */
-    val hasCloudflareServerHeader = header("Server")?.equals("cloudflare", ignoreCase = true) == true
-    /** Cloudflare 的请求标识头可覆盖限流等非旧状态码挑战响应。 */
-    val hasCloudflareRayHeader = header("CF-RAY") != null
-    return hasCloudflareServerHeader || hasCloudflareRayHeader
+/** 校验成功或调用方允许的重定向状态，并统一分类 Cloudflare 与普通拒绝。 */
+private fun Response.requireAcceptedStatus(allowRedirect: Boolean) {
+    /** 3xx 只供 redirectLocation 读取 Location，普通文本请求仍拒绝。 */
+    val isAcceptedRedirect = allowRedirect && code in 300..399
+    if (isSuccessful || isAcceptedRedirect) return
+    if (isCloudflareChallenge()) throw CloudflareLockedException(code)
+    throw HttpDeniedException(code)
 }
 
-/** 在透明解压后的 ResponseBody source 上逐字节计数，防止大 body 进入 Provider parser。 */
+/** 只在 403/429/503 挑战状态且存在 Cloudflare 特征头时分类锁定。 */
+private fun Response.isCloudflareChallenge(): Boolean {
+    /** 允许识别的挑战状态，避免 CF 404 等普通错误被误报。 */
+    val isChallengeStatus = code == 403 || code == 429 || code == 503
+    /** Server 头的 Cloudflare 标识。 */
+    val hasCloudflareServerHeader = header("Server")?.equals("cloudflare", ignoreCase = true) == true
+    /** CF-RAY 请求标识头。 */
+    val hasCloudflareRayHeader = header("CF-RAY") != null
+    return isChallengeStatus && (hasCloudflareServerHeader || hasCloudflareRayHeader)
+}
+
+/** 在 OkHttp 已透明解压的 source 上计数并读取文本。 */
 private fun ResponseBody.readLimitedText(): String {
-    /** 解压后的 source，由 OkHttp 自动处理 Content-Encoding。 */
+    /** 解压后的响应 source。 */
     val source = source()
-    /** 累积读取缓冲区，最多保存安全上限的文本字节。 */
+    /** 最多保留上限大小的内存缓冲。 */
     val output = Buffer()
-    /** 每次读取的固定小块，避免依据 Content-Length 错误信任压缩体大小。 */
+    /** 固定 8 KiB 读取块，不能信任压缩 Content-Length。 */
     val chunkSize = 8_192L
-    /** 已读取的解压后字节总数，严格用于上限判断。 */
+    /** 当前解压后累计字节数。 */
     var totalBytes = 0L
     while (true) {
-        /** 本次读取字节数；-1 表示响应体结束。 */
+        /** 当前读取字节数，-1 表示 body 结束。 */
         val readBytes = source.read(output, chunkSize)
         if (readBytes == -1L) break
         totalBytes += readBytes
@@ -186,16 +217,17 @@ private fun ResponseBody.readLimitedText(): String {
     return output.readUtf8()
 }
 
-/** 将网络、HTTP 与 Cloudflare 异常映射为稳定 reason；取消由协调器单独处理。 */
+/** 将网络异常映射稳定失败原因；协程取消由协调器单独处理。 */
 fun Throwable.toProviderFailureReason(): ProviderFailureReason = when (this) {
     is ResponseTooLargeException -> ProviderFailureReason.RESPONSE_TOO_LARGE
     is CloudflareLockedException -> ProviderFailureReason.CLOUDFLARE_LOCKED
     is HttpDeniedException -> ProviderFailureReason.HTTP_DENIED
+    is SocketTimeoutException -> ProviderFailureReason.TIMEOUT
     is IOException -> ProviderFailureReason.NETWORK
     else -> ProviderFailureReason.UNKNOWN
 }
 
-/** 提取允许进入低敏日志的 HTTP 状态码；其他异常不泄漏 message 或请求上下文。 */
+/** 提取允许进入日志的 HTTP 状态码，其他异常不泄漏上下文。 */
 fun Throwable.toProviderHttpStatusCode(): Int? = when (this) {
     is HttpDeniedException -> statusCode
     is CloudflareLockedException -> statusCode

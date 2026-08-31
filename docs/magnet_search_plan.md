@@ -112,13 +112,15 @@ Koin、Application、Activity 或 launcher 声明，资源可由当前空壳模�
 
 本阶段的 `TorrentSearchActivity` 只验证显式启动、Hilt、资源隔离和 Manifest 合并，不读取外部查询，也不移植 Provider、完整页面或数据层。`ACTION_SEARCH`、`ACTION_SEND`、`ACTION_PROCESS_TEXT` 由三个 exported alias 指向同一非 exported Activity，且均不声明 `MAIN`/`LAUNCHER`。启动来源只通过 `TorrentSearchLaunchSource.code` 传递；每个来源的精确稳定 code 和未知回退均由单测固定。我的页由功能 API 渲染 slot 提供本地化内容，宿主薄适配层复用现有 `ListEntryCard` 和主题 token；备份预检计数、恢复分类顺序及 label 由纯展示 mapper 承载并覆盖稳定映射测试。阶段空壳没有网络、文件、数据库或后台副作用，因此不新增运行时日志，避免把候选查询文本写入日志；后续输入消费、搜索、存储和备份实现继续遵循本文件的日志与脱敏计划。
 
-### 任务 04A 共用搜索内核（2026-08-31）
+### 任务 04A 共用搜索内核（2026-08-31，2026-09-01 审查收口）
 
-本子批次建立后续 Provider 共用的 `model/contract`、`provider`、`network`、`search`、`logging` 与 `di` 分层，不移植真实 Provider、注册表、UI、Room、Torznab、WebView、下载或备份。`Category`、`Sort`、`ProviderFailureReason`、`ProviderSafetyLevel` 全部使用显式 `code` 和安全 `fromCode` 回退；`Torrent`、详情、文件与 tracker 只承载领域数据，禁止页面状态和日志副作用。
+本子批次建立后续 Provider 共用的 `model/contract`、`provider`、`network`、`search`、`logging` 与 `di` 分层，不移植真实 Provider、注册表、UI、Room、Torznab、WebView、下载或备份。协议以固定上游 `ba82e889` 为事实：`Category` 精确包含 `all/anime/apps/books/games/movies/music/porn/series/other` 并提供 `isNsfw`，`SortCriteria` 精确包含 `name/seeders/peers/file_size/date` 且默认 `seeders`，`SortOrder` 为 `ascending/descending` 且默认 `descending`；全部协议枚举只通过显式 `code` 与大小写敏感的 `fromCode` 读写，`null`、空值、大小写变化和未知值统一回退安全默认。`ProviderId` 是校验长度与字符集的强类型，贯穿 Descriptor、Torrent、搜索事件和日志事件；`ProviderType`、Provider base URL/Cloudflare solver URL、支持分类、安全等级、默认启用、Cloudflare 标记及详情/Latest/Top 能力也由显式契约承载。
 
-Provider 只能依赖 `TorrentSearchNetworkClient`，直接 OkHttp 实现由 Hilt 以功能内限定符延迟提供共享客户端，不复用也不覆盖宿主全局 `OkHttpClient`：Dispatcher 固定全局 64、同主机 5，连接 10 秒、读取 30 秒，OkHttp 不另设总 `callTimeout`，由协调器统一执行 45 秒 Provider 总任务上限；正式构造严格 HTTPS-only，透明解压后文本/JSON 限制 5 MiB，gzip 解压后超限同样在 parser 前以 `response_too_large` 拒绝。协程通过 cancellable OkHttp Call 桥接，取消会触发底层 `Call.cancel()`；普通 HTTP 拒绝与带 Cloudflare 响应头的挑战分别映射 `http_denied`、`cloudflare_locked`，网络、解析和超限异常也使用稳定 reasonCode。测试回环 HTTP fixture 仅限模块 internal 构造，不可由正式 Provider/Hilt 调用。
+`Torrent` 与 `TorrentDetails` 覆盖上游所需的 infoHash、名称、大小、做种/下载人数、Provider ID/名称、上传时间、分类、详情链接、magnet、种子下载链接，以及详情页 uploader、lastChecked、描述、海报、截图、文件和 tracker。时间字段统一使用带单位后缀的 UTC `epochMillis`，避免为 minSdk 24 引入全局 desugaring。`SearchProvider.search(query, category)` 显式接收分类，详情、Latest、Top 能力扩展基础搜索能力，并带分类或备用域名契约。
 
-`SearchCoordinator` 在 `channelFlow` 内使用结构化 `supervisorScope`：先以独立 Deferred 实际进入全部启用且安全模式允许的 Provider，快源结果暂存到所有来源均获得启动机会后再并发处理，从而渐进发射 started/results/failed/skipped/completed 并隔离单源失败；默认每 Provider 45 秒，安全模式跳过非 SAFE 来源，达到 `maxResults` 时只取消其他未完成 Deferred，collector 或父 scope 取消则向下取消全部协程与网络 Call，且不会伪造 Completed。日志事件固定只允许 Provider ID、阶段、数量、耗时、状态码、是否重试和 reasonCode；默认 Android 输出不会接触 URL、查询、header、Cookie、payload 或响应正文。
+Provider 只能依赖 `TorrentSearchNetworkClient`，直接 OkHttp 实现由 Hilt 以功能内限定符延迟提供共享客户端，不复用也不覆盖宿主全局 `OkHttpClient`：Dispatcher 固定全局 64、同主机 5，连接 10 秒、读取 30 秒，OkHttp 不另设总 `callTimeout`，由协调器统一执行 45 秒 Provider 总任务上限；正式构造没有 HTTP 测试旁路并严格 HTTPS-only。状态校验、Cloudflare 分类和透明解压后的 5 MiB 限量读取都在同一个 OkHttp `Call` 的 callback/IO 线程内完成，响应在恢复调用协程前关闭；响应头到达后的慢 body 仍受 Provider 总超时、用户取消和 collector 取消约束，取消会触发 `Call.cancel()` 并处理 continuation 恢复竞争。重定向复用同一状态校验；只有 403/429/503 等挑战状态同时带 Cloudflare 特征头才映射 `cloudflare_locked`，Cloudflare 404 仍为 `http_denied`，`SocketTimeoutException` 映射 `timeout`。测试以 `okhttp-tls` 的 `HeldCertificate` 和 MockWebServer 构造仅测试信任的回环 HTTPS，不为生产暴露明文开关。
+
+`SearchCoordinator` 在 `channelFlow` 内使用结构化 `supervisorScope`：先以独立 Deferred 实际进入全部启用且安全模式允许的 Provider，快源结果暂存到所有来源均获得启动机会后再并发处理，从而渐进发射 started/results/failed/skipped/completed 并隔离单源失败；默认每 Provider 45 秒，安全模式跳过非 SAFE 来源，达到 `maxResults` 时只取消其他未完成 Deferred，collector 或父 scope 取消则向下取消全部协程与网络 Call，且不会伪造 Completed。日志使用封闭的 `ProviderLogStage`、`ProviderId` 与可空 `ProviderFailureReason`；Android 输出只读取稳定 code 及数量、耗时、状态码、是否重试，不接触 URL、查询、header、Cookie、API Key、payload、响应正文或 `Throwable.message`。模块级中文注释扫描除声明外还用受控 fixture 覆盖多行参数、callback 方法、`catch`、命名 lambda 与解构 lambda，防止新增语法形态绕过检查。
 
 1. 删除旧磁力模块，建立 API/实现空壳和宿主发现/启动/备份映射契约测试。
 2. 固定快照、许可证、manifest、资源前缀和依赖验证。
@@ -162,6 +164,7 @@ Provider 只能依赖 `TorrentSearchNetworkClient`，直接 OkHttp 实现由 Hil
 
 ## 变更记录
 
+- 2026-09-01：收口任务 04A 独立审查：按固定上游补齐精确分类/排序、强类型 Provider ID/Type、完整 Descriptor/Torrent/详情能力与 `epochMillis` 时间契约；删除生产 HTTP 测试旁路，改用回环 HTTPS fixture，并将响应状态、限量 body、Cloudflare/重定向分类与取消保持在同一 OkHttp Call 生命周期；同时封闭日志类型并增强中文注释扫描。原因是修复契约漂移、响应头后慢 body 无法及时取消、Cloudflare 404 误分类及注释检查覆盖不足。
 - 2026-08-31：启动任务 04A 共用搜索内核：补充稳定领域/Provider 协议、直接 OkHttp HTTPS/5 MiB/取消边界、低敏结构化日志、并发聚合器和 Hilt 提供；原因是先以可测试的共用契约收敛后续 43 个 Provider 的网络、安全和取消语义，且本子批次明确不接入真实 Provider 与持久化/UI 范围。
 - 2026-08-31：任务 04A 并发与网络边界复核改为结构化两阶段 Provider 启动/结果处理，移除会抢先于 45 秒总任务上限的 OkHttp `callTimeout`，区分普通 403 与带 Cloudflare 特征头的挑战，并以功能内 Hilt 限定符隔离专用 `OkHttpClient`；原因是修复快源在慢源实际进入搜索前取消它导致 Flow 测试泄漏的问题、消除宿主启用构建的重复网络绑定，同时用 gzip、底层 Call 取消、超时和低敏状态码回归锁定真实安全边界。
 - 2026-08-31：完成任务 3 的固定上游供应链与资源基线：新增 MIT/NOTICE、43 Provider 审计 manifest、直接依赖说明，并对完整上游资源作前缀化机械导入；原因是为后续 Provider/运行时移植冻结可回归的来源、安全和资源命名契约，同时避免过早锁定依赖验证元数据。

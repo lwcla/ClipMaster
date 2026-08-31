@@ -61,6 +61,7 @@ class TorrentSearchUpstreamBaselineContractTest {
         /** 清单中的路径集合用于发现遗漏或重复审计记录。 */
         val actualPaths = criticalFiles.map { file -> file.requiredString("path") }.toSet()
         assertTrue("关键文件记录不完整：${requiredPaths - actualPaths}", actualPaths.containsAll(requiredPaths))
+        /** file 是逐项校验摘要格式的关键上游文件。 */
         criticalFiles.forEach { file ->
             /** 每个关键文件必须使用完整小写 SHA-256，避免短哈希或占位值。 */
             val sha256 = file.requiredString("sha256")
@@ -123,6 +124,7 @@ class TorrentSearchUpstreamBaselineContractTest {
         /** 稳定 code 必须唯一且不依赖类名、枚举名或 ordinal。 */
         val providerCodes = providers.map { provider -> provider.requiredString("code") }
         assertEquals("Provider code 必须唯一", providerCodes.size, providerCodes.toSet().size)
+        /** code 是等待格式校验的单个稳定 Provider 标识。 */
         providerCodes.forEach { code ->
             assertTrue("Provider code 格式非法：$code", PROVIDER_CODE_REGEX.matches(code))
         }
@@ -130,6 +132,7 @@ class TorrentSearchUpstreamBaselineContractTest {
         /** 上游源路径必须一项一文件，确保 SHA 可以追溯到真实 Provider 实现。 */
         val sourcePaths = providers.map { provider -> provider.requiredString("sourcePath") }
         assertEquals("Provider 上游源路径必须唯一", sourcePaths.size, sourcePaths.toSet().size)
+        /** provider 是等待完整元数据校验的单个清单对象。 */
         providers.forEach { provider ->
             /** 当前 Provider code 用于输出可行动的失败消息。 */
             val code = provider.requiredString("code")
@@ -161,6 +164,7 @@ class TorrentSearchUpstreamBaselineContractTest {
         val thirteenThirtySevenX = providers.single { provider -> provider.requiredString("code") == "1337x" }
         /** 域名顺序按 manifest 固定，方便后续网络策略和审查差异精确定位。 */
         val thirteenThirtySevenXDomains = thirteenThirtySevenX.requiredArray("domains")
+            // domain 是 1337x 白名单中的单个主机名元素。
             .map { domain -> domain.jsonPrimitive.content }
         assertEquals(listOf("1337x.to", "itorrents.org"), thirteenThirtySevenXDomains)
     }
@@ -185,9 +189,11 @@ class TorrentSearchUpstreamBaselineContractTest {
     fun logicalResourceIdentifiersUseTorrentSearchPrefix() {
         /** res 根目录同时覆盖默认资源、翻译、版本限定和文件型资源。 */
         val resDirectory = findModuleRoot().resolve("src/main/res")
+        /** resourcePath 是等待扫描引用和定义前缀的单个 XML 文件。 */
         resourceXmlFiles(resDirectory).forEach { resourcePath ->
             /** 当前 XML 文本用于扫描所有本地类型引用，Android 系统资源会被正则排除。 */
             val xmlText = readUtf8(resourcePath)
+            /** match 是当前非系统资源引用的正则匹配结果。 */
             RESOURCE_REFERENCE_REGEX.findAll(xmlText).forEach { match ->
                 /** 捕获组只包含非 android 命名空间的资源 entry 名。 */
                 val resourceName = match.groupValues[1]
@@ -223,13 +229,17 @@ class TorrentSearchUpstreamBaselineContractTest {
         val metadataPath = resDirectory.resolve("resources.properties")
         assertTrue("缺少 AGP resources.properties 元数据", Files.isRegularFile(metadataPath))
         assertEquals("unqualifiedResLocale=en\n", readUtf8(metadataPath))
+        /** paths 是 res 树的受控流，use 结束时必须关闭文件系统资源。 */
         Files.walk(resDirectory).use { paths ->
             /** 只检查普通文件；values XML 的 ID 已由独立契约逐项检查。 */
             val fileResources = paths
                 .filter(Files::isRegularFile)
+                // path 是等待排除 values 目录的单个普通资源路径。
                 .filter { path -> !path.parent.fileName.toString().startsWith("values") }
+                // path 是等待排除 AGP 固定元数据的候选路径。
                 .filter { path -> path != metadataPath }
                 .toList()
+            /** resourcePath 是等待前缀校验的单个文件型资源。 */
             fileResources.forEach { resourcePath ->
                 assertTrue(
                     "文件型资源缺少前缀：$resourcePath",
@@ -339,9 +349,11 @@ class TorrentSearchUpstreamBaselineContractTest {
 
     /** 枚举资源相对路径与内容摘要；固定 AGP 元数据也纳入完整基线而不当作 R 资源。 */
     private fun resourceInventory(resDirectory: Path): List<String> =
+        /** paths 是计算资源 inventory 时必须在 use 结束后关闭的文件流。 */
         Files.walk(resDirectory).use { paths ->
             paths
                 .filter(Files::isRegularFile)
+                // resourcePath 是等待归一化相对路径和摘要的单个资源文件。
                 .map { resourcePath ->
                     /** Windows 分隔符归一为 /，确保 fixture 不随测试机变化。 */
                     val relativePath = resDirectory.relativize(resourcePath).toString().replace('\\', '/')
@@ -373,6 +385,7 @@ class TorrentSearchUpstreamBaselineContractTest {
         var rejected = false
         try {
             validation()
+        // 下划线参数表示预期的断言拒绝，不读取异常详情。
         } catch (_: AssertionError) {
             rejected = true
         }
@@ -397,9 +410,11 @@ class TorrentSearchUpstreamBaselineContractTest {
 
     /** 枚举 res 中全部 XML，供 values 定义与 XML 引用契约共同复用。 */
     private fun resourceXmlFiles(resDirectory: Path): List<Path> =
+        /** paths 是枚举 XML 时必须在 use 结束后关闭的文件流。 */
         Files.walk(resDirectory).use { paths ->
             paths
                 .filter(Files::isRegularFile)
+                // path 是等待 XML 后缀筛选的单个普通文件路径。
                 .filter { path -> path.fileName.toString().endsWith(".xml") }
                 .toList()
         }

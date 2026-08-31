@@ -1,39 +1,71 @@
 package com.cla.clip.feature.torrent.search.logging
 
 import android.util.Log
+import com.cla.clip.feature.torrent.search.model.contract.ProviderFailureReason
+import com.cla.clip.feature.torrent.search.provider.ProviderId
 
-/** Provider 生命周期的低敏结构化日志事件；字段白名单由单测锁定。 */
+/** Provider 生命周期阶段稳定协议，日志输出只使用显式 code。 */
+enum class ProviderLogStage(
+    /** 对外稳定阶段 code。 */
+    val code: String,
+) {
+    /** Provider 已开始执行。 */
+    STARTED("started"),
+    /** Provider 产生一批结果。 */
+    RESULTS("results"),
+    /** Provider 因安全策略被跳过。 */
+    SKIPPED("skipped"),
+    /** Provider 执行失败。 */
+    FAILED("failed"),
+    /** Provider 正常完成。 */
+    COMPLETED("completed"),
+    /** 兼容未来未知阶段，不用于正常写入。 */
+    UNKNOWN("unknown");
+
+    /** 集中提供阶段 code 的兼容读取。 */
+    companion object {
+        /** 精确匹配稳定 code；非法值回退 unknown。 */
+        fun fromCode(code: String?): ProviderLogStage = entries.firstOrNull { stage -> stage.code == code } ?: UNKNOWN
+    }
+}
+
+/** Provider 生命周期低敏日志事件；封闭类型和字段白名单共同限制敏感信息入口。 */
 data class ProviderLogEvent(
-    /** 稳定 Provider ID；禁止填入站点地址或显示内容。 */
-    val providerId: String,
-    /** 当前生命周期阶段，例如 started、results、failed 或 completed。 */
-    val stage: String,
-    /** 当前批次结果数量；无法统计时为 null。 */
+    /** 强类型稳定 Provider ID，不能填入地址、查询或展示内容。 */
+    val providerId: ProviderId,
+    /** 封闭生命周期阶段。 */
+    val stage: ProviderLogStage,
+    /** 当前批次结果数量；无法统计时为空。 */
     val resultCount: Int?,
-    /** 当前阶段耗时，单位毫秒；无法统计时为 null。 */
+    /** 当前阶段耗时毫秒；无法统计时为空。 */
     val durationMs: Long?,
-    /** HTTP 状态码；不存在 HTTP 响应时为 null。 */
+    /** HTTP 状态码；没有响应时为空。 */
     val httpStatusCode: Int?,
-    /** 当前失败是否可由调用方重试。 */
-    val retryable: Boolean?,
-    /** 稳定失败 reasonCode；成功阶段为 null。 */
-    val reasonCode: String?,
+    /** 当前操作是否已经发生重试；尚未执行重试或不适用时为空/false。 */
+    val retried: Boolean?,
+    /** 封闭失败原因；成功阶段为空。 */
+    val reason: ProviderFailureReason?,
 )
 
-/** 可替换日志出口，测试与未来宿主可以验证事件而不接触 Android Log。 */
+/** 可替换日志出口，测试与宿主只观察封闭事件而不接触请求/响应。 */
 fun interface ProviderLogger {
-    /** 输出一个已脱敏事件；调用方不得向事件外拼接请求或响应内容。 */
+    /** 输出一个已脱敏事件；实现不得追加异常 message 或网络内容。 */
     fun log(event: ProviderLogEvent)
 }
 
-/** 默认 Android 日志实现，仅序列化 ProviderLogEvent 的白名单字段。 */
+/** 把封闭事件格式化为 Android 日志文本；只展开稳定 code 和低敏数值。 */
+internal fun ProviderLogEvent.toAndroidLogMessage(): String =
+    "providerId=${providerId.value} stage=${stage.code} resultCount=$resultCount durationMs=$durationMs " +
+        "httpStatusCode=$httpStatusCode retried=$retried reasonCode=${reason?.code}"
+
+/** 默认 Android 日志实现，只输出 ProviderLogEvent 的固定白名单字段。 */
 class AndroidProviderLogger : ProviderLogger {
-    /** 输出固定字段顺序的调试日志；绝不输出 URL、查询、header、Cookie、payload 或正文。 */
+    /** 输出固定字段顺序的调试日志，绝不输出 URL、查询、header、Cookie、Key、正文或异常 message。 */
     override fun log(event: ProviderLogEvent) {
-        /** 固定 TAG 便于按模块过滤，而不包含用户或 Provider 私密内容。 */
+        /** 固定 TAG 只表达模块职责。 */
         val tag = "TorrentSearch"
-        /** 仅由 allowlist 字段拼成的低敏文本，避免 Throwable message 泄漏请求数据。 */
-        val message = "providerId=${event.providerId} stage=${event.stage} resultCount=${event.resultCount} durationMs=${event.durationMs} httpStatusCode=${event.httpStatusCode} retryable=${event.retryable} reasonCode=${event.reasonCode}"
+        /** 格式化结果只可能来自封闭事件类型。 */
+        val message = event.toAndroidLogMessage()
         Log.d(tag, message)
     }
 }

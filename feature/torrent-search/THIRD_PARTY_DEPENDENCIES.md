@@ -20,12 +20,15 @@ and coordinates remain owned by `gradle/libs.versions.toml`:
 | kotlinx-coroutines-android 1.10.2 | Provider 协调器的 Flow、超时和取消传播 | [Kotlinx Coroutines Apache-2.0 license](https://github.com/Kotlin/kotlinx.coroutines/blob/master/LICENSE.txt) |
 | kotlinx-coroutines-test 1.10.2 (test-only) | 用虚拟调度器验证 Provider 超时、并发启动和取消 | [Kotlinx Coroutines Apache-2.0 license](https://github.com/Kotlin/kotlinx.coroutines/blob/master/LICENSE.txt) |
 | OkHttp 5.3.2 | 直接 HTTP 边界、HTTPS 限制和协程取消联动 | [OkHttp Apache-2.0 license](https://github.com/square/okhttp/blob/master/LICENSE.txt) |
-| MockWebServer 5.3.2 (test-only) | 本地合成 HTTP/gzip 响应，不进行真实联网 | [OkHttp Apache-2.0 license](https://github.com/square/okhttp/blob/master/LICENSE.txt) |
+| MockWebServer 5.3.2 (test-only) | 本地合成 HTTPS/gzip 响应，不进行真实联网 | [OkHttp Apache-2.0 license](https://github.com/square/okhttp/blob/master/LICENSE.txt) |
+| okhttp-tls 5.3.2 (test-only) | 为 MockWebServer 生成仅测试使用的本地 HTTPS 证书 | [OkHttp Apache-2.0 license](https://github.com/square/okhttp/blob/master/LICENSE.txt) |
 
 JUnit 4.13.2, `kotlinx-serialization-json` 1.11.0,
-`kotlinx-coroutines-test` 1.10.2 and MockWebServer 5.3.2 are test-only
+`kotlinx-coroutines-test` 1.10.2, MockWebServer 5.3.2 and okhttp-tls 5.3.2 are test-only
 dependencies used by local synthetic contract tests; they are not runtime
-dependencies introduced by Task 04A.
+dependencies introduced by Task 04A. Network fixtures use a loopback HTTPS
+server and a test-only certificate trust configuration; production exposes no
+cleartext test bypass.
 
 Upstream source attribution is separate from runtime dependencies: the fixed
 TorrentSearch snapshot is MIT licensed and its full text is retained in
