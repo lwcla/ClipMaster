@@ -1,0 +1,771 @@
+{
+  "manifestSha256": "5eb1bacbcb4944d33d1057e12b8b99c6a8e7d72da7b15083fa1a99efbf02e781",
+  "licenseSha256": "be80995b77363831f9d6cdab93e9f708742d19dccb0ce6e416f7df7069e78706",
+  "providerSourcePairs": [
+    {
+      "code": "anilibria",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/AniLibria.kt"
+    },
+    {
+      "code": "anirena",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/AniRena.kt"
+    },
+    {
+      "code": "animetosho",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/AnimeTosho.kt"
+    },
+    {
+      "code": "audiobookbay",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/AudioBookBay.kt"
+    },
+    {
+      "code": "btdigg",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/BTDigg.kt"
+    },
+    {
+      "code": "bangumimoe",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/BangumiMoe.kt"
+    },
+    {
+      "code": "bitsearch",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/BitSearch.kt"
+    },
+    {
+      "code": "blueroms",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/BlueRoms.kt"
+    },
+    {
+      "code": "bt4g",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/Bt4g.kt"
+    },
+    {
+      "code": "btsow",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/Btsow.kt"
+    },
+    {
+      "code": "dmhy",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/Dmhy.kt"
+    },
+    {
+      "code": "extdotto",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/Ext.kt"
+    },
+    {
+      "code": "eztvx",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/Eztv.kt"
+    },
+    {
+      "code": "filemood",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/FileMood.kt"
+    },
+    {
+      "code": "internetarchive",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/InternetArchive.kt"
+    },
+    {
+      "code": "knaben",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/Knaben.kt"
+    },
+    {
+      "code": "limetorrents",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/LimeTorrents.kt"
+    },
+    {
+      "code": "linuxtracker",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/LinuxTracker.kt"
+    },
+    {
+      "code": "megapeer",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/MegaPeer.kt"
+    },
+    {
+      "code": "mikanproject",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/Mikan.kt"
+    },
+    {
+      "code": "mypornclub",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/MyPornClub.kt"
+    },
+    {
+      "code": "nekobt",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/NekoBT.kt"
+    },
+    {
+      "code": "nyaasi",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/Nyaa.kt"
+    },
+    {
+      "code": "oxtorrent",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/OxTorrent.kt"
+    },
+    {
+      "code": "rutorinfo",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/Rutor.kt"
+    },
+    {
+      "code": "subsplease",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/SubsPlease.kt"
+    },
+    {
+      "code": "sukebeinyaa",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/Sukebei.kt"
+    },
+    {
+      "code": "thepiratebay",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/ThePirateBay.kt"
+    },
+    {
+      "code": "therarbag",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/TheRarBg.kt"
+    },
+    {
+      "code": "1337x",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/ThirteenThirtySevenX.kt"
+    },
+    {
+      "code": "tokyotoshokan",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/TokyoToshokan.kt"
+    },
+    {
+      "code": "torrent9",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/Torrent9.kt"
+    },
+    {
+      "code": "torrentdatabase",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/TorrentDatabase.kt"
+    },
+    {
+      "code": "torrentdownloadinfo",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/TorrentDownload.kt"
+    },
+    {
+      "code": "torrentdownloads",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/TorrentDownloads.kt"
+    },
+    {
+      "code": "torrentkitty",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/TorrentKitty.kt"
+    },
+    {
+      "code": "torrentscsv",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/TorrentsCSV.kt"
+    },
+    {
+      "code": "torrentz",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/Torrentz.kt"
+    },
+    {
+      "code": "uindex",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/UIndex.kt"
+    },
+    {
+      "code": "xxxclub",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/XXXClub.kt"
+    },
+    {
+      "code": "xxxtracker",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/XXXTracker.kt"
+    },
+    {
+      "code": "ytsmx",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/Yts.kt"
+    },
+    {
+      "code": "0magnet",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/ZeroMagnet.kt"
+    }
+  ],
+  "criticalFiles": [
+    {
+      "path": "LICENSE",
+      "sha256": "be80995b77363831f9d6cdab93e9f708742d19dccb0ce6e416f7df7069e78706"
+    },
+    {
+      "path": "gradle/libs.versions.toml",
+      "sha256": "f269bdea2f23a9734922d0ad5283d3e354e8cab426364e1b1e1cf295bdcf9b63"
+    },
+    {
+      "path": "app/build.gradle.kts",
+      "sha256": "65aa62be1daff83f42f9b13dda87c7cc19aea74f8359b6922db7840966baff69"
+    },
+    {
+      "path": "app/src/main/kotlin/com/prajwalch/torrentsearch/TorrentSearchApplication.kt",
+      "sha256": "0952ef189519156ed068b402480c4a6c7c1a3f630ea82db0a2ef10f96fcf5268"
+    },
+    {
+      "path": "app/src/main/kotlin/com/prajwalch/torrentsearch/ui/main/MainActivity.kt",
+      "sha256": "1b8664fb713ed41ec18bc0dca7cc5d3a33773f78898a853ddafe65be6f90499c"
+    },
+    {
+      "path": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/SearchProvider.kt",
+      "sha256": "62ed9cbe71bfef049cba4d67271fa8b527a0f5968c71f94a3ab35170f22ae0b2"
+    },
+    {
+      "path": "app/src/main/kotlin/com/prajwalch/torrentsearch/di/BuiltinSearchProvidersModule.kt",
+      "sha256": "7ffc53aa2847deaffe52d3d6df588c9c5e48a1bc6de0387dff56454bad778f86"
+    }
+  ],
+  "resourceFileCount": 140,
+  "resourceFiles": [
+    {
+      "path": "resources.properties",
+      "sha256": "e5b0dfdb7d3662b11207b4e44b4e0328ac36b551e202138e3aa33293661d75c1"
+    },
+    {
+      "path": "mipmap-hdpi/torrent_search_ic_launcher.webp",
+      "sha256": "dcd268424e4b91e3960460198a2380b14ea1b289b819d5df2b0c1d9d915b563f"
+    },
+    {
+      "path": "mipmap-hdpi/torrent_search_ic_launcher_round.webp",
+      "sha256": "376e13b5768e6ca9422dcf243a311e05d1d15500a35e6d0daabab53b88c4ff39"
+    },
+    {
+      "path": "mipmap-anydpi-v26/torrent_search_ic_launcher.xml",
+      "sha256": "7c8321599170714df4d218b85dda5e414cb47bc6ad763dce6cbfe8293497093d"
+    },
+    {
+      "path": "mipmap-anydpi-v26/torrent_search_ic_launcher_round.xml",
+      "sha256": "7c8321599170714df4d218b85dda5e414cb47bc6ad763dce6cbfe8293497093d"
+    },
+    {
+      "path": "drawable/torrent_search_ic_widgets.xml",
+      "sha256": "760b6034c5fe8bc90266ea9135a079d6f3d6e8dfa52576b3e9ce8d0cfc9cd243"
+    },
+    {
+      "path": "drawable/torrent_search_ic_warning.xml",
+      "sha256": "decfd29580114def6740b1a22afe213468545e609958b5d42384bb85a0810cca"
+    },
+    {
+      "path": "drawable/torrent_search_ic_visibility.xml",
+      "sha256": "78097159eb9d72a28eec84320a8ad4efd2b6cc40738bb5e83206da3c88cfd405"
+    },
+    {
+      "path": "drawable/torrent_search_ic_visibility_off.xml",
+      "sha256": "bd8ef9f67041fa308f55d1c8f0722fe8aebbaa9212989257e8b7267486dde8e7"
+    },
+    {
+      "path": "drawable/torrent_search_ic_upload.xml",
+      "sha256": "0f4ddd882e6f909c63d8e7fbca067473ed34c12445f74129a2d82e6938cb3860"
+    },
+    {
+      "path": "drawable/torrent_search_ic_update.xml",
+      "sha256": "b2286ff38ef188eb0a86dd5bd30bbab55727f17ef9d3f5ab587778b876c4f49b"
+    },
+    {
+      "path": "drawable/torrent_search_ic_tv.xml",
+      "sha256": "288ffcd50aed4536c82c6eff57a3a38f13ea920c11aeaf00aadde6a395a2a717"
+    },
+    {
+      "path": "drawable/torrent_search_ic_trending_up.xml",
+      "sha256": "15941a28c5eb0ea3e7f16290ba990c8e5c5c427914c13593527e700d179cac74"
+    },
+    {
+      "path": "drawable/torrent_search_ic_travel_explore.xml",
+      "sha256": "5570493d06b217bf793525850251292af7053792a06396aa772a91fc21e64e9f"
+    },
+    {
+      "path": "drawable/torrent_search_ic_storage.xml",
+      "sha256": "b6446365ab4f5474542fafc1f344c7123795de68985d687f51e05ae788d449c2"
+    },
+    {
+      "path": "drawable/torrent_search_ic_star.xml",
+      "sha256": "b5d8b043b6fc2132cae6ff3ee668c8a24f46601b2dafb4ea829e8521a7f27a7c"
+    },
+    {
+      "path": "drawable/torrent_search_ic_star_filled.xml",
+      "sha256": "4460a3eb4a8b701a53b124b53fb980012b70e36fd13f629882e0413c75321e55"
+    },
+    {
+      "path": "drawable/torrent_search_ic_sports_esports.xml",
+      "sha256": "da8096701ff65d431afe54e4a06b5bc7cd0381aeb486afea87d1e4524778a878"
+    },
+    {
+      "path": "drawable/torrent_search_ic_reset_settings.xml",
+      "sha256": "d83d1d58c2a74ef95f6bfe4fcbe86f1aaee9e8fbae0a69de25b1b768beca42f9"
+    },
+    {
+      "path": "drawable/torrent_search_ic_results_not_found.xml",
+      "sha256": "e7a75d293927628f905e3279d766f332a78bc479403394ac7d866496291bc020"
+    },
+    {
+      "path": "drawable/torrent_search_ic_safety_check.xml",
+      "sha256": "01bf2b5f6009e48613aa6198470c85fc8c52782aed8e30dc9e486d445088d0bd"
+    },
+    {
+      "path": "drawable/torrent_search_ic_save.xml",
+      "sha256": "2ae955b7bfab8a46f45b42e00aaeedbb013067a258769227a1523cda9c25a3ad"
+    },
+    {
+      "path": "drawable/torrent_search_ic_search_activity.xml",
+      "sha256": "cd7435bf6c955150096a740c7aa23c361eaec81d14a13207b3d599803c1484fc"
+    },
+    {
+      "path": "drawable/torrent_search_ic_search.xml",
+      "sha256": "25b26887a94f881f02e1826f307a0ef922b4d4e5872ce2f11550642287c4a70a"
+    },
+    {
+      "path": "mipmap-mdpi/torrent_search_ic_launcher_round.webp",
+      "sha256": "9397de5d303629872b52f982d7794e358daf58fe36d36bb19f0bcf67cf5fdae9"
+    },
+    {
+      "path": "drawable/torrent_search_ic_select_all.xml",
+      "sha256": "1ed801d8c934e8ef705474c1a7b9c2c8e8ec2741c4ebf5fef879e8b23a10e958"
+    },
+    {
+      "path": "drawable/torrent_search_ic_share.xml",
+      "sha256": "b06678f93ddc843131addf487b5bf5ca84222c72bd108c4fd180d6dcc285be54"
+    },
+    {
+      "path": "drawable/torrent_search_ic_shield_checked.xml",
+      "sha256": "6ce2503d678fe1136be5ca191d1dc18bbc39496b6484a604242fdfa000b5a694"
+    },
+    {
+      "path": "drawable/torrent_search_ic_shield_lock.xml",
+      "sha256": "1df6455fbc728886705170c45e71d819a1a01231215d84e7a4ba700c8936ed8d"
+    },
+    {
+      "path": "drawable/torrent_search_ic_shield.xml",
+      "sha256": "e68556e1649d9ce92e4d61ca63ba877b9940871d2803322f2cc539ba354014e2"
+    },
+    {
+      "path": "drawable/torrent_search_ic_signal_wifi_off.xml",
+      "sha256": "593071a32fd63e732acafd57d49dc0bad7aebbcd84cb14441a4e0456195da797"
+    },
+    {
+      "path": "drawable/torrent_search_ic_sort.xml",
+      "sha256": "6078b3c300c26355f136e6c6413cee7a7d783d45b0ea07203db1b720e0d4c958"
+    },
+    {
+      "path": "drawable/torrent_search_ic_settings.xml",
+      "sha256": "94bedcda9a1d78e757271536dce095f423a25970efa49ad2bc0856d837c59e3b"
+    },
+    {
+      "path": "drawable/torrent_search_ic_release_alert.xml",
+      "sha256": "a2aa869a30592b8f26d050b7d38a3fea1ac8729c36cf9a51bdfad2d59137cd8d"
+    },
+    {
+      "path": "mipmap-mdpi/torrent_search_ic_launcher.webp",
+      "sha256": "7d1dd2b25f9f465b1dfa398cbd0ab39fdd741aaa6915da5e75616a097e5c2e50"
+    },
+    {
+      "path": "mipmap-xhdpi/torrent_search_ic_launcher.webp",
+      "sha256": "f72accf203d72b6308f6bfe42ccfa7014b672dcc7e0562b815906582955093af"
+    },
+    {
+      "path": "xml/torrent_search_backup_rules.xml",
+      "sha256": "173c90cbeb773e6a65b430581a85720dc5c7ddba17d543cfefe3d2aed9b9a7a4"
+    },
+    {
+      "path": "values-zh-rCN/strings.xml",
+      "sha256": "acef2ce5edcf83dac7f3670995eca374cbd4a5bcfadc35d9700f89b862b1cc65"
+    },
+    {
+      "path": "values-v31/themes.xml",
+      "sha256": "98cf07a3364f62454402b0fb0ec2ecbb4b398b2a45040367fc9c037e423c6711"
+    },
+    {
+      "path": "values-uk/strings.xml",
+      "sha256": "ee419fb79f08090b15614fd5f32052a1b022bc894ea45ad062a928553e855df8"
+    },
+    {
+      "path": "values-tr/strings.xml",
+      "sha256": "7871e37e1d75a9e2a475639a2afb3ec34704d117e4f9ee0a2f7335aae2814654"
+    },
+    {
+      "path": "values-ru/strings.xml",
+      "sha256": "193e63bcb303984d6c3fd93dcb33e2ca1d96d3a16f2e4fad70920625cab919d7"
+    },
+    {
+      "path": "values-ro/strings.xml",
+      "sha256": "bfbb57a7801bd4275be84b2dc91bcfa4d5d71a7db4f40edd8dbd7681c8665495"
+    },
+    {
+      "path": "values-pt-rBR/strings.xml",
+      "sha256": "484b93873b1f87c1c37ae29c172a5816d053d03f7291c9b1b4e702b67a798edc"
+    },
+    {
+      "path": "values-pt/strings.xml",
+      "sha256": "0da39d671c864d70df293d6068be83e4ace8e8f29fe604b0788fa32dcab15b31"
+    },
+    {
+      "path": "values-pl/strings.xml",
+      "sha256": "955ab4524d903bf1d0e176338956eb56405b3145cb5b93f614e7bdefdb9178d5"
+    },
+    {
+      "path": "values-peo/strings.xml",
+      "sha256": "26add52124aa18b06ce0f1dbb158c8f57549e3b64cfce78988dc4245e253793d"
+    },
+    {
+      "path": "values-ml/strings.xml",
+      "sha256": "0f4abf50c4607757474cbc19d9f9c063bead935d0bea30e8cfea826133fe5793"
+    },
+    {
+      "path": "values-ja/strings.xml",
+      "sha256": "ea207b893f8f3a5d755ea37bf076707d51cb0ee0314672f72ebb48e410566387"
+    },
+    {
+      "path": "values-it/strings.xml",
+      "sha256": "4287b089846762298991158d318199b22f87a7970a7dc90fff705413c930c162"
+    },
+    {
+      "path": "values-in/strings.xml",
+      "sha256": "2d060e479dd2c83a5a213e5bcf69af073c80ce02a5d869e448dee176f2ac97a5"
+    },
+    {
+      "path": "values-hi/strings.xml",
+      "sha256": "6bcbc721002cf571efba848a214cfc875a65f21213d6a6179eb26cc0ca5ef7a9"
+    },
+    {
+      "path": "values-fr/strings.xml",
+      "sha256": "030b49257754d03dbfd24104599ef99a6f5a2ba03ffed910bb52645bbd8a12ac"
+    },
+    {
+      "path": "mipmap-xxhdpi/torrent_search_ic_launcher_round.webp",
+      "sha256": "b1cc687d2884718dba61d578392a565bc55e2c485d430920b4155db6670c7434"
+    },
+    {
+      "path": "mipmap-xxhdpi/torrent_search_ic_launcher.webp",
+      "sha256": "9b0fc352941c1e91323718cddea38669b7f80bd432ef206acd475d2f7946b847"
+    },
+    {
+      "path": "mipmap-xxxhdpi/torrent_search_ic_launcher_round.webp",
+      "sha256": "050eebe37d4ab7e74a60c33477db8af28f365da566b9cf1948d21ba29c2baba0"
+    },
+    {
+      "path": "mipmap-xxxhdpi/torrent_search_ic_launcher.webp",
+      "sha256": "183172fac0fc46b85a4f70b48944d98bb5ce59bdb4ff216d3f28cb86c2f51f05"
+    },
+    {
+      "path": "values/colors.xml",
+      "sha256": "9d4f177d948495f72726e23dcc388adcebc4dfe59bc40c98df44f7e8e811b88d"
+    },
+    {
+      "path": "values/ic_launcher_background.xml",
+      "sha256": "f2bd3d607f219132a4a5f5115cf5fff384073bf3f46aeab02f6458fb846670d6"
+    },
+    {
+      "path": "mipmap-xhdpi/torrent_search_ic_launcher_round.webp",
+      "sha256": "5039e0c4e8c1c8f3f1ee9966e0abdb7681aad484f8264a3c2a848a1a293151e5"
+    },
+    {
+      "path": "values/strings.xml",
+      "sha256": "d3e3b38bd1bb66e260634dd0d514d0547ba4827d41d11f8bfcb38e4084db2120"
+    },
+    {
+      "path": "values-ar/strings.xml",
+      "sha256": "cae874aae1e7792faddda905c8cfc4012b0410cfd71fe26cd60d83a184ee99f3"
+    },
+    {
+      "path": "values-bn/strings.xml",
+      "sha256": "9ffeccf368a6102056cfcb58d78d99341ab3745b7ee05b5803a0f4f72188142d"
+    },
+    {
+      "path": "values-de/strings.xml",
+      "sha256": "26ee6ef5657abca590c3640f26f52d8811bd62e78c34d759e85af64f09097c77"
+    },
+    {
+      "path": "values-en/strings.xml",
+      "sha256": "089a79606a6e3c772b2f16ecf43e43c691d227f2fc1e05d330d34d80c4f8e433"
+    },
+    {
+      "path": "values-es/strings.xml",
+      "sha256": "73a354eef18be92c55731c133c62c351c1b54706e9b00f9a3072d959a912ee24"
+    },
+    {
+      "path": "values-fa/strings.xml",
+      "sha256": "c5ba3ccfa95d9b21d0474a06a0bfdee128be8883533df990d4360918cbe590fb"
+    },
+    {
+      "path": "values/themes.xml",
+      "sha256": "89988d80a6da2b355599e9b9f5d7f9aaf97f90b2be531d1cbfbb3bb9b10757cb"
+    },
+    {
+      "path": "drawable/torrent_search_ic_refresh.xml",
+      "sha256": "30da26464ffdd50fe5b8e6109ff9281deee060038e8e495ce7a3dac43ce4b765"
+    },
+    {
+      "path": "drawable/torrent_search_ic_question_mark.xml",
+      "sha256": "5cac74339e3e5df2d0923f293c9572591b93acf75d86f167a15b816f9d71b550"
+    },
+    {
+      "path": "drawable/torrent_search_ic_public.xml",
+      "sha256": "cae356e09c8217378e2d52bd1ef5360d336381478435bb000e4c671807dbfb9b"
+    },
+    {
+      "path": "drawable/torrent_search_ic_deselect_all.xml",
+      "sha256": "69198b7e1385e91a68f8b664b86aaef60fe71d8d8165ce8eefcd4950f9a8e924"
+    },
+    {
+      "path": "drawable/torrent_search_ic_delete.xml",
+      "sha256": "5c9d3c0e15e3e58fa76ea49b4f340977bd6ec01a55039284289d16cdb3b4228f"
+    },
+    {
+      "path": "drawable/torrent_search_ic_delete_sweep.xml",
+      "sha256": "b4a007ce5174510bb654e575bf4e77bb66092dc825a5421fdaca8d576e92b27f"
+    },
+    {
+      "path": "drawable/torrent_search_ic_delete_forever.xml",
+      "sha256": "b376db5227ac78e2a22dc2f23150288e52675362c3cedae337986e32f3fbaeda"
+    },
+    {
+      "path": "drawable/torrent_search_ic_data_object.xml",
+      "sha256": "b8e7cfecebbed5f8ee61b799bc99e8687b100021428687e323b5ad41239f892b"
+    },
+    {
+      "path": "drawable/torrent_search_ic_dark_mode.xml",
+      "sha256": "6db98d47b2c1fa39e43b6debffc9fa1e93dba8e30d44b5d3704b3351902a1638"
+    },
+    {
+      "path": "drawable/torrent_search_ic_copy.xml",
+      "sha256": "59a452fb64b126a3bb6896b09bf9328294b968ce2b1d02e0c0dfc0019e09cca7"
+    },
+    {
+      "path": "drawable/torrent_search_ic_contrast.xml",
+      "sha256": "7ba161a876fb8bf57b0345b1ac95f22b8ece2755172c45e8d75210b2ef3031f5"
+    },
+    {
+      "path": "drawable/torrent_search_ic_comic_bubble.xml",
+      "sha256": "13c225e8a6b5fa4228c0d8d02b0e19f4ee1a02471b8a51905cc27a49137f4d64"
+    },
+    {
+      "path": "drawable/torrent_search_ic_code.xml",
+      "sha256": "2f5ec3388ff52c75b5bca223346b9c3769bcfaec8aac9e9d5d534c2b6efcf951"
+    },
+    {
+      "path": "drawable/torrent_search_ic_cloud_off.xml",
+      "sha256": "f8fed65e9112f924d4f96d34a39d84c69914c811f11735c061d98944a94c067c"
+    },
+    {
+      "path": "drawable/torrent_search_ic_close.xml",
+      "sha256": "cc267024e9660b069441cb1a2f384d1412a0574ce22e505ec2b1c456cc55c594"
+    },
+    {
+      "path": "drawable/torrent_search_ic_check.xml",
+      "sha256": "e3dbce7d56cda05cf216b003b222c85cc117f2f6a2972affea6f715e9293fe87"
+    },
+    {
+      "path": "drawable/torrent_search_ic_category.xml",
+      "sha256": "6c86b024e3a370619ffbde7b221d3f2f6d88f60a78549340e5164c5457e5ee1e"
+    },
+    {
+      "path": "drawable/torrent_search_ic_category_search.xml",
+      "sha256": "75afb0401c17acd1fd75b22593cb7718fce660a91d03a0832b1010df9ec9d1db"
+    },
+    {
+      "path": "drawable/torrent_search_ic_cancel.xml",
+      "sha256": "5ac8b76dc81d8dc29271f06e10d0926f9f2f79c40fcfa145208f26e5467d9a2a"
+    },
+    {
+      "path": "drawable/torrent_search_ic_calendar_month.xml",
+      "sha256": "4b290697e2d3a1fd31f43afbf8c9e6352bc05287caa4c8448828d71fabcd347c"
+    },
+    {
+      "path": "drawable/torrent_search_fdroid.xml",
+      "sha256": "4a44147c6f2df0bf78e215dfd014059f3c99fd8c338f6f2001697a3ccb1b8cde"
+    },
+    {
+      "path": "drawable/torrent_search_github.xml",
+      "sha256": "701a3868ee22a504aadbf4e4890c24c21f41ea0f8474309d4d91ef4722037ee4"
+    },
+    {
+      "path": "drawable/torrent_search_googleplay.xml",
+      "sha256": "9910fa64508292be879261abc76fdd91110a562edcccc9594ccab25869c52202"
+    },
+    {
+      "path": "drawable/torrent_search_ic_18_up_rating.xml",
+      "sha256": "f3368e6f55583c8b876038497bf9b46b15087358ba4af91e153f2f25d5c56e32"
+    },
+    {
+      "path": "drawable/torrent_search_ic_add.xml",
+      "sha256": "63856b6cce89ba2b0756b2b594de323eec099ddd4d417a11e1972a1445016db9"
+    },
+    {
+      "path": "drawable/torrent_search_ic_arrow_back.xml",
+      "sha256": "cf6669eb532455ef015e2810e8da64cb34158d6b0449449a59f8799e08c2f7e8"
+    },
+    {
+      "path": "drawable/torrent_search_ic_dns.xml",
+      "sha256": "3092f3cba88a5f6f2e1054649d6a9a1a6c0c3530532411cf86469ac813cf3ef3"
+    },
+    {
+      "path": "drawable/torrent_search_ic_arrow_forward.xml",
+      "sha256": "3e50426cc79b674704da37f11dc01c1fa35ce13f020c859c2df63261c98186dd"
+    },
+    {
+      "path": "drawable/torrent_search_ic_arrow_outward.xml",
+      "sha256": "4f0a9780ca2337bd1bb935788270ed42472464425497fe3ee0fd0653ee18edcc"
+    },
+    {
+      "path": "drawable/torrent_search_ic_arrow_up.xml",
+      "sha256": "a960f32f1e2808363ab1f21a84237f086d1ea87216e8a1660f9781f2dcd8030c"
+    },
+    {
+      "path": "drawable/torrent_search_ic_block.xml",
+      "sha256": "50a6edb1b4fa917156362fd8b48a6e92e2cec00c032c8bb1eb011df7d5fc3cf4"
+    },
+    {
+      "path": "drawable/torrent_search_ic_book.xml",
+      "sha256": "8852c571d67fe358572e531180d1a3f7260ab21b9bf783b75dd8f0858ac96cb3"
+    },
+    {
+      "path": "drawable/torrent_search_ic_browse.xml",
+      "sha256": "57e5856192dfe7a71b622c2a4fb022fd37e03884334c631b9edfd30b7b4eb16d"
+    },
+    {
+      "path": "drawable/torrent_search_ic_bug_report.xml",
+      "sha256": "4c75222fb3833015135328181f377f130d2a59f0b7201116ddc92641d59113fa"
+    },
+    {
+      "path": "drawable/torrent_search_ic_arrow_insert.xml",
+      "sha256": "657c7145e145d32243e94029eb9a9af837466141c5dad8f614bbc0d92b7b9ae7"
+    },
+    {
+      "path": "drawable/torrent_search_ic_download.xml",
+      "sha256": "6b70d9043ee7a6ef9661e8ae5b0d79199c70b5aa049599439f0e5a80d3d5a6a3"
+    },
+    {
+      "path": "drawable/torrent_search_ic_downloading.xml",
+      "sha256": "155f3b0157e57d9c644252d047f81393bb2fa07dc719c1b3c2f6ee08c793ac47"
+    },
+    {
+      "path": "drawable/torrent_search_ic_edit.xml",
+      "sha256": "d3b87975096ccf7c8e340690f2c0be86409e413a19eaa1db5e81f94d0ab578b6"
+    },
+    {
+      "path": "drawable/torrent_search_ic_link_off.xml",
+      "sha256": "aa2611b1fb5a2c4a430405bc5415dfa0dd0e2ea47b88ead77eefedcd271dfb7f"
+    },
+    {
+      "path": "drawable/torrent_search_ic_link.xml",
+      "sha256": "7d865d7aca8ac3d863c017307838bac5197016b63453ef46a1e13ba5cf804dcd"
+    },
+    {
+      "path": "drawable/torrent_search_ic_lock_open.xml",
+      "sha256": "035dd10f565ebe0fb14e726003c57f41a77fb33171a941c347d887c6ab7d4c3c"
+    },
+    {
+      "path": "drawable/torrent_search_ic_magnet.xml",
+      "sha256": "5fbaf7c084aba2575cf0968c2697f0d02e3f9dcd891bf95d08a26a170284681c"
+    },
+    {
+      "path": "drawable/torrent_search_ic_more_vert.xml",
+      "sha256": "5e59b1057fd447b5fea51df321fb1f52ba0571a645b730792add1b5233b39437"
+    },
+    {
+      "path": "drawable/torrent_search_ic_movie.xml",
+      "sha256": "7be9802f2900d76cfb484fcf53e7ad4f1011b7ab51dee85d36b983eb4fef868e"
+    },
+    {
+      "path": "drawable/torrent_search_ic_lightbulb.xml",
+      "sha256": "4771179de289fec2b3c4b54ef2dcae9fd28579f3889c19a47bc5a7572cc0171d"
+    },
+    {
+      "path": "drawable/torrent_search_ic_music_note.xml",
+      "sha256": "7797d804fa2935499d2d75073e7390ff624700b020dd3dfdf1dcb81b3f08c08c"
+    },
+    {
+      "path": "drawable/torrent_search_ic_open_in_browser.xml",
+      "sha256": "b0429b6a27198dcd0fe1f7129722365317314baa7ec2ed347ad7db77072be75e"
+    },
+    {
+      "path": "drawable/torrent_search_ic_palette.xml",
+      "sha256": "1adc804d2d14a827ab100928d9992a26dcaabeb2a2668fa15489d6f4f81be2c7"
+    },
+    {
+      "path": "drawable/torrent_search_ic_pending.xml",
+      "sha256": "95de4009944a94a7fb256920576caa685ed84ec697ca6be360fe8a8e14f92336"
+    },
+    {
+      "path": "drawable/torrent_search_ic_person.xml",
+      "sha256": "d8e473403b8e6f46fc93423b6b9c3d92ceb9e40de05c213e71e55a79bc554914"
+    },
+    {
+      "path": "drawable/torrent_search_ic_preview_off.xml",
+      "sha256": "b70bbe857f2a91748cf536f41a70ecf48810fa3e18c1b101e79e7de11930cefd"
+    },
+    {
+      "path": "drawable/torrent_search_ic_preview.xml",
+      "sha256": "905851e9a69e89fc89901a9cfed7ae420674c5d8c0bc7f2fd722c56192c6200a"
+    },
+    {
+      "path": "drawable/torrent_search_ic_network_check.xml",
+      "sha256": "bfb5d27282b6ff612c5a5da4d823c28f91681e7ba8fd20b155060abbe2207df5"
+    },
+    {
+      "path": "xml/torrent_search_data_extraction_rules.xml",
+      "sha256": "30ae995624fd57d839bf0d638900f8d2c17c703d6e7d6c8640708a8a7cac2402"
+    },
+    {
+      "path": "drawable/torrent_search_ic_launcher_monochrome.xml",
+      "sha256": "73a8dfb964dca1ce6a556c21725684cdc472d0281b331c7fb2ceb705e52bdb92"
+    },
+    {
+      "path": "drawable/torrent_search_ic_language.xml",
+      "sha256": "10564b174685d554a0ec071c0e0945965957b95dc1ddad4610272358a717fc95"
+    },
+    {
+      "path": "drawable/torrent_search_ic_error_filled.xml",
+      "sha256": "69539bb77275a2f20687f5a37f8122ad545dfc3b9351886cb8ef84064fa088da"
+    },
+    {
+      "path": "drawable/torrent_search_ic_error.xml",
+      "sha256": "1df78fed73312402030a932fe8fd726d000ade93eb67c6057267cbb927e3c2ef"
+    },
+    {
+      "path": "drawable/torrent_search_ic_file_export.xml",
+      "sha256": "07466bcbef89f108f949b0e92056ddd47ca08ee7bebfd0a88db970329acad110"
+    },
+    {
+      "path": "drawable/torrent_search_ic_flip.xml",
+      "sha256": "f15f6f33b730b39bb62b960518bb62c7d6ea3825fc4020ba69a547c9288c6399"
+    },
+    {
+      "path": "drawable/torrent_search_ic_format_list_numbered.xml",
+      "sha256": "33132cea595fb703785adadf3bc812dcd53f39562bb6e96151cef4e8df502c7a"
+    },
+    {
+      "path": "drawable/torrent_search_ic_gpp_bad.xml",
+      "sha256": "18f2f5525f80f24adef4c155527cd0ec1778567d0fc4c9d60940fd7e1396acd9"
+    },
+    {
+      "path": "drawable/torrent_search_ic_launcher_foreground.xml",
+      "sha256": "a69cbbf03687936297744b91479adfb9d8fa1d513a5ec240b2ca165f576109e7"
+    },
+    {
+      "path": "drawable/torrent_search_ic_heart_broken.xml",
+      "sha256": "0a45fbb4b71d6fb396c9a3ecb04fbc6308e7a3abe3706876a36acc19fb500494"
+    },
+    {
+      "path": "drawable/torrent_search_ic_history.xml",
+      "sha256": "804f120b939da13c1334b944f1d06a9e129ffe33c1cb55a39358b731161449e5"
+    },
+    {
+      "path": "drawable/torrent_search_ic_hub.xml",
+      "sha256": "1f128316935d0011c1346e3d2473d44dbb8db048c12d6c657338b4699d5e9ec5"
+    },
+    {
+      "path": "drawable/torrent_search_ic_image.xml",
+      "sha256": "47b3bdf5d69f96cc6374e6197556bcb2966116dc1ea99e363983ec20c0373e7a"
+    },
+    {
+      "path": "drawable/torrent_search_ic_info.xml",
+      "sha256": "3b887d4b5c8ce9bb238a529e9ff5171d432e0de9d36c661e7eb9991689d2e4bd"
+    },
+    {
+      "path": "drawable/torrent_search_ic_keyboard_arrow_down.xml",
+      "sha256": "b89dced34f99cb1f893e1ca287e9d0ecac73e0834984c1fe18b1881b32cc2974"
+    },
+    {
+      "path": "drawable/torrent_search_ic_keyboard_arrow_up.xml",
+      "sha256": "5eced419ddc58fe4796581f69d244c397b4271cd1ec8f1994603fa28f17f5742"
+    },
+    {
+      "path": "drawable/torrent_search_ic_history_toggle_off.xml",
+      "sha256": "0bea8397932b2e3587187b4735f37caf7fb0c5ff87395bc2df89be504b481f78"
+    },
+    {
+      "path": "xml/torrent_search_searchable.xml",
+      "sha256": "254915aab287c20b8fb9277bad3118c7aef7e24ccd1f12da698b42401004b18c"
+    }
+  ]
+}

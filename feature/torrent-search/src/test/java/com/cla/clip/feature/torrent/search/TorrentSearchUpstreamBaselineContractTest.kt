@@ -2,6 +2,7 @@ package com.cla.clip.feature.torrent.search
 
 import java.nio.file.Files
 import java.nio.file.Path
+import java.security.MessageDigest
 import javax.xml.parsers.DocumentBuilderFactory
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -28,6 +29,12 @@ class TorrentSearchUpstreamBaselineContractTest {
         val manifestPath = moduleRoot.resolve("upstream-manifest.json")
         assertTrue("缺少 upstream-manifest.json", Files.isRegularFile(manifestPath))
 
+        /** 独立 fixture 锁定已审查内容，禁止测试从待测 manifest 自举期望。 */
+        val reviewedSnapshot = parseReviewedSnapshot(moduleRoot)
+        /** manifest 原文摘要锁定全部 Provider 字段、关键文件和本地策略。 */
+        val manifestText = readUtf8(manifestPath)
+        assertReviewedManifestContent(manifestText, reviewedSnapshot)
+
         /** 动态 JSON 只用于测试固定 artifact，不引入生产序列化模型。 */
         val manifest = parseManifest(manifestPath)
         assertEquals("https://github.com/prajwalch/TorrentSearch", manifest.requiredString("repositoryUrl"))
@@ -35,6 +42,9 @@ class TorrentSearchUpstreamBaselineContractTest {
         assertEquals("MIT", manifest.requiredString("license"))
         assertTrue("缺少上游 LICENSE", Files.isRegularFile(moduleRoot.resolve("LICENSE")))
         assertTrue("缺少本地 NOTICE", Files.isRegularFile(moduleRoot.resolve("NOTICE.md")))
+        /** LICENSE 摘要由独立 fixture 锁定，防止以同名但不同内容的许可证文件冒充来源。 */
+        val licenseSha256 = sha256(Files.readAllBytes(moduleRoot.resolve("LICENSE")))
+        assertEquals(reviewedSnapshot.requiredString("licenseSha256"), licenseSha256)
 
         /** 关键文件数组覆盖许可证、工具链、入口和 Provider 契约审计点。 */
         val criticalFiles = manifest.requiredArray("criticalFiles").map { element -> element.jsonObject }
@@ -55,6 +65,49 @@ class TorrentSearchUpstreamBaselineContractTest {
             /** 每个关键文件必须使用完整小写 SHA-256，避免短哈希或占位值。 */
             val sha256 = file.requiredString("sha256")
             assertTrue("关键文件 SHA-256 非法：${file.requiredString("path")}", SHA_256_REGEX.matches(sha256))
+        }
+    }
+
+    /** 已审查资源清单必须逐文件锁定，防止前缀扫描漏掉翻译或 UI 基线的删除。 */
+    @Test
+    fun resourceInventoryMatchesReviewedSnapshot() {
+        /** 模块目录用于定位真实 Android 资源，不读取构建中间产物。 */
+        val moduleRoot = findModuleRoot()
+        /** 独立 fixture 保存固定路径和内容摘要，不能由当前资源即时生成。 */
+        val reviewedSnapshot = parseReviewedSnapshot(moduleRoot)
+        /** 当前资源清单保留相对路径和逐文件 SHA，覆盖翻译、XML 与二进制资源。 */
+        val actualInventory = resourceInventory(moduleRoot.resolve("src/main/res"))
+        assertReviewedResourceInventory(actualInventory, reviewedSnapshot)
+    }
+
+    /** 受控变异必须触发失败，证明快照会拒绝错误域名、字段漂移和资源缺失。 */
+    @Test
+    fun reviewedSnapshotsRejectProviderAndResourceMutations() {
+        /** 模块目录提供真实基线内容，变异只停留在内存中。 */
+        val moduleRoot = findModuleRoot()
+        /** 独立 fixture 是变异校验唯一的不可变期望来源。 */
+        val reviewedSnapshot = parseReviewedSnapshot(moduleRoot)
+        /** 当前 manifest 原文用于构造不会写回磁盘的错误 Provider 域名。 */
+        val manifestText = readUtf8(moduleRoot.resolve("upstream-manifest.json"))
+        /** 错误 host 模拟注释 URL 误入后续网络白名单的审查回归。 */
+        val incorrectDomainManifest = manifestText.replaceFirst("\"1337x.to\"", "\"github.com\"")
+        assertValidationFails("错误 Provider 域名必须被快照拒绝") {
+            assertReviewedManifestContent(incorrectDomainManifest, reviewedSnapshot)
+        }
+
+        /** 错误显示名模拟 Provider 字段被格式校验无法发现的静默漂移。 */
+        val incorrectProviderFieldManifest = manifestText.replaceFirst(
+            "\"displayName\": \"AniLibria\"",
+            "\"displayName\": \"Unexpected Provider\"",
+        )
+        assertValidationFails("错误 Provider 字段必须被快照拒绝") {
+            assertReviewedManifestContent(incorrectProviderFieldManifest, reviewedSnapshot)
+        }
+
+        /** 资源清单仅移除一项，模拟机械导入漏掉一个翻译或 UI 文件。 */
+        val incompleteInventory = resourceInventory(moduleRoot.resolve("src/main/res")).dropLast(1)
+        assertValidationFails("缺失资源必须被完整 inventory 拒绝") {
+            assertReviewedResourceInventory(incompleteInventory, reviewedSnapshot)
         }
     }
 
@@ -103,6 +156,13 @@ class TorrentSearchUpstreamBaselineContractTest {
             assertFalse("Provider 仍允许明文 HTTP：$code", localNetworkPolicy.requiredBoolean("allowCleartext"))
             assertFalse("Provider 仍允许白名单外域名：$code", localNetworkPolicy.requiredBoolean("allowUnlistedDomains"))
         }
+
+        /** 1337x 只允许可执行主站和详情下载选择器使用的 host，注释链接不得扩大白名单。 */
+        val thirteenThirtySevenX = providers.single { provider -> provider.requiredString("code") == "1337x" }
+        /** 域名顺序按 manifest 固定，方便后续网络策略和审查差异精确定位。 */
+        val thirteenThirtySevenXDomains = thirteenThirtySevenX.requiredArray("domains")
+            .map { domain -> domain.jsonPrimitive.content }
+        assertEquals(listOf("1337x.to", "itorrents.org"), thirteenThirtySevenXDomains)
     }
 
     /** 本地改造策略必须显式拒绝远程代码、选择器或脚本下发。 */
@@ -159,11 +219,16 @@ class TorrentSearchUpstreamBaselineContractTest {
     fun fileBasedResourcesUseTorrentSearchPrefix() {
         /** res 根目录下非 values 目录中的每个文件都会生成文件型资源 ID。 */
         val resDirectory = findModuleRoot().resolve("src/main/res")
+        /** AGP 固定元数据文件不生成 R ID，必须保留其约定名称和默认语言语义。 */
+        val metadataPath = resDirectory.resolve("resources.properties")
+        assertTrue("缺少 AGP resources.properties 元数据", Files.isRegularFile(metadataPath))
+        assertEquals("unqualifiedResLocale=en\n", readUtf8(metadataPath))
         Files.walk(resDirectory).use { paths ->
             /** 只检查普通文件；values XML 的 ID 已由独立契约逐项检查。 */
             val fileResources = paths
                 .filter(Files::isRegularFile)
                 .filter { path -> !path.parent.fileName.toString().startsWith("values") }
+                .filter { path -> path != metadataPath }
                 .toList()
             fileResources.forEach { resourcePath ->
                 assertTrue(
@@ -225,6 +290,99 @@ class TorrentSearchUpstreamBaselineContractTest {
         return Json.parseToJsonElement(manifestText).jsonObject
     }
 
+    /** 读取独立审查 fixture；该文件与待测 manifest 分离，专门固定供应链事实。 */
+    private fun parseReviewedSnapshot(moduleRoot: Path): JsonObject {
+        /** fixture 路径固定在测试资源目录，避免生产 artifact 反向成为期望来源。 */
+        val snapshotPath = moduleRoot.resolve(REVIEWED_SNAPSHOT_RELATIVE_PATH)
+        assertTrue("缺少独立供应链快照 fixture", Files.isRegularFile(snapshotPath))
+        /** fixture 内容只含公开源路径、摘要和 Provider 稳定 code。 */
+        val snapshotText = readUtf8(snapshotPath)
+        return Json.parseToJsonElement(snapshotText).jsonObject
+    }
+
+    /** 精确核验 manifest 摘要、43 个 code/path 对和关键文件 SHA，拒绝合法格式的错误事实。 */
+    private fun assertReviewedManifestContent(manifestText: String, reviewedSnapshot: JsonObject) {
+        /** manifest 字节摘要一次性锁定所有展示名、能力、安全级、NSFW、域名和策略字段。 */
+        val manifestSha256 = sha256(manifestText.toByteArray(Charsets.UTF_8))
+        assertEquals(reviewedSnapshot.requiredString("manifestSha256"), manifestSha256)
+
+        /** 待测对象仍单独解析 code/path，避免摘要误改时难以指出 Provider 注册边界。 */
+        val manifest = Json.parseToJsonElement(manifestText).jsonObject
+        /** 当前 Provider 对以稳定 code 和上游相对路径组合，顺序也属于审查结果。 */
+        val actualProviderPairs = manifest.requiredArray("providers").map { provider ->
+            val providerObject = provider.jsonObject
+            providerObject.requiredString("code") + "|" + providerObject.requiredString("sourcePath")
+        }
+        /** fixture 明确列出 43 对 code/path，禁止仅按数量或格式自洽。 */
+        val expectedProviderPairs = reviewedSnapshot.requiredArray("providerSourcePairs").map { provider ->
+            val providerObject = provider.jsonObject
+            providerObject.requiredString("code") + "|" + providerObject.requiredString("sourcePath")
+        }
+        assertEquals(expectedProviderPairs, actualProviderPairs)
+
+        /** 关键文件数组的 path/SHA 对独立锁定，避免替换为任意 64 位十六进制。 */
+        val actualCriticalFiles = manifest.requiredArray("criticalFiles").map { file ->
+            val fileObject = file.jsonObject
+            fileObject.requiredString("path") + "|" + fileObject.requiredString("sha256")
+        }
+        /** fixture 记录固定提交对应的七个审计文件和实际 SHA。 */
+        val expectedCriticalFiles = reviewedSnapshot.requiredArray("criticalFiles").map { file ->
+            val fileObject = file.jsonObject
+            fileObject.requiredString("path") + "|" + fileObject.requiredString("sha256")
+        }
+        assertEquals(expectedCriticalFiles, actualCriticalFiles)
+    }
+
+    /** 枚举资源相对路径与内容摘要；固定 AGP 元数据也纳入完整基线而不当作 R 资源。 */
+    private fun resourceInventory(resDirectory: Path): List<String> =
+        Files.walk(resDirectory).use { paths ->
+            paths
+                .filter(Files::isRegularFile)
+                .map { resourcePath ->
+                    /** Windows 分隔符归一为 /，确保 fixture 不随测试机变化。 */
+                    val relativePath = resDirectory.relativize(resourcePath).toString().replace('\\', '/')
+                    /** 每个资源的字节摘要保护翻译文本和二进制图标内容。 */
+                    val contentSha256 = sha256(Files.readAllBytes(resourcePath))
+                    relativePath + "|" + contentSha256
+                }
+                .sorted()
+                .toList()
+        }
+
+    /** 将实际资源清单与独立 fixture 逐项比较，删除、替换或新增都会显式失败。 */
+    private fun assertReviewedResourceInventory(actualInventory: List<String>, reviewedSnapshot: JsonObject) {
+        /** fixture 总数先提供可行动的缺失/多余资源错误。 */
+        val expectedCount = reviewedSnapshot.requiredString("resourceFileCount").toInt()
+        assertEquals(expectedCount, actualInventory.size)
+        /** fixture 中每项均为相对路径和审查时的字节 SHA。 */
+        val expectedInventory = reviewedSnapshot.requiredArray("resourceFiles").map { resource ->
+            val resourceObject = resource.jsonObject
+            resourceObject.requiredString("path") + "|" + resourceObject.requiredString("sha256")
+        }
+        assertEquals(expectedInventory.sorted(), actualInventory)
+    }
+
+    /** 受控错误必须造成断言失败，避免测试出现“变异后仍全绿”的伪保护。 */
+    private fun assertValidationFails(message: String, validation: () -> Unit) {
+        /** 标记 validation 是否真的拒绝了变异，而不是被测试自身的 fail 误吞。 */
+        var rejected = false
+        try {
+            validation()
+        } catch (_: AssertionError) {
+            rejected = true
+        }
+        assertTrue(message, rejected)
+    }
+
+    /** 使用标准 SHA-256 计算字节摘要，作为固定快照的内容完整性锚点。 */
+    private fun sha256(bytes: ByteArray): String {
+        /** 摘要器不持久化状态，每次调用独立处理一份公开 artifact。 */
+        val digest = MessageDigest.getInstance("SHA-256")
+        /** 小写十六进制与 manifest/fixture 保持相同的稳定编码。 */
+        val encodedDigest = digest.digest(bytes).joinToString(separator = "") { byte -> "%02x".format(byte) }
+        return encodedDigest
+    }
+
     /** 以 UTF-8 读取清单和 XML，并兼容 Android 单测使用的 Java API 基线。 */
     private fun readUtf8(path: Path): String {
         /** 资源与清单都固定为 UTF-8；显式字符集避免依赖测试机默认编码。 */
@@ -272,6 +430,10 @@ class TorrentSearchUpstreamBaselineContractTest {
     private companion object {
         /** 模块资源前缀同时约束逻辑 ID、文件名和 XML 内部引用。 */
         const val RESOURCE_PREFIX = "torrent_search_"
+
+        /** 独立 fixture 相对模块目录固定，避免依赖 classpath 或 Gradle 临时目录。 */
+        const val REVIEWED_SNAPSHOT_RELATIVE_PATH =
+            "src/test/resources/com/cla/clip/feature/torrent/search/torrent_search_upstream_baseline_snapshot.json"
 
         /** 完整 SHA-256 固定为 64 位小写十六进制。 */
         val SHA_256_REGEX = Regex("^[0-9a-f]{64}$")

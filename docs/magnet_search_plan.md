@@ -81,7 +81,7 @@ OkHttp Dispatcher 固定全局并发 64、同主机 5；连接超时 10 秒、�
 
 ## 供应链与资源
 
-上游代码、资源和翻译采用机械移植并保留本地修改说明。所有导入资源使用 `torrent_search_` 前缀，禁止覆盖宿主资源。移植实现不得启动 Koin，不得替换宿主 Application、全局异常处理或全局 Coil。新增依赖必须来自 version catalog，并补齐 dependency verification 与许可证/依赖清单校验。
+上游代码、资源和翻译采用机械移植并保留本地修改说明。所有导入资源使用 `torrent_search_` 前缀，禁止覆盖宿主资源；仅 AGP 固定识别的 `src/main/res/resources.properties` 保持原文件名，其 `unqualifiedResLocale=en` 元数据不生成 `R` ID。移植实现不得启动 Koin，不得替换宿主 Application、全局异常处理或全局 Coil。新增依赖必须来自 version catalog，并补齐 dependency verification 与许可证/依赖清单校验。
 
 ### 任务 3 固定基线（2026-08-31）
 
@@ -89,18 +89,18 @@ OkHttp Dispatcher 固定全局并发 64、同主机 5；连接超时 10 秒、�
 固定为本地供应链基线：`feature/torrent-search/LICENSE` 保留 MIT 原文，
 `NOTICE.md` 说明署名与宿主不接管边界，`upstream-manifest.json` 固定 43 个
 内置 Provider 的稳定 code、源路径、SHA-256、能力、安全/NSFW 标记、源域名与
-HTTPS-only 本地策略。清单禁止远程代码、选择器和脚本下发；LimeTorrents 的
+HTTPS-only 本地策略。Provider 域名仅从固定源码的可执行 URL 常量、接口字段或详情下载选择器提取，不采纳致谢注释 URL；例如 `1337x` 仅记录 `1337x.to` 与 `itorrents.org`。清单禁止远程代码、选择器和脚本下发；LimeTorrents 的
 `itorrents.net` 明文地址仅作为上游源事实记录，本地策略仍禁止明文访问。
 
 上游 `app/src/main/res` 已完整机械导入并保留已有语言。所有本地资源定义、XML
-引用和文件型名称都增加 `torrent_search_` 前缀；默认 `values` 保持英文，任务 2
+引用和文件型名称都增加 `torrent_search_` 前缀（AGP 固定 `resources.properties` 元数据文件除外）；默认 `values` 保持英文，任务 2
 的核心入口和空壳字符串同时保留在 `values-zh-rCN`。本阶段不导入上游 Kotlin、
 Koin、Application、Activity 或 launcher 声明，资源可由当前空壳模块独立编译。
 为避免资源阶段引入未使用的 SplashScreen 运行时，API 31 的上游
 `Theme.SplashScreen`/`postSplashScreenTheme` 关系仅回退为平台无 ActionBar 父主题；
 带前缀的主题名称仍保留，后续由宿主 Activity 接入时再决定是否恢复该运行时能力。
 
-`THIRD_PARTY_DEPENDENCIES.md` 只记录当前模块已经声明的直接依赖和许可证来源。
+`THIRD_PARTY_DEPENDENCIES.md` 记录当前模块已经声明的直接依赖和许可证来源，并明确 JUnit 4.13.2、`kotlinx-serialization-json` 1.11.0 为本阶段快照契约的 test-only 依赖。独立测试 fixture 以 manifest 文件 SHA-256、43 个精确 code/sourcePath 对、关键文件 SHA 和逐项资源路径/内容摘要锁定完整基线；错误域名、Provider 字段和资源缺失的内存受控变异必须失败。
 完整 Gradle dependency-verification metadata 与完整许可证汇总仍延后到任务 8：
 原因是 Provider 运行时依赖尚未确定，当前生成会错误锁定不完整集合。
 
@@ -155,6 +155,7 @@ Koin、Application、Activity 或 launcher 声明，资源可由当前空壳模�
 ## 变更记录
 
 - 2026-08-31：完成任务 3 的固定上游供应链与资源基线：新增 MIT/NOTICE、43 Provider 审计 manifest、直接依赖说明，并对完整上游资源作前缀化机械导入；原因是为后续 Provider/运行时移植冻结可回归的来源、安全和资源命名契约，同时避免过早锁定依赖验证元数据。
+- 2026-08-31：任务 3 审查修正：移除 `1337x` 来源于致谢注释的 `github.com` 域名，恢复 AGP 固定 `resources.properties` 文件名，并以独立 manifest/资源 inventory 快照和受控变异锁定完整来源事实；同时补全 JUnit 与 kotlinx.serialization 的 test-only 许可证来源，原因是格式自洽测试不足以阻止供应链事实漂移。
 - 2026-08-31：任务 2 审查修正改为宿主渲染 slot 复用 `ListEntryCard`，并补齐启动来源精确 code、未知回退以及备份计数/分类纯映射测试；原因是空壳也必须保持宿主视觉、模块依赖和稳定协议可回归验证。
 - 2026-08-30：重写为 TorrentSearch 固定快照完整接入主方案，并明确废弃旧 Academic Torrents 单源磁力方案；原因是项目已确认以独立 Activity、43 Provider、安全边界和 schemaVersion 4 完整替换旧模块。
 - 2026-08-31：记录任务 2 的实际空壳边界、双构建路径、系统 Intent alias、宿主入口与下载历史迁出结果；原因是旧模块删除和新稳定契约已经落地，需要让方案与当前代码保持一致。

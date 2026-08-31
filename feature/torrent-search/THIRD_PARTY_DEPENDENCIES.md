@@ -14,9 +14,12 @@ and coordinates remain owned by `gradle/libs.versions.toml`:
 | `:feature:torrent-search-api` | Stable host/API contract | ClipMaster internal module |
 | AndroidX Core, Activity, Compose UI/Foundation/Material3 and Compose icons | Existing Activity and Compose shell | [AndroidX / AOSP Apache-2.0 notices](https://source.android.com/docs/setup/about/licenses) |
 | Hilt Android and Hilt compiler | Existing host DI integration shell | [Dagger Apache-2.0 license](https://github.com/google/dagger/blob/master/LICENSE.txt) |
+| JUnit 4.13.2 (test-only) | `TorrentSearchUpstreamBaselineContractTest` contract and mutation tests | [JUnit official EPL-1.0 license](https://github.com/junit-team/junit4/blob/main/LICENSE-junit.txt) |
+| kotlinx-serialization-json 1.11.0 (test-only) | Parse static manifest and snapshot fixtures in local contract tests | [kotlinx.serialization official Apache-2.0 license](https://github.com/Kotlin/kotlinx.serialization/blob/master/LICENSE.txt) |
 
-JUnit and `kotlinx-serialization-json` are test-only dependencies used by the
-local contract test; they are not runtime dependencies introduced by this task.
+JUnit 4.13.2 and `kotlinx-serialization-json` 1.11.0 are test-only dependencies
+used by the local contract test; they are not runtime dependencies introduced by
+this task.
 
 Upstream source attribution is separate from runtime dependencies: the fixed
 TorrentSearch snapshot is MIT licensed and its full text is retained in

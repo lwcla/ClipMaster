@@ -644,7 +644,6 @@
       "nsfwCategorySupported": true,
       "domains": [
         "1337x.to",
-        "github.com",
         "itorrents.org"
       ],
       "localNetworkPolicy": {

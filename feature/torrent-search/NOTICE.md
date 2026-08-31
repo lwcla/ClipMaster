@@ -16,6 +16,16 @@ Provider source files in `upstream-manifest.json`. The local changes are limited
 to toolchain compatibility, security and privacy hardening, Hilt/host integration,
 and resource namespacing.
 
+Provider domain entries are extracted only from executable URL constants,
+interface fields and detail-download selectors in the fixed Provider sources;
+attribution comments are not network facts. For example, `1337x` permits only
+`1337x.to` and `itorrents.org`, never the GitHub URL appearing in a source comment.
+
+All Android resource IDs and file names use the `torrent_search_` prefix except
+the AGP-recognized root metadata file `src/main/res/resources.properties`. That
+file intentionally keeps its fixed name, contains `unqualifiedResLocale=en`, and
+does not generate an `R` resource ID.
+
 One resource compatibility adjustment is intentional: the API 31 upstream
 `Theme.SplashScreen` / `postSplashScreenTheme` relationship is replaced with the
 platform no-action-bar parent because this resource-only phase neither imports
