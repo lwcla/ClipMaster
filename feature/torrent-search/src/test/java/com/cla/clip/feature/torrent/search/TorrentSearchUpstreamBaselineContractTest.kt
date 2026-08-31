@@ -1,0 +1,302 @@
+package com.cla.clip.feature.torrent.search
+
+import java.nio.file.Files
+import java.nio.file.Path
+import javax.xml.parsers.DocumentBuilderFactory
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/** 固定上游供应链清单与资源隔离契约，防止来源、Provider 或宿主资源边界静默漂移。 */
+class TorrentSearchUpstreamBaselineContractTest {
+    /** 清单必须固定到已审查提交，并同时保留许可证、署名和关键文件校验值。 */
+    @Test
+    fun upstreamManifestPinsVerifiedSnapshotAndCriticalFiles() {
+        /** 模块根目录承载清单、许可证和 NOTICE，不依赖构建产物路径。 */
+        val moduleRoot = findModuleRoot()
+        /** 清单文件必须先于后续运行时移植建立可审查来源。 */
+        val manifestPath = moduleRoot.resolve("upstream-manifest.json")
+        assertTrue("缺少 upstream-manifest.json", Files.isRegularFile(manifestPath))
+
+        /** 动态 JSON 只用于测试固定 artifact，不引入生产序列化模型。 */
+        val manifest = parseManifest(manifestPath)
+        assertEquals("https://github.com/prajwalch/TorrentSearch", manifest.requiredString("repositoryUrl"))
+        assertEquals("ba82e889637027f7bed82715ec4d2106cbce5a28", manifest.requiredString("commit"))
+        assertEquals("MIT", manifest.requiredString("license"))
+        assertTrue("缺少上游 LICENSE", Files.isRegularFile(moduleRoot.resolve("LICENSE")))
+        assertTrue("缺少本地 NOTICE", Files.isRegularFile(moduleRoot.resolve("NOTICE.md")))
+
+        /** 关键文件数组覆盖许可证、工具链、入口和 Provider 契约审计点。 */
+        val criticalFiles = manifest.requiredArray("criticalFiles").map { element -> element.jsonObject }
+        /** 手工固定的关键路径避免只记录容易通过的任意文件。 */
+        val requiredPaths = setOf(
+            "LICENSE",
+            "gradle/libs.versions.toml",
+            "app/build.gradle.kts",
+            "app/src/main/kotlin/com/prajwalch/torrentsearch/TorrentSearchApplication.kt",
+            "app/src/main/kotlin/com/prajwalch/torrentsearch/ui/main/MainActivity.kt",
+            "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/SearchProvider.kt",
+            "app/src/main/kotlin/com/prajwalch/torrentsearch/di/BuiltinSearchProvidersModule.kt",
+        )
+        /** 清单中的路径集合用于发现遗漏或重复审计记录。 */
+        val actualPaths = criticalFiles.map { file -> file.requiredString("path") }.toSet()
+        assertTrue("关键文件记录不完整：${requiredPaths - actualPaths}", actualPaths.containsAll(requiredPaths))
+        criticalFiles.forEach { file ->
+            /** 每个关键文件必须使用完整小写 SHA-256，避免短哈希或占位值。 */
+            val sha256 = file.requiredString("sha256")
+            assertTrue("关键文件 SHA-256 非法：${file.requiredString("path")}", SHA_256_REGEX.matches(sha256))
+        }
+    }
+
+    /** 内置 Provider 清单必须恰好 43 项，并完整描述稳定协议、安全和网络边界。 */
+    @Test
+    fun upstreamManifestContainsCompleteProviderRegistry() {
+        /** 固定清单由测试直接读取，后续 Provider 注册实现只能消费同一审计基线。 */
+        val manifest = parseManifest(findModuleRoot().resolve("upstream-manifest.json"))
+        /** Provider 数组是后续任务注册表和 fixture 的唯一固定来源。 */
+        val providers = manifest.requiredArray("providers").map { element -> element.jsonObject }
+        assertEquals("内置 Provider 数量必须固定为 43", 43, providers.size)
+
+        /** 稳定 code 必须唯一且不依赖类名、枚举名或 ordinal。 */
+        val providerCodes = providers.map { provider -> provider.requiredString("code") }
+        assertEquals("Provider code 必须唯一", providerCodes.size, providerCodes.toSet().size)
+        providerCodes.forEach { code ->
+            assertTrue("Provider code 格式非法：$code", PROVIDER_CODE_REGEX.matches(code))
+        }
+
+        /** 上游源路径必须一项一文件，确保 SHA 可以追溯到真实 Provider 实现。 */
+        val sourcePaths = providers.map { provider -> provider.requiredString("sourcePath") }
+        assertEquals("Provider 上游源路径必须唯一", sourcePaths.size, sourcePaths.toSet().size)
+        providers.forEach { provider ->
+            /** 当前 Provider code 用于输出可行动的失败消息。 */
+            val code = provider.requiredString("code")
+            assertTrue("Provider 显示名缺失：$code", provider.requiredString("displayName").isNotBlank())
+            assertTrue("Provider 源路径缺失：$code", provider.requiredString("sourcePath").endsWith(".kt"))
+            assertTrue("Provider SHA-256 非法：$code", SHA_256_REGEX.matches(provider.requiredString("sha256")))
+
+            /** 能力列表至少包含基础搜索，并只使用固定的小写 capability code。 */
+            val capabilities = provider.requiredArray("capabilities").map { capability -> capability.jsonPrimitive.content }
+            assertTrue("Provider 缺少 search 能力：$code", "search" in capabilities)
+            assertTrue("Provider 能力 code 非法：$code", capabilities.all(CAPABILITY_CODES::contains))
+
+            /** safetyLevel 必须区分安全、不安全和支持 NSFW 的来源。 */
+            val safetyLevel = provider.requiredString("safetyLevel")
+            assertTrue("Provider safetyLevel 非法：$code", safetyLevel in SAFETY_LEVELS)
+            /** 域名白名单不能为空，后续网络包装只能在该集合中选择 HTTPS 端点。 */
+            val domains = provider.requiredArray("domains").map { domain -> domain.jsonPrimitive.content }
+            assertTrue("Provider 域名为空：$code", domains.isNotEmpty())
+            assertTrue("Provider 域名格式非法：$code", domains.all(DOMAIN_REGEX::matches))
+
+            /** 本地策略必须明确禁止 HTTP 与白名单外跳转，而非只依赖上游当前 URL。 */
+            val localNetworkPolicy = provider.requiredObject("localNetworkPolicy")
+            assertTrue("Provider 未启用 HTTPS-only：$code", localNetworkPolicy.requiredBoolean("httpsOnly"))
+            assertFalse("Provider 仍允许明文 HTTP：$code", localNetworkPolicy.requiredBoolean("allowCleartext"))
+            assertFalse("Provider 仍允许白名单外域名：$code", localNetworkPolicy.requiredBoolean("allowUnlistedDomains"))
+        }
+    }
+
+    /** 本地改造策略必须显式拒绝远程代码、选择器或脚本下发。 */
+    @Test
+    fun upstreamManifestForbidsRemoteExecutableConfiguration() {
+        /** 本地改造对象记录首轮允许的兼容、安全和宿主接入边界。 */
+        val localAdaptations = parseManifest(findModuleRoot().resolve("upstream-manifest.json"))
+            .requiredObject("localAdaptations")
+        assertFalse(localAdaptations.requiredBoolean("remoteCodeDeliveryAllowed"))
+        assertFalse(localAdaptations.requiredBoolean("remoteSelectorDeliveryAllowed"))
+        assertFalse(localAdaptations.requiredBoolean("remoteScriptDeliveryAllowed"))
+
+        /** 完整 JSON 字符串用于兜底阻止伪装成 URL/endpoint 的远程执行配置字段。 */
+        val manifestText = readUtf8(findModuleRoot().resolve("upstream-manifest.json"))
+        assertFalse("清单不得包含远程代码/脚本下发 URL", REMOTE_EXECUTABLE_URL_KEY_REGEX.containsMatchIn(manifestText))
+    }
+
+    /** values 定义和 XML 内部非系统资源引用必须统一使用模块前缀。 */
+    @Test
+    fun logicalResourceIdentifiersUseTorrentSearchPrefix() {
+        /** res 根目录同时覆盖默认资源、翻译、版本限定和文件型资源。 */
+        val resDirectory = findModuleRoot().resolve("src/main/res")
+        resourceXmlFiles(resDirectory).forEach { resourcePath ->
+            /** 当前 XML 文本用于扫描所有本地类型引用，Android 系统资源会被正则排除。 */
+            val xmlText = readUtf8(resourcePath)
+            RESOURCE_REFERENCE_REGEX.findAll(xmlText).forEach { match ->
+                /** 捕获组只包含非 android 命名空间的资源 entry 名。 */
+                val resourceName = match.groupValues[1]
+                assertTrue("资源引用缺少前缀：$resourcePath -> $resourceName", resourceName.startsWith(RESOURCE_PREFIX))
+            }
+
+            if (resourcePath.parent.fileName.toString().startsWith("values")) {
+                /** DOM 只读取 values 顶层资源定义的 name，不绑定 XML 排版。 */
+                val document = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(resourcePath.toFile())
+                /** resources 的直接子节点包含 string/plurals/color/style 等逻辑资源。 */
+                val definitions = document.documentElement.childNodes
+                for (index in 0 until definitions.length) {
+                    /** 非元素节点是缩进文本或注释，不参与资源 ID 契约。 */
+                    val definition = definitions.item(index)
+                    if (definition.nodeType != org.w3c.dom.Node.ELEMENT_NODE || !definition.hasAttributes()) continue
+                    /** 顶层 name 属性是 Android 生成 R 符号的逻辑 ID。 */
+                    val nameAttribute = definition.attributes.getNamedItem("name") ?: continue
+                    assertTrue(
+                        "资源定义缺少前缀：$resourcePath -> ${nameAttribute.nodeValue}",
+                        nameAttribute.nodeValue.startsWith(RESOURCE_PREFIX),
+                    )
+                }
+            }
+        }
+    }
+
+    /** drawable、mipmap、xml 等文件型资源必须用模块前缀隔离宿主命名空间。 */
+    @Test
+    fun fileBasedResourcesUseTorrentSearchPrefix() {
+        /** res 根目录下非 values 目录中的每个文件都会生成文件型资源 ID。 */
+        val resDirectory = findModuleRoot().resolve("src/main/res")
+        Files.walk(resDirectory).use { paths ->
+            /** 只检查普通文件；values XML 的 ID 已由独立契约逐项检查。 */
+            val fileResources = paths
+                .filter(Files::isRegularFile)
+                .filter { path -> !path.parent.fileName.toString().startsWith("values") }
+                .toList()
+            fileResources.forEach { resourcePath ->
+                assertTrue(
+                    "文件型资源缺少前缀：$resourcePath",
+                    resourcePath.fileName.toString().startsWith(RESOURCE_PREFIX),
+                )
+            }
+        }
+    }
+
+    /** 默认英文和简体中文都必须保留任务 2 的入口、空壳和备份核心文案。 */
+    @Test
+    fun coreIntegrationStringsExistInEnglishAndSimplifiedChinese() {
+        /** 默认 values 必须是英文基线，不能依赖 values-en 才获得英文。 */
+        val defaultStrings = readNamedResourceValues(findModuleRoot().resolve("src/main/res/values/strings.xml"))
+        /** 简体中文固定放在 Android 标准 zh-rCN 目录。 */
+        val simplifiedChineseStrings = readNamedResourceValues(
+            findModuleRoot().resolve("src/main/res/values-zh-rCN/strings.xml"),
+        )
+        /** 空壳已公开使用的核心资源必须在两种语言中完整保留。 */
+        val requiredNames = setOf(
+            "torrent_search_title",
+            "torrent_search_entry_description",
+            "torrent_search_placeholder_message",
+            "torrent_search_backup_bookmarks",
+            "torrent_search_backup_search_histories",
+            "torrent_search_backup_viewed_items",
+            "torrent_search_backup_settings",
+        )
+        assertTrue("默认英文缺少核心字符串：${requiredNames - defaultStrings.keys}", defaultStrings.keys.containsAll(requiredNames))
+        assertTrue(
+            "简体中文缺少核心字符串：${requiredNames - simplifiedChineseStrings.keys}",
+            simplifiedChineseStrings.keys.containsAll(requiredNames),
+        )
+        assertEquals("Torrent Search", defaultStrings.getValue("torrent_search_title"))
+        assertEquals("Torrent 搜索", simplifiedChineseStrings.getValue("torrent_search_title"))
+    }
+
+    /** 从 Gradle 可能采用的仓库根或模块根工作目录定位当前模块。 */
+    private fun findModuleRoot(): Path {
+        /** 测试工作目录由 Gradle 决定，因此同时兼容仓库根和模块根。 */
+        val workingDirectory = Path.of("").toAbsolutePath().normalize()
+        /** 直接命中用于 Gradle 将 user.dir 设为模块目录的情况。 */
+        val directModuleDirectory = workingDirectory.takeIf { directory ->
+            directory.fileName?.toString() == "torrent-search"
+        }
+        if (directModuleDirectory != null) return directModuleDirectory
+
+        /** 仓库根命中是当前项目标准 Gradle Test 工作目录。 */
+        val nestedModuleDirectory = workingDirectory.resolve("feature/torrent-search")
+        require(Files.isDirectory(nestedModuleDirectory)) { "无法定位 feature/torrent-search：$workingDirectory" }
+        return nestedModuleDirectory
+    }
+
+    /** 解析供应链清单并返回动态 JSON 对象，失败时保留文件路径上下文。 */
+    private fun parseManifest(manifestPath: Path): JsonObject {
+        /** 清单原文只包含公开上游元数据，不承载用户或运行时数据。 */
+        val manifestText = readUtf8(manifestPath)
+        return Json.parseToJsonElement(manifestText).jsonObject
+    }
+
+    /** 以 UTF-8 读取清单和 XML，并兼容 Android 单测使用的 Java API 基线。 */
+    private fun readUtf8(path: Path): String {
+        /** 资源与清单都固定为 UTF-8；显式字符集避免依赖测试机默认编码。 */
+        val bytes = Files.readAllBytes(path)
+        return bytes.toString(Charsets.UTF_8)
+    }
+
+    /** 枚举 res 中全部 XML，供 values 定义与 XML 引用契约共同复用。 */
+    private fun resourceXmlFiles(resDirectory: Path): List<Path> =
+        Files.walk(resDirectory).use { paths ->
+            paths
+                .filter(Files::isRegularFile)
+                .filter { path -> path.fileName.toString().endsWith(".xml") }
+                .toList()
+        }
+
+    /** 读取 string 资源 name 到文本的映射，只保护任务 2 已公开的核心文案。 */
+    private fun readNamedResourceValues(stringsPath: Path): Map<String, String> {
+        /** DOM 解析避免通过源文本 grep 绑定排版或属性顺序。 */
+        val document = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(stringsPath.toFile())
+        /** string 节点列表包含当前语言目录的全部普通字符串。 */
+        val stringNodes = document.getElementsByTagName("string")
+        /** 结果映射保留资源名与最终文本，供核心文案精确断言。 */
+        val values = linkedMapOf<String, String>()
+        for (index in 0 until stringNodes.length) {
+            /** 当前节点的 name 和 textContent 分别对应 R 名称与本地化文本。 */
+            val stringNode = stringNodes.item(index)
+            values[stringNode.attributes.getNamedItem("name").nodeValue] = stringNode.textContent
+        }
+        return values
+    }
+
+    /** 读取必填 JSON 字符串；缺失或类型错误直接让契约测试失败。 */
+    private fun JsonObject.requiredString(key: String): String = getValue(key).jsonPrimitive.content
+
+    /** 读取必填 JSON 布尔值；禁止用字符串形式模糊策略语义。 */
+    private fun JsonObject.requiredBoolean(key: String): Boolean = getValue(key).jsonPrimitive.boolean
+
+    /** 读取必填 JSON 数组；缺失或类型错误直接让契约测试失败。 */
+    private fun JsonObject.requiredArray(key: String): JsonArray = getValue(key).jsonArray
+
+    /** 读取必填 JSON 对象；用于保持网络和本地改造策略结构稳定。 */
+    private fun JsonObject.requiredObject(key: String): JsonObject = getValue(key).jsonObject
+
+    private companion object {
+        /** 模块资源前缀同时约束逻辑 ID、文件名和 XML 内部引用。 */
+        const val RESOURCE_PREFIX = "torrent_search_"
+
+        /** 完整 SHA-256 固定为 64 位小写十六进制。 */
+        val SHA_256_REGEX = Regex("^[0-9a-f]{64}$")
+
+        /** Provider code 只允许稳定小写字母、数字和单下划线分段。 */
+        val PROVIDER_CODE_REGEX = Regex("^[a-z0-9]+(?:_[a-z0-9]+)*$")
+
+        /** 域名只允许 ASCII 小写 host，不接受 scheme、路径、端口或通配符。 */
+        val DOMAIN_REGEX = Regex("^[a-z0-9]+(?:[.-][a-z0-9]+)+$")
+
+        /** XML 引用只扫描本地具体资源类型；android 命名空间不会匹配。 */
+        val RESOURCE_REFERENCE_REGEX = Regex(
+            "@(?:string|plurals|color|dimen|drawable|mipmap|xml|style|array|bool|integer|font|anim|animator|menu|raw)/([A-Za-z0-9_.]+)",
+        )
+
+        /** 首轮清单允许的 Provider 能力由真实接口实现推导，不能凭空扩展。 */
+        val CAPABILITY_CODES = setOf("search", "details", "latest", "top", "cloudflare")
+
+        /** 安全等级区分普通、上游显式 unsafe 以及支持 NSFW 分类三类。 */
+        val SAFETY_LEVELS = setOf("safe", "unsafe", "nsfw")
+
+        /** 拒绝 remote code/script/selector 的 URL 或 endpoint 字段，避免形成热更新入口。 */
+        val REMOTE_EXECUTABLE_URL_KEY_REGEX = Regex(
+            "\\\"remote(?:Code|Script|Selector)(?:Url|Endpoint)\\\"\\s*:",
+            RegexOption.IGNORE_CASE,
+        )
+    }
+}

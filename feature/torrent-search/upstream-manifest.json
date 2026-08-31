@@ -1,0 +1,983 @@
+{
+  "schemaVersion": 1,
+  "repositoryUrl": "https://github.com/prajwalch/TorrentSearch",
+  "commit": "ba82e889637027f7bed82715ec4d2106cbce5a28",
+  "license": "MIT",
+  "upstreamAuthor": "Prajwal Chapagain",
+  "providerRegistrySourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/di/BuiltinSearchProvidersModule.kt",
+  "providers": [
+    {
+      "code": "anilibria",
+      "displayName": "AniLibria",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/AniLibria.kt",
+      "sha256": "56ad7fb82d06c1d4e6f63d3da553ba51f21868795746311df8b7899688942797",
+      "capabilities": [
+        "search"
+      ],
+      "safetyLevel": "safe",
+      "nsfwCategorySupported": false,
+      "domains": [
+        "anilibria.top",
+        "www.anilibria.top"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "anirena",
+      "displayName": "AniRena",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/AniRena.kt",
+      "sha256": "f387441322baceb3760848d1f6dae1c28315ca7f53208c85a7d6eb83164be639",
+      "capabilities": [
+        "search",
+        "details",
+        "latest",
+        "top"
+      ],
+      "safetyLevel": "nsfw",
+      "nsfwCategorySupported": true,
+      "domains": [
+        "anirena.com"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "animetosho",
+      "displayName": "AnimeTosho",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/AnimeTosho.kt",
+      "sha256": "835931667c81aa25627cb998dedd996296bb297661734aa5e52e9df8ff34aae7",
+      "capabilities": [
+        "search",
+        "details"
+      ],
+      "safetyLevel": "safe",
+      "nsfwCategorySupported": false,
+      "domains": [
+        "animetosho.org"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "audiobookbay",
+      "displayName": "AudioBookBay",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/AudioBookBay.kt",
+      "sha256": "b79247c7e8d44b472513fab59773b231455c73fc763d1d1ba74bd6c94fbf3e61",
+      "capabilities": [
+        "search",
+        "details",
+        "latest"
+      ],
+      "safetyLevel": "safe",
+      "nsfwCategorySupported": false,
+      "domains": [
+        "audiobookbay.lu"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "btdigg",
+      "displayName": "BTDigg",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/BTDigg.kt",
+      "sha256": "9ca014627b7e184c9a22a2ea113210e931da505935b635db6425025035274cb7",
+      "capabilities": [
+        "search",
+        "details"
+      ],
+      "safetyLevel": "safe",
+      "nsfwCategorySupported": false,
+      "domains": [
+        "btdig.com"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "bangumimoe",
+      "displayName": "BangumiMoe",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/BangumiMoe.kt",
+      "sha256": "703d4a529db88874c3a5bd8503f1dac319008828da366a60b6e335a7dbb68b78",
+      "capabilities": [
+        "search",
+        "details",
+        "latest"
+      ],
+      "safetyLevel": "safe",
+      "nsfwCategorySupported": false,
+      "domains": [
+        "bangumi.moe"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "bitsearch",
+      "displayName": "BitSearch",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/BitSearch.kt",
+      "sha256": "5b16bf2415d017ae8421382ccd57f9c108fc46b95d6c0b2864f7caec71ebe657",
+      "capabilities": [
+        "search",
+        "details",
+        "latest",
+        "top"
+      ],
+      "safetyLevel": "nsfw",
+      "nsfwCategorySupported": true,
+      "domains": [
+        "bitsearch.to"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "blueroms",
+      "displayName": "BlueRoms",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/BlueRoms.kt",
+      "sha256": "8bc457314f01d54a54bbc69943b2529f512c409d511c0825e97fb1c9ae6eb5e2",
+      "capabilities": [
+        "search",
+        "details"
+      ],
+      "safetyLevel": "safe",
+      "nsfwCategorySupported": false,
+      "domains": [
+        "www.blueroms.ws"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "bt4g",
+      "displayName": "BT4G",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/Bt4g.kt",
+      "sha256": "992f4e631beee292a29d782086eab87f54ecb717e1216cc10742148b480b30be",
+      "capabilities": [
+        "search",
+        "details",
+        "latest",
+        "top",
+        "cloudflare"
+      ],
+      "safetyLevel": "safe",
+      "nsfwCategorySupported": false,
+      "domains": [
+        "bt4gprx.com"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "btsow",
+      "displayName": "Btsow",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/Btsow.kt",
+      "sha256": "bf0df6ab5e9cf1b2ed3ef46c82b90141d4c341bbad3afc35c7bf567e1cf593cd",
+      "capabilities": [
+        "search",
+        "details"
+      ],
+      "safetyLevel": "safe",
+      "nsfwCategorySupported": false,
+      "domains": [
+        "btsow.live"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "dmhy",
+      "displayName": "Dmhy",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/Dmhy.kt",
+      "sha256": "6e79330926f24cd9b007bc2a99e43674aaa74601f231921fd6bf6496112fd9f8",
+      "capabilities": [
+        "search",
+        "details",
+        "latest",
+        "top"
+      ],
+      "safetyLevel": "safe",
+      "nsfwCategorySupported": false,
+      "domains": [
+        "share.dmhy.org"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "extdotto",
+      "displayName": "Ext",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/Ext.kt",
+      "sha256": "46dfa037fec6b098c793e4b3c5af7c6e8b734ff30c0477447c4ce6d125cc2bf1",
+      "capabilities": [
+        "search",
+        "details",
+        "latest",
+        "top",
+        "cloudflare"
+      ],
+      "safetyLevel": "nsfw",
+      "nsfwCategorySupported": true,
+      "domains": [
+        "ext.to"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "eztvx",
+      "displayName": "Eztv",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/Eztv.kt",
+      "sha256": "c0c286d75e36a001dfe0cde426f57797839b3c87fb60d27799ac4a6f58effbdb",
+      "capabilities": [
+        "search",
+        "details",
+        "cloudflare"
+      ],
+      "safetyLevel": "safe",
+      "nsfwCategorySupported": false,
+      "domains": [
+        "eztvx.to"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "filemood",
+      "displayName": "FileMood",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/FileMood.kt",
+      "sha256": "93e387799ad1d688dddcce1412f5e9cf8ad9b6721ad97dc0da66d475cc561762",
+      "capabilities": [
+        "search",
+        "details"
+      ],
+      "safetyLevel": "safe",
+      "nsfwCategorySupported": false,
+      "domains": [
+        "filemood.com"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "internetarchive",
+      "displayName": "InternetArchive",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/InternetArchive.kt",
+      "sha256": "2e6a3a25155b872aa9e958f614b3d76682a9961e46fc47b46db97ac8a88c29f5",
+      "capabilities": [
+        "search",
+        "details"
+      ],
+      "safetyLevel": "nsfw",
+      "nsfwCategorySupported": true,
+      "domains": [
+        "archive.org"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "knaben",
+      "displayName": "Knaben",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/Knaben.kt",
+      "sha256": "465d0728c28720edbf98da1de2c7a0e952902d4e4efe55fca25b79342be30201",
+      "capabilities": [
+        "search",
+        "latest",
+        "top"
+      ],
+      "safetyLevel": "nsfw",
+      "nsfwCategorySupported": true,
+      "domains": [
+        "api.knaben.org",
+        "knaben.org"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "limetorrents",
+      "displayName": "LimeTorrents",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/LimeTorrents.kt",
+      "sha256": "34a5f5ec2d9cd44f1d14a56c52947c440e42f1c72a92e806a8b56a14b60e5d14",
+      "capabilities": [
+        "search",
+        "details",
+        "latest",
+        "top"
+      ],
+      "safetyLevel": "unsafe",
+      "nsfwCategorySupported": true,
+      "domains": [
+        "itorrents.net",
+        "limetorrents.fun",
+        "www.limetorrents.lol"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "linuxtracker",
+      "displayName": "LinuxTracker",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/LinuxTracker.kt",
+      "sha256": "eff5b74249d1a193c515efb1d1eb1cd7f54b49b51be2b4df58c206e8caf13b2b",
+      "capabilities": [
+        "search",
+        "details",
+        "latest",
+        "top"
+      ],
+      "safetyLevel": "safe",
+      "nsfwCategorySupported": false,
+      "domains": [
+        "linuxtracker.org"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "megapeer",
+      "displayName": "MegaPeer",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/MegaPeer.kt",
+      "sha256": "47a4dafe9663e919c32581f0d33b2c1a48bd8ea9fc130bb32311304e245a3599",
+      "capabilities": [
+        "search",
+        "details"
+      ],
+      "safetyLevel": "safe",
+      "nsfwCategorySupported": false,
+      "domains": [
+        "megapeer.vip"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "mikanproject",
+      "displayName": "Mikan",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/Mikan.kt",
+      "sha256": "1ea733b3f10fdd1e0443cf3832d3a823e1a6707293bd0f80f215949dc2f27670",
+      "capabilities": [
+        "search",
+        "details"
+      ],
+      "safetyLevel": "safe",
+      "nsfwCategorySupported": false,
+      "domains": [
+        "mikanani.me"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "mypornclub",
+      "displayName": "MyPornClub",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/MyPornClub.kt",
+      "sha256": "5fe33a0baeddb3e0a74cf3bd374cb04cf84c8328f08ef8c4a879442742cf487f",
+      "capabilities": [
+        "search",
+        "details",
+        "latest",
+        "top"
+      ],
+      "safetyLevel": "nsfw",
+      "nsfwCategorySupported": true,
+      "domains": [
+        "myporn.club"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "nekobt",
+      "displayName": "NekoBT",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/NekoBT.kt",
+      "sha256": "b6b8c897696fe81cd741309d2a59aabbd63977d06094a3d5d2ff05ba6b62c283",
+      "capabilities": [
+        "search",
+        "details",
+        "latest",
+        "top"
+      ],
+      "safetyLevel": "safe",
+      "nsfwCategorySupported": false,
+      "domains": [
+        "nekobt.to"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "nyaasi",
+      "displayName": "Nyaa",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/Nyaa.kt",
+      "sha256": "1e87b14991a76305f5d72f12eae7346bc761d20f998078ad5452f2365cf6db9a",
+      "capabilities": [
+        "search",
+        "details",
+        "latest",
+        "top"
+      ],
+      "safetyLevel": "safe",
+      "nsfwCategorySupported": false,
+      "domains": [
+        "nyaa.iss.ink",
+        "nyaa.si"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "oxtorrent",
+      "displayName": "OxTorrent",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/OxTorrent.kt",
+      "sha256": "f6ef674b7007b6864edb7185ecfa139db369b99e6c11716a3fc8e4002a5a07cd",
+      "capabilities": [
+        "search",
+        "details",
+        "latest",
+        "top"
+      ],
+      "safetyLevel": "safe",
+      "nsfwCategorySupported": false,
+      "domains": [
+        "oxtorrent.co"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "rutorinfo",
+      "displayName": "Rutor",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/Rutor.kt",
+      "sha256": "69746f430e7b38ff13b231ed953dadd1a6d97f8aebbf2031be44a575348a3ae5",
+      "capabilities": [
+        "search",
+        "details",
+        "latest",
+        "top"
+      ],
+      "safetyLevel": "safe",
+      "nsfwCategorySupported": false,
+      "domains": [
+        "rutor.info"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "subsplease",
+      "displayName": "SubsPlease",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/SubsPlease.kt",
+      "sha256": "d6f795b3722adb9b491dbbe772e6a25e2b15f9fd640220a21d8a9b64a8861955",
+      "capabilities": [
+        "search",
+        "details",
+        "latest"
+      ],
+      "safetyLevel": "safe",
+      "nsfwCategorySupported": false,
+      "domains": [
+        "subsplease.org"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "sukebeinyaa",
+      "displayName": "Sukebei",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/Sukebei.kt",
+      "sha256": "ed3edd9383c3296ebb7bcbeb2b59120a766cc596aceea4de6284519a6e89c2dd",
+      "capabilities": [
+        "search",
+        "details",
+        "latest",
+        "top"
+      ],
+      "safetyLevel": "nsfw",
+      "nsfwCategorySupported": true,
+      "domains": [
+        "sukebei.nyaa.si"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "thepiratebay",
+      "displayName": "ThePirateBay",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/ThePirateBay.kt",
+      "sha256": "e02675dc092498079e5018767d17668d416daa93baf994cfd5e8c90bf8c20497",
+      "capabilities": [
+        "search",
+        "details",
+        "latest",
+        "top"
+      ],
+      "safetyLevel": "unsafe",
+      "nsfwCategorySupported": true,
+      "domains": [
+        "apibay.org",
+        "knaben.xyz",
+        "thepiratebay.org"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "therarbag",
+      "displayName": "TheRarBg",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/TheRarBg.kt",
+      "sha256": "87540635eed558fb9f5a4a60fedbf9a3766ebfed68907157f95534428facb42c",
+      "capabilities": [
+        "search",
+        "details",
+        "latest",
+        "top"
+      ],
+      "safetyLevel": "unsafe",
+      "nsfwCategorySupported": true,
+      "domains": [
+        "therarbg.com"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "1337x",
+      "displayName": "1337x",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/ThirteenThirtySevenX.kt",
+      "sha256": "fc7604cdaef49b92de8b10c6eaaab8b6d8464f03447a32e34dfaacf9ac0ee386",
+      "capabilities": [
+        "search",
+        "details",
+        "top",
+        "cloudflare"
+      ],
+      "safetyLevel": "nsfw",
+      "nsfwCategorySupported": true,
+      "domains": [
+        "1337x.to",
+        "github.com",
+        "itorrents.org"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "tokyotoshokan",
+      "displayName": "TokyoToshokan",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/TokyoToshokan.kt",
+      "sha256": "be1ab0767770cf6938e842ddec72ef905876599fd6eff27c8f858d2636bb058f",
+      "capabilities": [
+        "search",
+        "details",
+        "latest",
+        "top"
+      ],
+      "safetyLevel": "nsfw",
+      "nsfwCategorySupported": true,
+      "domains": [
+        "tokyotosho.info"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "torrent9",
+      "displayName": "Torrent9",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/Torrent9.kt",
+      "sha256": "6a06da9b94fdb73f6034a6862a3e28e61239b5d46130de887d85707472f06299",
+      "capabilities": [
+        "search",
+        "details",
+        "latest",
+        "top"
+      ],
+      "safetyLevel": "safe",
+      "nsfwCategorySupported": false,
+      "domains": [
+        "www6.torrent9.to"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "torrentdatabase",
+      "displayName": "TorrentDatabase",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/TorrentDatabase.kt",
+      "sha256": "bd476499074f868b47349e9ce9f8d65ea4435fd0987cb433a9d7dca6a0b4539a",
+      "capabilities": [
+        "search",
+        "details",
+        "latest",
+        "top",
+        "cloudflare"
+      ],
+      "safetyLevel": "nsfw",
+      "nsfwCategorySupported": true,
+      "domains": [
+        "developify.ca"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "torrentdownloadinfo",
+      "displayName": "TorrentDownload",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/TorrentDownload.kt",
+      "sha256": "f42cb40b1c8a052786cb7c812c40c193e55eaab76db7aeb16b90be9d7e5b944f",
+      "capabilities": [
+        "search",
+        "details",
+        "latest",
+        "top"
+      ],
+      "safetyLevel": "nsfw",
+      "nsfwCategorySupported": true,
+      "domains": [
+        "itorrent.net",
+        "torrentdownload.info"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "torrentdownloads",
+      "displayName": "TorrentDownloads",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/TorrentDownloads.kt",
+      "sha256": "a3e05ebd7c951f5fdeceff2b57206999e774e4f8f50478cd25bf4bedb2d8647d",
+      "capabilities": [
+        "search",
+        "details",
+        "latest",
+        "top",
+        "cloudflare"
+      ],
+      "safetyLevel": "nsfw",
+      "nsfwCategorySupported": true,
+      "domains": [
+        "torrentdownloads.pro"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "torrentkitty",
+      "displayName": "TorrentKitty",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/TorrentKitty.kt",
+      "sha256": "0dc17ce16b9d7fee93b3d5d0996894594dce6395c4f37cc0c57cc7526b7f6f1e",
+      "capabilities": [
+        "search",
+        "details"
+      ],
+      "safetyLevel": "safe",
+      "nsfwCategorySupported": false,
+      "domains": [
+        "torrentkitty.tv"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "torrentscsv",
+      "displayName": "TorrentsCSV",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/TorrentsCSV.kt",
+      "sha256": "86544097f8a43ba6d6e6ac223571563711770278658a81cafad997079dd6629d",
+      "capabilities": [
+        "search"
+      ],
+      "safetyLevel": "safe",
+      "nsfwCategorySupported": false,
+      "domains": [
+        "torrents-csv.com"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "torrentz",
+      "displayName": "Torrentz",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/Torrentz.kt",
+      "sha256": "56615f8e53fe7cfbe1adf03726a508913ba79a990d5d12f0182f4cefd5b0bb16",
+      "capabilities": [
+        "search",
+        "details",
+        "latest",
+        "top"
+      ],
+      "safetyLevel": "nsfw",
+      "nsfwCategorySupported": true,
+      "domains": [
+        "torrentz2.nz"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "uindex",
+      "displayName": "UIndex",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/UIndex.kt",
+      "sha256": "8d3d55bfae1119a19c13e1e71c9f008c36e5acd01e97fc1e897187c6f3545c88",
+      "capabilities": [
+        "search",
+        "details",
+        "latest",
+        "top",
+        "cloudflare"
+      ],
+      "safetyLevel": "nsfw",
+      "nsfwCategorySupported": true,
+      "domains": [
+        "uindex.org"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "xxxclub",
+      "displayName": "XXXClub",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/XXXClub.kt",
+      "sha256": "71bba7a809f1d6cf2c50dcf55d7ad92774fb28df1ef19721209c7c33f51b6e7e",
+      "capabilities": [
+        "search",
+        "details",
+        "latest",
+        "top"
+      ],
+      "safetyLevel": "nsfw",
+      "nsfwCategorySupported": true,
+      "domains": [
+        "xxxclub.to"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "xxxtracker",
+      "displayName": "XXXTracker",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/XXXTracker.kt",
+      "sha256": "385520ad264c75a5e56e9ed247c95f5b4adeb44b4f0dae4611c8bf2444f92ce4",
+      "capabilities": [
+        "search",
+        "details",
+        "latest",
+        "top"
+      ],
+      "safetyLevel": "nsfw",
+      "nsfwCategorySupported": true,
+      "domains": [
+        "xxxtor.com"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "ytsmx",
+      "displayName": "Yts",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/Yts.kt",
+      "sha256": "af6b4ba6e654f0874bf1de44887bf47708aaaef513197b1e7e04d93fe804e9e6",
+      "capabilities": [
+        "search",
+        "details",
+        "latest",
+        "top"
+      ],
+      "safetyLevel": "safe",
+      "nsfwCategorySupported": false,
+      "domains": [
+        "movies-api.accel.li",
+        "yts.bz"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    },
+    {
+      "code": "0magnet",
+      "displayName": "0Magnet",
+      "sourcePath": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/ZeroMagnet.kt",
+      "sha256": "53ee95801f3d903a518d310c6485710b9f6bc481c7f4e3ca4edf674b171291a8",
+      "capabilities": [
+        "search",
+        "details"
+      ],
+      "safetyLevel": "nsfw",
+      "nsfwCategorySupported": true,
+      "domains": [
+        "9mag.net"
+      ],
+      "localNetworkPolicy": {
+        "httpsOnly": true,
+        "allowCleartext": false,
+        "allowUnlistedDomains": false
+      }
+    }
+  ],
+  "criticalFiles": [
+    {
+      "path": "LICENSE",
+      "sha256": "be80995b77363831f9d6cdab93e9f708742d19dccb0ce6e416f7df7069e78706"
+    },
+    {
+      "path": "gradle/libs.versions.toml",
+      "sha256": "f269bdea2f23a9734922d0ad5283d3e354e8cab426364e1b1e1cf295bdcf9b63"
+    },
+    {
+      "path": "app/build.gradle.kts",
+      "sha256": "65aa62be1daff83f42f9b13dda87c7cc19aea74f8359b6922db7840966baff69"
+    },
+    {
+      "path": "app/src/main/kotlin/com/prajwalch/torrentsearch/TorrentSearchApplication.kt",
+      "sha256": "0952ef189519156ed068b402480c4a6c7c1a3f630ea82db0a2ef10f96fcf5268"
+    },
+    {
+      "path": "app/src/main/kotlin/com/prajwalch/torrentsearch/ui/main/MainActivity.kt",
+      "sha256": "1b8664fb713ed41ec18bc0dca7cc5d3a33773f78898a853ddafe65be6f90499c"
+    },
+    {
+      "path": "app/src/main/kotlin/com/prajwalch/torrentsearch/providers/SearchProvider.kt",
+      "sha256": "62ed9cbe71bfef049cba4d67271fa8b527a0f5968c71f94a3ab35170f22ae0b2"
+    },
+    {
+      "path": "app/src/main/kotlin/com/prajwalch/torrentsearch/di/BuiltinSearchProvidersModule.kt",
+      "sha256": "7ffc53aa2847deaffe52d3d6df588c9c5e48a1bc6de0387dff56454bad778f86"
+    }
+  ],
+  "localAdaptations": {
+    "allowedCategories": [
+      "toolchainCompatibility",
+      "security",
+      "privacy",
+      "hiltHostIntegration",
+      "resourcePrefix"
+    ],
+    "remoteCodeDeliveryAllowed": false,
+    "remoteSelectorDeliveryAllowed": false,
+    "remoteScriptDeliveryAllowed": false
+  }
+}

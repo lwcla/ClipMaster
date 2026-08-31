@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="torrent_search_Theme.TorrentSearch.Main" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!-- 当前空壳不接管上游 launcher，也不引入 SplashScreen 运行时；保留主题名称但回退到平台父主题。 -->
+    <style name="torrent_search_Theme.TorrentSearch" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

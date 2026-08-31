@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="torrent_search_Theme.TorrentSearch" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/torrent_search_black</item>
+    </style>
+</resources>

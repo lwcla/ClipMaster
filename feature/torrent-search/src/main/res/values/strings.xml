@@ -1,10 +1,282 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="torrent_search_title">Torrent 搜索</string>
-    <string name="torrent_search_entry_description">聚合搜索种子资源</string>
-    <string name="torrent_search_placeholder_message">TorrentSearch 正在接入中</string>
-    <string name="torrent_search_backup_bookmarks">TorrentSearch 书签</string>
-    <string name="torrent_search_backup_search_histories">TorrentSearch 搜索历史</string>
-    <string name="torrent_search_backup_viewed_items">TorrentSearch 已查看</string>
-    <string name="torrent_search_backup_settings">TorrentSearch 设置</string>
+    <string name="torrent_search_title">Torrent Search</string>
+    <string name="torrent_search_entry_description">Search torrent sources in one place</string>
+    <string name="torrent_search_placeholder_message">TorrentSearch integration is in progress</string>
+    <string name="torrent_search_backup_bookmarks">TorrentSearch bookmarks</string>
+    <string name="torrent_search_backup_search_histories">TorrentSearch search history</string>
+    <string name="torrent_search_backup_viewed_items">TorrentSearch viewed items</string>
+    <string name="torrent_search_backup_settings">TorrentSearch settings</string>
+
+    <string name="torrent_search_app_name" translatable="false">Torrent Search</string>
+
+    <string name="torrent_search_button_done">Done</string>
+    <string name="torrent_search_button_cancel">Cancel</string>
+    <string name="torrent_search_button_try_again">Try again</string>
+    <string name="torrent_search_nsfw">NSFW</string>
+    <string name="torrent_search_torznab" translatable="false">Torznab</string>
+    <string name="torrent_search_safety_status_unsafe">Unsafe</string>
+    <string name="torrent_search_bookmarked_message">Bookmarked</string>
+    <string name="torrent_search_internet_connection_error">No internet connection</string>
+
+    <string name="torrent_search_category_all">All</string>
+    <string name="torrent_search_category_anime">Anime</string>
+    <string name="torrent_search_category_apps">Apps</string>
+    <string name="torrent_search_category_books">Books</string>
+    <string name="torrent_search_category_games">Games</string>
+    <string name="torrent_search_category_movies">Movies</string>
+    <string name="torrent_search_category_music">Music</string>
+    <string name="torrent_search_category_porn">Porn</string>
+    <string name="torrent_search_category_series">Series</string>
+    <string name="torrent_search_category_other">Other</string>
+
+    <string name="torrent_search_action_sort">Sort</string>
+    <string name="torrent_search_action_sort_criteria_name">Name</string>
+    <string name="torrent_search_action_sort_criteria_seeders">Seeders</string>
+    <string name="torrent_search_action_sort_criteria_peers">Peers</string>
+    <string name="torrent_search_action_sort_criteria_file_size">File size</string>
+    <string name="torrent_search_action_sort_criteria_date">Date</string>
+    <string name="torrent_search_action_sort_order_ascending">Ascending</string>
+    <string name="torrent_search_action_sort_order_descending">Descending</string>
+
+    <string name="torrent_search_torznab_conn_check_result_conn_established">Connection established</string>
+    <string name="torrent_search_torznab_conn_check_result_conn_failed">Connection failed. Check URL and server status.</string>
+    <string name="torrent_search_torznab_conn_check_result_invalid_api_key">Invalid API key</string>
+    <string name="torrent_search_torznab_conn_check_result_app_error">Application error (%1$d)</string>
+    <string name="torrent_search_torznab_conn_check_result_unexpected_response">Unexpected response (%1$d)</string>
+    <string name="torrent_search_torznab_conn_check_result_unexpected_error">Unexpected error</string>
+
+    <string name="torrent_search_torrent_file_downloading_message">Downloading torrent file…</string>
+    <string name="torrent_search_torrent_file_download_error">Download failed</string>
+    <string name="torrent_search_torrent_file_not_found_error">Torrent file not found on any source</string>
+    <string name="torrent_search_torrent_file_saving_message">Saving torrent file…</string>
+    <string name="torrent_search_torrent_file_saved_message">Torrent file saved</string>
+    <string name="torrent_search_torrent_file_save_error">Torrent file save failed</string>
+
+    <string name="torrent_search_torrent_client_not_found_title">Torrent client not found</string>
+    <string name="torrent_search_torrent_client_not_found_content">Install a torrent client to open magnet links.</string>
+    <string name="torrent_search_torrent_client_not_found_recommended_client_hint">Recommended client</string>
+    <string name="torrent_search_torrent_client_libretorrent" translatable="false">LibreTorrent</string>
+    <string name="torrent_search_torrent_client_aria2" translatable="false">Aria2App</string>
+    <string name="torrent_search_torrent_client_gopeed" translatable="false">Gopeed</string>
+    <string name="torrent_search_torrent_client_pikatorrent" translatable="false">PikaTorrent</string>
+    <string name="torrent_search_torrent_client_torrserve" translatable="false">TorrServe</string>
+
+    <string name="torrent_search_torrent_list_action_bookmark_torrent">Bookmark torrent</string>
+    <string name="torrent_search_torrent_list_action_delete_bookmark">Delete bookmark</string>
+    <string name="torrent_search_torrent_list_action_open_magnet_link">Open magnet link</string>
+    <string name="torrent_search_torrent_list_action_download_torrent_file">Download torrent file</string>
+    <string name="torrent_search_torrent_list_action_copy_magnet_link">Copy magnet link</string>
+    <string name="torrent_search_torrent_list_action_share_magnet_link">Share magnet link</string>
+    <string name="torrent_search_torrent_list_action_open_description_page">Open description page</string>
+    <string name="torrent_search_torrent_list_action_copy_description_page_url">Copy description page URL</string>
+    <string name="torrent_search_torrent_list_action_share_description_page_url">Share description page URL</string>
+    <string name="torrent_search_torrent_list_magnet_link_copied_message">Magnet link copied to clipboard!</string>
+    <string name="torrent_search_torrent_list_url_copied_message">Url copied to clipboard!</string>
+
+    <!-- MainActivity -->
+    <string name="torrent_search_main_cannot_search_using_url_message">Cannot search using a URL</string>
+    <string name="torrent_search_main_cannot_search_blank_query_message">Cannot search using a blank query</string>
+
+    <string name="torrent_search_crash_screen_title">Oops!</string>
+    <string name="torrent_search_crash_screen_subtitle">%1$s hit an unexpected error. Please export the logs and create a GitHub issue with the logs attached.</string>
+    <string name="torrent_search_crash_button_export_crash_logs">Export crash logs to file</string>
+    <string name="torrent_search_crash_button_restart_application">Restart the application</string>
+    <string name="torrent_search_crash_logs_export_success_message">Logs exported to a file</string>
+
+    <string name="torrent_search_home_search_query_hint">Search…</string>
+    <string name="torrent_search_home_button_search">Search</string>
+    <string name="torrent_search_home_button_browse">Browse</string>
+    <string name="torrent_search_home_title_enable_search_providers">Enable search providers</string>
+    <string name="torrent_search_home_search_providers_not_enabled_msg">No search providers are enabled yet. Want to enable the recommended ones?</string>
+    <string name="torrent_search_home_button_enable">Enable</string>
+    <string name="torrent_search_home_button_i_will_choose_myself">I\'ll choose myself</string>
+    <string name="torrent_search_home_title_recent_searches">Recent searches</string>
+
+    <string name="torrent_search_search_screen_title">Search</string>
+    <string name="torrent_search_search_action_refresh">Refresh</string>
+    <string name="torrent_search_search_action_stop_search">Stop search</string>
+    <string name="torrent_search_search_action_view_errors">View errors</string>
+    <string name="torrent_search_search_action_settings">Settings</string>
+    <string name="torrent_search_search_filter_query_hint">Search torrents</string>
+    <string name="torrent_search_search_filter_chip_dead_torrents">Dead torrents</string>
+    <string name="torrent_search_search_filter_chip_hide_viewed">Hide viewed</string>
+    <string name="torrent_search_search_filter_chip_search_providers">Search providers</string>
+    <string name="torrent_search_search_filter_providers_title">Filter by search provider</string>
+    <string name="torrent_search_search_filter_providers_action_select_all">Select all</string>
+    <string name="torrent_search_search_filter_providers_action_deselect_all">Deselect all</string>
+    <string name="torrent_search_search_filter_providers_action_invert_selection">Invert selection</string>
+    <string name="torrent_search_search_state_results_not_found_title">No results found</string>
+    <string name="torrent_search_search_state_results_not_found_description">No torrents matched \'%1$s\' in %2$s. Try a different query or check that search providers are enabled.</string>
+    <string name="torrent_search_search_button_go_to_providers">Go to providers</string>
+    <string name="torrent_search_search_results_count_format">%1$s results for \'%2$s\' (%3$s)</string>
+    <string name="torrent_search_search_errors_bottom_sheet_title">Failed search providers</string>
+    <string name="torrent_search_search_unexpected_error">Unexpected error</string>
+    <string name="torrent_search_search_error_crashed">Crashed</string>
+    <string name="torrent_search_search_error_cloudflare_challenge_encountered">Cloudflare challenge encountered</string>
+    <string name="torrent_search_search_title_stack_trace">Stack trace</string>
+    <string name="torrent_search_search_message_no_stack_trace">No stack trace found</string>
+    <string name="torrent_search_search_info_troubleshoot_help">To help troubleshoot issues, export the logs from the settings screen and create a GitHub issue with the logs attached.</string>
+
+    <string name="torrent_search_torrent_details_screen_title">Details</string>
+    <string name="torrent_search_torrent_details_action_open_link">Open link in browser</string>
+    <string name="torrent_search_torrent_details_action_copy_link">Copy page link</string>
+    <string name="torrent_search_torrent_details_action_share_link">Share page link</string>
+    <string name="torrent_search_torrent_details_tap_to_reveal_hint">Tap to reveal</string>
+    <string name="torrent_search_torrent_details_state_unavailable_title">Details unavailable</string>
+    <string name="torrent_search_torrent_details_state_unavailable_description">The page layout may have changed or the host is temporarily offline.</string>
+    <string name="torrent_search_torrent_details_state_unsupported_site_title">Unsupported URL</string>
+    <string name="torrent_search_torrent_details_state_unsupported_site_description">Couldn\'t retrieve details from %1$s. This torrent site may not be supported yet. Try opening details page in the browser instead.</string>
+    <string name="torrent_search_torrent_details_state_something_wrong_title">Something went wrong</string>
+    <string name="torrent_search_torrent_details_title_info">Torrent info</string>
+    <string name="torrent_search_torrent_details_title_screenshots">Screenshots</string>
+    <string name="torrent_search_torrent_details_title_description">Description</string>
+    <string name="torrent_search_torrent_details_label_file_size">File size</string>
+    <string name="torrent_search_torrent_details_label_seeders">Seeders</string>
+    <string name="torrent_search_torrent_details_label_peers">Peers</string>
+    <string name="torrent_search_torrent_details_label_upload_date">Upload date</string>
+    <string name="torrent_search_torrent_details_label_provider">Provider</string>
+    <string name="torrent_search_torrent_details_label_category">Category</string>
+    <string name="torrent_search_torrent_details_label_uploader">Uploader</string>
+    <string name="torrent_search_torrent_details_label_last_checked">Last checked</string>
+    <string name="torrent_search_torrent_details_label_info_hash">Info hash</string>
+    <string name="torrent_search_torrent_details_message_link_copied">Link copied to clipboard!</string>
+    <string name="torrent_search_torrent_details_message_info_hash_copied">Info hash copied to clipboard</string>
+    <string name="torrent_search_torrent_details_message_description_hidden">Description hidden</string>
+    <string name="torrent_search_torrent_details_error_image_load_failed">Failed to load</string>
+    <string name="torrent_search_torrent_details_button_open_magnet_link">Open magnet link</string>
+    <string name="torrent_search_torrent_details_button_download_torrent_file">Download torrent file</string>
+    <string name="torrent_search_torrent_details_button_open_in_browser">Open in browser</string>
+
+    <string name="torrent_search_bookmarks_screen_title">Bookmarks</string>
+    <plurals name="torrent_search_bookmarks_count_format">
+        <item quantity="one">%1$d bookmark</item>
+        <item quantity="other">%1$d bookmarks</item>
+    </plurals>
+    <string name="torrent_search_bookmarks_search_query_hint">Search bookmarks</string>
+    <string name="torrent_search_bookmarks_action_delete_all">Delete all</string>
+    <string name="torrent_search_bookmarks_action_import">Import from file</string>
+    <string name="torrent_search_bookmarks_action_export">Export to file</string>
+    <string name="torrent_search_bookmarks_action_settings">Settings</string>
+    <string name="torrent_search_bookmarks_dialog_title_delete_all">Delete all bookmarks?</string>
+    <string name="torrent_search_bookmarks_dialog_message_delete_all">Bookmarks will be permanently removed</string>
+    <string name="torrent_search_bookmarks_button_delete">Delete</string>
+    <string name="torrent_search_bookmarks_empty_message">No bookmarks</string>
+    <string name="torrent_search_bookmarks_swipe_delete_tip">You can also swipe left on a bookmark to delete it.</string>
+
+    <string name="torrent_search_browse_screen_title">Browse</string>
+    <string name="torrent_search_browse_search_query_hint">Search torrents</string>
+    <string name="torrent_search_browse_sort_latest">Latest</string>
+    <string name="torrent_search_browse_sort_top">Top</string>
+    <string name="torrent_search_browse_torrents_count_format">Found %1$d torrents</string>
+    <string name="torrent_search_browse_state_unavailable_title">Torrents unavailable</string>
+    <string name="torrent_search_browse_state_unavailable_description">No torrents to show. The required providers may be disabled or unreachable.</string>
+    <string name="torrent_search_browse_button_go_to_providers">Go to providers</string>
+    <string name="torrent_search_browse_button_try_again">Try again</string>
+
+    <string name="torrent_search_search_history_screen_title">Search history</string>
+    <string name="torrent_search_search_history_action_delete_all">Delete all</string>
+    <string name="torrent_search_search_history_empty_message">No search history</string>
+    <string name="torrent_search_search_history_query_copied_message">Query copied to clipboard!</string>
+    <string name="torrent_search_search_history_dialog_title_clear_history">Clear search history?</string>
+    <string name="torrent_search_search_history_dialog_message_clear_history">Search history will be permanently removed</string>
+    <string name="torrent_search_search_history_button_clear">Clear</string>
+    <string name="torrent_search_search_history_today">Today</string>
+    <string name="torrent_search_search_history_yesterday">Yesterday</string>
+
+    <string name="torrent_search_search_providers_screen_title">Search providers</string>
+    <string name="torrent_search_search_providers_action_enable_all">Enable all</string>
+    <string name="torrent_search_search_providers_action_disable_all">Disable all</string>
+    <string name="torrent_search_search_providers_action_update_protection_status">Update protection status</string>
+    <string name="torrent_search_search_providers_action_reset">Reset to default</string>
+    <string name="torrent_search_search_providers_reset_to_default_title">Reset to default?</string>
+    <string name="torrent_search_search_providers_reset_to_default_text">Enabled search providers will reset to the default set and cookies for protection-unlocked providers will be cleared.</string>
+    <string name="torrent_search_search_providers_reset_to_default_button_confirm">Reset</string>
+    <string name="torrent_search_search_providers_reset_to_default_button_dismiss">Cancel</string>
+    <string name="torrent_search_search_providers_list_action_edit">Edit configuration</string>
+    <string name="torrent_search_search_providers_list_action_delete">Delete</string>
+    <string name="torrent_search_search_providers_add_screen_title">Add search provider</string>
+    <string name="torrent_search_search_providers_button_save">Save</string>
+    <string name="torrent_search_search_providers_learn_how_to_add">Learn how to add</string>
+    <string name="torrent_search_search_providers_edit_screen_title">Edit search provider</string>
+    <string name="torrent_search_search_providers_label_name">Name</string>
+    <string name="torrent_search_search_providers_label_url">URL</string>
+    <string name="torrent_search_search_providers_url_validation_error">Not a valid URL</string>
+    <string name="torrent_search_search_providers_label_api_key">API key</string>
+    <string name="torrent_search_search_providers_title_supported_categories">Supported categories</string>
+    <string name="torrent_search_search_providers_subtitle_supported_categories">Select one or more categories</string>
+    <string name="torrent_search_search_providers_button_check_connection">Check connection</string>
+    <string name="torrent_search_search_providers_button_check_connection_checking">Checking connection…</string>
+    <string name="torrent_search_search_providers_button_auto_detect_categories">Auto-detect categories</string>
+    <string name="torrent_search_search_providers_button_auto_detect_categories_detecting">Detecting categories…</string>
+    <string name="torrent_search_search_providers_button_try_again">Try again</string>
+    <string name="torrent_search_search_providers_state_challenge_solving_title">Solving Cloudflare challenge…</string>
+    <string name="torrent_search_search_providers_state_challenge_solving_description">This may take a while. Cloudflare challenges sometimes require manual interaction like checking a box, so if it\'s taking too long, open the WebView from the top bar to complete it.</string>
+    <string name="torrent_search_search_providers_state_challenge_solved_title">Challenge solved!</string>
+    <string name="torrent_search_search_providers_state_challenge_solve_error_title">Unlock failed</string>
+    <string name="torrent_search_search_providers_state_challenge_solve_error_description">Couldn\'t solve the challenge. Make sure the internet connection is available and try again.</string>
+    <string name="torrent_search_search_providers_state_updating_protection_status">Updating protection status…</string>
+    <string name="torrent_search_search_providers_state_protection_status_update_complete">%1$d unlocked, %2$d need unlocking</string>
+    <string name="torrent_search_search_providers_chip_category">Category</string>
+    <string name="torrent_search_search_providers_chip_protection">Protection</string>
+    <string name="torrent_search_search_providers_protection_protected">Protected</string>
+    <string name="torrent_search_search_providers_protection_locked">Locked</string>
+    <string name="torrent_search_search_providers_protection_unlocked">Unlocked</string>
+    <string name="torrent_search_search_providers_search_hint">Search providers</string>
+
+    <string name="torrent_search_settings_screen_title">Settings</string>
+    <string name="torrent_search_settings_section_appearance">Appearance</string>
+    <string name="torrent_search_settings_enable_dynamic_theme">Enable dynamic theme</string>
+    <string name="torrent_search_settings_enable_dynamic_theme_summary">Generates app theme based on device wallpaper</string>
+    <string name="torrent_search_settings_dark_theme">Dark theme</string>
+    <string name="torrent_search_settings_dark_theme_on">On</string>
+    <string name="torrent_search_settings_dark_theme_off">Off</string>
+    <string name="torrent_search_settings_dark_theme_follow_system">Follow system</string>
+    <string name="torrent_search_settings_pure_black">Pure black</string>
+    <string name="torrent_search_settings_pure_black_summary">Enables AMOLED theme mode</string>
+    <string name="torrent_search_settings_section_general">General</string>
+    <string name="torrent_search_settings_language">Language</string>
+    <string name="torrent_search_settings_enable_nsfw_mode">Enable NSFW mode</string>
+    <string name="torrent_search_settings_enable_nsfw_mode_summary">When disabled, hides NSFW categories and search results.</string>
+    <string name="torrent_search_settings_blur_nsfw_images">Blur NSFW images</string>
+    <string name="torrent_search_settings_blur_nsfw_images_summary">Automatically blurs the NSFW images</string>
+    <string name="torrent_search_settings_clear_viewed_torrents">Clear viewed torrents</string>
+    <string name="torrent_search_settings_clear_viewed_torrents_summary">Clears the list of torrents you\'ve already opened</string>
+    <string name="torrent_search_settings_clear_viewed_torrents_dialog_text">Are you sure you want to clear all viewed torrents?</string>
+    <string name="torrent_search_settings_clear_viewed_torrents_dialog_button_clear">Clear</string>
+    <string name="torrent_search_settings_clear_viewed_torrents_dialog_button_cancel">Cancel</string>
+    <string name="torrent_search_settings_section_search">Search</string>
+    <string name="torrent_search_settings_search_providers">Search providers</string>
+    <string name="torrent_search_settings_search_providers_summary_format">%1$d of %2$d enabled</string>
+    <string name="torrent_search_settings_default_category">Default category</string>
+    <string name="torrent_search_settings_default_sort_options">Default sort options</string>
+    <string name="torrent_search_settings_section_sort_criteria">Sort criteria</string>
+    <string name="torrent_search_settings_section_sort_order">Sort order</string>
+    <string name="torrent_search_settings_max_num_results">Maximum number of results</string>
+    <string name="torrent_search_settings_max_num_results_summary_format">%1$d results</string>
+    <string name="torrent_search_settings_max_num_results_button_unlimited">Unlimited</string>
+    <string name="torrent_search_settings_section_search_history">Search history</string>
+    <string name="torrent_search_settings_save_search_history">Save search history</string>
+    <string name="torrent_search_settings_save_search_history_summary">Stores recent searches locally for quick access and suggestions</string>
+    <string name="torrent_search_settings_show_search_history">Show search history</string>
+    <string name="torrent_search_settings_show_search_history_summary">Show search history in search bar</string>
+    <string name="torrent_search_settings_section_advanced">Advanced</string>
+    <string name="torrent_search_settings_open_torrent_details_in_app">Open torrent details in app</string>
+    <string name="torrent_search_settings_open_torrent_details_in_app_summary">Opens torrent details directly in the app\'s native screen</string>
+    <string name="torrent_search_settings_enable_share_integration">Enable share integration</string>
+    <string name="torrent_search_settings_enable_share_integration_summary">When enabled, adds this app in the share menu.</string>
+    <string name="torrent_search_settings_enable_quick_search">Enable quick search</string>
+    <string name="torrent_search_settings_enable_quick_search_summary">When enabled, adds this app to the text selection menu (like Copy or Cut).</string>
+    <string name="torrent_search_settings_dns_over_https">DNS over HTTPS (DoH)</string>
+    <string name="torrent_search_settings_dns_over_https_label_provider">Provider</string>
+    <string name="torrent_search_settings_dns_over_https_summary">Resolves domain names through a secure connection instead of your network\'s default DNS</string>
+    <string name="torrent_search_settings_export_logs_to_file">Export logs to file</string>
+    <string name="torrent_search_settings_export_logs_to_file_summary">Generates a file with application activities that can help troubleshoot issues</string>
+    <string name="torrent_search_settings_section_about">About</string>
+    <string name="torrent_search_settings_version">Version</string>
+    <string name="torrent_search_settings_source_code">Source code</string>
+
+    <string name="torrent_search_limetorrents_unsafe_reason">Not technically unsafe, but it ignores category selection. Choose carefully.</string>
+    <string name="torrent_search_tpb_unsafe_reason">Many malware reports due to inadequate moderation.</string>
+    <string name="torrent_search_therarbg_unsafe_reason">Clone of original RARBG with many fake torrents. Use extreme caution.</string>
 </resources>
