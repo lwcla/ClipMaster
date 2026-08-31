@@ -7,13 +7,16 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.config.ClipItemQuickAction
+import com.cla.clip.feature.torrent.search.api.TorrentSearchFeatureEntry
 import com.cla.clip.master.ui.navigation.BackupRoute
 import com.cla.clip.master.ui.navigation.DownloadHistoryRoute
 import com.cla.clip.master.ui.navigation.FoldedClipsRoute
@@ -149,6 +152,42 @@ internal fun DownloadHistoryEntry(
         title = stringResource(R.string.base_general_download_history),
         description = stringResource(R.string.base_general_download_history_entry_desc),
         onClick = { onNavigate(DownloadHistoryRoute) }
+    )
+}
+
+/**
+ * TorrentSearch “我的”页入口宿主适配器。
+ *
+ * feature 负责提供本地化标题、说明与点击语义；宿主在此复用 [ListEntryCard]，统一圆角、主题间距、
+ * 动态字体溢出和同页入口视觉，且不让 feature 反向依赖 app 私有组件。
+ *
+ * @param onLaunch 用户点击入口后的启动回调，由导航层补充 Context 与稳定来源。
+ * @param modifier 调用方传入的布局修饰符，最终由共享入口卡片接管外边距。
+ */
+@Composable
+internal fun TorrentSearchFeatureEntry.MineListEntry(
+    onLaunch: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    MineEntry(
+        onLaunch = onLaunch,
+        /** 把 feature 内容适配到宿主唯一的入口卡片，不在 feature 内复制 Card、间距或文字样式。 */
+        entryCard = { title, description, onClick, cardModifier ->
+            ListEntryCard(
+                icon = {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                },
+                title = title,
+                description = description,
+                onClick = onClick,
+                modifier = cardModifier,
+            )
+        },
+        modifier = modifier,
     )
 }
 

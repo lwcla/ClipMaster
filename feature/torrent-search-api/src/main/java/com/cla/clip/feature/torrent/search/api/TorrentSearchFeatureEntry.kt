@@ -7,6 +7,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 
 /**
+ * 宿主提供的“我的”页入口卡片渲染器。
+ *
+ * 参数依次为本地化标题、本地化说明、点击回调和宿主布局修饰符；feature 只提供内容，宿主负责复用
+ * 自身卡片、主题 token、溢出规则和图标，避免 feature 反向依赖 app 私有 UI。
+ */
+typealias TorrentSearchMineEntryCard = @Composable (
+    title: String,
+    description: String,
+    onClick: () -> Unit,
+    modifier: Modifier,
+) -> Unit
+
+/**
  * TorrentSearch 对宿主暴露的稳定轻量入口。
  *
  * API 只包含显式 Activity 启动、两个宿主 Composable 插槽和备份展示映射；不得泄漏导航、Provider、
@@ -34,11 +47,13 @@ interface TorrentSearchFeatureEntry {
      * “我的”页入口；组件只抛出点击事件，由宿主决定 Context 和启动来源。
      *
      * @param onLaunch 用户确认启动后的回调，不在 API 组件内读取宿主导航或 Context。
+     * @param entryCard 宿主卡片渲染器，负责套用宿主共享卡片和主题 token。
      * @param modifier 宿主提供的布局修饰符，用于适配现有列表间距。
      */
     @Composable
     fun MineEntry(
         onLaunch: () -> Unit,
+        entryCard: TorrentSearchMineEntryCard,
         modifier: Modifier = Modifier,
     )
 

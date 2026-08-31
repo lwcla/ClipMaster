@@ -95,13 +95,13 @@
 
 ## 本次同步
 
-- 我的页入口卡片和权限设置项列表已接入 `ClipMasterCard` 公共内容卡片外壳；外边距和页面入口语义仍由本页面维护，公共外壳只负责圆角、阴影、边框和触摸裁剪规则，完整规则详见 `docs/shared_card_component_plan.md`。TorrentSearch 入口由功能 API 提供可发现启动能力，宿主只提供打开动作。
+- 我的页入口卡片和权限设置项列表已接入 `ClipMasterCard` 公共内容卡片外壳；外边距和页面入口语义仍由本页面维护，公共外壳只负责圆角、阴影、边框和触摸裁剪规则，完整规则详见 `docs/shared_card_component_plan.md`。TorrentSearch 功能 API 通过渲染 slot 提供本地化标题、说明和打开动作，宿主在 `MineEntries.kt` 的薄适配层复用 `ListEntryCard`、主题 token 与图标，避免实现模块反向依赖 app 私有 UI。
 - 我的页入口项复用 `ListEntryCard`；快捷动作设置弹窗复用 `SingleChoiceDialog`；权限项复用 `SettingSwitchEntryCard`，分别渲染 Shizuku 与通知两张入口式开关卡片。`SettingSwitchListCard` 继续作为表单式多项设置列表保留在共享组件中。本页面保留权限动作消费、系统跳转、Shizuku 回调监听和快捷动作枚举到资源文案的映射。
 - 自更新能力以 `docs/app_update_plan.md` 作为主文档；我的页只记录入口展示、用户触发和页面可见时的轻量检查边界，避免重复维护 GitHub/Gitee 发布契约。
 
-## TorrentSearch 接入影响（待实施）
+## TorrentSearch 接入影响（已实施）
 
-我的页只通过 `TorrentSearchFeatureEntry` 的可发现启动能力提供轻量入口；点击以空查询和 `mine` 稳定启动来源打开独立 Activity，不在 Mine ViewModel 预热 Provider、读取数据库或发起网络。关闭 `enableMagnetFeature` 时入口完全隐藏；旧 Academic Torrents 磁力入口随旧模块移除。搜索、安全提示、Provider 和数据规则以 [TorrentSearch 主方案](magnet_search_plan.md) 为准。
+我的页只通过 `TorrentSearchFeatureEntry` 的可发现启动能力提供轻量入口；功能实现提供本地化内容，宿主渲染 slot 复用现有 `ListEntryCard`，点击以空查询和 `mine` 稳定启动来源打开独立 Activity，不在 Mine ViewModel 预热 Provider、读取数据库或发起网络。关闭 `enableMagnetFeature` 时入口完全隐藏；旧 Academic Torrents 磁力入口随旧模块移除。搜索、安全提示、Provider 和数据规则以 [TorrentSearch 主方案](magnet_search_plan.md) 为准。
 
 ## 日志与诊断计划
 
@@ -111,6 +111,7 @@
 
 ## 变更记录
 
+- 2026-08-31：TorrentSearch 我的页入口改由功能 API 提供内容、宿主 `MineEntries.kt` 渲染 slot 复用 `ListEntryCard`；原因是实现模块不能反向依赖 app 私有组件，宿主薄适配可同时保持模块边界和页面视觉一致。
 - 2026-08-31：移除当前状态、交互、文件清单、验收和组件同步中的 `MagnetFeatureEntry` / Academic Torrents 现行表述；原因是旧磁力契约已废弃，仅保留历史变更记录。
 - 2026-08-30：同步我的页改为 TorrentSearch 独立 Activity 轻量入口及关闭构建隐藏规则；原因是旧磁力模块将被固定快照实现完整替换。
 - 2026-06-29：来源过滤选择页改为主进程 `QUERY_ALL_PACKAGES` + `PackageManager` 直读安装应用，并按可见行懒加载当前安装图标；原因是旧安装缓存同步方案未发布且实现复杂，当前自用/私有分发可以接受包可见性权限。

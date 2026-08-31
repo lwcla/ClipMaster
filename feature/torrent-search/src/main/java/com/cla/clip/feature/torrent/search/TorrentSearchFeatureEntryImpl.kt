@@ -3,28 +3,22 @@ package com.cla.clip.feature.torrent.search
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.cla.clip.feature.torrent.search.api.TorrentSearchBackupCountItem
 import com.cla.clip.feature.torrent.search.api.TorrentSearchFeatureEntry
 import com.cla.clip.feature.torrent.search.api.TorrentSearchLaunchSource
+import com.cla.clip.feature.torrent.search.api.TorrentSearchMineEntryCard
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -32,30 +26,6 @@ import dagger.hilt.components.SingletonComponent
 import dagger.multibindings.IntoSet
 import javax.inject.Inject
 import javax.inject.Singleton
-
-/** TorrentSearch 书签在备份 featureCounts 中的稳定计数 key。 */
-private const val TORRENT_SEARCH_BOOKMARK_COUNT_KEY = "torrent_search_bookmark_count"
-
-/** TorrentSearch 搜索历史在备份 featureCounts 中的稳定计数 key。 */
-private const val TORRENT_SEARCH_SEARCH_HISTORY_COUNT_KEY = "torrent_search_search_history_count"
-
-/** TorrentSearch 已查看条目在备份 featureCounts 中的稳定计数 key。 */
-private const val TORRENT_SEARCH_VIEWED_ITEM_COUNT_KEY = "torrent_search_viewed_item_count"
-
-/** TorrentSearch 非敏感设置在备份 featureCounts 中的稳定计数 key。 */
-private const val TORRENT_SEARCH_SETTING_COUNT_KEY = "torrent_search_setting_count"
-
-/** TorrentSearch 书签恢复报告的稳定分类 code。 */
-private const val TORRENT_SEARCH_BOOKMARK_CATEGORY = "torrent_search_bookmarks"
-
-/** TorrentSearch 搜索历史恢复报告的稳定分类 code。 */
-private const val TORRENT_SEARCH_SEARCH_HISTORY_CATEGORY = "torrent_search_search_histories"
-
-/** TorrentSearch 已查看条目恢复报告的稳定分类 code。 */
-private const val TORRENT_SEARCH_VIEWED_ITEM_CATEGORY = "torrent_search_viewed_items"
-
-/** TorrentSearch 非敏感设置恢复报告的稳定分类 code。 */
-private const val TORRENT_SEARCH_SETTING_CATEGORY = "torrent_search_settings"
 
 /**
  * TorrentSearch 的宿主入口实现。
@@ -68,12 +38,8 @@ internal class TorrentSearchFeatureEntryImpl @Inject constructor() : TorrentSear
     override val featureId: String = "torrent_search"
 
     /** 恢复报告按书签、搜索历史、已查看和设置的固定顺序展示。 */
-    override val restoreReportCategoryCodes: List<String> = listOf(
-        TORRENT_SEARCH_BOOKMARK_CATEGORY,
-        TORRENT_SEARCH_SEARCH_HISTORY_CATEGORY,
-        TORRENT_SEARCH_VIEWED_ITEM_CATEGORY,
-        TORRENT_SEARCH_SETTING_CATEGORY,
-    )
+    override val restoreReportCategoryCodes: List<String> =
+        TorrentSearchBackupDisplayMapper.restoreReportCategoryCodes
 
     /** 使用显式组件 Intent 启动独立 Activity，并只写入稳定来源 code。 */
     override fun launch(
@@ -92,39 +58,18 @@ internal class TorrentSearchFeatureEntryImpl @Inject constructor() : TorrentSear
         context.startActivity(launchIntent)
     }
 
-    /** 渲染“我的”页轻量入口，视觉遵循 MaterialTheme，点击动作完全交给宿主。 */
+    /** 提供“我的”页本地化内容，并把实际卡片、主题 token 与溢出规则交给宿主渲染器。 */
     @Composable
     override fun MineEntry(
         onLaunch: () -> Unit,
+        entryCard: TorrentSearchMineEntryCard,
         modifier: Modifier,
     ) {
-        Card(
-            modifier = modifier.fillMaxWidth(),
-            onClick = onLaunch,
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.torrent_search_title),
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Text(
-                        text = stringResource(R.string.torrent_search_entry_description),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
+        /** 当前语言环境下的入口标题，由实现模块资源提供但不决定宿主排版。 */
+        val title = stringResource(R.string.torrent_search_title)
+        /** 当前语言环境下的入口说明，由宿主共享卡片负责动态字体和溢出处理。 */
+        val description = stringResource(R.string.torrent_search_entry_description)
+        entryCard(title, description, onLaunch, modifier)
     }
 
     /** 渲染详情页等权快捷按钮，只回传调用方传入的候选查询文本。 */
@@ -146,35 +91,12 @@ internal class TorrentSearchFeatureEntryImpl @Inject constructor() : TorrentSear
 
     /** 按稳定 featureCounts key 生成宿主备份预检的四行计数。 */
     override fun backupCountItems(featureCounts: Map<String, Int>): List<TorrentSearchBackupCountItem> {
-        return listOf(
-            TorrentSearchBackupCountItem(
-                labelRes = R.string.torrent_search_backup_bookmarks,
-                count = featureCounts[TORRENT_SEARCH_BOOKMARK_COUNT_KEY] ?: 0,
-            ),
-            TorrentSearchBackupCountItem(
-                labelRes = R.string.torrent_search_backup_search_histories,
-                count = featureCounts[TORRENT_SEARCH_SEARCH_HISTORY_COUNT_KEY] ?: 0,
-            ),
-            TorrentSearchBackupCountItem(
-                labelRes = R.string.torrent_search_backup_viewed_items,
-                count = featureCounts[TORRENT_SEARCH_VIEWED_ITEM_COUNT_KEY] ?: 0,
-            ),
-            TorrentSearchBackupCountItem(
-                labelRes = R.string.torrent_search_backup_settings,
-                count = featureCounts[TORRENT_SEARCH_SETTING_COUNT_KEY] ?: 0,
-            ),
-        )
+        return TorrentSearchBackupDisplayMapper.backupCountItems(featureCounts)
     }
 
     /** 把稳定恢复分类 code 映射为实现模块资源，未知值返回 null 交给宿主兜底。 */
     override fun restoreCategoryLabelRes(categoryCode: String): Int? {
-        return when (categoryCode) {
-            TORRENT_SEARCH_BOOKMARK_CATEGORY -> R.string.torrent_search_backup_bookmarks
-            TORRENT_SEARCH_SEARCH_HISTORY_CATEGORY -> R.string.torrent_search_backup_search_histories
-            TORRENT_SEARCH_VIEWED_ITEM_CATEGORY -> R.string.torrent_search_backup_viewed_items
-            TORRENT_SEARCH_SETTING_CATEGORY -> R.string.torrent_search_backup_settings
-            else -> null
-        }
+        return TorrentSearchBackupDisplayMapper.restoreCategoryLabelRes(categoryCode)
     }
 }
 

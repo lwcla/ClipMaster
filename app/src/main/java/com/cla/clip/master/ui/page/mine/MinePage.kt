@@ -24,7 +24,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -137,10 +136,9 @@ fun MinePage(
             /** 可选入口按稳定功能 ID 排序，避免 Hilt Set 的无序性造成列表跳动。 */
             torrentSearchFeatures.sortedBy { it.featureId }.forEach { feature ->
                 item(key = "torrent_search_feature_${feature.featureId}") {
-                    feature.MineEntry(
+                    feature.MineListEntry(
                         /** 当前入口点击只回传所属实现，具体 Activity 启动由导航层完成。 */
                         onLaunch = { onLaunchTorrentSearch(feature) },
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                     )
                 }
             }

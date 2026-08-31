@@ -157,7 +157,7 @@
     <string name="base_general_prompt">提示</string>
     <string name="base_general_the_download_was_cancelled">下载被取消</string>
     <string name="base_general_download_history">下载记录</string>
-    <string name="base_general_download_history_entry_desc">查看和管理视频、图片和磁力记录</string>
+    <string name="base_general_download_history_entry_desc">查看和管理视频、图片记录</string>
     <string name="base_general_download_history_multi_select">多选</string>
     <string name="base_general_download_history_clear_current_tab">清空当前分类</string>
     <string name="base_general_download_history_selected_count">已选择 %1$d 条</string>

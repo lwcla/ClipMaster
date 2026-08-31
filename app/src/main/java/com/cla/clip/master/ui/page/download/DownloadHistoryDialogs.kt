@@ -101,9 +101,9 @@ internal data class DeleteRequestUi(
     /** 是否包含正在下载的记录；包含时弹窗提示会先停止下载任务。 */
     val hasRunning: Boolean,
 
-    /** 是否提供删除本地文件选项；磁力记录没有本地文件关联，只允许删除记录。 */
+    /** 是否提供删除本地文件选项；当前视频与图片记录都允许用户自行选择是否同步删除文件。 */
     val allowDeleteFiles: Boolean = true,
 
-    /** 当前 Tab 的确认文案；扩展 Tab 由扩展模块提供。 */
+    /** 当前内建视频或图片 Tab 的确认文案；按删除选中项或清空分类两种来源生成。 */
     val message: String,
 )
