@@ -205,6 +205,7 @@ class TorrentSearchUpstreamBaselineContractTest {
                 val document = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(resourcePath.toFile())
                 /** resources 的直接子节点包含 string/plurals/color/style 等逻辑资源。 */
                 val definitions = document.documentElement.childNodes
+                // index 逐项访问 DOM NodeList，避免依赖实现不保证的集合转换行为。
                 for (index in 0 until definitions.length) {
                     /** 非元素节点是缩进文本或注释，不参与资源 ID 契约。 */
                     val definition = definitions.item(index)
@@ -427,6 +428,7 @@ class TorrentSearchUpstreamBaselineContractTest {
         val stringNodes = document.getElementsByTagName("string")
         /** 结果映射保留资源名与最终文本，供核心文案精确断言。 */
         val values = linkedMapOf<String, String>()
+        // index 逐项访问 DOM NodeList，并保持资源文件中的稳定遍历顺序。
         for (index in 0 until stringNodes.length) {
             /** 当前节点的 name 和 textContent 分别对应 R 名称与本地化文本。 */
             val stringNode = stringNodes.item(index)

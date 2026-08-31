@@ -35,10 +35,15 @@ class SearchCoordinator(
 ) {
     /** 对全部已启用 Provider 执行一次搜索，返回可渐进收集的事件流。 */
     fun search(
+        /** 用户本次查询文本，只透传 Provider，协调器与日志均不读取其内容。 */
         query: String,
+        /** 本次统一分类筛选，按稳定领域 code 语义传给全部 Provider。 */
         category: Category,
+        /** 已启用来源快照；列表顺序仅影响启动顺序，不限制并发。 */
         providers: List<SearchProvider>,
+        /** 开启时只允许 SAFE 来源实际进入搜索。 */
         safeModeEnabled: Boolean,
+        /** 本次事件流最多发射的结果总数，非正数不会启动网络任务。 */
         maxResults: Int,
     ): Flow<SearchEvent> = channelFlow {
         /** 全局已发送结果数，跨独立 Provider 协程原子限制最大结果数量。 */
@@ -184,8 +189,11 @@ class SearchCoordinator(
 
     /** 发送失败事件并记录低敏结构化诊断；异常 message 和正文永远不进入日志。 */
     private suspend fun kotlinx.coroutines.channels.ProducerScope<SearchEvent>.emitFailure(
+        /** 发生失败的稳定 Provider ID，用于事件和低敏日志关联。 */
         providerId: ProviderId,
+        /** 已归一化的稳定失败原因，不携带第三方响应文本。 */
         reason: ProviderFailureReason,
+        /** Provider 启动毫秒时间，仅用于计算本地耗时。 */
         startTimeMs: Long,
         /** 只允许传入响应状态码；网络异常、超时和取消保持为空。 */
         httpStatusCode: Int? = null,
@@ -208,7 +216,9 @@ class SearchCoordinator(
 
     /** 在原子上限内截取当前批次，避免两个 Provider 同时越过最大结果数。 */
     private fun List<Torrent>.takeRemainingResults(
+        /** 跨 Provider 共享的已占用额度计数，原子更新避免并发超发。 */
         emittedResultCount: AtomicInteger,
+        /** 全局结果上限，调用前已归一化为正数。 */
         maxResults: Int,
     ): List<Torrent> {
         /** 接收当前 Provider 可安全发出的结果，保持 Provider 返回顺序。 */

@@ -126,6 +126,7 @@ class OkHttpTorrentSearchNetworkClient internal constructor(
      * response 在恢复调用方前关闭；prompt cancellation 保证取消与恢复竞争不会交付过期结果。
      */
     private suspend fun <T> executeInCallback(
+        /** 当前请求的唯一 Call；协程取消会直接取消它及正在读取的响应体。 */
         call: Call,
         /** 只在 callback 线程、response.use 作用域内执行的响应转换。 */
         transform: (Response) -> T,

@@ -43,8 +43,11 @@ internal class TorrentSearchFeatureEntryImpl @Inject constructor() : TorrentSear
 
     /** 使用显式组件 Intent 启动独立 Activity，并只写入稳定来源 code。 */
     override fun launch(
+        /** 启动宿主；非 Activity Context 会由实现补充新任务标记。 */
         context: Context,
+        /** 仅预填到搜索页的初始查询文本，后续输入加固由 Activity 负责。 */
         initialQuery: String,
+        /** 使用稳定 code 写入 Intent 的入口来源，不依赖枚举名称或 ordinal。 */
         launchSource: TorrentSearchLaunchSource,
     ) {
         /** 指向实现模块 Activity 的显式 Intent；非 Activity Context 需要新任务标记。 */
@@ -61,8 +64,11 @@ internal class TorrentSearchFeatureEntryImpl @Inject constructor() : TorrentSear
     /** 提供“我的”页本地化内容，并把实际卡片、主题 token 与溢出规则交给宿主渲染器。 */
     @Composable
     override fun MineEntry(
+        /** 用户点击“我的”入口后的宿主回调。 */
         onLaunch: () -> Unit,
+        /** 宿主提供的共享卡片渲染器，避免实现模块反向依赖 app UI。 */
         entryCard: TorrentSearchMineEntryCard,
+        /** 宿主传入的布局约束，保持共享入口排版一致。 */
         modifier: Modifier,
     ) {
         /** 当前语言环境下的入口标题，由实现模块资源提供但不决定宿主排版。 */
@@ -75,8 +81,11 @@ internal class TorrentSearchFeatureEntryImpl @Inject constructor() : TorrentSear
     /** 渲染详情页等权快捷按钮，只回传调用方传入的候选查询文本。 */
     @Composable
     override fun RowScope.DetailAction(
+        /** 详情页候选查询文本，仅在点击时原样交回宿主。 */
         initialQuery: String,
+        /** 点击后的查询启动回调，由宿主决定 Activity 启动时机。 */
         onLaunch: (String) -> Unit,
+        /** 等权 RowScope 按钮的外部布局约束。 */
         modifier: Modifier,
     ) {
         Button(
@@ -108,6 +117,7 @@ internal abstract class TorrentSearchFeatureBindingModule {
     @Binds
     @IntoSet
     abstract fun bindTorrentSearchFeatureEntry(
+        /** 唯一无状态入口实现，由 Hilt 创建后加入跨模块集合。 */
         impl: TorrentSearchFeatureEntryImpl,
     ): TorrentSearchFeatureEntry
 }

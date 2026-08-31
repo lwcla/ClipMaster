@@ -43,6 +43,7 @@ dependencies {
     // 实现模块只消费 API 契约；与现有 adapter 模块一致使用 implementation，确保 Hilt KSP 解析本模块绑定返回类型。
     implementation(project(":feature:torrent-search-api"))
 
+    // Compose BOM 统一约束本模块 UI 依赖版本，避免各组件自行漂移。
     val composeBom = platform(libs.androidx.compose.bom)
     implementation(composeBom)
     implementation(libs.activity.compose)
@@ -68,26 +69,41 @@ dependencies {
     testImplementation(libs.okhttp.tls)
 }
 
-/** Kotlin 声明行识别规则，仅扫描类型、方法和变量声明，不匹配调用链或普通表达式。 */
+/** Kotlin 显式声明行识别规则，只匹配类型、方法、构造和 val/var，不匹配普通调用表达式。 */
 val torrentSearchDeclarationPattern = Regex(
-    """^(?:(?:public|private|internal|protected|override|open|abstract|final|suspend|inline|tailrec|operator|infix|external|const|lateinit|data|sealed|enum|annotation|value|fun|companion)\s+)*(?:class|interface|object|fun|val|var)\b""",
+    """^(?:(?:public|private|internal|protected|override|open|abstract|final|suspend|inline|tailrec|operator|infix|external|const|lateinit|data|sealed|enum|annotation|value|fun|companion)\s+)*(?:class|interface|object(?!\s*:)|fun|constructor|typealias|val|var)\b""",
+)
+/** 普通多行参数识别规则，以名称和类型冒号为锚点，并排除使用等号的函数调用 named argument。 */
+val torrentSearchParameterPattern = Regex(
+    """^(?:(?:crossinline|noinline|vararg)\s+)?(?:(?:val|var)\s+)?[A-Za-z_][A-Za-z0-9_]*\s*:\s*[^=].*(?:,|\))$""",
+)
+/** for 循环头会声明单个或解构变量，必须像其他局部变量一样说明迭代语义。 */
+val torrentSearchForVariablePattern = Regex(
+    """^for\s*\(\s*(?:\([^)]*\)|[A-Za-z_][A-Za-z0-9_]*)\s+in\b""",
 )
 /** catch 参数同样属于局部变量声明，必须有贴近的简体中文边界说明。 */
 val torrentSearchCatchPattern = Regex("""(?:^|}\s*)catch\s*\(""")
 /** 命名或解构 lambda 都会声明回调变量，必须有贴近的简体中文用途说明。 */
-val torrentSearchLambdaParameterPattern = Regex("""\{\s*(?:\([^)]*\)|[A-Za-z_][A-Za-z0-9_]*)\s*->""")
+val torrentSearchLambdaParameterPattern = Regex(
+    """\{\s*(?:\([^)]*\)|[A-Za-z_][A-Za-z0-9_]*(?:\s*,\s*[A-Za-z_][A-Za-z0-9_]*)*)\s*->""",
+)
 /** 简体中文字符识别规则，用于确认注释不是仅有英文占位。 */
 val torrentSearchChineseCharacterPattern = Regex("[\\u4e00-\\u9fff]")
 
-/** 扫描一组 Kotlin 文本行，返回缺少贴近中文注释的声明、catch 与解构回调。 */
+/** 扫描一组 Kotlin 文本行，返回缺少贴近中文注释的声明、参数、循环、catch 与回调。 */
 fun collectTorrentSearchCommentViolations(sourceLines: List<String>, sourceLabel: String): List<String> {
     /** 当前文本中的全部违规位置。 */
     val violations = mutableListOf<String>()
+    /** 逐行检查可以保留精确行号；lineIndex 是零基下标，sourceLine 是未裁剪原文。 */
     sourceLines.forEachIndexed { lineIndex, sourceLine ->
         /** 去除缩进后的候选行，避免格式差异影响匹配。 */
         val candidateLine = sourceLine.trim()
-        /** 普通/多行参数声明、catch 变量和解构 lambda 都属于强制覆盖。 */
+        // 构建脚本中的合成 fixture 以字符串字面量保存；其内容只由下方独立 fixture 调用验证，不能当作脚本声明重复扫描。
+        if (candidateLine.startsWith("\"")) return@forEachIndexed
+        /** 类型/方法/变量、普通参数、循环变量、catch 变量和 lambda 参数都属于强制覆盖。 */
         val requiresComment = torrentSearchDeclarationPattern.containsMatchIn(candidateLine) ||
+            torrentSearchParameterPattern.containsMatchIn(candidateLine) ||
+            torrentSearchForVariablePattern.containsMatchIn(candidateLine) ||
             torrentSearchCatchPattern.containsMatchIn(candidateLine) ||
             torrentSearchLambdaParameterPattern.containsMatchIn(candidateLine)
         if (!requiresComment) return@forEachIndexed
@@ -127,37 +143,59 @@ tasks.register("checkTorrentSearchChineseComments") {
 
     /** 扫描主代码与测试代码；生成目录不属于人工注释契约。 */
     val torrentSearchKotlinSources = fileTree("src") { include("**/*.kt") }
-    inputs.files(torrentSearchKotlinSources)
+    /** 将模块构建脚本纳入同一门禁，避免扫描器自身新增声明或局部变量却绕过规则。 */
+    val torrentSearchCommentSources = files(
+        torrentSearchKotlinSources,
+        layout.projectDirectory.file("build.gradle.kts"),
+    )
+    inputs.files(torrentSearchCommentSources)
 
     /** 执行确定性文本扫描；失败会列出文件和行号供直接修正。 */
     doLast {
         /** 汇总全部缺少贴近中文注释的声明位置。 */
         val violations = mutableListOf<String>()
-        torrentSearchKotlinSources.files.sortedBy { sourceFile -> sourceFile.invariantSeparatorsPath }.forEach { sourceFile ->
+        /** sourceFile 代表当前被扫描的 Kotlin 源码或模块构建脚本，排序保证诊断稳定。 */
+        torrentSearchCommentSources.files.sortedBy { sourceFile -> sourceFile.invariantSeparatorsPath }.forEach { sourceFile ->
             /** 当前 Kotlin 文件的全部文本行，用于声明、回调和局部变量扫描。 */
             val sourceLines = sourceFile.readLines()
             /** 相对路径作为可行动诊断标签，不暴露工作机绝对路径。 */
             val sourceLabel = sourceFile.relativeTo(projectDir).invariantSeparatorsPath
             violations += collectTorrentSearchCommentViolations(sourceLines, sourceLabel)
         }
-        /** 无注释合成样本覆盖多行属性、callback 方法、catch、命名 lambda 与解构 lambda。 */
+        /** 无注释合成样本逐类锁定类型、方法、变量、普通参数、循环变量、异常和 lambda 声明。 */
         val invalidScannerFixture = listOf(
-            "    val field: String,",
-            "override fun onResponse() = Unit",
+            "class FixtureType",
+            "fun fixtureMethod() = Unit",
+            "val immutableValue = 1",
+            "var mutableValue = 2",
+            "    query: String,",
+            "for (index in indices) {",
             "} catch (failure: Throwable) {",
-            "registerCallback { result -> Unit }",
+            "items.map { item -> item }",
+            "items.zip(values) { name, value -> name to value }",
             "items.forEach { (name, value) -> Unit }",
         )
-        /** 五类遗漏都必须被扫描器独立识别。 */
+        /** 十类遗漏都必须被扫描器独立识别，避免某一种 Kotlin 写法绕过门禁。 */
         val invalidFixtureViolations = collectTorrentSearchCommentViolations(invalidScannerFixture, "invalid-fixture")
-        check(invalidFixtureViolations.size == 5) { "中文注释扫描器未覆盖全部合成遗漏：$invalidFixtureViolations" }
-        /** 带简体中文注释的合成样本必须全部放行，避免规则不可用。 */
+        check(invalidFixtureViolations.size == 10) { "中文注释扫描器未覆盖全部合成遗漏：$invalidFixtureViolations" }
+        /** 带简体中文注释的声明，以及调用参数、when 标签和继承语法，都不得被误报。 */
         val validScannerFixture = listOf(
-            "/** 字段用途。 */", "    val field: String,",
-            "/** 回调用途。 */", "override fun onResponse() = Unit",
+            "/** 类型用途。 */", "class FixtureType",
+            "/** 方法用途。 */", "fun fixtureMethod() = Unit",
+            "/** 不可变值用途。 */", "val immutableValue = 1",
+            "/** 可变值用途。 */", "var mutableValue = 2",
+            "/** 查询参数用途。 */", "    query: String,",
+            "// 循环下标用途。", "for (index in indices) {",
             "// 异常边界。", "} catch (failure: Throwable) {",
-            "// 回调结果用途。", "registerCallback { result -> Unit }",
+            "// 单参数回调用途。", "items.map { item -> item }",
+            "// name 与 value 回调用途。", "items.zip(values) { name, value -> name to value }",
             "// name 与 value 的用途。", "items.forEach { (name, value) -> Unit }",
+            "submit(query = \"synthetic\")",
+            "when (state) {",
+            "    READY -> Unit",
+            "}",
+            ") : SearchProvider",
+            "object : SearchProvider {}",
         )
         /** 合法合成样本不得产生误报。 */
         val validFixtureViolations = collectTorrentSearchCommentViolations(validScannerFixture, "valid-fixture")
