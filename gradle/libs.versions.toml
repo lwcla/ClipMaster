@@ -36,6 +36,8 @@ paletteKtx = "1.0.0"
 paging_version = "3.4.2"
 #okhttp
 okhttp = "5.3.2"
+# Provider 协调器依赖协程 Flow、取消与超时能力，版本固定以确保生产和 JVM 测试行为一致。
+coroutines = "1.10.2"
 codelocator = "2.0.4"
 kontlinx-serialization-json = "1.11.0"
 work = "2.11.2"
@@ -111,6 +113,11 @@ paging-common = { group = "androidx.paging", name = "paging-common", version.ref
 #okhttp
 okhttp-client = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 okhttp-logger = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
+# 搜索内核仅通过直接 OkHttp 实现网络边界，避免引入 Ktor 或其他 HTTP 栈。
+okhttp-mockwebserver = { group = "com.squareup.okhttp3", name = "mockwebserver3", version.ref = "okhttp" }
+# Provider 调度器使用协程，测试使用虚拟调度器验证超时和取消边界。
+kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 # codelocator，用于在调试时定位代码位置，提升调试效率 https://github.com/bytedance/CodeLocator
 codelocator-core = { group = "com.bytedance.tools.codelocator", name = "codelocator-core", version.ref = "codelocator" }
 #json

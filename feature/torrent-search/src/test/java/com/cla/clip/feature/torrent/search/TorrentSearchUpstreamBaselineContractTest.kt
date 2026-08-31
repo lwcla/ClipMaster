@@ -310,11 +310,13 @@ class TorrentSearchUpstreamBaselineContractTest {
         val manifest = Json.parseToJsonElement(manifestText).jsonObject
         /** 当前 Provider 对以稳定 code 和上游相对路径组合，顺序也属于审查结果。 */
         val actualProviderPairs = manifest.requiredArray("providers").map { provider ->
+            /** 当前 manifest Provider 对象，只读取固定 code 与 sourcePath。 */
             val providerObject = provider.jsonObject
             providerObject.requiredString("code") + "|" + providerObject.requiredString("sourcePath")
         }
         /** fixture 明确列出 43 对 code/path，禁止仅按数量或格式自洽。 */
         val expectedProviderPairs = reviewedSnapshot.requiredArray("providerSourcePairs").map { provider ->
+            /** 当前审查 fixture Provider 对象，作为独立固定期望。 */
             val providerObject = provider.jsonObject
             providerObject.requiredString("code") + "|" + providerObject.requiredString("sourcePath")
         }
@@ -322,11 +324,13 @@ class TorrentSearchUpstreamBaselineContractTest {
 
         /** 关键文件数组的 path/SHA 对独立锁定，避免替换为任意 64 位十六进制。 */
         val actualCriticalFiles = manifest.requiredArray("criticalFiles").map { file ->
+            /** 当前 manifest 关键文件对象，只读取路径与摘要。 */
             val fileObject = file.jsonObject
             fileObject.requiredString("path") + "|" + fileObject.requiredString("sha256")
         }
         /** fixture 记录固定提交对应的七个审计文件和实际 SHA。 */
         val expectedCriticalFiles = reviewedSnapshot.requiredArray("criticalFiles").map { file ->
+            /** 当前审查 fixture 关键文件对象，提供独立摘要期望。 */
             val fileObject = file.jsonObject
             fileObject.requiredString("path") + "|" + fileObject.requiredString("sha256")
         }
@@ -356,6 +360,7 @@ class TorrentSearchUpstreamBaselineContractTest {
         assertEquals(expectedCount, actualInventory.size)
         /** fixture 中每项均为相对路径和审查时的字节 SHA。 */
         val expectedInventory = reviewedSnapshot.requiredArray("resourceFiles").map { resource ->
+            /** 当前审查 fixture 资源对象，提供固定路径与摘要。 */
             val resourceObject = resource.jsonObject
             resourceObject.requiredString("path") + "|" + resourceObject.requiredString("sha256")
         }
@@ -427,6 +432,7 @@ class TorrentSearchUpstreamBaselineContractTest {
     /** 读取必填 JSON 对象；用于保持网络和本地改造策略结构稳定。 */
     private fun JsonObject.requiredObject(key: String): JsonObject = getValue(key).jsonObject
 
+    /** 上游基线 fixture 的稳定常量入口，避免测试方法内散落路径和协议值。 */
     private companion object {
         /** 模块资源前缀同时约束逻辑 ID、文件名和 XML 内部引用。 */
         const val RESOURCE_PREFIX = "torrent_search_"
