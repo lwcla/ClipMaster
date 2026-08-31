@@ -98,8 +98,6 @@ fun collectTorrentSearchCommentViolations(sourceLines: List<String>, sourceLabel
     sourceLines.forEachIndexed { lineIndex, sourceLine ->
         /** 去除缩进后的候选行，避免格式差异影响匹配。 */
         val candidateLine = sourceLine.trim()
-        // 构建脚本中的合成 fixture 以字符串字面量保存；其内容只由下方独立 fixture 调用验证，不能当作脚本声明重复扫描。
-        if (candidateLine.startsWith("\"")) return@forEachIndexed
         /** 类型/方法/变量、普通参数、循环变量、catch 变量和 lambda 参数都属于强制覆盖。 */
         val requiresComment = torrentSearchDeclarationPattern.containsMatchIn(candidateLine) ||
             torrentSearchParameterPattern.containsMatchIn(candidateLine) ||
@@ -134,6 +132,15 @@ fun collectTorrentSearchCommentViolations(sourceLines: List<String>, sourceLabel
     return violations
 }
 
+/** 未注释 Kotlin 样本文件，独立于构建脚本以免 fixture 字符串形成扫描绕过。 */
+val torrentSearchInvalidCommentFixture = layout.projectDirectory.file(
+    "src/test/resources/comment-scan/invalid-kotlin.txt",
+)
+/** 已正确注释及合法非声明样本文件，用于锁定扫描器的误报边界。 */
+val torrentSearchValidCommentFixture = layout.projectDirectory.file(
+    "src/test/resources/comment-scan/valid-kotlin.txt",
+)
+
 /** 注册模块级中文注释扫描，供每个实现批次和 CI 重复执行。 */
 tasks.register("checkTorrentSearchChineseComments") {
     /** 将任务归入 verification，便于与单测和编译门禁一起发现。 */
@@ -149,6 +156,8 @@ tasks.register("checkTorrentSearchChineseComments") {
         layout.projectDirectory.file("build.gradle.kts"),
     )
     inputs.files(torrentSearchCommentSources)
+    inputs.file(torrentSearchInvalidCommentFixture)
+    inputs.file(torrentSearchValidCommentFixture)
 
     /** 执行确定性文本扫描；失败会列出文件和行号供直接修正。 */
     doLast {
@@ -162,41 +171,13 @@ tasks.register("checkTorrentSearchChineseComments") {
             val sourceLabel = sourceFile.relativeTo(projectDir).invariantSeparatorsPath
             violations += collectTorrentSearchCommentViolations(sourceLines, sourceLabel)
         }
-        /** 无注释合成样本逐类锁定类型、方法、变量、普通参数、循环变量、异常和 lambda 声明。 */
-        val invalidScannerFixture = listOf(
-            "class FixtureType",
-            "fun fixtureMethod() = Unit",
-            "val immutableValue = 1",
-            "var mutableValue = 2",
-            "    query: String,",
-            "for (index in indices) {",
-            "} catch (failure: Throwable) {",
-            "items.map { item -> item }",
-            "items.zip(values) { name, value -> name to value }",
-            "items.forEach { (name, value) -> Unit }",
-        )
-        /** 十类遗漏都必须被扫描器独立识别，避免某一种 Kotlin 写法绕过门禁。 */
+        /** 无注释合成样本独立锁定类型、方法、构造、变量、参数、循环、异常和 lambda 声明。 */
+        val invalidScannerFixture = torrentSearchInvalidCommentFixture.asFile.readLines()
+        /** 十二类遗漏都必须被扫描器识别，包括字符串 receiver 的命名 lambda，避免字符串行绕过门禁。 */
         val invalidFixtureViolations = collectTorrentSearchCommentViolations(invalidScannerFixture, "invalid-fixture")
-        check(invalidFixtureViolations.size == 10) { "中文注释扫描器未覆盖全部合成遗漏：$invalidFixtureViolations" }
-        /** 带简体中文注释的声明，以及调用参数、when 标签和继承语法，都不得被误报。 */
-        val validScannerFixture = listOf(
-            "/** 类型用途。 */", "class FixtureType",
-            "/** 方法用途。 */", "fun fixtureMethod() = Unit",
-            "/** 不可变值用途。 */", "val immutableValue = 1",
-            "/** 可变值用途。 */", "var mutableValue = 2",
-            "/** 查询参数用途。 */", "    query: String,",
-            "// 循环下标用途。", "for (index in indices) {",
-            "// 异常边界。", "} catch (failure: Throwable) {",
-            "// 单参数回调用途。", "items.map { item -> item }",
-            "// name 与 value 回调用途。", "items.zip(values) { name, value -> name to value }",
-            "// name 与 value 的用途。", "items.forEach { (name, value) -> Unit }",
-            "submit(query = \"synthetic\")",
-            "when (state) {",
-            "    READY -> Unit",
-            "}",
-            ") : SearchProvider",
-            "object : SearchProvider {}",
-        )
+        check(invalidFixtureViolations.size == 12) { "中文注释扫描器未覆盖全部合成遗漏：$invalidFixtureViolations" }
+        /** 带简体中文注释的声明和合法非声明样本由独立文件提供，避免扫描器测试污染自身源码。 */
+        val validScannerFixture = torrentSearchValidCommentFixture.asFile.readLines()
         /** 合法合成样本不得产生误报。 */
         val validFixtureViolations = collectTorrentSearchCommentViolations(validScannerFixture, "valid-fixture")
         check(validFixtureViolations.isEmpty()) { "中文注释扫描器误报合法合成样本：$validFixtureViolations" }

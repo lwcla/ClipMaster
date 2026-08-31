@@ -1,0 +1,12 @@
+class FixtureType
+fun fixtureMethod() = Unit
+constructor(value: String)
+val immutableValue = 1
+var mutableValue = 2
+    query: String,
+for (index in indices) {
+} catch (failure: Throwable) {
+items.map { item -> item }
+items.zip(values) { name, value -> name to value }
+items.forEach { (name, value) -> Unit }
+"x".let { value -> value.length }
