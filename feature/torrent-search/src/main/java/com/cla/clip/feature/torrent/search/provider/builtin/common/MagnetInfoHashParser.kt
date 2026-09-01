@@ -3,6 +3,7 @@ package com.cla.clip.feature.torrent.search.provider.builtin.common
 import com.cla.clip.feature.torrent.search.provider.ProviderParseException
 import java.net.URI
 import java.net.URLDecoder
+import java.net.URLEncoder
 import java.util.Locale
 
 /** 解析 magnet btih 并统一生成 40 位小写 hex 稳定键，不在失败中回显原始 URI。 */
@@ -13,6 +14,33 @@ internal object MagnetInfoHashParser {
     private val base32Pattern = Regex("^[A-Z2-7a-z]{32}$")
     /** RFC 4648 base32 索引表，大小写输入都先转大写。 */
     private const val base32Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+    /** 固定上源 `ba82e889` 的公共 tracker 快照；顺序属于 magnet 输出契约，禁止运行时联网刷新。 */
+    private val publicTrackers = listOf(
+        "udp://tracker.opentrackr.org:1337/announce",
+        "udp://open.demonoid.ch:6969/announce",
+        "udp://open.demonii.com:1337/announce",
+        "udp://open.stealth.si:80/announce",
+        "udp://exodus.desync.com:6969/announce",
+        "udp://tracker.torrent.eu.org:451/announce",
+        "udp://explodie.org:6969/announce",
+        "udp://tracker2.dler.org:80/announce",
+        "udp://tracker.qu.ax:6969/announce",
+        "udp://tracker.filemail.com:6969/announce",
+        "udp://tracker.dler.org:6969/announce",
+        "udp://tracker.bittor.pw:1337/announce",
+        "udp://tracker.0x7c0.com:6969/announce",
+        "udp://tracker-udp.gbitt.info:80/announce",
+        "udp://run.publictracker.xyz:6969/announce",
+        "udp://retracker01-msk-virt.corbina.net:80/announce",
+        "udp://p4p.arenabg.com:1337/announce",
+        "udp://opentracker.io:6969/announce",
+        "udp://open.tracker.cl:1337/announce",
+        "udp://leet-tracker.moe:1337/announce",
+    )
+    /** 按固定顺序 URL 编码的 tracker 参数，避免 `:`、`/` 被误解释为 magnet 查询结构。 */
+    private val publicTrackerParameters = publicTrackers.joinToString(separator = "&") { tracker ->
+        "tr=${URLEncoder.encode(tracker, Charsets.UTF_8.name())}"
+    }
 
     /** 解析 magnet 的 xt=urn:btih 参数；非法 scheme、缺参数或非法 hash 返回 null。 */
     fun parse(magnetUri: String): String? {
@@ -24,8 +52,8 @@ internal object MagnetInfoHashParser {
         if (!rawSchemeSpecificPart.startsWith('?')) return null
         /** 原始查询在本方法内解码，不进入日志或异常。 */
         val rawQuery = rawSchemeSpecificPart.removePrefix("?")
-        /** 第一个合法 btih xt 参数，其他 tracker 或显示名不影响稳定键。 */
-        val rawInfoHash = rawQuery.split('&').firstNotNullOfOrNull { parameter ->
+        /** 第一个可规范化的合法 btih xt 参数；非法 xt 不阻断后续候选。 */
+        return rawQuery.split('&').firstNotNullOfOrNull { parameter ->
             /** 查询名与值仅在内存中短暂存在，不传递到外部。 */
             val nameAndValue = parameter.split('=', limit = 2)
             if (nameAndValue.size != 2 || !nameAndValue[0].equals("xt", ignoreCase = true)) {
@@ -37,9 +65,9 @@ internal object MagnetInfoHashParser {
                 decodedValue?.takeIf { value -> value.startsWith("urn:btih:", ignoreCase = true) }
                     ?.substringAfter(':')
                     ?.substringAfter(':')
+                    ?.let(::normalize)
             }
-        } ?: return null
-        return normalize(rawInfoHash)
+        }
     }
 
     /** 规范化裸 btih：40 位 hex 转小写，32 位 base32 解码为小写 hex，其他返回 null。 */
@@ -56,11 +84,11 @@ internal object MagnetInfoHashParser {
     /** 必需语义的 magnet 解析；失败统一抛出无 message 的 ProviderParseException。 */
     fun require(magnetUri: String): String = parse(magnetUri) ?: throw ProviderParseException()
 
-    /** 用已规范化 infoHash 生成最小 canonical magnet；非法 hash 抛出低敏解析异常。 */
+    /** 用规范化 infoHash 和固定快照 tracker 生成 canonical magnet；非法 hash 抛低敏解析异常。 */
     fun create(rawInfoHash: String): String {
         /** 用于业务稳定键的小写 hex，不保留输入格式差异。 */
         val normalizedInfoHash = normalize(rawInfoHash) ?: throw ProviderParseException()
-        return "magnet:?xt=urn:btih:$normalizedInfoHash"
+        return "magnet:?xt=urn:btih:$normalizedInfoHash&$publicTrackerParameters"
     }
 
     /** 将恰好 160 bit 的 base32 值按 RFC 4648 解码为 20 字节小写 hex。 */

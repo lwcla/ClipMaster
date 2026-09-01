@@ -31,6 +31,53 @@ class MagnetInfoHashParserTest {
         )
     }
 
+    /** 非零 20 字节已知向量必须保持 RFC 4648 位序，不能只靠全零样本掩盖错位。 */
+    @Test
+    fun parseConvertsIndependentNonZeroBase32Vector() {
+        /** 该 base32 由 Python 标准库对固定字节 `001122...3040` 独立计算，不复用生产 helper。 */
+        val magnet = "magnet:?xt=urn:btih:AAISEM2EKVTHPCEZVK54ZXPO74ICAMCA"
+
+        assertEquals("00112233445566778899aabbccddeeff10203040", MagnetInfoHashParser.parse(magnet))
+    }
+
+    /** 前一个 btih 非法时必须继续查找后续合法 xt，避免多 xt magnet 被错误拒绝。 */
+    @Test
+    fun parseSkipsInvalidBtihAndUsesLaterValidXt() {
+        /** 第一个 xt 长度非法，第二个 xt 是独立固定的合法 40 位 hash。 */
+        val magnet = "magnet:?xt=urn:btih:invalid&xt=urn:btih:00112233445566778899AABBCCDDEEFF10203040"
+
+        assertEquals("00112233445566778899aabbccddeeff10203040", MagnetInfoHashParser.parse(magnet))
+    }
+
+    /** 创建 magnet 必须保留固定快照的 20 个公共 tracker、顺序和 URL 编码。 */
+    @Test
+    fun createIncludesSnapshotTrackersInExactEncodedOrder() {
+        /** 完整期望由固定 `ba82e889` tracker 列表逐项独立 URL 编码后写死。 */
+        val expected = "magnet:?xt=urn:btih:00112233445566778899aabbccddeeff10203040" +
+            "&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce" +
+            "&tr=udp%3A%2F%2Fopen.demonoid.ch%3A6969%2Fannounce" +
+            "&tr=udp%3A%2F%2Fopen.demonii.com%3A1337%2Fannounce" +
+            "&tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce" +
+            "&tr=udp%3A%2F%2Fexodus.desync.com%3A6969%2Fannounce" +
+            "&tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce" +
+            "&tr=udp%3A%2F%2Fexplodie.org%3A6969%2Fannounce" +
+            "&tr=udp%3A%2F%2Ftracker2.dler.org%3A80%2Fannounce" +
+            "&tr=udp%3A%2F%2Ftracker.qu.ax%3A6969%2Fannounce" +
+            "&tr=udp%3A%2F%2Ftracker.filemail.com%3A6969%2Fannounce" +
+            "&tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce" +
+            "&tr=udp%3A%2F%2Ftracker.bittor.pw%3A1337%2Fannounce" +
+            "&tr=udp%3A%2F%2Ftracker.0x7c0.com%3A6969%2Fannounce" +
+            "&tr=udp%3A%2F%2Ftracker-udp.gbitt.info%3A80%2Fannounce" +
+            "&tr=udp%3A%2F%2Frun.publictracker.xyz%3A6969%2Fannounce" +
+            "&tr=udp%3A%2F%2Fretracker01-msk-virt.corbina.net%3A80%2Fannounce" +
+            "&tr=udp%3A%2F%2Fp4p.arenabg.com%3A1337%2Fannounce" +
+            "&tr=udp%3A%2F%2Fopentracker.io%3A6969%2Fannounce" +
+            "&tr=udp%3A%2F%2Fopen.tracker.cl%3A1337%2Fannounce" +
+            "&tr=udp%3A%2F%2Fleet-tracker.moe%3A1337%2Fannounce"
+
+        assertEquals(expected, MagnetInfoHashParser.create("00112233445566778899AABBCCDDEEFF10203040"))
+    }
+
     /** 无效长度、字符或非 magnet scheme 按可空契约返回 null。 */
     @Test
     fun parseReturnsNullForInvalidValues() {

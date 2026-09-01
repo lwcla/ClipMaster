@@ -11,15 +11,26 @@ import java.util.TimeZone
 internal object ProviderDateParser {
     /** 所有无时区站点字段使用 UTC，避免设备时区导致测试和排序漂移。 */
     private val utcTimeZone: TimeZone = TimeZone.getTimeZone("UTC")
-    /** ISO-8601 站点时间可能带毫秒或不带毫秒，按严格顺序尝试。 */
-    private val isoPatterns = listOf(
-        "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
-        "yyyy-MM-dd'T'HH:mm:ssXXX",
+    /** ISO-8601 只接受秒后 1..9 位可选小数及 Z/±HH:mm，避免宽松日期解析吞掉污染文本。 */
+    private val isoPattern = Regex(
+        "^(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2})(?:\\.(\\d{1,9}))?(Z|[+-]\\d{2}:\\d{2})$",
     )
 
-    /** 严格解析 ISO-8601 时间；无法完整消费输入时返回 null。 */
-    fun parseIsoEpochMillis(rawDate: String): Long? = isoPatterns.firstNotNullOfOrNull { pattern ->
-        parseUtcEpochMillis(rawDate, pattern)
+    /** 严格解析 ISO-8601 时间；超过毫秒的精度向下截断，无法完整消费输入时返回 null。 */
+    fun parseIsoEpochMillis(rawDate: String): Long? {
+        /** 去除协议值两端空白，不允许时间主体内部出现空白。 */
+        val normalizedInput = rawDate.trim()
+        /** 匹配结果分别固定秒级主体、小数秒和显式时区，任何缺失边界都返回 null。 */
+        val match = isoPattern.matchEntire(normalizedInput) ?: return null
+        /** 秒级时间主体不含小数和时区，用于组装三位毫秒格式。 */
+        val secondsPart = match.groupValues[1]
+        /** 小数不足三位右补零，超过三位截断，从而稳定落到 epochMillis。 */
+        val millisPart = match.groupValues[2].padEnd(3, '0').take(3)
+        /** 时区保留 Z 或 ±HH:mm，由 `XXX` 严格换算到 UTC。 */
+        val zonePart = match.groupValues[3]
+        /** SimpleDateFormat 仅接收统一三位毫秒输入，兼容 minSdk 24 且不依赖 java.time desugaring。 */
+        val normalizedIsoDate = "$secondsPart.$millisPart$zonePart"
+        return parseUtcEpochMillis(normalizedIsoDate, "yyyy-MM-dd'T'HH:mm:ss.SSSXXX")
     }
 
     /** 使用显式格式严格解析 UTC 时间；返回 null 而不抛出带原文的异常。 */

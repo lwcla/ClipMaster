@@ -124,11 +124,13 @@ Provider 只能依赖 `TorrentSearchNetworkClient`，直接 OkHttp 实现由 Hil
 
 ### 任务 04B1 首批 Provider（2026-09-01）
 
-本子批次只移植固定快照的 AniLibria、AnimeTosho 与 AniRena，不接入第四个 Provider、注册总表、UI、Room、Torznab、Cloudflare WebView、下载或备份。三者都只通过构造注入的 `TorrentSearchNetworkClient` 联网；站点编排类与纯 Kotlin 的 URL、JSON/HTML、magnet/infoHash、大小和 UTC `epochMillis` 解析器分层放置。内置请求仅允许 manifest 中的精确 host 与 HTTPS，查询参数由 OkHttp `HttpUrl.Builder.addQueryParameter` 编码并先删除控制字符；详情地址和 AniRena 磁力跳转在发起网络前校验 host，跳转结果再校验 `magnet` scheme 与 btih。
+本子批次只移植固定快照的 AniLibria、AnimeTosho 与 AniRena，不接入第四个 Provider、注册总表、UI、Room、Torznab、Cloudflare WebView、下载或备份。三者都只通过构造注入的 `TorrentSearchNetworkClient` 联网；站点编排类与纯 Kotlin 的 URL、JSON/HTML、magnet/infoHash、大小和 UTC `epochMillis` 解析器分层放置。网络读取和 AniRena `redirectLocation` 保持在原 Provider 调用协程，响应返回后才将 JSON/Jsoup DOM、逐条校验和领域映射切换到可注入且默认 `Dispatchers.Default` 的计算调度器；DOM draft 不持有网络能力。大列表统一使用逐元素 `ensureActive` 的协作遍历，用户停止、页面退出或父任务取消后不继续映射剩余条目。内置请求仅允许 manifest 中的精确 host 与 HTTPS，查询参数由 OkHttp `HttpUrl.Builder.addQueryParameter` 编码并先删除控制字符；详情地址和 AniRena 磁力跳转在发起网络前校验 host，跳转结果再校验 `magnet` scheme 与 btih。
 
-AniLibria 保留 search 能力且最多取 15 个 release，每个 release 的 torrent 请求并发发起并继续受 04A 共享 OkHttp Dispatcher 的 64/5 边界约束。AnimeTosho 实现 search/details，Today/Yesterday 相对日期以可注入基准时间转换为 UTC 日起点。AniRena 实现 search/details/latest/top；本地安全审计结论固定为 `NSFW` 且默认关闭，不采用上源源码的 Safe 标记。单条缺少必填字段时跳过该条，顶层结构异常统一抛出不携带原文的 `ProviderParseException`。
+AniLibria 保留 search 能力且最多取 15 个 release，每个 release 的 torrent 请求并发发起并继续受 04A 共享 OkHttp Dispatcher 的 64/5 边界约束；URL builder、顶层 JSON 解析和 torrent 领域映射均为独立 `internal` 协作者。ISO-8601 接受无小数或 1..9 位小数秒以及 `Z`/`±HH:mm`，超过毫秒的位数明确截断后再转 UTC `epochMillis`，无需 minSdk 24 全局 desugaring。AnimeTosho 实现 search/details，Today/Yesterday 相对日期以可注入基准时间转换为 UTC 日起点。AniRena 实现 search/details/latest/top；本地安全审计结论固定为 `NSFW` 且默认关闭，不采用上源源码的 Safe 标记。单条缺少必填字段时跳过该条，顶层结构异常统一抛出不携带原文的 `ProviderParseException`。
 
-本批次使用三份独立最小合成 fixture 及内联边界样本，覆盖正常字段映射、空结果、单条缺字段、顶层异常、查询/分类编码、详情 host 拒绝、AniRena 磁力重定向与时间换算，以及 40 位 hex/32 位 base32 btih 规范化和非法输入失败契约。fixture 不包含真实用户内容，测试不访问互联网。本批次不新增 Provider 内部日志：调度开始/成功/失败仍由 04A 的结构化日志记录，解析器不接收 logger，因此无法输出查询、URL、magnet 或 fixture 正文。
+`MagnetInfoHashParser.create` 恢复固定 `ba82e889` 的 `TorrentUtils` 中 20 个公共 tracker 及原始顺序，输出时逐个 URL 编码；该列表是随应用版本审查的静态快照，不在运行时联网刷新，也不得用 trackerslist 当前内容替换。后续如需增删 tracker，必须另做安全、隐私和可用性审计并随版本发布。btih 解析支持 40 位 hex 和 32 位 RFC 4648 base32；多个 `xt` 中遇到非法 btih 会继续查找后续合法候选。
+
+本批次使用三份独立最小合成 fixture 及内联边界样本，覆盖正常字段映射、空结果、单条缺字段、顶层异常、查询/分类编码、详情 host 拒绝、AniRena 磁力重定向与时间换算，以及 ISO 1/3/6/9 位小数秒、40 位 hex、独立非零 base32 位序、多 `xt` 回退和固定 tracker 完整输出。线程测试从单线程调用上下文发起，断言网络回调仍在 caller、解析与映射只进入注入的 parser dispatcher；协作遍历测试在首条回调内取消子任务，断言第二条不会执行。fixture 不包含真实用户内容，测试不访问互联网。本批次不新增 Provider 内部日志：调度开始/成功/失败仍由 04A 的结构化日志记录，解析器不接收 logger，因此无法输出查询、URL、magnet 或 fixture 正文。
 
 1. 删除旧磁力模块，建立 API/实现空壳和宿主发现/启动/备份映射契约测试。
 2. 固定快照、许可证、manifest、资源前缀和依赖验证。
@@ -172,6 +174,7 @@ AniLibria 保留 search 能力且最多取 15 个 release，每个 release 的 t
 
 ## 变更记录
 
+- 2026-09-02：修复任务 04B1 独立审查项：把三个 Provider 的 JSON/Jsoup DOM 与逐条领域映射恢复到可注入的 `Dispatchers.Default`，将 AniRena DOM draft 与重定向网络解耦，并以公共协作遍历锁定取消；拆出 AniLibria URL/JSON parser；补齐 ISO 1..9 位小数秒与偏移、非零 base32、多 `xt` 回退，以及固定快照 20 个 URL 编码 tracker 的精确契约。原因是避免在 UI/调用线程执行大响应解析、避免把网络请求错误包入计算调度器，并恢复固定上游磁力创建能力而不引入运行时远程 tracker 更新。
 - 2026-09-01：启动任务 04B1，按固定 SHA 移植 AniLibria、AnimeTosho 与 AniRena，明确共用解析分层、HTTPS/host 白名单、可注入时间、`ProviderParseException` 与合成 fixture 边界；原因是首批 Provider 必须先建立可复用且可回归的站点解析安全契约，并以本地审计结论覆盖 AniRena 上源错误的 Safe 标记。
 - 2026-09-01：修复任务 04A 中文注释门禁复审项：以先失败后通过的十二类外置合成 fixture 补齐普通多行参数、`for` 变量、显式构造、双命名/解构 lambda 与字符串 receiver lambda，增加调用 named argument、`when` 标签、继承续行与匿名对象反例，并把模块 `build.gradle.kts` 纳入扫描；同时补齐扫描发现的入口参数、网络 Call、协调器参数和两处 DOM 循环下标注释。原因是旧规则虽声称覆盖多行参数，实际只匹配带 `val`/`var` 的属性参数，且内嵌 fixture 曾通过跳过字符串行形成新的扫描绕过。
 - 2026-09-01：收口任务 04A 独立审查：按固定上游补齐精确分类/排序、强类型 Provider ID/Type、完整 Descriptor/Torrent/详情能力与 `epochMillis` 时间契约；删除生产 HTTP 测试旁路，改用回环 HTTPS fixture，并将响应状态、限量 body、Cloudflare/重定向分类与取消保持在同一 OkHttp Call 生命周期；同时封闭日志类型并增强中文注释扫描。原因是修复契约漂移、响应头后慢 body 无法及时取消、Cloudflare 404 误分类及注释检查覆盖不足。

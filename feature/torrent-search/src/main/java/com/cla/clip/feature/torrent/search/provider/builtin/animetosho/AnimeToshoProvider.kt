@@ -13,7 +13,11 @@ import com.cla.clip.feature.torrent.search.provider.TorrentDetailsProvider
 import com.cla.clip.feature.torrent.search.provider.builtin.common.BuiltinProviderUrlPolicy
 import com.cla.clip.feature.torrent.search.provider.builtin.common.MagnetInfoHashParser
 import com.cla.clip.feature.torrent.search.provider.builtin.common.ProviderDateParser
+import com.cla.clip.feature.torrent.search.provider.builtin.common.mapNotNullCancellable
 import com.cla.clip.feature.torrent.search.provider.builtin.common.sanitizeProviderQuery
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
@@ -25,6 +29,8 @@ internal class AnimeToshoProvider(
     private val networkClient: TorrentSearchNetworkClient,
     /** Today/Yesterday 解析所需的可注入基准时间，默认读取系统毫秒。 */
     private val currentTimeMillis: () -> Long = System::currentTimeMillis,
+    /** Jsoup DOM 与逐条领域映射使用的计算调度器。 */
+    parsingDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : SearchProvider, TorrentDetailsProvider {
     /** AnimeTosho 稳定元数据，安全等级与 manifest 审计一致。 */
     override val descriptor = ProviderDescriptor(
@@ -38,9 +44,9 @@ internal class AnimeToshoProvider(
     /** 详情输入和页面链接只允许 manifest 中的 animetosho.org。 */
     private val urlPolicy = BuiltinProviderUrlPolicy(setOf("animetosho.org"))
     /** 搜索 DOM 解析器只接收稳定 Provider 元数据、URL 策略和可注入时间。 */
-    private val resultsParser = AnimeToshoResultsParser(descriptor, urlPolicy, currentTimeMillis)
+    private val resultsParser = AnimeToshoResultsParser(descriptor, urlPolicy, currentTimeMillis, parsingDispatcher)
     /** 详情 DOM 解析器与搜索共用同一白名单和时间边界。 */
-    private val detailsParser = AnimeToshoDetailsParser(descriptor, urlPolicy, currentTimeMillis)
+    private val detailsParser = AnimeToshoDetailsParser(descriptor, urlPolicy, currentTimeMillis, parsingDispatcher)
 
     /** 构造编码后搜索 URL、读取 HTML 并交给纯 DOM 解析器。 */
     override suspend fun search(query: String, category: Category): List<Torrent> {
@@ -86,14 +92,18 @@ private class AnimeToshoResultsParser(
     private val urlPolicy: BuiltinProviderUrlPolicy,
     /** Today/Yesterday 使用的可注入当前时间。 */
     private val currentTimeMillis: () -> Long,
+    /** DOM 构建和逐条映射使用的可注入计算调度器。 */
+    private val parsingDispatcher: CoroutineDispatcher,
 ) {
-    /** 解析搜索页；`#content` 存在且无条目表示合法空结果。 */
-    fun parse(html: String, pageUrl: String): List<Torrent> {
+    /** 在计算调度器解析搜索页；`#content` 存在且无条目表示合法空结果。 */
+    suspend fun parse(html: String, pageUrl: String): List<Torrent> = withContext(parsingDispatcher) {
         /** Jsoup 只构建 DOM，不创建 WebView 或执行 script。 */
         val document = Jsoup.parse(html, pageUrl)
         if (document.selectFirst("#content") == null) throw ProviderParseException()
-        /** entry 代表当前结果 DOM，单条缺字段时 parseEntry 返回 null 并跳过。 */
-        return document.select("div.home_list_entry").mapNotNull { entry -> parseEntry(entry, pageUrl) }
+        /** entry 代表当前结果 DOM，共用协作遍历在每轮领域映射前响应取消。 */
+        document.select("div.home_list_entry").mapNotNullCancellable { entry ->
+            parseEntry(entry, pageUrl)
+        }
     }
 
     /** 解析单条搜索结果；名称、大小、日期、links 或 magnet 缺失时跳过。 */
@@ -170,20 +180,22 @@ private class AnimeToshoDetailsParser(
     private val urlPolicy: BuiltinProviderUrlPolicy,
     /** Today/Yesterday 详情日期使用的可注入时间。 */
     private val currentTimeMillis: () -> Long,
+    /** DOM 构建、截图循环和详情映射使用的可注入计算调度器。 */
+    private val parsingDispatcher: CoroutineDispatcher,
 ) {
-    /** 解析详情页；缺失顶层 content 容器视为结构异常。 */
-    fun parse(html: String, pageUrl: String): TorrentDetails? {
+    /** 在计算调度器解析详情页；缺失顶层 content 容器视为结构异常。 */
+    suspend fun parse(html: String, pageUrl: String): TorrentDetails? = withContext(parsingDispatcher) {
         /** Jsoup DOM 仅在当前方法内存在，脚本节点不会执行。 */
         val document = Jsoup.parse(html, pageUrl)
         if (document.selectFirst("#content") == null) throw ProviderParseException()
         /** 详情名称为必填，空白标题返回 null。 */
-        val torrentName = document.selectFirst("#title")?.ownText()?.takeIf(String::isNotBlank) ?: return null
+        val torrentName = document.selectFirst("#title")?.ownText()?.takeIf(String::isNotBlank) ?: return@withContext null
         /** magnet 元素为必填，同时供大小文本回退查找下一个节点。 */
-        val magnetElement = document.selectFirst("""a[href^="magnet:"]""") ?: return null
+        val magnetElement = document.selectFirst("""a[href^="magnet:"]""") ?: return@withContext null
         /** magnet URI 为必填且不改写原始 tracker 参数。 */
-        val magnetUri = magnetElement.attr("href").takeIf(String::isNotBlank) ?: return null
+        val magnetUri = magnetElement.attr("href").takeIf(String::isNotBlank) ?: return@withContext null
         /** 详情稳定 hash 从 magnet btih 规范化，非法时按缺必填字段返回 null。 */
-        val infoHash = MagnetInfoHashParser.parse(magnetUri) ?: return null
+        val infoHash = MagnetInfoHashParser.parse(magnetUri) ?: return@withContext null
         /** 大小优先读取 title 选择器，其次读 magnet 后紧邻文本节点。 */
         val rawSize = document.selectFirst("""span[title^="File size:"]""")?.ownText()
             /** node 是 magnet 后的紧邻节点，只接受纯文本以避免混入 HTML。 */
@@ -199,8 +211,8 @@ private class AnimeToshoDetailsParser(
         val uploadEpochMillis = parseDetailsDate(
             document.selectFirst("#content > table:nth-of-type(1) > tbody > tr:nth-child(2) > td")?.ownText(),
         )
-        /** 所有截图相对地址转为同 host HTTPS，恶意链接直接拒绝。 */
-        val screenshotUrls = document.select("a.screenthumb").mapNotNull { anchor ->
+        /** anchor 是当前截图链接，共用协作遍历逐条响应取消并跳过空地址。 */
+        val screenshotUrls = document.select("a.screenthumb").mapNotNullCancellable { anchor ->
             urlPolicy.resolveOptionalHttpsUrl(pageUrl, anchor.attr("href"))
         }
         /** torrent 文件地址可选且必须保持同 host HTTPS。 */
@@ -208,7 +220,7 @@ private class AnimeToshoDetailsParser(
             pageUrl,
             document.selectFirst("a[href*=/storage/torrent]")?.attr("href"),
         )
-        return TorrentDetails(
+        TorrentDetails(
             infoHash = infoHash,
             name = torrentName,
             size = size,

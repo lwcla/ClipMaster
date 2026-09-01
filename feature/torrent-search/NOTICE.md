@@ -39,6 +39,11 @@ boundary, HTTPS/host allowlists, deterministic epoch-millisecond parsers, and
 synthetic fixtures. AniRena follows the local manifest's NSFW/default-disabled
 audit result even though the pinned upstream class labels it safe.
 
+The magnet builder also retains the 20 public tracker values and their order
+from the pinned upstream `TorrentUtils.kt`. ClipMaster URL-encodes each tracker
+query value and does not contact the comment-linked tracker-list service at
+runtime; future tracker changes require a reviewed application update.
+
 The integration does not adopt Koin, `TorrentSearchApplication`, `MainActivity`,
 upstream launcher declarations, global exception handling, or global Coil
 configuration. The host application remains responsible for its own

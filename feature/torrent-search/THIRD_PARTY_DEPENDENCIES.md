@@ -7,6 +7,13 @@ shared pure parsers on top of the Task 04A search kernel. It still does not add
 UI data, Room, Torznab, WebView, downloads, backup, or the complete Provider
 registry.
 
+The Task 04B1 review fixes add no dependency. Coroutine dispatcher isolation,
+cooperative parsing cancellation, ISO normalization, base32/magnet handling,
+and tracker URL encoding use the Kotlin/JDK and already declared coroutine,
+OkHttp, Jsoup, and kotlinx.serialization dependencies. The 20 public tracker
+values are restored from the pinned MIT-licensed `TorrentUtils.kt` source; they
+are a static application snapshot and are never fetched from the network.
+
 The existing `:feature:torrent-search` module directly declares the following
 dependencies in `feature/torrent-search/build.gradle.kts`; all external versions
 and coordinates remain owned by `gradle/libs.versions.toml`:
