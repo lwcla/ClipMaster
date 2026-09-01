@@ -1,0 +1,15 @@
+[
+  {
+    "hash": "0123456789ABCDEF0123456789ABCDEF01234567",
+    "label": "Synthetic AniLibria Episode",
+    "size": 1048576,
+    "magnet": "magnet:?xt=urn:btih:0123456789ABCDEF0123456789ABCDEF01234567",
+    "seeders": 12,
+    "leechers": 3,
+    "created_at": "2024-03-04T05:06:07Z",
+    "release": {
+      "name": {"english": "Synthetic Release", "main": "Synthetic Main"},
+      "alias": "synthetic-release"
+    }
+  }
+]

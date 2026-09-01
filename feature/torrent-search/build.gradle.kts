@@ -59,9 +59,12 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     // 统一使用直接 OkHttp 客户端，Provider 不自行创建或持有第二套 HTTP 栈。
     implementation(libs.okhttp.client)
+    // 内置 Provider 用 Jsoup 纯解析固定 HTML 结构，不执行页面脚本。
+    implementation(libs.jsoup)
+    // AniLibria Provider 使用 kotlinx JSON DOM 解析合成响应，不依赖反射或类名协议。
+    implementation(libs.kotlinx.serialization.json)
 
     testImplementation(libs.junit)
-    testImplementation(libs.kotlinx.serialization.json)
     // JVM 单测用虚拟调度器与本地 MockWebServer 固定并发、取消和解压边界，不访问互联网。
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver)

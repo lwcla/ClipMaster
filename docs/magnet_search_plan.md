@@ -122,6 +122,14 @@ Provider 只能依赖 `TorrentSearchNetworkClient`，直接 OkHttp 实现由 Hil
 
 `SearchCoordinator` 在 `channelFlow` 内使用结构化 `supervisorScope`：先以独立 Deferred 实际进入全部启用且安全模式允许的 Provider，快源结果暂存到所有来源均获得启动机会后再并发处理，从而渐进发射 started/results/failed/skipped/completed 并隔离单源失败；默认每 Provider 45 秒，安全模式跳过非 SAFE 来源，达到 `maxResults` 时只取消其他未完成 Deferred，collector 或父 scope 取消则向下取消全部协程与网络 Call，且不会伪造 Completed。日志使用封闭的 `ProviderLogStage`、`ProviderId` 与可空 `ProviderFailureReason`；Android 输出只读取稳定 code 及数量、耗时、状态码、是否重试，不接触 URL、查询、header、Cookie、API Key、payload、响应正文或 `Throwable.message`。模块级中文注释扫描同时检查 `src/**/*.kt` 与模块 `build.gradle.kts`，独立于构建脚本的正反 fixture 锁定类型、方法、构造、`val`/`var`、普通多行参数、`for` 变量、`catch`、单/多命名 lambda、解构 lambda 与字符串 receiver lambda，并确认函数调用 named argument、`when` 标签、继承续行及匿名对象表达式不会误报。该门禁是确定性文本检查而非完整 Kotlin 语法解析器，复杂新语法仍需代码评审补充确认，避免夸大自动覆盖范围。
 
+### 任务 04B1 首批 Provider（2026-09-01）
+
+本子批次只移植固定快照的 AniLibria、AnimeTosho 与 AniRena，不接入第四个 Provider、注册总表、UI、Room、Torznab、Cloudflare WebView、下载或备份。三者都只通过构造注入的 `TorrentSearchNetworkClient` 联网；站点编排类与纯 Kotlin 的 URL、JSON/HTML、magnet/infoHash、大小和 UTC `epochMillis` 解析器分层放置。内置请求仅允许 manifest 中的精确 host 与 HTTPS，查询参数由 OkHttp `HttpUrl.Builder.addQueryParameter` 编码并先删除控制字符；详情地址和 AniRena 磁力跳转在发起网络前校验 host，跳转结果再校验 `magnet` scheme 与 btih。
+
+AniLibria 保留 search 能力且最多取 15 个 release，每个 release 的 torrent 请求并发发起并继续受 04A 共享 OkHttp Dispatcher 的 64/5 边界约束。AnimeTosho 实现 search/details，Today/Yesterday 相对日期以可注入基准时间转换为 UTC 日起点。AniRena 实现 search/details/latest/top；本地安全审计结论固定为 `NSFW` 且默认关闭，不采用上源源码的 Safe 标记。单条缺少必填字段时跳过该条，顶层结构异常统一抛出不携带原文的 `ProviderParseException`。
+
+本批次使用三份独立最小合成 fixture 及内联边界样本，覆盖正常字段映射、空结果、单条缺字段、顶层异常、查询/分类编码、详情 host 拒绝、AniRena 磁力重定向与时间换算，以及 40 位 hex/32 位 base32 btih 规范化和非法输入失败契约。fixture 不包含真实用户内容，测试不访问互联网。本批次不新增 Provider 内部日志：调度开始/成功/失败仍由 04A 的结构化日志记录，解析器不接收 logger，因此无法输出查询、URL、magnet 或 fixture 正文。
+
 1. 删除旧磁力模块，建立 API/实现空壳和宿主发现/启动/备份映射契约测试。
 2. 固定快照、许可证、manifest、资源前缀和依赖验证。
 3. 先以失败测试固定 43 Provider 注册表、调度器、超时、取消、渐进结果和失败隔离，再接入搜索内核。
@@ -164,6 +172,7 @@ Provider 只能依赖 `TorrentSearchNetworkClient`，直接 OkHttp 实现由 Hil
 
 ## 变更记录
 
+- 2026-09-01：启动任务 04B1，按固定 SHA 移植 AniLibria、AnimeTosho 与 AniRena，明确共用解析分层、HTTPS/host 白名单、可注入时间、`ProviderParseException` 与合成 fixture 边界；原因是首批 Provider 必须先建立可复用且可回归的站点解析安全契约，并以本地审计结论覆盖 AniRena 上源错误的 Safe 标记。
 - 2026-09-01：修复任务 04A 中文注释门禁复审项：以先失败后通过的十二类外置合成 fixture 补齐普通多行参数、`for` 变量、显式构造、双命名/解构 lambda 与字符串 receiver lambda，增加调用 named argument、`when` 标签、继承续行与匿名对象反例，并把模块 `build.gradle.kts` 纳入扫描；同时补齐扫描发现的入口参数、网络 Call、协调器参数和两处 DOM 循环下标注释。原因是旧规则虽声称覆盖多行参数，实际只匹配带 `val`/`var` 的属性参数，且内嵌 fixture 曾通过跳过字符串行形成新的扫描绕过。
 - 2026-09-01：收口任务 04A 独立审查：按固定上游补齐精确分类/排序、强类型 Provider ID/Type、完整 Descriptor/Torrent/详情能力与 `epochMillis` 时间契约；删除生产 HTTP 测试旁路，改用回环 HTTPS fixture，并将响应状态、限量 body、Cloudflare/重定向分类与取消保持在同一 OkHttp Call 生命周期；同时封闭日志类型并增强中文注释扫描。原因是修复契约漂移、响应头后慢 body 无法及时取消、Cloudflare 404 误分类及注释检查覆盖不足。
 - 2026-08-31：启动任务 04A 共用搜索内核：补充稳定领域/Provider 协议、直接 OkHttp HTTPS/5 MiB/取消边界、低敏结构化日志、并发聚合器和 Hilt 提供；原因是先以可测试的共用契约收敛后续 43 个 Provider 的网络、安全和取消语义，且本子批次明确不接入真实 Provider 与持久化/UI 范围。

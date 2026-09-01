@@ -32,11 +32,18 @@ platform no-action-bar parent because this resource-only phase neither imports
 the SplashScreen runtime nor adopts the upstream launcher. The prefixed theme
 names remain available for later host-owned Activity work.
 
-This task does not import or run upstream Kotlin runtime code. In particular it
-does not adopt Koin, `TorrentSearchApplication`, `MainActivity`, upstream launcher
-declarations, global exception handling, or global Coil configuration. The host
-application remains responsible for its own `Application`, activity lifecycle,
-dependency injection, launcher, exception handling, and image-loading setup.
+The first reviewed runtime batch ports AniLibria, AnimeTosho, and AniRena from
+the pinned source files recorded in the manifest. These implementations are
+adapted to ClipMaster's typed Provider contracts, Hilt-owned shared network
+boundary, HTTPS/host allowlists, deterministic epoch-millisecond parsers, and
+synthetic fixtures. AniRena follows the local manifest's NSFW/default-disabled
+audit result even though the pinned upstream class labels it safe.
+
+The integration does not adopt Koin, `TorrentSearchApplication`, `MainActivity`,
+upstream launcher declarations, global exception handling, or global Coil
+configuration. The host application remains responsible for its own
+`Application`, activity lifecycle, dependency injection, launcher, exception
+handling, and image-loading setup.
 
 The manifest is a fixed local audit artifact. It permits no remote delivery of
 code, selectors, or scripts; future Provider runtime work must remain pinned to
