@@ -140,6 +140,14 @@ AudioBookBay 固定 SAFE、BOOKS、默认关闭并实现 search/details/latest�
 
 本批以最小合成 HTML/JSON fixture 和 recording fake 覆盖正常/空/缺字段/顶层异常、恶意 host、查询与 ID 编码、AudioBookBay 两阶段顺序和取消、Bangumi payload 与 hash 冲突、BitSearch 五页稳定顺序/取消/分类/相对日期及三站 dispatcher 边界。fixture 不含真实第三方正文或用户数据且测试不联网。本批不新增 Provider 内部日志：沿用 04A 聚合器的低敏阶段、数量、耗时、状态码和 reasonCode，解析器不接收 logger，禁止记录 URL、查询、magnet、JSON/HTML 正文或底层异常 message。
 
+### 任务 04B3 第三批 Provider（2026-09-02）
+
+本子批次只移植固定快照的 BlueRoms、BT4G 与 BTDigg，不接入注册总表、UI、Room、备份或第四个 Provider。三者继续复用精确 HTTPS host、查询清洗、magnet/infoHash、UTC/相对日期和协作取消能力；每站只通过构造注入共享网络客户端，DOM、Base64、日期、hash 和领域映射进入可注入且默认 `Dispatchers.Default` 的计算调度器，所有网络调用保留在调用协程。BlueRoms 与 BT4G 都采用两阶段 draft：先解析结果 DOM，再按 DOM 顺序请求同站下载页或详情页，取消后不再访问后续页面。
+
+BlueRoms 固定 SAFE、GAMES、默认关闭并实现 search/details；Base64 `data-link` 只在计算 dispatcher 解码，解码结果必须是 UTF-8、非空且包含合法 btih 的 magnet，任何编码值和解码正文都不进入日志。BT4G 固定 SAFE、默认关闭并实现 search/details/latest/top，支持 APPS/BOOKS/MOVIES/MUSIC/OTHER 且标记 Cloudflare；`downloadtorrentfile.com/hash/<hash>` 只作为精确匹配的离线 hash marker，禁止联网、禁止作为模型 URL 产出，其他外域或路径一律拒绝。BTDigg 固定 SAFE、OTHER、默认关闭并实现 search/details，搜索结果保留通过 btih 校验的 magnet，结果与详情相对日期使用可注入时钟。所有请求、详情、下载、海报和截图地址只允许各自 manifest 的单一精确 HTTPS host；合法空容器返回空，顶层容器缺失抛无正文的 `ProviderParseException`，单条或详情缺必填字段返回空值而不拖垮整批。
+
+本批以最小合成 HTML fixture 和 recording fake 覆盖正常/空/缺字段/顶层异常、查询与分类编码、descriptor 能力与安全元数据、精确 host、两阶段顺序与取消、Base64 非法输入、BT4G 外域 marker 离线提 hash和恶意 marker 拒绝、BTDigg magnet 保留与相对日期，以及三站 caller/parser 线程边界。fixture 不含真实第三方正文或用户数据且测试不联网。本批不新增 Provider 内部日志：继续由 04A 聚合器记录低敏阶段、数量、耗时、状态码和 reasonCode，解析器不接收 logger，禁止记录 URL、查询、magnet、Base64、HTML 正文或底层异常 message。
+
 1. 删除旧磁力模块，建立 API/实现空壳和宿主发现/启动/备份映射契约测试。
 2. 固定快照、许可证、manifest、资源前缀和依赖验证。
 3. 先以失败测试固定 43 Provider 注册表、调度器、超时、取消、渐进结果和失败隔离，再接入搜索内核。
@@ -182,6 +190,7 @@ AudioBookBay 固定 SAFE、BOOKS、默认关闭并实现 search/details/latest�
 
 ## 变更记录
 
+- 2026-09-02：启动任务 04B3，按固定 SHA 移植 BlueRoms、BT4G 与 BTDigg，明确 Base64 两阶段解码、BT4G 外域 hash marker 仅离线解析且绝不联网/产出、BTDigg 结果保留合法 magnet，并锁定精确 host、Cloudflare、取消、线程与低敏日志边界；原因是第三批 Provider 必须在注册前独立验证跨页补全与不可信链接约束。
 - 2026-09-02：启动任务 04B2，按固定 SHA 移植 AudioBookBay、BangumiMoe 与 BitSearch，明确两阶段详情 hash、严格 JSON/详情 ID、五页结构化并发、精确 host 与本地 NSFW 审计边界；原因是第二批 Provider 必须在接入注册表前独立锁定网络/解析线程、取消、字段容错和安全元数据契约。
 - 2026-09-02：修复任务 04B1 独立审查项：把三个 Provider 的 JSON/Jsoup DOM 与逐条领域映射恢复到可注入的 `Dispatchers.Default`，将 AniRena DOM draft 与重定向网络解耦，并以公共协作遍历锁定取消；拆出 AniLibria URL/JSON parser；补齐 ISO 1..9 位小数秒与偏移、非零 base32、多 `xt` 回退，以及固定快照 20 个 URL 编码 tracker 的精确契约。原因是避免在 UI/调用线程执行大响应解析、避免把网络请求错误包入计算调度器，并恢复固定上游磁力创建能力而不引入运行时远程 tracker 更新。
 - 2026-09-01：启动任务 04B1，按固定 SHA 移植 AniLibria、AnimeTosho 与 AniRena，明确共用解析分层、HTTPS/host 白名单、可注入时间、`ProviderParseException` 与合成 fixture 边界；原因是首批 Provider 必须先建立可复用且可回归的站点解析安全契约，并以本地审计结论覆盖 AniRena 上源错误的 Safe 标记。

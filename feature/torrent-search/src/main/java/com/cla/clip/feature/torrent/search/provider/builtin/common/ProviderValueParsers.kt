@@ -151,3 +151,11 @@ internal object TorrentFileSizeFormatter {
         return String.format(Locale.US, "%.2f %s", value, units[unitIndex])
     }
 }
+
+/** 将上源紧邻数字的 ASCII 大小单位插入单个空格，其他展示文本保持不变。 */
+internal fun normalizeProviderDisplaySize(rawSize: String): String? {
+    /** 去除 HTML 文本节点两端空白，空内容按缺失处理。 */
+    val trimmedSize = rawSize.trim().takeIf(String::isNotEmpty) ?: return null
+    /** 仅处理数字与紧随其后的英文字母边界，避免改写小数或已有空格。 */
+    return Regex("(?<=\\d)(?=[A-Za-z])").replace(trimmedSize, " ")
+}

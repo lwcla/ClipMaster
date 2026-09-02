@@ -7,6 +7,9 @@ import com.cla.clip.feature.torrent.search.provider.builtin.anirena.AniRenaProvi
 import com.cla.clip.feature.torrent.search.provider.builtin.audiobookbay.AudioBookBayProvider
 import com.cla.clip.feature.torrent.search.provider.builtin.bangumimoe.BangumiMoeProvider
 import com.cla.clip.feature.torrent.search.provider.builtin.bitsearch.BitSearchProvider
+import com.cla.clip.feature.torrent.search.provider.builtin.blueroms.BlueRomsProvider
+import com.cla.clip.feature.torrent.search.provider.builtin.bt4g.Bt4gProvider
+import com.cla.clip.feature.torrent.search.provider.builtin.btdigg.BtDiggProvider
 import com.cla.clip.feature.torrent.search.provider.builtin.testing.FakeTorrentSearchNetworkClient
 import com.cla.clip.feature.torrent.search.provider.builtin.testing.readProviderFixture
 import java.util.concurrent.Executors
@@ -239,6 +242,121 @@ class ProviderParsingDispatcherTest {
         assertTrue(networkThreads.all { threadName -> threadName.startsWith("provider-caller") })
         assertTrue(parsingDispatcher.executedThreadNames.isNotEmpty())
         /** threadName 是每页 DOM 与领域映射线程。 */
+        assertTrue(parsingDispatcher.executedThreadNames.all { threadName -> threadName.startsWith("provider-parser") })
+    }
+
+    /** BlueRoms 结果/下载 DOM 与 Base64 进入 parser，页面和顺序下载请求都留在 caller。 */
+    @Test
+    fun blueRomsSeparatesTwoStageNetworkFromParsingDispatcher() = runBlocking {
+        /** 单线程 Provider 调用 dispatcher。 */
+        val callerDispatcher = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "provider-caller") }
+            .asCoroutineDispatcher()
+        /** 记录 DOM、Base64 和领域映射线程。 */
+        val parsingDispatcher = RecordingCoroutineDispatcher("provider-parser")
+        /** 搜索页与两个下载页网络回调线程。 */
+        val networkThreads = mutableListOf<String>()
+        /** 按 URL 返回结果 fixture 或固定合法 Base64 magnet。 */
+        val networkClient = FakeTorrentSearchNetworkClient(
+            /** url 只区分搜索与下载阶段。 */
+            textHandler = { url ->
+                networkThreads += Thread.currentThread().name
+                if (url.contains("/search?")) {
+                    readProviderFixture("provider/blueroms/search_normal.html")
+                } else {
+                    "<html><body><button id=\"magnet-button\" data-link=\"bWFnbmV0Oj94dD11cm46YnRpaDowMDExMjIzMzQ0NTU2Njc3ODg5OWFhYmJjY2RkZWVmZjAwMTEyMjMz\"></button></body></html>"
+                }
+            },
+        )
+
+        try {
+            withContext(callerDispatcher) {
+                BlueRomsProvider(networkClient, parsingDispatcher).search("fixture", Category.GAMES)
+            }
+        } finally {
+            callerDispatcher.close()
+            parsingDispatcher.close()
+        }
+
+        assertEquals(3, networkThreads.size)
+        /** threadName 覆盖搜索页和两个下载页网络回调。 */
+        assertTrue(networkThreads.all { threadName -> threadName.startsWith("provider-caller") })
+        assertTrue(parsingDispatcher.executedThreadNames.isNotEmpty())
+        /** threadName 覆盖 DOM、Base64 与领域映射 continuation。 */
+        assertTrue(parsingDispatcher.executedThreadNames.all { threadName -> threadName.startsWith("provider-parser") })
+    }
+
+    /** BT4G 结果/marker DOM 进入 parser，结果页和顺序详情请求都留在 caller。 */
+    @Test
+    fun bt4gSeparatesTwoStageNetworkFromParsingDispatcher() = runBlocking {
+        /** 单线程 Provider 调用 dispatcher。 */
+        val callerDispatcher = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "provider-caller") }
+            .asCoroutineDispatcher()
+        /** 记录结果 DOM、marker 与领域映射线程。 */
+        val parsingDispatcher = RecordingCoroutineDispatcher("provider-parser")
+        /** 结果页和两个同站详情页网络回调线程。 */
+        val networkThreads = mutableListOf<String>()
+        /** 按 URL 返回结果 fixture 或固定 marker 页面。 */
+        val networkClient = FakeTorrentSearchNetworkClient(
+            /** url 只区分搜索与详情阶段。 */
+            textHandler = { url ->
+                networkThreads += Thread.currentThread().name
+                if (url.contains("/search?")) {
+                    readProviderFixture("provider/bt4g/search_normal.html")
+                } else {
+                    "<html><body><main><a href=\"//downloadtorrentfile.com/hash/00112233445566778899aabbccddeeff00112233\">marker</a></main></body></html>"
+                }
+            },
+        )
+
+        try {
+            withContext(callerDispatcher) {
+                Bt4gProvider(networkClient, parsingDispatcher = parsingDispatcher).search("fixture", Category.ALL)
+            }
+        } finally {
+            callerDispatcher.close()
+            parsingDispatcher.close()
+        }
+
+        assertEquals(3, networkThreads.size)
+        /** threadName 覆盖结果页和两个详情页网络回调。 */
+        assertTrue(networkThreads.all { threadName -> threadName.startsWith("provider-caller") })
+        assertTrue(parsingDispatcher.executedThreadNames.isNotEmpty())
+        /** threadName 覆盖结果 DOM、marker 与映射 continuation。 */
+        assertTrue(parsingDispatcher.executedThreadNames.all { threadName -> threadName.startsWith("provider-parser") })
+    }
+
+    /** BTDigg 网络保持 caller，结果 DOM、btih、日期与领域映射进入 parser。 */
+    @Test
+    fun btDiggSeparatesNetworkFromParsingDispatcher() = runBlocking {
+        /** 单线程 Provider 调用 dispatcher。 */
+        val callerDispatcher = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "provider-caller") }
+            .asCoroutineDispatcher()
+        /** 记录 DOM 与映射线程。 */
+        val parsingDispatcher = RecordingCoroutineDispatcher("provider-parser")
+        /** 唯一结果页网络回调线程。 */
+        val networkThreads = mutableListOf<String>()
+        /** 返回正常 BTDigg fixture 的网络 fake。 */
+        val networkClient = FakeTorrentSearchNetworkClient(
+            textHandler = {
+                networkThreads += Thread.currentThread().name
+                readProviderFixture("provider/btdigg/search_normal.html")
+            },
+        )
+
+        try {
+            withContext(callerDispatcher) {
+                BtDiggProvider(networkClient, parsingDispatcher = parsingDispatcher).search("fixture", Category.OTHER)
+            }
+        } finally {
+            callerDispatcher.close()
+            parsingDispatcher.close()
+        }
+
+        assertEquals(1, networkThreads.size)
+        /** threadName 是唯一搜索页网络回调。 */
+        assertTrue(networkThreads.all { threadName -> threadName.startsWith("provider-caller") })
+        assertTrue(parsingDispatcher.executedThreadNames.isNotEmpty())
+        /** threadName 覆盖 DOM、btih、日期与映射 continuation。 */
         assertTrue(parsingDispatcher.executedThreadNames.all { threadName -> threadName.startsWith("provider-parser") })
     }
 }
