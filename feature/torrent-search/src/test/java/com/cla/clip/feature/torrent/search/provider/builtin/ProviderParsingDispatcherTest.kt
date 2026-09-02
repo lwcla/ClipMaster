@@ -4,6 +4,9 @@ import com.cla.clip.feature.torrent.search.model.contract.Category
 import com.cla.clip.feature.torrent.search.provider.builtin.anilibria.AniLibriaProvider
 import com.cla.clip.feature.torrent.search.provider.builtin.animetosho.AnimeToshoProvider
 import com.cla.clip.feature.torrent.search.provider.builtin.anirena.AniRenaProvider
+import com.cla.clip.feature.torrent.search.provider.builtin.audiobookbay.AudioBookBayProvider
+import com.cla.clip.feature.torrent.search.provider.builtin.bangumimoe.BangumiMoeProvider
+import com.cla.clip.feature.torrent.search.provider.builtin.bitsearch.BitSearchProvider
 import com.cla.clip.feature.torrent.search.provider.builtin.testing.FakeTorrentSearchNetworkClient
 import com.cla.clip.feature.torrent.search.provider.builtin.testing.readProviderFixture
 import java.util.concurrent.Executors
@@ -125,6 +128,117 @@ class ProviderParsingDispatcherTest {
         assertTrue(networkThreads.all { threadName -> threadName.startsWith("provider-caller") })
         assertTrue(parsingDispatcher.executedThreadNames.isNotEmpty())
         /** threadName 覆盖 DOM draft 与最终映射，只能属于 parser executor。 */
+        assertTrue(parsingDispatcher.executedThreadNames.all { threadName -> threadName.startsWith("provider-parser") })
+    }
+
+    /** AudioBookBay 结果/详情 hash DOM 解析进入 parser，页面与顺序详情请求都留在 caller。 */
+    @Test
+    fun audioBookBaySeparatesTwoStageNetworkFromDomParsingDispatcher() = runBlocking {
+        /** 单线程 Provider 调用 dispatcher。 */
+        val callerDispatcher = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "provider-caller") }
+            .asCoroutineDispatcher()
+        /** 记录两类 DOM 解析 continuation 的 dispatcher。 */
+        val parsingDispatcher = RecordingCoroutineDispatcher("provider-parser")
+        /** 结果页及两个详情 hash 网络回调线程。 */
+        val networkThreads = mutableListOf<String>()
+        /** 按 URL 返回结果 fixture 或合法 hash 页。 */
+        val networkClient = FakeTorrentSearchNetworkClient(
+            /** url 只用于区分结果与详情阶段。 */
+            textHandler = { url ->
+                networkThreads += Thread.currentThread().name
+                if (url.contains("?s=")) {
+                    readProviderFixture("provider/audiobookbay/search_normal.html")
+                } else {
+                    "<html><body><table><tr><td>Info Hash:</td><td>00112233445566778899aabbccddeeff00112233</td></tr></table></body></html>"
+                }
+            },
+        )
+
+        try {
+            withContext(callerDispatcher) {
+                AudioBookBayProvider(networkClient, parsingDispatcher).search("fixture", Category.BOOKS)
+            }
+        } finally {
+            callerDispatcher.close()
+            parsingDispatcher.close()
+        }
+
+        assertEquals(3, networkThreads.size)
+        /** threadName 覆盖结果页和两个详情页网络回调。 */
+        assertTrue(networkThreads.all { threadName -> threadName.startsWith("provider-caller") })
+        assertTrue(parsingDispatcher.executedThreadNames.isNotEmpty())
+        /** threadName 覆盖结果 draft、hash 与领域映射。 */
+        assertTrue(parsingDispatcher.executedThreadNames.all { threadName -> threadName.startsWith("provider-parser") })
+    }
+
+    /** BangumiMoe POST 网络保持 caller，JSON tree 与领域映射进入 parser。 */
+    @Test
+    fun bangumiMoeSeparatesNetworkCallFromJsonParsingDispatcher() = runBlocking {
+        /** 单线程 Provider 调用 dispatcher。 */
+        val callerDispatcher = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "provider-caller") }
+            .asCoroutineDispatcher()
+        /** 记录 JSON 解析线程。 */
+        val parsingDispatcher = RecordingCoroutineDispatcher("provider-parser")
+        /** POST 网络回调线程。 */
+        val networkThreads = mutableListOf<String>()
+        /** 返回正常 Bangumi fixture 的网络 fake。 */
+        val networkClient = FakeTorrentSearchNetworkClient(
+            /** 两个下划线参数分别为固定 URL 与不进入断言的 payload。 */
+            postJsonHandler = { _, _ ->
+                networkThreads += Thread.currentThread().name
+                readProviderFixture("provider/bangumimoe/search_normal.json")
+            },
+        )
+
+        try {
+            withContext(callerDispatcher) {
+                BangumiMoeProvider(networkClient, parsingDispatcher).search("fixture", Category.ANIME)
+            }
+        } finally {
+            callerDispatcher.close()
+            parsingDispatcher.close()
+        }
+
+        assertEquals(1, networkThreads.size)
+        /** threadName 是唯一 POST 网络线程。 */
+        assertTrue(networkThreads.all { threadName -> threadName.startsWith("provider-caller") })
+        assertTrue(parsingDispatcher.executedThreadNames.isNotEmpty())
+        /** threadName 是 JSON tree 与映射线程。 */
+        assertTrue(parsingDispatcher.executedThreadNames.all { threadName -> threadName.startsWith("provider-parser") })
+    }
+
+    /** BitSearch 五页网络任务继承 caller，五份 DOM 与映射进入 parser。 */
+    @Test
+    fun bitSearchSeparatesPageNetworkCallsFromDomParsingDispatcher() = runBlocking {
+        /** 单线程 Provider 调用 dispatcher。 */
+        val callerDispatcher = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "provider-caller") }
+            .asCoroutineDispatcher()
+        /** 记录五页 DOM 解析线程。 */
+        val parsingDispatcher = RecordingCoroutineDispatcher("provider-parser")
+        /** 五页网络回调线程。 */
+        val networkThreads = mutableListOf<String>()
+        /** 每页返回同一正常最小 fixture。 */
+        val networkClient = FakeTorrentSearchNetworkClient(
+            textHandler = {
+                networkThreads += Thread.currentThread().name
+                readProviderFixture("provider/bitsearch/search_normal.html")
+            },
+        )
+
+        try {
+            withContext(callerDispatcher) {
+                BitSearchProvider(networkClient, parsingDispatcher = parsingDispatcher).search("fixture", Category.ALL)
+            }
+        } finally {
+            callerDispatcher.close()
+            parsingDispatcher.close()
+        }
+
+        assertEquals(5, networkThreads.size)
+        /** threadName 是每个页请求的网络回调线程。 */
+        assertTrue(networkThreads.all { threadName -> threadName.startsWith("provider-caller") })
+        assertTrue(parsingDispatcher.executedThreadNames.isNotEmpty())
+        /** threadName 是每页 DOM 与领域映射线程。 */
         assertTrue(parsingDispatcher.executedThreadNames.all { threadName -> threadName.startsWith("provider-parser") })
     }
 }

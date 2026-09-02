@@ -51,6 +51,27 @@ class ProviderValueParsersTest {
         assertNull(ProviderDateParser.epochSecondsToMillis(Long.MAX_VALUE))
     }
 
+    /** RFC1123 日期时间必须按显式 GMT 偏移转为 UTC 毫秒。 */
+    @Test
+    fun rfc1123ParserReturnsUtcEpochMillis() {
+        assertEquals(
+            1709528767000L,
+            ProviderDateParser.parseRfc1123EpochMillis("Mon, 4 Mar 2024 05:06:07 GMT"),
+        )
+    }
+
+    /** 相对日期使用注入基准时间，月和年继续保留固定上源的 30/365 天语义。 */
+    @Test
+    fun relativeParserUsesInjectedClockAndFixedUpstreamDurations() {
+        /** 测试基准时间固定为 2024-03-04T05:06:07Z。 */
+        val now = 1709528767000L
+
+        assertEquals(now - 2L * 60L * 60L * 1000L, ProviderDateParser.parseRelativeEpochMillis("2 hours ago", now))
+        assertEquals(now - 30L * 86_400_000L, ProviderDateParser.parseRelativeEpochMillis("1 month", now))
+        assertEquals(now - 365L * 86_400_000L, ProviderDateParser.parseRelativeEpochMillis("1 Year+", now))
+        assertNull(ProviderDateParser.parseRelativeEpochMillis("unknown", now))
+    }
+
     /** 固定上源对不足 1 KiB 的输入显示 0.00 B，该行为需防止移植漂移。 */
     @Test
     fun fileSizeFormatterPreservesSubKilobyteUpstreamFallback() {

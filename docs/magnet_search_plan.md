@@ -132,6 +132,14 @@ AniLibria 保留 search 能力且最多取 15 个 release，每个 release 的 t
 
 本批次使用三份独立最小合成 fixture 及内联边界样本，覆盖正常字段映射、空结果、单条缺字段、顶层异常、查询/分类编码、详情 host 拒绝、AniRena 磁力重定向与时间换算，以及 ISO 1/3/6/9 位小数秒、40 位 hex、独立非零 base32 位序、多 `xt` 回退和固定 tracker 完整输出。线程测试从单线程调用上下文发起，断言网络回调仍在 caller、解析与映射只进入注入的 parser dispatcher；协作遍历测试在首条回调内取消子任务，断言第二条不会执行。fixture 不包含真实用户内容，测试不访问互联网。本批次不新增 Provider 内部日志：调度开始/成功/失败仍由 04A 的结构化日志记录，解析器不接收 logger，因此无法输出查询、URL、magnet 或 fixture 正文。
 
+### 任务 04B2 第二批 Provider（2026-09-02）
+
+本子批次只移植固定快照的 AudioBookBay、BangumiMoe 与 BitSearch，不接入注册总表、UI、Room、备份或第四个 Provider。三者继续复用 04B1 的精确 HTTPS host 策略、查询清洗、magnet/infoHash、UTC 日期和协作取消能力。AudioBookBay 保留“结果页 draft 后按 DOM 顺序访问详情页读取 infoHash”的两阶段流程，解析和领域映射进入可注入计算调度器，详情网络读取留在调用协程；BangumiMoe 使用 Kotlin serialization 构造 JSON payload 并严格校验 `torrents` 顶层数组、详情 URL path segment 及 magnet/infohash 一致性；BitSearch 以结构化并发立即请求固定 1..5 页，在调用上下文发起网络并按页码稳定合并结果。
+
+AudioBookBay 固定 SAFE、BOOKS、默认关闭并实现 search/details/latest；BangumiMoe 固定 SAFE、ANIME、默认关闭并实现 search/details/latest；BitSearch 按本地 manifest 审计固定为 NSFW、默认关闭并实现 search/details/latest/top，覆盖九个站点分类且 ALL 不发送分类参数。所有详情、torrent 下载和海报 URL 仅允许各自 manifest 的单一精确 host，不放行子域、明文 HTTP、查询污染的 Bangumi 详情 ID 或任意重定向。正常空容器返回空列表，顶层结构异常抛不带正文的 `ProviderParseException`，单条缺必填字段或非法/冲突 btih 只跳过该条。
+
+本批以最小合成 HTML/JSON fixture 和 recording fake 覆盖正常/空/缺字段/顶层异常、恶意 host、查询与 ID 编码、AudioBookBay 两阶段顺序和取消、Bangumi payload 与 hash 冲突、BitSearch 五页稳定顺序/取消/分类/相对日期及三站 dispatcher 边界。fixture 不含真实第三方正文或用户数据且测试不联网。本批不新增 Provider 内部日志：沿用 04A 聚合器的低敏阶段、数量、耗时、状态码和 reasonCode，解析器不接收 logger，禁止记录 URL、查询、magnet、JSON/HTML 正文或底层异常 message。
+
 1. 删除旧磁力模块，建立 API/实现空壳和宿主发现/启动/备份映射契约测试。
 2. 固定快照、许可证、manifest、资源前缀和依赖验证。
 3. 先以失败测试固定 43 Provider 注册表、调度器、超时、取消、渐进结果和失败隔离，再接入搜索内核。
@@ -174,6 +182,7 @@ AniLibria 保留 search 能力且最多取 15 个 release，每个 release 的 t
 
 ## 变更记录
 
+- 2026-09-02：启动任务 04B2，按固定 SHA 移植 AudioBookBay、BangumiMoe 与 BitSearch，明确两阶段详情 hash、严格 JSON/详情 ID、五页结构化并发、精确 host 与本地 NSFW 审计边界；原因是第二批 Provider 必须在接入注册表前独立锁定网络/解析线程、取消、字段容错和安全元数据契约。
 - 2026-09-02：修复任务 04B1 独立审查项：把三个 Provider 的 JSON/Jsoup DOM 与逐条领域映射恢复到可注入的 `Dispatchers.Default`，将 AniRena DOM draft 与重定向网络解耦，并以公共协作遍历锁定取消；拆出 AniLibria URL/JSON parser；补齐 ISO 1..9 位小数秒与偏移、非零 base32、多 `xt` 回退，以及固定快照 20 个 URL 编码 tracker 的精确契约。原因是避免在 UI/调用线程执行大响应解析、避免把网络请求错误包入计算调度器，并恢复固定上游磁力创建能力而不引入运行时远程 tracker 更新。
 - 2026-09-01：启动任务 04B1，按固定 SHA 移植 AniLibria、AnimeTosho 与 AniRena，明确共用解析分层、HTTPS/host 白名单、可注入时间、`ProviderParseException` 与合成 fixture 边界；原因是首批 Provider 必须先建立可复用且可回归的站点解析安全契约，并以本地审计结论覆盖 AniRena 上源错误的 Safe 标记。
 - 2026-09-01：修复任务 04A 中文注释门禁复审项：以先失败后通过的十二类外置合成 fixture 补齐普通多行参数、`for` 变量、显式构造、双命名/解构 lambda 与字符串 receiver lambda，增加调用 named argument、`when` 标签、继承续行与匿名对象反例，并把模块 `build.gradle.kts` 纳入扫描；同时补齐扫描发现的入口参数、网络 Call、协调器参数和两处 DOM 循环下标注释。原因是旧规则虽声称覆盖多行参数，实际只匹配带 `val`/`var` 的属性参数，且内嵌 fixture 曾通过跳过字符串行形成新的扫描绕过。

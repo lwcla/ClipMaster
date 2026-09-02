@@ -15,6 +15,11 @@ internal object ProviderDateParser {
     private val isoPattern = Regex(
         "^(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2})(?:\\.(\\d{1,9}))?(Z|[+-]\\d{2}:\\d{2})$",
     )
+    /** 固定上源相对日期格式；数值只接受非负整数或小数并向下取整。 */
+    private val relativePattern = Regex(
+        """\b(\d+(?:\.\d+)?)\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|wk|wks|week|weeks|mo|mos|month|months|y|yr|yrs|year|years)\b\s*(ago)?\b""",
+        RegexOption.IGNORE_CASE,
+    )
 
     /** 严格解析 ISO-8601 时间；超过毫秒的精度向下截断，无法完整消费输入时返回 null。 */
     fun parseIsoEpochMillis(rawDate: String): Long? {
@@ -44,6 +49,49 @@ internal object ProviderDateParser {
         /** 解析出的 UTC Date，空值或未完整消费均视为失败。 */
         val parsedDate = formatter.parse(rawDate.trim(), parsePosition) ?: return null
         return parsedDate.time.takeIf { parsePosition.index == rawDate.trim().length }
+    }
+
+    /** 严格解析 RFC1123 日期时间并尊重输入中的显式时区；失败返回 null。 */
+    fun parseRfc1123EpochMillis(rawDate: String): Long? =
+        parseUtcEpochMillis(rawDate, "EEE, d MMM yyyy HH:mm:ss zzz")
+
+    /** 按固定上源的秒/分/时/日/周/30 日月/365 日年语义解析相对时间。 */
+    fun parseRelativeEpochMillis(rawDate: String, currentEpochMillis: Long): Long? {
+        /** 去除旧资源使用的尾部加号，但不放宽中间文本。 */
+        val normalizedDate = rawDate.removeSuffix("+").trim()
+        /** today/即时表达保持注入时刻，yesterday 保持上源 UTC 前一日零点语义。 */
+        val specialEpochMillis = when (normalizedDate.lowercase(Locale.US)) {
+            "today", "just now", "moments ago" -> currentEpochMillis
+            "yesterday" -> utcDayStart(currentEpochMillis) - MILLIS_PER_DAY
+            "last week" -> currentEpochMillis - 7L * MILLIS_PER_DAY
+            "last month" -> currentEpochMillis - 30L * MILLIS_PER_DAY
+            "last year" -> currentEpochMillis - 365L * MILLIS_PER_DAY
+            else -> null
+        }
+        if (specialEpochMillis != null) return specialEpochMillis
+        /** 匹配结果只读取首个完整相对时间片段，与固定上源行为一致。 */
+        val match = relativePattern.find(normalizedDate) ?: return null
+        /** 小数数值沿用上源 `toLong` 语义向下取整。 */
+        val value = match.groupValues[1].toDoubleOrNull()?.toLong() ?: return null
+        /** 单位统一小写后映射为固定毫秒倍数。 */
+        val unit = match.groupValues[2].lowercase(Locale.US)
+        /** durationMillis 使用 Math.multiplyExact 拒绝恶意超大数值溢出。 */
+        val durationMillis = runCatching {
+            Math.multiplyExact(
+                value,
+                when (unit) {
+                    "s", "sec", "secs", "second", "seconds" -> MILLIS_PER_SECOND
+                    "m", "min", "mins", "minute", "minutes" -> 60L * MILLIS_PER_SECOND
+                    "h", "hr", "hrs", "hour", "hours" -> 60L * 60L * MILLIS_PER_SECOND
+                    "d", "day", "days" -> MILLIS_PER_DAY
+                    "w", "wk", "wks", "week", "weeks" -> 7L * MILLIS_PER_DAY
+                    "mo", "mos", "month", "months" -> 30L * MILLIS_PER_DAY
+                    "y", "yr", "yrs", "year", "years" -> 365L * MILLIS_PER_DAY
+                    else -> return null
+                },
+            )
+        }.getOrNull() ?: return null
+        return runCatching { Math.subtractExact(currentEpochMillis, durationMillis) }.getOrNull()
     }
 
     /** 解析 AnimeTosho 的 Today/Yesterday/d/M/yyyy，相对日期使用注入基准时间。 */
