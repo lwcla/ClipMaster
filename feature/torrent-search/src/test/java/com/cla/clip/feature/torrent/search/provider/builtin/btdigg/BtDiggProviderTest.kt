@@ -3,7 +3,6 @@ package com.cla.clip.feature.torrent.search.provider.builtin.btdigg
 import com.cla.clip.feature.torrent.search.model.contract.Category
 import com.cla.clip.feature.torrent.search.model.contract.ProviderSafetyLevel
 import com.cla.clip.feature.torrent.search.network.HttpDeniedException
-import com.cla.clip.feature.torrent.search.provider.ProviderParseException
 import com.cla.clip.feature.torrent.search.provider.builtin.testing.FakeTorrentSearchNetworkClient
 import com.cla.clip.feature.torrent.search.provider.builtin.testing.readProviderFixture
 import kotlinx.coroutines.test.runTest
@@ -61,7 +60,7 @@ class BtDiggProviderTest {
             /** 调用次数选择固定页面。 */
             textHandler = {
                 callCount += 1
-                if (callCount == 1) "<html><body><main id=\"search-results\"></main></body></html>" else mixedPage
+                if (callCount == 1) "<html><body><p>0 results</p></body></html>" else mixedPage
             },
         )
         /** 待测 Provider。 */
@@ -72,21 +71,20 @@ class BtDiggProviderTest {
         assertEquals(listOf("Valid"), provider.search("mixed", Category.OTHER).map { torrent -> torrent.name })
     }
 
-    /** 缺顶层容器抛低敏异常，恶意详情 host 在发起网络前拒绝。 */
+    /** 无结果页没有稳定顶层哨兵仍返回空，恶意详情 host 在网络前拒绝。 */
     @Test
-    fun rejectsMalformedTopLevelAndUnlistedDetailsHost() = runTest {
-        /** 不含顶层结果容器的挑战页。 */
-        val networkClient = FakeTorrentSearchNetworkClient(textHandler = { "<html><body>challenge</body></html>" })
+    fun acceptsRealShapeEmptyPageAndRejectsUnlistedDetailsHost() = runTest {
+        /** 合法零结果页没有 one_result、main 或人造 search-results id。 */
+        val networkClient = FakeTorrentSearchNetworkClient(textHandler = { "<html><body><p>0 results</p></body></html>" })
         /** 待测 Provider。 */
         val provider = BtDiggProvider(networkClient)
 
-        /** 顶层结构失败。 */
-        val malformedFailure = runCatching { provider.search("fixture", Category.OTHER) }.exceptionOrNull()
+        /** 未匹配固定结果 selector 时按上源语义得到空列表。 */
+        val emptyResults = provider.search("fixture", Category.OTHER)
         /** 直接恶意详情 host 拒绝。 */
         val detailsFailure = runCatching { provider.getDetails("https://evil.invalid/item") }.exceptionOrNull()
 
-        assertTrue(malformedFailure is ProviderParseException)
-        assertNull(malformedFailure?.message)
+        assertTrue(emptyResults.isEmpty())
         assertTrue(detailsFailure is HttpDeniedException)
         assertEquals(1, networkClient.textUrls.size)
     }

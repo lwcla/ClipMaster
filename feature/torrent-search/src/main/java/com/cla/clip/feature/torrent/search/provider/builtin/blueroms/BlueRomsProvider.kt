@@ -17,7 +17,7 @@ import com.cla.clip.feature.torrent.search.provider.builtin.common.normalizeProv
 import com.cla.clip.feature.torrent.search.provider.builtin.common.sanitizeProviderQuery
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
-import java.util.Base64
+import kotlin.io.encoding.Base64
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -114,14 +114,14 @@ private class BlueRomsResultsParser(
     /** DOM 与领域映射调度器。 */
     private val parsingDispatcher: CoroutineDispatcher,
 ) {
-    /** 解析结果容器；合法空容器返回空，顶层缺失抛低敏异常。 */
+    /** 按固定上源全局 selector 解析所有卡片；未匹配卡片按合法空结果返回。 */
     suspend fun parse(html: String, pageUrl: String): List<BlueRomsResultDraft> = withContext(parsingDispatcher) {
         /** Jsoup 静态解析不会执行站点脚本。 */
         val document = Jsoup.parse(html, pageUrl)
-        /** 固定上源结果顶层容器。 */
-        val container = document.selectFirst("div.row > div.col-xs-12") ?: throw ProviderParseException()
+        /** cards 保留所有同级 col-xs-12 下卡片的全局 DOM 顺序。 */
+        val cards = document.select("div.row > div.col-xs-12 > div.card")
         /** card 是当前结果节点，逐条解析前检查取消。 */
-        container.select("div.card").mapNotNullCancellable { card -> parseCard(card, pageUrl) }
+        cards.mapNotNullCancellable { card -> parseCard(card, pageUrl) }
     }
 
     /** 将已补全 magnet 的 draft 映射为稳定 Torrent。 */
@@ -227,8 +227,10 @@ private class BlueRomsDownloadParser(
             ?.attr("data-link")
             ?.takeIf(String::isNotBlank)
             ?: return@withContext null
-        /** 严格 Base64 解码失败按单条缺失处理。 */
-        val decodedBytes = runCatching { Base64.getDecoder().decode(encodedMagnet) }.getOrNull() ?: return@withContext null
+        /** Kotlin 标准库解码器保留标准 Base64 可选 padding，并避免引用 Android API 26 才提供的 java.util.Base64。 */
+        val decodedBytes = runCatching {
+            Base64.Default.withPadding(Base64.PaddingOption.PRESENT_OPTIONAL).decode(encodedMagnet)
+        }.getOrNull() ?: return@withContext null
         /** UTF-8 decoder 禁止用替换字符吞掉恶意无效字节。 */
         val utf8Decoder = Charsets.UTF_8.newDecoder()
             .onMalformedInput(CodingErrorAction.REPORT)

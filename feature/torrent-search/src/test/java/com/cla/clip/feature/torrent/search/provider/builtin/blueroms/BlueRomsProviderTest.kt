@@ -3,7 +3,6 @@ package com.cla.clip.feature.torrent.search.provider.builtin.blueroms
 import com.cla.clip.feature.torrent.search.model.contract.Category
 import com.cla.clip.feature.torrent.search.model.contract.ProviderSafetyLevel
 import com.cla.clip.feature.torrent.search.network.HttpDeniedException
-import com.cla.clip.feature.torrent.search.provider.ProviderParseException
 import com.cla.clip.feature.torrent.search.provider.builtin.testing.FakeTorrentSearchNetworkClient
 import com.cla.clip.feature.torrent.search.provider.builtin.testing.readProviderFixture
 import kotlinx.coroutines.CancellationException
@@ -84,7 +83,7 @@ class BlueRomsProviderTest {
                 when {
                     url.contains("/search?") -> {
                         pageCallCount += 1
-                        if (pageCallCount == 1) "<html><body><div class=\"row\"><div class=\"col-xs-12\"></div></div></body></html>" else mixedPage
+                        if (pageCallCount == 1) "<html><body><p>No results found</p></body></html>" else mixedPage
                     }
                     url.endsWith("/bad") -> magnetPage("%%%")
                     url.endsWith("/http") -> magnetPage("aHR0cHM6Ly93d3cuYmx1ZXJvbXMud3Mvbm90LW1hZ25ldA==")
@@ -100,16 +99,62 @@ class BlueRomsProviderTest {
         assertEquals(listOf("Valid"), provider.search("mixed", Category.GAMES).map { torrent -> torrent.name })
     }
 
-    /** 缺顶层容器必须抛无正文的稳定解析异常。 */
+    /** 保持上游兼容：末尾 padding 可有可无，两个样本必须产出相同 magnet。 */
     @Test
-    fun searchRejectsMalformedTopLevelHtml() = runTest {
-        /** 不含结果容器的挑战页。 */
-        val provider = BlueRomsProvider(FakeTorrentSearchNetworkClient(textHandler = { "<html><body>challenge</body></html>" }))
+    fun searchAcceptsPaddedAndUnpaddedBase64() = runTest {
+        /** 同级卡片分别承载带 padding 与不带 padding 的固定编码。 */
+        val searchPage = """
+            <html><body><div class="row"><div class="col-xs-12">
+              <div class="card"><h4 class="card-title"><a href="/game/padded">Padded</a></h4><div class="card-footer"><a href="/download/padded">x</a></div></div>
+              <div class="card"><h4 class="card-title"><a href="/game/unpadded">Unpadded</a></h4><div class="card-footer"><a href="/download/unpadded">x</a></div></div>
+            </div></div></body></html>
+        """.trimIndent()
+        /** 合成下载响应不使用生产编码器生成，避免实现与期望同时出错。 */
+        val networkClient = FakeTorrentSearchNetworkClient(
+            /** url 区分搜索页和两种兼容编码。 */
+            textHandler = { url ->
+                when {
+                    url.contains("/search?") -> searchPage
+                    url.endsWith("/padded") -> magnetPage("bWFnbmV0Oj94dD11cm46YnRpaDowMDExMjIzMzQ0NTU2Njc3ODg5OWFhYmJjY2RkZWVmZjAwMTEyMjMzJmRuPXg=")
+                    else -> magnetPage("bWFnbmV0Oj94dD11cm46YnRpaDowMDExMjIzMzQ0NTU2Njc3ODg5OWFhYmJjY2RkZWVmZjAwMTEyMjMzJmRuPXg")
+                }
+            },
+        )
 
-        /** 稳定解析失败对象。 */
-        val failure = runCatching { provider.search("fixture", Category.ALL) }.exceptionOrNull()
-        assertTrue(failure is ProviderParseException)
-        assertNull(failure?.message)
+        /** 两种编码都应保留合法名称参数，不能只验证 infoHash。 */
+        val results = BlueRomsProvider(networkClient).search("fixture", Category.GAMES)
+        /** torrent 是已通过完整解码链路的结果，验证未丢失任一种编码。 */
+        assertEquals(listOf("Padded", "Unpadded"), results.map { torrent -> torrent.name })
+        /** torrent 的 URI 必须与独立固定期望完全一致。 */
+        results.forEach { torrent ->
+            assertEquals("magnet:?xt=urn:btih:00112233445566778899aabbccddeeff00112233&dn=x", torrent.magnetUri)
+        }
+    }
+
+    /** 合法 hash 后的非法 UTF-8 必须拒绝，不能用替换字符掩盖损坏正文。 */
+    @Test
+    fun detailsRejectsMalformedUtf8AfterValidMagnetHash() = runTest {
+        /** 合成详情页复用既有字段契约。 */
+        val detailsFixture = readProviderFixture("provider/blueroms/details_normal.html")
+        /** Base64 解码为合法 magnet 前缀与末尾非法字节 FF，宽松 UTF-8 会错误放行。 */
+        val networkClient = FakeTorrentSearchNetworkClient(
+            /** url 只决定读取详情页还是损坏的下载页。 */
+            textHandler = { url ->
+                if (url.endsWith("/game/detail")) detailsFixture
+                else magnetPage("bWFnbmV0Oj94dD11cm46YnRpaDowMDExMjIzMzQ0NTU2Njc3ODg5OWFhYmJjY2RkZWVmZjAwMTEyMjMzJmRuPf8=")
+            },
+        )
+
+        assertNull(BlueRomsProvider(networkClient).getDetails("https://www.blueroms.ws/game/detail"))
+    }
+
+    /** BlueRoms 没有稳定空态容器，未匹配卡片的正常页面必须返回空。 */
+    @Test
+    fun searchAcceptsRealShapeEmptyPageWithoutSyntheticSentinel() = runTest {
+        /** 合法零结果页不包含 row、col-xs-12 或 card。 */
+        val provider = BlueRomsProvider(FakeTorrentSearchNetworkClient(textHandler = { "<html><body><p>No results found</p></body></html>" }))
+
+        assertTrue(provider.search("fixture", Category.ALL).isEmpty())
     }
 
     /** 取消首个下载页请求后不得访问后续下载页。 */

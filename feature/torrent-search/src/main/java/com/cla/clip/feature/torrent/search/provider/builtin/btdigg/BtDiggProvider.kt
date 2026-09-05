@@ -88,13 +88,12 @@ private class BtDiggResultsParser(
     /** DOM、日期、btih 与领域映射计算调度器。 */
     private val parsingDispatcher: CoroutineDispatcher,
 ) {
-    /** 解析结果；空容器返回空，缺顶层结果标记抛低敏异常。 */
+    /** 按固定上源 selector 解析结果；未匹配节点按合法零结果返回。 */
     suspend fun parse(html: String, pageUrl: String): List<Torrent> = withContext(parsingDispatcher) {
         /** Jsoup 静态 DOM 不执行脚本。 */
         val document = Jsoup.parse(html, pageUrl)
         /** 固定上源结果节点集合。 */
         val entries = document.select("div.one_result > div")
-        if (entries.isEmpty() && document.selectFirst("main#search-results") == null) throw ProviderParseException()
         /** entry 是当前结果节点，逐条解析前检查取消。 */
         entries.mapNotNullCancellable { entry -> parseEntry(entry, pageUrl) }
     }

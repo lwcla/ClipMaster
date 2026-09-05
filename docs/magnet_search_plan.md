@@ -144,7 +144,7 @@ AudioBookBay 固定 SAFE、BOOKS、默认关闭并实现 search/details/latest�
 
 本子批次只移植固定快照的 BlueRoms、BT4G 与 BTDigg，不接入注册总表、UI、Room、备份或第四个 Provider。三者继续复用精确 HTTPS host、查询清洗、magnet/infoHash、UTC/相对日期和协作取消能力；每站只通过构造注入共享网络客户端，DOM、Base64、日期、hash 和领域映射进入可注入且默认 `Dispatchers.Default` 的计算调度器，所有网络调用保留在调用协程。BlueRoms 与 BT4G 都采用两阶段 draft：先解析结果 DOM，再按 DOM 顺序请求同站下载页或详情页，取消后不再访问后续页面。
 
-BlueRoms 固定 SAFE、GAMES、默认关闭并实现 search/details；Base64 `data-link` 只在计算 dispatcher 解码，解码结果必须是 UTF-8、非空且包含合法 btih 的 magnet，任何编码值和解码正文都不进入日志。BT4G 固定 SAFE、默认关闭并实现 search/details/latest/top，支持 APPS/BOOKS/MOVIES/MUSIC/OTHER 且标记 Cloudflare；`downloadtorrentfile.com/hash/<hash>` 只作为精确匹配的离线 hash marker，禁止联网、禁止作为模型 URL 产出，其他外域或路径一律拒绝。BTDigg 固定 SAFE、OTHER、默认关闭并实现 search/details，搜索结果保留通过 btih 校验的 magnet，结果与详情相对日期使用可注入时钟。所有请求、详情、下载、海报和截图地址只允许各自 manifest 的单一精确 HTTPS host；合法空容器返回空，顶层容器缺失抛无正文的 `ProviderParseException`，单条或详情缺必填字段返回空值而不拖垮整批。
+BlueRoms 固定 SAFE、GAMES、默认关闭并实现 search/details；Base64 `data-link` 只在计算 dispatcher 解码，解码结果必须是 UTF-8、非空且包含合法 btih 的 magnet，任何编码值和解码正文都不进入日志。BT4G 固定 SAFE、默认关闭并实现 search/details/latest/top，支持 APPS/BOOKS/MOVIES/MUSIC/OTHER 且标记 Cloudflare；`downloadtorrentfile.com/hash/<hash>` 只作为精确匹配的离线 hash marker，禁止联网、禁止作为模型 URL 产出，其他外域或路径一律拒绝。BTDigg 固定 SAFE、OTHER、默认关闭并实现 search/details，搜索结果保留通过 btih 校验的 magnet，结果与详情相对日期使用可注入时钟。所有请求、详情、下载、海报和截图地址只允许各自 manifest 的单一精确 HTTPS host。BlueRoms 与 BTDigg 的固定上游结果 parser 没有稳定顶层/空态哨兵，因此严格沿用“结果 selector 未匹配即合法空列表”，避免把真实零结果误报为解析失败；BT4G 仍以稳定 `main` 区分顶层异常。单条或详情缺必填字段返回空值而不拖垮整批。
 
 本批以最小合成 HTML fixture 和 recording fake 覆盖正常/空/缺字段/顶层异常、查询与分类编码、descriptor 能力与安全元数据、精确 host、两阶段顺序与取消、Base64 非法输入、BT4G 外域 marker 离线提 hash和恶意 marker 拒绝、BTDigg magnet 保留与相对日期，以及三站 caller/parser 线程边界。fixture 不含真实第三方正文或用户数据且测试不联网。本批不新增 Provider 内部日志：继续由 04A 聚合器记录低敏阶段、数量、耗时、状态码和 reasonCode，解析器不接收 logger，禁止记录 URL、查询、magnet、Base64、HTML 正文或底层异常 message。
 
@@ -190,6 +190,8 @@ BlueRoms 固定 SAFE、GAMES、默认关闭并实现 search/details；Base64 `da
 
 ## 变更记录
 
+- 2026-09-05：修复任务 04B3 的 API 24 兼容性：BlueRoms Base64 解码由 Android API 26 才提供的 `java.util.Base64` 改为 Kotlin 2.2 标准库纯 Kotlin 实现，并保留标准 Base64 末尾 padding 可选的既有行为；补带/不带 padding 等价解析与非法 UTF-8 回归。原因是宿主 `minSdk=24` 且本模块未启用 core library desugaring，原直接调用可能在 API 24/25 触发 `NoClassDefFoundError`。静态字节码检查覆盖业务 class 与实际 `kotlin.io.encoding.Base64` 实现；设备级 API 24 冒烟仍保留为发布验收项。本修复不新增日志，既有调度器日志已覆盖 Provider 成败，解码器继续只在内存处理 Base64/magnet，禁止将正文写入日志。
+- 2026-09-02：修复任务 04B3 独立审查项：BlueRoms 恢复固定上游全局 `div.row > div.col-xs-12 > div.card` 选择语义，覆盖多个同级列而不是只解析首列；BlueRoms 与 BTDigg 移除不存在于真实零结果页的人造顶层哨兵，selector 未匹配时返回空列表，并补真实形状空页回归。原因是原合成 fixture 形成自洽假阳性，可能导致 BlueRoms 只返回第一条以及两站零结果被误报解析失败。
 - 2026-09-02：启动任务 04B3，按固定 SHA 移植 BlueRoms、BT4G 与 BTDigg，明确 Base64 两阶段解码、BT4G 外域 hash marker 仅离线解析且绝不联网/产出、BTDigg 结果保留合法 magnet，并锁定精确 host、Cloudflare、取消、线程与低敏日志边界；原因是第三批 Provider 必须在注册前独立验证跨页补全与不可信链接约束。
 - 2026-09-02：启动任务 04B2，按固定 SHA 移植 AudioBookBay、BangumiMoe 与 BitSearch，明确两阶段详情 hash、严格 JSON/详情 ID、五页结构化并发、精确 host 与本地 NSFW 审计边界；原因是第二批 Provider 必须在接入注册表前独立锁定网络/解析线程、取消、字段容错和安全元数据契约。
 - 2026-09-02：修复任务 04B1 独立审查项：把三个 Provider 的 JSON/Jsoup DOM 与逐条领域映射恢复到可注入的 `Dispatchers.Default`，将 AniRena DOM draft 与重定向网络解耦，并以公共协作遍历锁定取消；拆出 AniLibria URL/JSON parser；补齐 ISO 1..9 位小数秒与偏移、非零 base32、多 `xt` 回退，以及固定快照 20 个 URL 编码 tracker 的精确契约。原因是避免在 UI/调用线程执行大响应解析、避免把网络请求错误包入计算调度器，并恢复固定上游磁力创建能力而不引入运行时远程 tracker 更新。
