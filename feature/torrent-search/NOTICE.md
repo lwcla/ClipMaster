@@ -76,3 +76,15 @@ and exact metadata routes, skips invalid file candidates, and intentionally
 fixes the upstream metadata.metadata category typo to metadata.mediatype.
 Fixtures are synthetic and offline. No registry, UI, persistence, or backup
 behavior is added in this batch.
+
+The sixth runtime batch ports Knaben, LimeTorrents, and LinuxTracker from the
+same pinned sources and verified manifest hashes. Provider entry points retain
+network orchestration while dedicated URL, category, JSON, and HTML parsers run
+on injected computation dispatchers. Knaben follows the local NSFW/default-off
+audit and submits explicit JSON fields. LimeTorrents treats its HTTP iTorrents
+link only as an offline hash marker, then rebuilds a query-free HTTPS download
+URL; no plaintext request is made. LinuxTracker preserves its nested-table
+selectors and performs independent latest/top requests. All emitted web links
+use exact reviewed hosts, HTTPS default ports, and no user information. Invalid
+optional links degrade locally, fixtures are synthetic and offline, and this
+batch adds no registry, UI, persistence, backup, or reflection behavior.

@@ -231,3 +231,21 @@ InternetArchive 按本地 manifest 为 NSFW、默认关闭。搜索保留固定�
 04C2 路径补充（2026-09-06）：复审确认 FileMood 不应从 URL query/fragment 尾部取 hash；改为 HttpUrl 最后路径文件名必须 `.html` 后缀，从最后连字符后读取 hash，存在 query/fragment 的候选直接跳过。IA 详情额外校验归一化前恰好两段和默认 HTTPS 443 端口，避免点段折叠或非标准端口改变元数据目标。这两项先跑 2 tests / 2 failures 的真实 RED 再修复。
 
 04C2 验证记录（2026-09-06）：最终全模块 225 tests / 28 suites，0 failures/errors/skipped；模块 Kotlin、中文注释门禁与开启功能的 App Kotlin 编译通过（BUILD SUCCESSFUL in 1m 3s）。仅运行合成离线测试，真实站点、设备和 release/R8 未验证。
+
+### 任务 04C3：Knaben、LimeTorrents、LinuxTracker（2026-09-06）
+
+状态：已完成。固定上游提交与 manifest SHA 已逐文件核对；本批只移植三站的 search/latest/top 与站点已有 details 能力，不接注册表、UI、Room 或备份。每站入口只编排网络，具名 URL/category/parser 协作者负责结构化请求、静态响应解析和领域映射；网络留在调用协程，JSON/DOM、日期、hash 和逐条映射进入可注入且默认 `Dispatchers.Default` 的计算调度器。复用共享网络客户端、查询清洗、精确 host URL policy、hash/magnet、UTC 日期、大小、无符号人数、协作取消及测试 fake。
+
+Knaben 按本地安全审计标记为 NSFW 且默认关闭，通过 `https://api.knaben.org/v1` 提交结构化 JSON；search 使用清洗后的 query 和 seeders 排序，latest/top 省略 query 并分别按 date/seeders 排序。ALL 省略 categories，其余九类使用固定百万级 ID。`hits` 必须为数组；合法空数组返回空，坏条目跳过，顶层结构异常抛无正文 `ProviderParseException`。名称与合法 magnet 必填，Long 字节值格式化，ISO UTC、seeders/peers 和最小有效 categoryId 安全降级；可选 details 只允许 `knaben.org`、`api.knaben.org` 的 HTTPS 默认端口且无用户信息，非法链接置空而不丢合法条目。
+
+LimeTorrents 按本地审计为 UNSAFE 且默认关闭。search 通过结构化 path segment 编码查询，BOOKS/PORN/ALL 回退 `all`；latest/top 对不支持分类直接返回空且不联网，其余分类保留固定上源大小写路径。结果页只解析 `.table2 > tbody > tr`，名称与精确 `itorrents.net` marker 中的合法 hash 必填；marker 允许输入 HTTP/HTTPS 默认端口、无用户信息且路径严格为 `/torrent/{hash}.torrent`，但只离线提取并重建无 query 的 `https://itorrents.net/torrent/{hash}.torrent`，绝不访问 HTTP。详情 host 只允许两个站点域名的 HTTPS 默认端口；名称、匹配 hash 和合法 magnet 必填，可选下载链接按同一 marker 规则降级。日期/分类字段缺少分隔符时保持可选空值，分类先 trim 后映射，相对日期使用注入时钟。
+
+LinuxTracker 按本地审计为 SAFE 且默认关闭，固定分类为 APPS。search/latest 使用结构化 query 参数请求同一列表入口；top 每次独立发起一次 latest 形状请求，不共享缓存。列表完整保留上游 `table.lista` 与带 title 的详情 anchor 选择器，避免嵌套子表重复；名称和合法 magnet 必填，日期按 UTC `dd/MM/yyyy`，可选详情与下载只允许 `linuxtracker.org` HTTPS 默认端口。详情读取 itemprop 名称/描述与标签相邻表格值，seed/leech 字段缺分隔符或为空时只降级可选人数；描述继续作为不可信 HTML，等待展示层禁脚本。
+
+日志与诊断计划：本批不新增逐站运行时日志，现有协调器的 started/results/failed/completed 与低敏 Provider ID、reasonCode、数量和耗时已覆盖诊断。Provider 和 parser 禁止输出 URL、query、JSON body、HTML、magnet、Cookie、响应正文或异常 message；所有响应只在内存处理。描述保持不可信内容，测试 fixture 使用合成数据。没有新增持久数据、备份字段、反射或序列化模型，因此备份与 keep/R8 规则不变。
+
+测试：采用选择性 TDD，先运行可编译失败契约，再实现生产代码。每站覆盖正常、真实形状空、缺字段、结构异常、查询编码、请求参数、恶意输入和产出 URL；额外锁定 Knaben 精确 JSON 与分类边界、Lime 全类别路径/不联网/marker 升级与 hash 一致性、Linux 嵌套表/日期/人数及 latest/top 独立请求。复用单线程 dispatcher 与响应后取消模式。最终运行 `:feature:torrent-search:testDebugUnitTest`、`:feature:torrent-search:compileDebugKotlin`、`:feature:torrent-search:checkTorrentSearchChineseComments`、开启功能的 `:app:compileDebugKotlin` 及 `git diff --check`；设备、真实联网与 release/R8 留发布阶段。
+
+变更记录：2026-09-06，启动 04C3 固定快照移植；明确三站精确 URL、解析线程、单条容错、Lime marker 离线 HTTPS 重建和 Linux latest/top 独立请求边界，避免机械移植保留明文链接、越界拆分与可选字段扩大失败面。
+
+04C3 验证记录（2026-09-06）：首轮可编译空骨架上的 15 个行为测试有 13 个按请求、解析、URL 和元数据契约真实失败；实现后补充 Knaben 严格数字类型回归，先得到 1 test / 1 failure 再拒绝字符串数字与 UInt 溢出。最终全模块 245 tests / 30 suites，0 failures/errors/skipped；模块 Kotlin、中文注释门禁及开启功能的 App Kotlin 编译通过（BUILD SUCCESSFUL in 41s），`git diff --check` 无错误。仅运行合成离线测试；真实站点、设备和 release/R8 未验证，按发布阶段计划处理。
