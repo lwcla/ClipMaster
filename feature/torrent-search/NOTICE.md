@@ -114,3 +114,14 @@ applies to direct URLs, validated bases, and resolved relative or absolute
 candidates while preserving default and explicit port 443. Provider-local
 guards remain in place where already present, and the general network client
 retains its separate same-origin port contract.
+
+The eighth runtime batch ports NekoBT, Nyaa, and Sukebei from the same pinned
+sources and verified manifest hashes. NekoBT retains its reviewed HTML endpoint
+and dedicated parsers. Nyaa and Sukebei share only their static table and detail
+card parsing skeleton while preserving separate request builders, exact-host
+policies, categories, and safety metadata. Nyaa accepts only its reviewed mirror;
+Sukebei remains NSFW, default-disabled, and fixed to the pornography category.
+All parsing runs on injected computation dispatchers, cancellation propagates,
+and optional unsafe URLs degrade without discarding otherwise valid results.
+Fixtures use neutral synthetic content and no network. This batch adds no
+registry, UI, persistence, backup, reflection, or runtime remote-code behavior.

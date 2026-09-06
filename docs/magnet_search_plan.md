@@ -150,6 +150,16 @@ BlueRoms 固定 SAFE、GAMES、默认关闭并实现 search/details；Base64 `da
 
 本批以最小合成 HTML fixture 和 recording fake 覆盖正常/空/缺字段/顶层异常、查询与分类编码、descriptor 能力与安全元数据、精确 host、两阶段顺序与取消、Base64 非法输入、BT4G 外域 marker 离线提 hash和恶意 marker 拒绝、BTDigg magnet 保留与相对日期，以及三站 caller/parser 线程边界。fixture 不含真实第三方正文或用户数据且测试不联网。本批不新增 Provider 内部日志：继续由 04A 聚合器记录低敏阶段、数量、耗时、状态码和 reasonCode，解析器不接收 logger，禁止记录 URL、查询、magnet、Base64、HTML 正文或底层异常 message。
 
+### 任务 04D2 NekoBT 与 Nyaa 族 Provider（2026-09-06）
+
+本子批次只移植固定快照的 NekoBT、Nyaa 与 Sukebei，不接入注册表、数据层、UI、备份或其他 Provider。NekoBT 保留独立 HTML Provider 与具名结果/详情 parser；Nyaa 和 Sukebei 共享无网络的 `NyaaFamilyResultsParser`、`NyaaFamilyDetailsParser`，通过 descriptor、精确 URL policy、类别映射或固定类别及信息卡 selector 表达差异。三个入口分别构造 search/latest/top URL，查询由 `HttpUrl` 编码；网络调用留在调用协程，DOM 与领域映射进入可注入的 `Dispatchers.Default`，逐行解析复用可取消遍历。
+
+NekoBT 固定 SAFE、默认关闭、ANIME 与唯一 `nekobt.to`；Nyaa 固定 SAFE、默认开启、六类映射及备用 host `nyaa.iss.ink`；Sukebei 固定 NSFW、默认关闭、PORN 与唯一 `sukebei.nyaa.si`。名称和合法 magnet/btih 是必填字段，详情必填缺失返回 null；详情输入在网络前拒绝非 HTTPS、非 443、userinfo 和非精确 host。可选详情、下载与海报链接校验失败只清空对应字段。Nyaa 详情类别优先第二级 `6_2`，两站 magnet 与下载按钮按固定上源从全页查找，描述保留为不可信 HTML。
+
+本批用三站独立中性合成 fixture 与 Provider 公开契约测试覆盖正常、空、结构漂移、必填缺失、查询参数、精确 host、可选恶意 URL、Nyaa 评论链接排除与完整类别、Sukebei 固定 PORN、NekoBT 嵌套标题/data-tip、epoch 溢出、非法计数、caller/parser dispatcher 及父取消。复用共享网络层既有 5 MiB HTTPS 测试，不创建巨型 fixture 或真实网络请求。无持久数据、序列化和反射契约，因此不改备份及 keep/R8 规则。
+
+日志与诊断继续复用 04A 聚合器的低敏 Provider ID、阶段、数量、耗时和 reasonCode；Provider/parser 不新增 logger，禁止记录 URL、查询、magnet、HTML、登录态或异常 message。解析失败通过合成 fixture、断言和统一失败分类定位，避免重复及高敏日志。
+
 1. 删除旧磁力模块，建立 API/实现空壳和宿主发现/启动/备份映射契约测试。
 2. 固定快照、许可证、manifest、资源前缀和依赖验证。
 3. 先以失败测试固定 43 Provider 注册表、调度器、超时、取消、渐进结果和失败隔离，再接入搜索内核。
@@ -191,6 +201,8 @@ BlueRoms 固定 SAFE、GAMES、默认关闭并实现 search/details；Base64 `da
 - `docs/unit_test_plan.md`：固定快照、协议、安全与恢复测试矩阵。
 
 ## 变更记录
+
+- 2026-09-06：启动任务 04D2，固定 NekoBT 独立 HTML parser 与 Nyaa/Sukebei 同引擎共享 parser 边界，明确三站独立请求、安全元数据、精确 URL、计算调度、取消和测试契约；不新增日志、持久数据、备份或 keep。原因是按固定上游快照继续分批移植，同时避免复制 Nyaa 族 DOM 解析。
 
 - 2026-09-06：第四批复审要求恢复 Ext 详情下载按钮的整页查找范围；固定上游按钮选择器不属于详情 card，移植时收窄会把卡片外按钮的合法页面误判为无详情。补该页面形状回归，名称/其他详情字段继续读取原有 card，网络和 token 校验边界不变。
 
