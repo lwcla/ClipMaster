@@ -284,6 +284,28 @@ MyPornClub 按本地审计标记 NSFW 且默认关闭，固定 `myporn.club` HTT
 
 04D1 独立复审最终验证（2026-09-06）：完整命令首次由中文注释门禁发现两处测试 lambda 参数缺贴近注释，补齐后重跑通过；最终全模块 269 tests / 33 suites，0 failures/errors/skipped，模块 Kotlin、中文注释门禁与开启功能 App Kotlin 编译通过（BUILD SUCCESSFUL in 38s），`git diff --check` 无错误，仅有换行符提示。未运行真实联网、设备/API 24 或 release/R8。
 
+### 任务 04E1：TorrentsCSV、ThePirateBay、Yts（2026-09-06）
+
+状态：已完成。固定上游提交与 manifest SHA 已逐文件核对；本批只移植三个 JSON Provider 的既有能力，不接注册表、UI、Room、备份或其他来源。Provider 入口只编排网络，站点 URL builder、严格详情 token、category mapper 和显式 JSON key parser 分别放在具名文件；网络留在调用协程，JSON tree、逐条校验与领域映射进入可注入且默认 `Dispatchers.Default` 的计算调度器。
+
+TorrentsCSV 保留 SAFE、默认启用、OTHER 分类与仅 search 能力。请求固定为 `https://torrents-csv.com/service/search?q=...`，查询先删除控制字符再交给 `HttpUrl` 编码。顶层必须是对象且 `torrents` 必须是数组；合法空数组返回空，非对象条目、空名称或非法 hash 跳过。大小全程使用 Long 格式化；seeders、leechers 与 epoch 秒按可选字段安全降级。列表仅输出上源提供的 infoHash 与统计字段，不合成 magnet、详情页或文件链接。
+
+ThePirateBay 按本地审计固定为 UNSAFE 且默认关闭；展示页为 `thepiratebay.org`，备用页面 host 保留 `knaben.xyz`，所有搜索、latest、top 与 details API 请求只访问 `apibay.org`。search/category、recent 与 48h 预编译路径完整保留固定上源映射。详情 token 只接受 `https://thepiratebay.org/description.php`、唯一有界正整数 `id`、默认 443、无 userinfo、无额外 query/fragment；响应存在 id 时必须与请求一致。结果 JSON 顶层必须为数组，上源空结果 sentinel 为空，坏条目逐项跳过；详情名称与合法 hash 必填，公共 magnet 由 hash 构造，描述保留为不可信文本。
+
+Yts 保留 SAFE、默认启用、MOVIES 分类，API 仅访问 `movies-api.accel.li/api/v2`，展示与可选媒体只允许 `yts.bz`。search 固定 `limit=50`，latest 与 top 每次独立请求 list API。结果按电影和 torrent 的原始顺序展开；正整数 movie ID、非空电影名、合法 hash 与合法页面 token 为必填，坏电影或坏 torrent 不阻断后续合法项。`movie_count=0` 且省略 movies 是合法空，其余缺失或错误顶层结构抛无正文 `ProviderParseException`。详情 token 只接受 `/movies/{slug}` 及唯一 `movieid`、`infohash` 参数；详情响应 movie ID 与目标 hash 必须匹配。海报、截图和 torrent 文件 URL 只保留精确白名单 HTTPS 默认端口且无 userinfo 的值，非法可选媒体置空而不丢详情，入口不预取媒体或 torrent 文件。
+
+日志与诊断计划：本批不新增逐站或逐条日志，沿用协调器的低敏 Provider ID、阶段、结果数、耗时和 reasonCode。Provider/parser 禁止输出 query、URL、movie/id、hash、magnet、响应 JSON、描述、媒体地址、header 或异常 message；所有响应只在内存处理。没有新增持久数据、外部序列化/反射模型或数据库字段，因此备份与 keep/R8 不变。
+
+测试：采用选择性 TDD，先在可编译 stub 上运行行为测试获得断言层面的真实 RED，再实现生产逻辑。三站覆盖 descriptor、请求编码、能力、正常/空/坏顶层/坏单条、Long/UInt/epoch 边界、精确 host 与恶意 URL、详情身份、计算 dispatcher 和取消；Yts 额外覆盖多电影多 torrent 顺序、严格 token 往返、合法零电影、独立 top/latest 与恶意媒体降级。全部 fixture 为中性合成 JSON，不访问真实网络。最终运行模块全量单测、模块编译、中文注释门禁、开启功能 App 编译、JUnit XML 汇总和 `git diff --check`；设备、真实站点与 release/R8 留任务 8。
+
+变更记录：2026-09-06，启动 04E1 固定快照移植；明确三个 JSON 协议的严格顶层/逐项容错、TPB/Yts 页面 token 与 API host 隔离、Yts 逐电影展开和媒体 URL 降级边界，避免机械移植上源的字符串拼接、强制数字转换与宽松 URL 解析。
+
+04E1 验证记录（2026-09-06）：可编译 stub 上定向运行 21 项行为测试，得到 18 项按请求、解析、严格 URL/token、数值边界、dispatcher 和取消契约的真实失败；实现后相同 21 项全部 GREEN。最终完整验证为 318 tests / 41 suites，0 failures/errors/skipped；模块 Kotlin、中文注释门禁与开启功能的 App Kotlin 编译通过（BUILD SUCCESSFUL in 31s），`git diff --check` 无错误，仅有工作树换行符提示。全部测试使用中性合成 JSON 和 fake 网络；真实站点、设备/API 24 与 release/R8 未验证，按任务 8 发布阶段处理。
+
+04E1 独立复审 round1（2026-09-06）：TPB 详情响应的 `id` 校验改为先判断 key 是否存在；完全缺键继续兼容固定源，一旦存在则必须是与请求一致的规范正整数字符串，数字、null、Boolean、对象、数组、空白、负数、零、前导零、溢出或冲突值均返回空详情。该修复不放宽其他字符串数字字段。公开 Provider 入口回归先得到 1 test / 1 failure，再完成定向 GREEN；同时补齐 TPB/Yts 详情网络 caller 与注入解析 dispatcher，以及 TPB search/details 的 Long 大小、UInt 最大值/越界/负数/非法文本和 epoch 溢出覆盖。
+
+04E1 round1 验证记录（2026-09-06）：最终新代码完整组合验证通过，JUnit XML 汇总为 322 tests / 41 suites，0 failures/errors/skipped；模块测试、模块 Kotlin 编译、中文注释门禁与开启功能的 App Kotlin 编译均通过（BUILD SUCCESSFUL in 22s）。限定未暂存差异只包含上述 parser、两份测试、主方案和 NOTICE；`git diff --check` 无错误，仅有 LF/CRLF 工作树提示。
+
 ### 任务 04A3：内置来源共同 URL authority 边界（2026-09-06）
 
 状态：已完成。内置来源共同 `BuiltinProviderUrlPolicy` 在既有 HTTPS 与精确 host 白名单之外，统一要求解析后的有效端口为 443 且用户名、密码均为空。默认 443 与显式 `:443` 等价允许；非 443 端口、username-only、password-only、组合及编码 userinfo 均在网络前以无正文 `HttpDeniedException` 拒绝。`resolveOptionalHttpsUrl` 继续复用同一 policy 校验 base 与解析后的 candidate，覆盖网络路径、相对/绝对地址和污染 base；`null`/空白 candidate 保持原有 `null` 短路，非法非空 candidate 保持抛异常契约。

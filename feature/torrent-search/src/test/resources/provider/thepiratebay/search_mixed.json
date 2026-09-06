@@ -1,0 +1,12 @@
+[
+  null,
+  {"name":"Bad","id":"x","info_hash":"bad"},
+  {"name":"Synthetic Apps","id":"1","info_hash":"00112233445566778899aabbccddeeff00112233","size":"1024","seeders":"1","leechers":"0","added":"1","category":"306"},
+  {"name":"Synthetic Books","id":"2","info_hash":"112233445566778899aabbccddeeff0011223344","size":"2048","seeders":"2","leechers":"1","added":"2","category":"601"},
+  {"name":"Synthetic Games","id":"3","info_hash":"2233445566778899aabbccddeeff001122334455","size":"4096","seeders":"3","leechers":"2","added":"3","category":"499"},
+  {"name":"Synthetic Movies","id":"4","info_hash":"33445566778899aabbccddeeff00112233445566","size":"8192","seeders":"4","leechers":"3","added":"4","category":"211"},
+  {"name":"Synthetic Music","id":"5","info_hash":"445566778899aabbccddeeff0011223344556677","size":"16384","seeders":"5","leechers":"4","added":"5","category":"199"},
+  {"name":"Synthetic Adult","id":"6","info_hash":"5566778899aabbccddeeff001122334455667788","size":"32768","seeders":"6","leechers":"5","added":"6","category":"599"},
+  {"name":"Synthetic Series","id":"7","info_hash":"66778899aabbccddeeff00112233445566778899","size":"65536","seeders":"7","leechers":"6","added":"7","category":"212"},
+  {"name":"Synthetic Other","id":"8","info_hash":"778899aabbccddeeff00112233445566778899aa","size":"131072","seeders":"8","leechers":"7","added":"8","category":"999999999999999999999"}
+]

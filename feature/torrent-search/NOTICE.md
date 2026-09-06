@@ -125,3 +125,23 @@ All parsing runs on injected computation dispatchers, cancellation propagates,
 and optional unsafe URLs degrade without discarding otherwise valid results.
 Fixtures use neutral synthetic content and no network. This batch adds no
 registry, UI, persistence, backup, reflection, or runtime remote-code behavior.
+
+The ninth runtime batch ports TorrentsCSV, ThePirateBay, and Yts from the same
+pinned sources and verified manifest hashes. Local adaptations use dedicated
+URL, category, detail-token, and explicit-key JSON collaborators while keeping
+network calls in the caller coroutine and parsing on injected computation
+dispatchers. TorrentsCSV retains search-only output without invented download
+links. ThePirateBay follows the local unsafe/default-disabled audit and isolates
+its public page token from the fixed API host. Yts expands each movie torrent in
+source order, validates movie/hash identity, and drops optional media URLs that
+do not use reviewed HTTPS hosts, default ports, and empty user information.
+Fixtures are neutral, synthetic, and offline. This batch adds no registry, UI,
+persistence, backup, reflection, or runtime remote-code behavior.
+
+The round-one review hardens ThePirateBay detail identity handling: a completely
+missing response ID remains compatible with the pinned source, while any present
+ID must be a canonical positive decimal string matching the requested torrent.
+JSON numbers, nulls, booleans, objects, arrays, noncanonical strings, overflow,
+and conflicts are rejected without widening the other string-number contracts.
+Offline tests also cover detail network/dispatcher separation and search/detail
+Long, UInt, and epoch boundaries for the reviewed adapters.
