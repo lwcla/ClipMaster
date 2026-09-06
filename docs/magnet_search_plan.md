@@ -271,3 +271,13 @@ MyPornClub 按本地审计标记 NSFW 且默认关闭，固定 `myporn.club` HTT
 04D1 独立复审补测（2026-09-06）：新增 8 项边界测试，覆盖 MegaPeer 十二个俄文短月与 `Мая`、全部请求分类、跨站或异常端口 poster/截图/文件降级，以及 Mikan/MyPornClub 的空页面、selector 漂移、必填缺失、详情请求阻断和恶意可选产出链接；首次定向执行即 20 tests / 0 failures，因此属于既有行为覆盖补全，不记作新的 RED。原第七批测试的压缩分号同时改为标准多行结构，便于逐条审查。
 
 04D1 独立复审最终验证（2026-09-06）：完整命令首次由中文注释门禁发现两处测试 lambda 参数缺贴近注释，补齐后重跑通过；最终全模块 269 tests / 33 suites，0 failures/errors/skipped，模块 Kotlin、中文注释门禁与开启功能 App Kotlin 编译通过（BUILD SUCCESSFUL in 38s），`git diff --check` 无错误，仅有换行符提示。未运行真实联网、设备/API 24 或 release/R8。
+
+### 任务 04A3：内置来源共同 URL authority 边界（2026-09-06）
+
+状态：已完成。内置来源共同 `BuiltinProviderUrlPolicy` 在既有 HTTPS 与精确 host 白名单之外，统一要求解析后的有效端口为 443 且用户名、密码均为空。默认 443 与显式 `:443` 等价允许；非 443 端口、username-only、password-only、组合及编码 userinfo 均在网络前以无正文 `HttpDeniedException` 拒绝。`resolveOptionalHttpsUrl` 继续复用同一 policy 校验 base 与解析后的 candidate，覆盖网络路径、相对/绝对地址和污染 base；`null`/空白 candidate 保持原有 `null` 短路，非法非空 candidate 保持抛异常契约。
+
+本修复复用 `HttpUrl` 解析、既有低敏异常、Eztv 真实 `getDetails` 入口和 recording fake，不新增类，不改通用 `TorrentSearchNetworkClient` 的端口规则；后者的回环 HTTPS 测试及未来显式配置来源仍可使用合法自定义端口。已审计全部 21 个共同 policy 调用方；Knaben、LimeTorrents、LinuxTracker 等 feature-local 重复 guard 暂时保留，以缩小修复范围并避免无关重构。
+
+日志与诊断计划：不新增运行时日志，共用协调器的低敏 Provider ID 与 reasonCode 已覆盖拒绝结果；异常禁止携带 URL、host、userinfo、query、body 或底层异常 message。测试仅使用 `fixture.example`、Eztv 合成地址和现有网络 fake，不访问真实网络。没有持久字段、数据库、备份、序列化、反射或外部 ABI 变化，备份与 keep/R8 无需调整；设备/API 24、真实联网和 release/R8 仍留发布阶段。
+
+测试与变更记录：2026-09-06，先增加共同 policy 与 Eztv 入口回归，定向执行 6 tests 得到 3 failures，分别证明直接校验、optional resolve 与真实 Provider 会放行 userinfo/8443；随后仅补共同 guard，相同 6 tests 定向 GREEN。最终唯一一轮组合验证通过，JUnit XML 汇总为 273 tests / 33 suites、0 failures/errors/skipped；模块 Kotlin、中文注释门禁及开启功能 App Kotlin 编译通过（BUILD SUCCESSFUL in 40s），`git diff --check` 无错误。仅使用合成离线测试；设备/API 24、真实联网与 release/R8 未验证，仍按发布阶段计划处理。

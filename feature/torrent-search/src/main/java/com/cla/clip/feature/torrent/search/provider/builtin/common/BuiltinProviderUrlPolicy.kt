@@ -20,11 +20,18 @@ internal class BuiltinProviderUrlPolicy(
         require(normalizedAllowedHosts.isNotEmpty())
     }
 
-    /** 校验并返回 HTTPS URL；解析、scheme 或 host 不合法时统一抛出低敏拒绝异常。 */
+    /** 校验并返回无用户信息、默认端口、精确白名单 host 的 HTTPS URL；失败时统一抛出低敏拒绝异常。 */
     fun requireHttpsUrl(url: String): HttpUrl {
         /** OkHttp 解析结果只用于安全判定，不进入日志或异常正文。 */
         val parsedUrl = url.toHttpUrlOrNull() ?: throw HttpDeniedException()
-        if (!parsedUrl.isHttps || parsedUrl.host.lowercase() !in normalizedAllowedHosts) {
+        /** 内置来源固定访问标准 HTTPS 服务，禁止 authority 注入凭据或切换到同 host 的其他端口。 */
+        if (
+            !parsedUrl.isHttps ||
+            parsedUrl.host.lowercase() !in normalizedAllowedHosts ||
+            parsedUrl.port != 443 ||
+            parsedUrl.username.isNotEmpty() ||
+            parsedUrl.password.isNotEmpty()
+        ) {
             throw HttpDeniedException()
         }
         return parsedUrl

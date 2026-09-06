@@ -130,6 +130,30 @@ class FifthBatchProviderTest {
         assertTrue(client.jsonUrls.isEmpty())
     }
 
+    /** Eztv 真实详情入口必须在 fake 记录请求前拒绝用户信息与异常端口。 */
+    @Test
+    fun eztvRejectsUnsafeAuthorityBeforeNetwork() = runBlocking {
+        /** fake 记录所有潜在请求，拒绝路径不提供任何响应。 */
+        val client = FakeTorrentSearchNetworkClient()
+        /** 真实 Provider 入口复用共同 URL policy。 */
+        val provider = EztvProvider(client)
+        /** 恶意输入分别覆盖用户信息和非 HTTPS 默认端口。 */
+        val deniedUrls = listOf(
+            "https://user:password@eztvx.to/item",
+            "https://eztvx.to:8443/item",
+        )
+
+        /** 每个恶意详情地址都必须在请求创建前失败。 */
+        for (deniedUrl in deniedUrls) {
+            /** 入口失败用于核对低敏异常，不读取或回显原始地址。 */
+            val failure = runCatching { provider.getDetails(deniedUrl) }.exceptionOrNull()
+            assertTrue(failure is HttpDeniedException)
+            assertNull(failure?.message)
+        }
+        assertTrue(client.textUrls.isEmpty())
+        assertTrue(client.jsonUrls.isEmpty())
+    }
+
     /** FileMood 搜索保留标题条件、hash 和节点数。 */
     @Test
     fun fileMoodSearchKeepsTitleConstraintAndMetadata() = runBlocking {

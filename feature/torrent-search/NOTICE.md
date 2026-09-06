@@ -107,3 +107,10 @@ Russian month tokens and category IDs, reject unsafe optional media links,
 and exercise empty, malformed, missing-required-field, and unsafe-output-link
 cases for Mikan and MyPornClub. These fixtures remain synthetic and perform no
 requests to the upstream services.
+
+The shared built-in Provider URL policy also rejects user information and
+non-443 effective ports before a request is created. This authority boundary
+applies to direct URLs, validated bases, and resolved relative or absolute
+candidates while preserving default and explicit port 443. Provider-local
+guards remain in place where already present, and the general network client
+retains its separate same-origin port contract.
