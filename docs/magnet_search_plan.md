@@ -306,6 +306,28 @@ Yts 保留 SAFE、默认启用、MOVIES 分类，API 仅访问 `movies-api.accel
 
 04E1 round1 验证记录（2026-09-06）：最终新代码完整组合验证通过，JUnit XML 汇总为 322 tests / 41 suites，0 failures/errors/skipped；模块测试、模块 Kotlin 编译、中文注释门禁与开启功能的 App Kotlin 编译均通过（BUILD SUCCESSFUL in 22s）。限定未暂存差异只包含上述 parser、两份测试、主方案和 NOTICE；`git diff --check` 无错误，仅有 LF/CRLF 工作树提示。
 
+### 任务 04E2：Rutor、XXXTracker、TorrentKitty（2026-09-06）
+
+状态：已完成。固定上游提交 `ba82e889637027f7bed82715ec4d2106cbce5a28` 与 manifest 中三份 SHA 已逐文件核对；本批只移植 Rutor、XXXTracker、TorrentKitty 的既有搜索、详情、最新和热门能力，不接注册表、UI、Room 或备份。每站入口只编排调用协程中的网络请求；URL builder/policy、结果 parser、详情 parser 和 Rutor category mapper分别承担结构化请求、安全边界、静态 DOM 解析与领域映射，解析使用可注入且默认 `Dispatchers.Default` 的计算调度器。
+
+Rutor 保留 SAFE、默认关闭和 search/details/latest/top。搜索路径固定为 `/search/0/{category}/010/2/{query}`，latest 为 `/browse/0/{category}/0/0`，top 固定 `/top`；类别映射完整保留 0/10/9/11/8/1/2/3/4，未知分类回退 0。列表严格读取 file/magnet/name 三个 anchor 的固定顺序，ALL 结果 category 为空，其他分类保留调用范围。详情按俄文 header 读取，完整移除日期括号后缀后严格解析 `dd-MM-yyyy H:m:s`；类别从已解析 `HttpUrl` 的 path segment 映射，截图 textarea 使用真实 page URL 作为 base 二次静态解析，再按同站媒体策略过滤。海报只选择首个直属 `img`，清理时也只移除该节点，再移除全部 `div.hidewrap`，其余嵌套正文图片保留为不可信 HTML；这是对固定上源“直属选择、任意后代删除”不一致的本地修复。
+
+XXXTracker 按本地审计固定为 NSFW、默认关闭、仅 PORN，保留 search/details/latest/top；search 使用结构化 `/b.php?search=...`，latest `/b.php`，top `/top`。列表独立解析 magnet/file/name 的相反 anchor 顺序，不能复用 Rutor DOM parser。详情完整保留 `nth-last-child` 定位和严格 `dd-MM-yyyy`，坏日期、人数或选填 URL 独立降级；描述只删除前三个直属元素，嵌套正文继续保留。相对 poster 和文件地址使用真实详情页作为 base，并经过 `xxxtor.com` 精确 HTTPS 默认端口、无 userinfo 策略。
+
+TorrentKitty 保留 SAFE、默认关闭、仅 OTHER 输入分类和 search/details。搜索固定 `/search/{query}`；列表按 `table#archiveResult` 丢弃首行，`td.action` 第一/第二/第三 anchor 分别是详情、magnet/hash 和文件。为保持固定上源契约，列表只输出合法 infoHash，不输出 magnet 或 category；详情按 `h2`、`detailSummary` 第四/五行和 `p.action` 第二/第一 anchor 解析，使用真实 page URL 修复相对文件地址。两处大小均以 `Locale.ROOT` 大写，日期严格 `yyyy-MM-dd`，名称或 hash 缺失跳过，其他坏字段独立降级。
+
+三站复用 `BuiltinProviderUrlPolicy`、`sanitizeProviderQuery`、`MagnetInfoHashParser`、`ProviderDateParser`、`mapNotNullCancellable`、共享网络客户端、5 MiB 正文边界和测试 fake。MegaPeer 既有俄文十二月、`Мая`、三字段与两位年份 2000..2099 协议与 Rutor/XXXTracker 完全相同，因此把最小规则行为等价移动到 `builtin/common/RussianProviderDateParser`，三个调用方共同依赖；站点详情的完整四位年仍由各自格式调用公共 UTC parser，不扩大共享能力。三站各自的 results/details parser 因 selector 顺序、描述结构和类别语义不同而保持独立，并按职责落在六个具名文件中，不创建跨站万能 parser。
+
+日志与诊断计划：本批不新增逐站、逐条或媒体日志，沿用协调器的低敏 Provider ID、阶段、数量、耗时和 reasonCode。Provider/parser 禁止输出 URL、query、magnet/hash、日期原文、响应 HTML、描述、媒体地址、header、Cookie/Token 或异常 message；所有响应只在内存处理，HTML 不执行脚本。三站所有请求和产出 URL 只接受审计 host 的 HTTPS、有效端口 443 且无 userinfo；非法选填 URL 置空而不丢弃合法结果，非法详情输入在网络前拒绝。
+
+测试：采用选择性 TDD，先建立可编译空实现并运行行为测试取得断言层面的 RED，再完成最小实现。共享日期测试覆盖十二个月、`Мая`、00/69/99、闰日、未知月、缺字段和年宽；三站覆盖全部能力与类别、正常/合法空/selector 漂移/缺必填/坏单条、查询编码、固定 anchor 或行顺序、日期与 UInt 人数边界、描述媒体提取清理、相对 URL、精确 host/userinfo/端口输入输出、计算 dispatcher 与取消。测试使用中性合成 fixture 和 fake 网络，不访问真实站点；设备/API 24、真实联网和 release/R8 留发布阶段。没有新增持久数据、外部序列化/反射模型或数据库字段，因此备份与 keep/R8 不变。
+
+变更记录：2026-09-06，启动 04E2 固定快照移植；确认只共享俄文短日期协议，锁定三站独立 DOM 顺序、TorrentKitty 列表仅 hash 契约、Rutor 截图二次解析 base、XXXTracker 直属描述清理，以及精确 HTTPS authority、线程与取消边界。
+
+变更记录：2026-09-07，完成 04E2 实现与离线验证。行为 RED 为 36 tests 中 29 failures，修复实现与测试夹具后扩展到 47 项新测试全绿；最终唯一一轮组合验证 `BUILD SUCCESSFUL in 24s`，JUnit XML 汇总为 369 tests / 46 suites、0 failures/errors/skipped，确认既有 322 tests / 41 suites 基线全部保留，并新增 47 tests / 5 suites。模块 Kotlin、中文注释门禁和开启磁力功能的 App Kotlin 编译通过；真实网络、设备/API 24 与 release/R8 按发布阶段计划保留。
+
+变更记录：2026-09-07，独立复审 round1 修复海报直属元素边界：Rutor 保留嵌套正文图且仅删除实际选中的直属海报，XXXTracker 可识别其他直属元素之后的首个直属海报并继续只删除前三个直属元素。三站原合并 HTML parser 各自拆为具名 `ResultsParser` 与 `DetailsParser` 文件，不新增跨站抽象或改变 selector 契约。三项公开 Provider 回归先取得 3 failures，再全部转绿；本批定向扩展到 50 tests / 5 suites 全绿。round1 唯一一轮完整组合验证 `BUILD SUCCESSFUL in 22s`，JUnit XML 为 372 tests / 46 suites、0 failures/errors/skipped，保留 round0 的 369 项并增加 3 项回归。
+
 ### 任务 04A3：内置来源共同 URL authority 边界（2026-09-06）
 
 状态：已完成。内置来源共同 `BuiltinProviderUrlPolicy` 在既有 HTTPS 与精确 host 白名单之外，统一要求解析后的有效端口为 443 且用户名、密码均为空。默认 443 与显式 `:443` 等价允许；非 443 端口、username-only、password-only、组合及编码 userinfo 均在网络前以无正文 `HttpDeniedException` 拒绝。`resolveOptionalHttpsUrl` 继续复用同一 policy 校验 base 与解析后的 candidate，覆盖网络路径、相对/绝对地址和污染 base；`null`/空白 candidate 保持原有 `null` 短路，非法非空 candidate 保持抛异常契约。

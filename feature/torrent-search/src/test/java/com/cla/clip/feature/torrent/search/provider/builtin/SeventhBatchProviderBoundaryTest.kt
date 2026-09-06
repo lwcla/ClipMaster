@@ -2,7 +2,7 @@ package com.cla.clip.feature.torrent.search.provider.builtin
 
 import com.cla.clip.feature.torrent.search.model.contract.Category
 import com.cla.clip.feature.torrent.search.provider.builtin.megapeer.MegaPeerProvider
-import com.cla.clip.feature.torrent.search.provider.builtin.megapeer.MegaPeerRussianDateParser
+import com.cla.clip.feature.torrent.search.provider.builtin.common.RussianProviderDateParser
 import com.cla.clip.feature.torrent.search.provider.builtin.mikan.MikanProvider
 import com.cla.clip.feature.torrent.search.provider.builtin.mypornclub.MyPornClubProvider
 import com.cla.clip.feature.torrent.search.provider.builtin.testing.FakeTorrentSearchNetworkClient
@@ -31,11 +31,11 @@ class SeventhBatchProviderBoundaryTest {
                 .atStartOfDay(java.time.ZoneOffset.UTC)
                 .toInstant()
                 .toEpochMilli()
-            assertEquals(expectedEpochMillis, MegaPeerRussianDateParser.parseEpochMillis("1 $token 24"))
+            assertEquals(expectedEpochMillis, RussianProviderDateParser.parseShortYearEpochMillis("1 $token 24"))
         }
         assertEquals(
-            MegaPeerRussianDateParser.parseEpochMillis("1 Май 24"),
-            MegaPeerRussianDateParser.parseEpochMillis("1 Мая 24"),
+            RussianProviderDateParser.parseShortYearEpochMillis("1 Май 24"),
+            RussianProviderDateParser.parseShortYearEpochMillis("1 Мая 24"),
         )
     }
 

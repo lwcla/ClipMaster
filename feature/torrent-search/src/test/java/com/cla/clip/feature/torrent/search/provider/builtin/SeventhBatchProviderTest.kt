@@ -4,7 +4,7 @@ import com.cla.clip.feature.torrent.search.model.contract.Category
 import com.cla.clip.feature.torrent.search.model.contract.ProviderSafetyLevel
 import com.cla.clip.feature.torrent.search.network.HttpDeniedException
 import com.cla.clip.feature.torrent.search.provider.builtin.megapeer.MegaPeerProvider
-import com.cla.clip.feature.torrent.search.provider.builtin.megapeer.MegaPeerRussianDateParser
+import com.cla.clip.feature.torrent.search.provider.builtin.common.RussianProviderDateParser
 import com.cla.clip.feature.torrent.search.provider.builtin.mikan.MikanProvider
 import com.cla.clip.feature.torrent.search.provider.builtin.mypornclub.MyPornClubProvider
 import com.cla.clip.feature.torrent.search.provider.builtin.testing.FakeTorrentSearchNetworkClient
@@ -81,12 +81,12 @@ class SeventhBatchProviderTest {
     /** MegaPeer 俄文月份和固定世纪必须覆盖 00/69/99、闰日与坏输入。 */
     @Test
     fun megaPeerRussianDatesUseStableTwentyFirstCentury() {
-        assertEquals(951782400000L, MegaPeerRussianDateParser.parseEpochMillis("29 Фев 00"))
-        assertEquals(3134592000000L, MegaPeerRussianDateParser.parseEpochMillis("1 Май 69"))
-        assertEquals(4102358400000L, MegaPeerRussianDateParser.parseEpochMillis("31 Дек 99"))
-        assertEquals(3981312000000L, MegaPeerRussianDateParser.parseEpochMillis("29 Фев 96"))
-        assertNull(MegaPeerRussianDateParser.parseEpochMillis("29 Фев 99"))
-        assertNull(MegaPeerRussianDateParser.parseEpochMillis("1 Неиз 24"))
+        assertEquals(951782400000L, RussianProviderDateParser.parseShortYearEpochMillis("29 Фев 00"))
+        assertEquals(3134592000000L, RussianProviderDateParser.parseShortYearEpochMillis("1 Май 69"))
+        assertEquals(4102358400000L, RussianProviderDateParser.parseShortYearEpochMillis("31 Дек 99"))
+        assertEquals(3981312000000L, RussianProviderDateParser.parseShortYearEpochMillis("29 Фев 96"))
+        assertNull(RussianProviderDateParser.parseShortYearEpochMillis("29 Фев 99"))
+        assertNull(RussianProviderDateParser.parseShortYearEpochMillis("1 Неиз 24"))
     }
 
     /** Mikan 搜索编码查询并映射 magnet、大小、UTC 日期和同站链接。 */

@@ -145,3 +145,26 @@ JSON numbers, nulls, booleans, objects, arrays, noncanonical strings, overflow,
 and conflicts are rejected without widening the other string-number contracts.
 Offline tests also cover detail network/dispatcher separation and search/detail
 Long, UInt, and epoch boundaries for the reviewed adapters.
+
+The tenth runtime batch ports Rutor, XXXTracker, and TorrentKitty from the same
+pinned sources and verified manifest hashes. Each provider keeps its own URL,
+category, list, and detail collaborators because their selectors and result
+contracts differ. Rutor and XXXTracker share only the reviewed Russian short-date
+parser with MegaPeer, including all twelve month tokens, the genitive May token,
+and the explicit 2000..2099 two-digit-year range. Rutor preserves category-scoped
+search, latest, and top behavior; XXXTracker remains NSFW, default-disabled, and
+limited to pornography; TorrentKitty emits only a validated hash from list pages
+and resolves the magnet on details. Network calls stay in the caller coroutine,
+static parsing runs on injected computation dispatchers, and cancellation is
+propagated. Requested and emitted links require exact reviewed HTTPS hosts,
+effective port 443, and empty user information; unsafe optional links degrade
+locally. Fixtures are neutral, synthetic, and offline. This batch adds no
+registry, UI, persistence, backup, reflection, or runtime remote-code behavior.
+
+The round-one review keeps each provider's result and detail parser in separate
+responsibility-named files. It also tightens poster handling to the first direct
+image child even when another direct element appears earlier. For Rutor, only
+that selected poster node is removed from the returned description, so nested
+body images remain intact; this is an intentional local correction to the pinned
+source's broader descendant-image removal. XXXTracker retains its reviewed rule
+of removing the first three direct description elements.

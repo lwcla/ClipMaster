@@ -6,6 +6,7 @@ import com.cla.clip.feature.torrent.search.model.contract.TorrentDetails
 import com.cla.clip.feature.torrent.search.model.contract.TorrentTracker
 import com.cla.clip.feature.torrent.search.provider.ProviderDescriptor
 import com.cla.clip.feature.torrent.search.provider.builtin.common.MagnetInfoHashParser
+import com.cla.clip.feature.torrent.search.provider.builtin.common.RussianProviderDateParser
 import com.cla.clip.feature.torrent.search.provider.builtin.common.mapNotNullCancellable
 import java.net.URI
 import java.net.URLDecoder
@@ -103,7 +104,7 @@ internal class MegaPeerResultsParser(
             peers = row.selectFirst("td:nth-child(4) > font:nth-child(4)")
                 ?.ownText()?.trim()?.toUIntOrNull(),
             uploadEpochMillis = row.selectFirst("td:nth-child(1)")?.ownText()
-                ?.let(MegaPeerRussianDateParser::parseEpochMillis),
+                ?.let(RussianProviderDateParser::parseShortYearEpochMillis),
             detailsPageUrl = detailsUrl,
             fileDownloadLink = urlPolicy.optionalUrl(
                 pageUrl,
