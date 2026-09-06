@@ -249,3 +249,25 @@ LinuxTracker 按本地审计为 SAFE 且默认关闭，固定分类为 APPS。se
 变更记录：2026-09-06，启动 04C3 固定快照移植；明确三站精确 URL、解析线程、单条容错、Lime marker 离线 HTTPS 重建和 Linux latest/top 独立请求边界，避免机械移植保留明文链接、越界拆分与可选字段扩大失败面。
 
 04C3 验证记录（2026-09-06）：首轮可编译空骨架上的 15 个行为测试有 13 个按请求、解析、URL 和元数据契约真实失败；实现后补充 Knaben 严格数字类型回归，先得到 1 test / 1 failure 再拒绝字符串数字与 UInt 溢出。最终全模块 245 tests / 30 suites，0 failures/errors/skipped；模块 Kotlin、中文注释门禁及开启功能的 App Kotlin 编译通过（BUILD SUCCESSFUL in 41s），`git diff --check` 无错误。仅运行合成离线测试；真实站点、设备和 release/R8 未验证，按发布阶段计划处理。
+
+### 任务 04D1：MegaPeer、Mikan、MyPornClub（2026-09-06）
+
+状态：已完成。固定上游提交及三份 Provider SHA 已核对；本批只移植 MegaPeer、Mikan、MyPornClub 的既有搜索、详情、最新和热门能力，不注册来源，不接 UI、Room 或备份。入口类只编排网络；URL builder/policy、无网络 HTML parser、站点字段转换器各自保持单一职责。网络留在调用协程，DOM 与领域映射进入可注入且默认 `Dispatchers.Default` 的计算调度器。
+
+MegaPeer 固定 `megapeer.vip` HTTPS 默认端口，按 `browse.php` 的 search/age/cat/stype/sort/ascdesc 参数与七类 ID 构造请求。列表先在计算调度器生成名称、同站详情地址、大小、人数、日期和文件链接 draft，缺名称或合法详情地址的条目在联网前跳过；入口再用结构化协程并发补详情，任一真实网络失败使 Provider 整体失败，父取消传播至全部子任务，最终在计算调度器按列表原序合并。列表只保留详情解析出的 infoHash，不复制 magnet，详情接口返回合法 magnet/tracker。俄文短月由 feature-local 纯转换器处理，`Мая` 归一为 `Май`；两位年份显式解释为 2000..2099，再复用公共 `d MMM yyyy` 严格 UTC 解析，避免 `SimpleDateFormat("yy")` 的运行年份滑动窗口。测试锁定 00、69、99 与 2000/2096 闰日和非法闰日。详情先提取同站 HTTPS 海报/截图，再移除首图和截图折叠块，避免描述重复；可选媒体或文件 URL 非法只丢字段。
+
+Mikan 固定 `mikanani.me` HTTPS 默认端口和 ANIME 分类，通过 `HttpUrl` 编码 `/Home/Search?searchstr=`。列表名称与合法 magnet 必填，大小复用公共展示规范化器，日期按 `yyyy/MM/dd HH:mm` 严格 UTC；详情与 `/Download/` 文件链接只允许同站。详情读取标题、中文 `文件大小：`/`发布日期：` 标签和描述 HTML，标签内容去前缀后完整 trim；缺失可选字段不影响详情，描述继续作为不可信 HTML，不执行脚本。
+
+MyPornClub 按本地审计标记 NSFW 且默认关闭，固定 `myporn.club` HTTPS 默认端口和 PORN 分类。搜索仅对清洗后的 query 保留上游字面 `%20` 到 `-` 的转换，再作为一个 path segment 编码；普通空格仍由 `HttpUrl` 编为 `%20`，该规则不推广到其他路径。latest `/ts/latest/alltime` 与 top `/ts/hits/alltime` 每次独立请求。列表和 MegaPeer 一样先形成无网络 draft 再结构化并发详情，列表字段优先，hash/magnet/file 由详情补全并保持原序。详情名称取 `#` 前文本，hash 公共规范化；缺 magnet 时复用公共固定 20 tracker 生成，存在 magnet 时必须合法且 hash 一致。相对时间使用注入 clock，大小使用 `Locale.ROOT` 大写；可选文件链接非法只丢字段。测试和 fixture 仅用中性合成标题，不访问真实成人正文或图片。
+
+日志与诊断计划：本批不新增逐站或逐详情日志，复用 04A 协调器的低敏 Provider ID、阶段、数量、耗时和 reasonCode。Provider/parser 禁止输出 URL、query、magnet、日期原文、响应 HTML、正文、Cookie 或异常 message；响应仅在内存处理。详情 fan-out 的取消和网络失败由既有聚合器分类，避免高频逐项日志和敏感内容泄漏。没有新增持久数据、外部序列化/反射模型或数据库字段，因此备份和 keep/R8 无需调整。
+
+测试：采用选择性 TDD。三站覆盖正常、真实形状空、缺字段、非法字段、查询编码、分类、metadata 和恶意输入/输出 URL；MegaPeer 额外覆盖俄文十二月、`Мая`、短年边界、闰日、描述媒体移除；Mikan 覆盖中文标签空白、大小和严格日期；MyPornClub 覆盖字面 `%20` 与普通空格、缺 magnet 生成、magnet/hash 冲突、注入时钟及 latest/top 独立请求。MegaPeer/MyPornClub 还覆盖详情并发机会、原序合并、缺必填不联网、网络失败整体传播和父取消。复用既有 5 MiB 上限测试，不复制大型 fixture。最终运行模块全量单测、模块编译、中文注释门禁、开启功能 App 编译及 `git diff --check`；设备、API 24、真实站点与 release/R8 留发布阶段。
+
+变更记录：2026-09-06，启动 04D1 固定快照移植；批准 MegaPeer 两位年份固定为 2000..2099 并保留公共日期 parser 既有行为，明确两站结构化详情并发、严格站点 URL、取消/失败契约和中性离线 fixture，避免 parser 持有网络或测试随系统年份漂移。
+
+04D1 验证记录（2026-09-06）：在可编译空外壳上运行 12 项 Provider 行为测试，得到 10 项按请求、解析、URL、日期和磁力契约真实失败；实现后新增 4 项 dispatcher/并发/失败/取消测试。最终模块 261 tests / 32 suites，0 failures/errors/skipped；模块 Kotlin、中文注释门禁与开启功能 App Kotlin 编译通过（BUILD SUCCESSFUL in 38s），`git diff --check` 无错误。仅使用中性合成离线 fixture；真实站点、设备/API 24 和 release/R8 未验证，按发布阶段计划处理。后续 Rutor/XXXTracker 出现真实相同俄文短月协议时，由 04E2 把 feature-local 日期规则迁到 common 并保留 MegaPeer 回归，本批不提前扩大共享契约。
+
+04D1 独立复审补测（2026-09-06）：新增 8 项边界测试，覆盖 MegaPeer 十二个俄文短月与 `Мая`、全部请求分类、跨站或异常端口 poster/截图/文件降级，以及 Mikan/MyPornClub 的空页面、selector 漂移、必填缺失、详情请求阻断和恶意可选产出链接；首次定向执行即 20 tests / 0 failures，因此属于既有行为覆盖补全，不记作新的 RED。原第七批测试的压缩分号同时改为标准多行结构，便于逐条审查。
+
+04D1 独立复审最终验证（2026-09-06）：完整命令首次由中文注释门禁发现两处测试 lambda 参数缺贴近注释，补齐后重跑通过；最终全模块 269 tests / 33 suites，0 failures/errors/skipped，模块 Kotlin、中文注释门禁与开启功能 App Kotlin 编译通过（BUILD SUCCESSFUL in 38s），`git diff --check` 无错误，仅有换行符提示。未运行真实联网、设备/API 24 或 release/R8。

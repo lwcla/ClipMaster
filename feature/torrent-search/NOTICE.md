@@ -88,3 +88,22 @@ selectors and performs independent latest/top requests. All emitted web links
 use exact reviewed hosts, HTTPS default ports, and no user information. Invalid
 optional links degrade locally, fixtures are synthetic and offline, and this
 batch adds no registry, UI, persistence, backup, or reflection behavior.
+
+The seventh runtime batch ports MegaPeer, Mikan, and MyPornClub from the same
+pinned sources and verified manifest hashes. Local adaptations keep network
+requests in the caller coroutine, parse static HTML on injected computation
+dispatchers, and validate every emitted or requested URL against exact HTTPS
+hosts and default ports. MegaPeer and MyPornClub parse list drafts before
+starting structured concurrent detail requests, preserve list order, and
+propagate cancellation and transport failures. MegaPeer fixes two-digit years
+to the explicit 2000..2099 range before strict UTC parsing. Mikan keeps its
+Chinese metadata labels and anime category. MyPornClub follows the local
+NSFW/default-disabled audit, and its synthetic fixtures contain neutral text
+only. This batch adds no registry, UI, persistence, backup, reflection, or
+runtime remote-code behavior.
+
+The seventh-batch offline tests additionally cover all reviewed MegaPeer
+Russian month tokens and category IDs, reject unsafe optional media links,
+and exercise empty, malformed, missing-required-field, and unsafe-output-link
+cases for Mikan and MyPornClub. These fixtures remain synthetic and perform no
+requests to the upstream services.
