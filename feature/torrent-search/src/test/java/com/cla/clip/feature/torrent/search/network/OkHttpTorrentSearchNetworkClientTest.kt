@@ -2,6 +2,8 @@ package com.cla.clip.feature.torrent.search.network
 
 import com.cla.clip.feature.torrent.search.model.contract.ProviderFailureReason
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
@@ -38,6 +40,8 @@ class OkHttpTorrentSearchNetworkClientTest {
         assertEquals(10_000L, client.connectTimeoutMillis.toLong())
         assertEquals(30_000L, client.readTimeoutMillis.toLong())
         assertEquals(0L, client.callTimeoutMillis.toLong())
+        assertFalse(client.followRedirects)
+        assertFalse(client.followSslRedirects)
     }
 
     /** 明文 HTTP 必须在创建 Call 前拒绝，生产类不得暴露测试绕过参数。 */
@@ -53,6 +57,260 @@ class OkHttpTorrentSearchNetworkClientTest {
         assertSuspendFailsWith<HttpDeniedException> { networkClient.getText("http://example.invalid/path") }
         // name 是等待检查明文测试旁路痕迹的单个构造参数名。
         assertFalse(constructorParameterNames.any { name -> name.contains("allowHttp", ignoreCase = true) })
+    }
+
+    /** HTTPS 响应降级到 HTTP 时必须在目标 Call 创建前拒绝，明文服务不得收到请求。 */
+    @Test
+    fun getTextRejectsHttpsRedirectToHttpBeforeTargetRequest() = runBlocking {
+        /** 初始 HTTPS fixture 复现 Provider 已通过首个地址校验后的共享网络调用。 */
+        val fixture = HttpsNetworkFixture()
+        /** 明文目标只在本机监听，用于证明安全边界不会实际访问降级地址。 */
+        val cleartextTarget = MockWebServer().apply { start() }
+        try {
+            /** 明文目标响应可识别正文；旧实现自动跟随时会错误返回该内容。 */
+            cleartextTarget.enqueue(MockResponse.Builder().body("unexpected-cleartext-target").build())
+            /** 首个可信 HTTPS 响应尝试把请求降级到本地 HTTP 服务。 */
+            fixture.server.enqueue(
+                MockResponse.Builder().code(302).addHeader("Location", cleartextTarget.url("/target")).build(),
+            )
+
+            assertSuspendFailsWith<HttpDeniedException> { fixture.networkClient.getText(fixture.url("/start")) }
+            assertEquals(0, cleartextTarget.requestCount)
+        } finally {
+            fixture.close()
+            cleartextTarget.close()
+        }
+    }
+
+    /** HTTPS 重定向更换 host 时必须在后续 Call 前拒绝，即使证书和端口仍可连接。 */
+    @Test
+    fun getTextRejectsCrossHostHttpsRedirectBeforeTargetRequest() = runBlocking {
+        /** 同一 TLS 服务同时接受 localhost 与 127.0.0.1，隔离测试只观察来源策略。 */
+        val fixture = HttpsNetworkFixture()
+        fixture.use {
+            /** 首个响应把 host 从 localhost 改为 127.0.0.1，保持 scheme 与有效端口不变。 */
+            fixture.server.enqueue(
+                MockResponse.Builder().code(302).addHeader(
+                    "Location",
+                    fixture.urlWithHost(path = "/cross-host", host = "127.0.0.1"),
+                ).build(),
+            )
+            /** 第二个响应仅用于暴露旧实现确实自动访问了跨来源目标。 */
+            fixture.server.enqueue(MockResponse.Builder().body("unexpected-cross-host-target").build())
+
+            assertSuspendFailsWith<HttpDeniedException> { fixture.networkClient.getText(fixture.url("/start")) }
+            assertEquals(1, fixture.server.requestCount)
+        }
+    }
+
+    /** HTTPS 重定向保持 host 但更换有效 port 时必须拒绝，目标服务不得收到请求。 */
+    @Test
+    fun getTextRejectsCrossPortHttpsRedirectBeforeTargetRequest() = runBlocking {
+        /** 初始 HTTPS fixture 提供固定 localhost 来源与共享测试证书。 */
+        val fixture = HttpsNetworkFixture()
+        fixture.use {
+            /** 目标 HTTPS 服务复用相同证书但监听不同端口，隔离验证有效 port 策略。 */
+            val differentPortTarget = fixture.newHttpsServer()
+            differentPortTarget.use {
+                differentPortTarget.enqueue(MockResponse.Builder().body("unexpected-cross-port-target").build())
+                fixture.server.enqueue(
+                    MockResponse.Builder().code(302).addHeader("Location", differentPortTarget.url("/target")).build(),
+                )
+
+                assertSuspendFailsWith<HttpDeniedException> { fixture.networkClient.getText(fixture.url("/start")) }
+                assertEquals(1, fixture.server.requestCount)
+                assertEquals(0, differentPortTarget.requestCount)
+            }
+        }
+    }
+
+    /** 同来源相对与绝对 HTTPS 跳转必须连续取得最终正文，且每一跳保持 GET。 */
+    @Test
+    fun getTextFollowsSameOriginRelativeAndAbsoluteRedirects() = runBlocking {
+        /** 本地 HTTPS fixture 提供同 scheme、host 与有效 port 的三段响应。 */
+        val fixture = HttpsNetworkFixture()
+        fixture.use {
+            fixture.server.enqueue(MockResponse.Builder().code(302).addHeader("Location", "/middle").build())
+            fixture.server.enqueue(
+                MockResponse.Builder().code(301).addHeader("Location", fixture.url("/final")).build(),
+            )
+            fixture.server.enqueue(MockResponse.Builder().body("final-body").build())
+
+            assertEquals("final-body", fixture.networkClient.getText(fixture.url("/start")))
+            /** 三次真实请求分别对应初始、相对跳转与绝对跳转地址。 */
+            val requests = List(3) { fixture.server.takeRequest() }
+            // request 是当前跳转阶段的真实请求，只提取方法用于固定 GET 语义。
+            assertEquals(listOf("GET", "GET", "GET"), requests.map { request -> request.method })
+            // request 是当前跳转阶段的真实请求，只提取无敏感参数的合成路径。
+            assertEquals(listOf("/start", "/middle", "/final"), requests.map { request -> request.url.encodedPath })
+        }
+    }
+
+    /** POST 的 301、302 与 303 必须转 GET，并移除原正文及内容相关 header。 */
+    @Test
+    fun postRedirects301302And303SwitchToGetWithoutBodyHeaders() = runBlocking {
+        /** 三类会改变 POST 方法的标准重定向状态。 */
+        val redirectCodes = listOf(301, 302, 303)
+        // redirectCode 是当前独立验证的响应状态，失败时便于定位具体语义。
+        redirectCodes.forEach { redirectCode ->
+            /** 每个状态使用独立 TLS fixture，避免请求队列相互影响。 */
+            val fixture = HttpsNetworkFixture()
+            fixture.use {
+                fixture.server.enqueue(MockResponse.Builder().code(redirectCode).addHeader("Location", "/final").build())
+                fixture.server.enqueue(MockResponse.Builder().body("accepted").build())
+
+                assertEquals("accepted", fixture.networkClient.postJson(fixture.url("/start"), "{\"fixture\":true}"))
+                /** 初始请求用于确认测试确实从 POST 开始。 */
+                val initialRequest = fixture.server.takeRequest()
+                /** 后续请求锁定方法、正文与内容 header 的转换契约。 */
+                val redirectedRequest = fixture.server.takeRequest()
+                assertEquals("POST", initialRequest.method)
+                assertEquals("GET", redirectedRequest.method)
+                assertEquals(0L, redirectedRequest.bodySize)
+                assertEquals(null, redirectedRequest.headers["Content-Type"])
+                assertEquals(null, redirectedRequest.headers["Content-Length"])
+                assertEquals(null, redirectedRequest.headers["Transfer-Encoding"])
+            }
+        }
+    }
+
+    /** POST 303 指回同一 URL 时允许以 GET 再请求一次，方法变化不能被误判为 URL 循环。 */
+    @Test
+    fun post303ToSameUrlSwitchesToGetAndReturnsFinalBody() = runBlocking {
+        /** 本地 HTTPS fixture 用同一路径依次返回 303 与最终 200。 */
+        val fixture = HttpsNetworkFixture()
+        fixture.use {
+            fixture.server.enqueue(MockResponse.Builder().code(303).addHeader("Location", "/same").build())
+            fixture.server.enqueue(MockResponse.Builder().body("same-url-final-body").build())
+
+            assertEquals(
+                "same-url-final-body",
+                fixture.networkClient.postJson(fixture.url("/same"), "{\"fixture\":true}"),
+            )
+            /** 两次真实请求分别锁定初始 POST 与同 URL 的后续 GET 身份。 */
+            val requests = List(2) { fixture.server.takeRequest() }
+            // request 是同一 URL 上的当前请求，只提取方法验证循环身份包含 HTTP method。
+            assertEquals(listOf("POST", "GET"), requests.map { request -> request.method })
+        }
+    }
+
+    /** POST 的 307 与 308 必须保持方法和固定合成正文，不能误降级成 GET。 */
+    @Test
+    fun postRedirects307And308PreserveMethodAndBody() = runBlocking {
+        /** 两类要求保留请求语义的标准重定向状态。 */
+        val redirectCodes = listOf(307, 308)
+        // redirectCode 是当前独立验证的方法保留状态。
+        redirectCodes.forEach { redirectCode ->
+            /** 每个状态使用独立 TLS fixture，保证断言只对应一次跳转。 */
+            val fixture = HttpsNetworkFixture()
+            fixture.use {
+                fixture.server.enqueue(MockResponse.Builder().code(redirectCode).addHeader("Location", "/final").build())
+                fixture.server.enqueue(MockResponse.Builder().body("accepted").build())
+
+                assertEquals("accepted", fixture.networkClient.postJson(fixture.url("/start"), "{\"fixture\":true}"))
+                /** 初始请求只用于移出队列，后续断言聚焦重放语义。 */
+                val initialRequest = fixture.server.takeRequest()
+                /** 重定向请求必须保留 POST 与完全相同的固定 JSON。 */
+                val redirectedRequest = fixture.server.takeRequest()
+                assertEquals("POST", initialRequest.method)
+                assertEquals("POST", redirectedRequest.method)
+                assertEquals("{\"fixture\":true}", redirectedRequest.body?.utf8())
+            }
+        }
+    }
+
+    /** 同来源跳转最多跟随 20 次，第 21 个跳转响应必须稳定拒绝。 */
+    @Test
+    fun getTextRejectsRedirectBeyondTwentyFollowUps() = runBlocking {
+        /** 本地 HTTPS fixture 提供 21 个不同路径的连续跳转。 */
+        val fixture = HttpsNetworkFixture()
+        fixture.use {
+            // hopNumber 是从 1 开始的目标序号，避免循环检测提前终止上限测试。
+            (1..21).forEach { hopNumber ->
+                fixture.server.enqueue(
+                    MockResponse.Builder().code(302).addHeader("Location", "/hop-$hopNumber").build(),
+                )
+            }
+
+            assertSuspendFailsWith<HttpDeniedException> { fixture.networkClient.getText(fixture.url("/start")) }
+            assertEquals(21, fixture.server.requestCount)
+        }
+    }
+
+    /** 缺少 Location 的受支持重定向状态必须稳定拒绝，不能返回空正文。 */
+    @Test
+    fun getTextRejectsRedirectWithoutLocation() = runBlocking {
+        /** 本地 HTTPS fixture 只返回不完整的 302。 */
+        val fixture = HttpsNetworkFixture()
+        fixture.use {
+            fixture.server.enqueue(MockResponse.Builder().code(302).build())
+
+            assertSuspendFailsWith<HttpDeniedException> { fixture.networkClient.getText(fixture.url("/missing-location")) }
+            assertEquals(1, fixture.server.requestCount)
+        }
+    }
+
+    /** 非法 Location 与带用户信息的 URL 必须在后续 Call 创建前拒绝。 */
+    @Test
+    fun getTextRejectsMalformedAndUserInfoRedirectLocations() = runBlocking {
+        /** 同一 TLS fixture 让带用户信息 URL 保持相同 scheme、host 与有效 port。 */
+        val fixture = HttpsNetworkFixture()
+        fixture.use {
+            /** 两类 Location 分别保护解析失败与凭据式 URL 边界。 */
+            val locations = listOf("https://[invalid", fixture.urlWithUserInfo("/target"))
+            // location 是当前独立验证的固定合成 Location，不含真实地址或真实凭据。
+            locations.forEach { location ->
+                fixture.server.enqueue(MockResponse.Builder().code(302).addHeader("Location", location).build())
+
+                assertSuspendFailsWith<HttpDeniedException> { fixture.networkClient.getText(fixture.url("/start")) }
+            }
+            assertEquals(2, fixture.server.requestCount)
+        }
+    }
+
+    /** 已访问 URL 再次出现时必须按循环拒绝，不能继续发出第三个请求。 */
+    @Test
+    fun getTextRejectsRedirectLoopBeforeRepeatedRequest() = runBlocking {
+        /** 本地 HTTPS fixture 构造 start 到 middle 再回 start 的最小循环。 */
+        val fixture = HttpsNetworkFixture()
+        fixture.use {
+            fixture.server.enqueue(MockResponse.Builder().code(302).addHeader("Location", "/middle").build())
+            fixture.server.enqueue(MockResponse.Builder().code(302).addHeader("Location", "/start").build())
+
+            assertSuspendFailsWith<HttpDeniedException> { fixture.networkClient.getText(fixture.url("/start")) }
+            assertEquals(2, fixture.server.requestCount)
+        }
+    }
+
+    /** redirectLocation 只返回首个 Location，不能消费目标响应或创建后续 Call。 */
+    @Test
+    fun redirectLocationDoesNotFollowReturnedLocation() = runBlocking {
+        /** 本地 HTTPS fixture 提供首个跳转及一个不应被消费的目标响应。 */
+        val fixture = HttpsNetworkFixture()
+        fixture.use {
+            fixture.server.enqueue(MockResponse.Builder().code(302).addHeader("Location", "/target").build())
+            fixture.server.enqueue(MockResponse.Builder().body("must-remain-unread").build())
+
+            assertEquals("/target", fixture.networkClient.redirectLocation(fixture.url("/start")))
+            assertEquals(1, fixture.server.requestCount)
+        }
+    }
+
+    /** 同来源跳转后的最终 Cloudflare 挑战仍必须经过共享状态分类。 */
+    @Test
+    fun getTextClassifiesFinalRedirectResponseAsCloudflareLocked() = runBlocking {
+        /** 本地 HTTPS fixture 先跳转，再返回带 Cloudflare 特征头的挑战状态。 */
+        val fixture = HttpsNetworkFixture()
+        fixture.use {
+            fixture.server.enqueue(MockResponse.Builder().code(302).addHeader("Location", "/challenge").build())
+            fixture.server.enqueue(MockResponse.Builder().code(503).addHeader("CF-RAY", "fixture").build())
+
+            /** 最终异常应保留低敏状态码，不能暴露 Location 或正文。 */
+            val failure = assertSuspendFailsWith<CloudflareLockedException> {
+                fixture.networkClient.getText(fixture.url("/start"))
+            }
+            assertEquals(503, failure.statusCode)
+        }
     }
 
     /** 解压后恰好 5 MiB 可读取，超过一字节必须在 parser 前拒绝。 */
@@ -134,6 +392,40 @@ class OkHttpTorrentSearchNetworkClientTest {
 
             assertSuspendFailsWith<CloudflareLockedException> { fixture.networkClient.redirectLocation(fixture.url("/locked")) }
             assertEquals("https://target.invalid/file", fixture.networkClient.redirectLocation(fixture.url("/redirect")))
+        }
+    }
+
+    /** 首个 3xx 响应关闭时取消协程，不得跨越恢复边界创建下一跳 Call。 */
+    @Test
+    fun cancellationWhenRedirectResponseClosesDoesNotStartFollowUpCall() = runBlocking {
+        /** 首个 Call 关闭同步点精确落在 executeInCallback 恢复与下一轮 ensureActive 之前。 */
+        val redirectCallEnded = CompletableDeferred<Unit>()
+        /** 延迟赋值的请求 Job 由 EventListener 在首个 Call 结束回调内取消。 */
+        lateinit var requestJob: Job
+        /** 生命周期监听器只使用 Call 结束事件，不读取 URL、Location、header 或正文。 */
+        val listener = object : EventListener() {
+            /** 响应已关闭且 Call 已结束时同步取消外层协程，锁定不得创建后续请求。 */
+            override fun callEnd(call: Call) {
+                requestJob.cancel()
+                redirectCallEnded.complete(Unit)
+            }
+        }
+        /** HTTPS fixture 注入真实 EventListener，生产网络接口保持不变。 */
+        val fixture = HttpsNetworkFixture(listener)
+        fixture.use {
+            fixture.server.enqueue(MockResponse.Builder().code(302).addHeader("Location", "/target").build())
+            fixture.server.enqueue(MockResponse.Builder().body("must-remain-unrequested").build())
+            /** LAZY 启动保证监听器触发前 requestJob 已完成赋值。 */
+            val request = async(start = CoroutineStart.LAZY) {
+                fixture.networkClient.getText(fixture.url("/start"))
+            }
+            requestJob = request
+            request.start()
+
+            withTimeout(5_000L) { redirectCallEnded.await() }
+            request.join()
+            assertTrue(request.isCancelled)
+            assertEquals(1, fixture.server.requestCount)
         }
     }
 
@@ -246,8 +538,11 @@ private class HttpsNetworkFixture(
     /** 可选生命周期监听器，用于取消与响应头测试。 */
     eventListener: EventListener? = null,
 ) : AutoCloseable {
-    /** 仅对 localhost 有效的短期测试证书。 */
-    private val heldCertificate = HeldCertificate.Builder().addSubjectAlternativeName("localhost").build()
+    /** 仅对本机 localhost 与 127.0.0.1 有效的短期测试证书。 */
+    private val heldCertificate = HeldCertificate.Builder()
+        .addSubjectAlternativeName("localhost")
+        .addSubjectAlternativeName("127.0.0.1")
+        .build()
     /** 服务端证书链，只供当前 MockWebServer。 */
     private val serverCertificates = HandshakeCertificates.Builder().heldCertificate(heldCertificate).build()
     /** 客户端只信任本测试证书，不修改系统或生产信任策略。 */
@@ -271,6 +566,26 @@ private class HttpsNetworkFixture(
 
     /** 生成当前本地 HTTPS 服务地址，不包含查询或真实域名。 */
     fun url(path: String): String = server.url(path).toString()
+
+    /** 生成仅替换 host 的本地 HTTPS 地址，用于隔离验证跨来源重定向拒绝。 */
+    fun urlWithHost(
+        /** 目标路径只使用固定合成值。 */
+        path: String,
+        /** 目标 host 必须被当前合成证书覆盖。 */
+        host: String,
+    ): String = server.url(path).newBuilder().host(host).build().toString()
+
+    /** 生成同来源但带固定合成用户信息的地址，隔离验证凭据式 Location 拒绝。 */
+    fun urlWithUserInfo(
+        /** 目标路径只使用固定合成值。 */
+        path: String,
+    ): String = server.url(path).newBuilder().username("user").password("password").build().toString()
+
+    /** 启动复用当前合成证书的额外 HTTPS 服务，用于隔离同 host 不同 port 行为。 */
+    fun newHttpsServer(): MockWebServer = MockWebServer().apply {
+        useHttps(serverCertificates.sslSocketFactory())
+        start()
+    }
 
     /** 关闭服务及其活动连接，保证测试资源不会泄漏。 */
     override fun close() {
