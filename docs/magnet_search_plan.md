@@ -192,6 +192,10 @@ BlueRoms 固定 SAFE、GAMES、默认关闭并实现 search/details；Base64 `da
 
 ## 变更记录
 
+- 2026-09-06：第四批复审要求恢复 Ext 详情下载按钮的整页查找范围；固定上游按钮选择器不属于详情 card，移植时收窄会把卡片外按钮的合法页面误判为无详情。补该页面形状回归，名称/其他详情字段继续读取原有 card，网络和 token 校验边界不变。
+
+- 2026-09-06：启动第四批 Btsow、Dmhy、Ext；恢复四份测试草稿并确认缺实现 RED。三站复用共享网络、URL、磁力、日期和大小能力，解析使用可注入计算调度器，网络留调用协程；Btsow 严格校验详情路径/hash，Dmhy 保留分类及独立 latest/top 请求，Ext 静态解析 token 后分阶段请求 magnet/description，固定请求头并限制字段长度。不新增持久数据或备份字段，不新增日志，沿用聚合器低敏 reasonCode；详情 HTML 作为不可信内容等待展示层禁脚本处理。原因是逐批推进固定快照内核，注册表与 UI 尚不接入。
+
 - 2026-09-05：封闭任务 04A2 的共享网络自动重定向边界：底层客户端统一禁用自动 HTTP/SSL 跳转，普通文本、JSON 与表单请求只显式跟随同首次 scheme、host、有效 port 的 301/302/303/307/308，固定 20 次上限、循环/非法/缺失/用户信息拒绝和 POST 方法转换；`redirectLocation` 保持只返回一次未信任 Location。原因是旧实现只校验首次 HTTPS URL，可能在 Provider 精确 host 校验之后自动访问 HTTP 或另一来源，且最终 200 会隐藏中间 3xx。回环 HTTPS/HTTP 合成测试覆盖目标请求未发出、相对/绝对同来源跳转、方法/body/header、上限、循环、状态分类和单次 Location。日志计划不新增运行时日志，沿用状态码/reasonCode 等低敏分类；禁止输出 URL、Location、query、Cookie、header/body 或异常 message。
 - 2026-09-05：修复任务 04B3 的 API 24 兼容性：BlueRoms Base64 解码由 Android API 26 才提供的 `java.util.Base64` 改为 Kotlin 2.2 标准库纯 Kotlin 实现，并保留标准 Base64 末尾 padding 可选的既有行为；补带/不带 padding 等价解析与非法 UTF-8 回归。原因是宿主 `minSdk=24` 且本模块未启用 core library desugaring，原直接调用可能在 API 24/25 触发 `NoClassDefFoundError`。静态字节码检查覆盖业务 class 与实际 `kotlin.io.encoding.Base64` 实现；设备级 API 24 冒烟仍保留为发布验收项。本修复不新增日志，既有调度器日志已覆盖 Provider 成败，解码器继续只在内存处理 Base64/magnet，禁止将正文写入日志。
 - 2026-09-02：修复任务 04B3 独立审查项：BlueRoms 恢复固定上游全局 `div.row > div.col-xs-12 > div.card` 选择语义，覆盖多个同级列而不是只解析首列；BlueRoms 与 BTDigg 移除不存在于真实零结果页的人造顶层哨兵，selector 未匹配时返回空列表，并补真实形状空页回归。原因是原合成 fixture 形成自洽假阳性，可能导致 BlueRoms 只返回第一条以及两站零结果被误报解析失败。

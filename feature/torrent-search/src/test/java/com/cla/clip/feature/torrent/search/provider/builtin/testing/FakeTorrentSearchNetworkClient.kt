@@ -9,8 +9,10 @@ import com.cla.clip.feature.torrent.search.network.TorrentSearchNetworkClient
 internal class FakeTorrentSearchNetworkClient(
     /** GET 文本的合成响应逻辑；默认返回空文本便于单一边界测试。 */
     private val textHandler: suspend (String) -> String = { "" },
-    /** GET JSON 的合成响应逻辑；默认返回空数组。 */
+    /** GET JSON 的无 header 合成响应逻辑；默认返回空数组。 */
     private val jsonHandler: suspend (String) -> String = { "[]" },
+    /** 带固定 header 的 GET JSON 合成响应逻辑；默认回退同一 JSON handler。 */
+    private val jsonWithHeadersHandler: suspend (String, Map<String, String>) -> String = { url, _ -> jsonHandler(url) },
     /** POST JSON 的合成响应逻辑；本批 Provider 不使用。 */
     private val postJsonHandler: suspend (String, String) -> String = { _, _ -> "" },
     /** 表单提交的合成响应逻辑；本批 Provider 不使用。 */
@@ -35,10 +37,10 @@ internal class FakeTorrentSearchNetworkClient(
         return textHandler(url)
     }
 
-    /** 记录 URL 后返回合成 JSON。 */
-    override suspend fun getJson(url: String): String {
+    /** 记录 URL 后返回合成 JSON；header 直接交给受控测试回调且不额外持久化。 */
+    override suspend fun getJson(url: String, headers: Map<String, String>): String {
         jsonUrls += url
-        return jsonHandler(url)
+        return if (headers.isEmpty()) jsonHandler(url) else jsonWithHeadersHandler(url, headers)
     }
 
     /** 只记录 URL，正文直接交给合成回调以避免测试诊断泄漏。 */

@@ -44,6 +44,16 @@ from the pinned upstream `TorrentUtils.kt`. ClipMaster URL-encodes each tracker
 query value and does not contact the comment-linked tracker-list service at
 runtime; future tracker changes require a reviewed application update.
 
+The fourth runtime batch ports Btsow, Dmhy, and Ext from the same pinned
+sources. Local changes separate request orchestration from static JSON/HTML
+parsing, validate hashes and exact HTTPS origins, use injected parsing
+dispatchers and clocks, and bound Ext page fields before form submission.
+Ext retains its request HMAC protocol but follows the local NSFW/default-off
+audit. Its description request uses an explicit fixed AJAX header through
+the shared client. Provider descriptions remain untrusted HTML for the
+later script-disabled presentation layer. Synthetic fixtures are local
+test data and do not contact upstream services.
+
 The integration does not adopt Koin, `TorrentSearchApplication`, `MainActivity`,
 upstream launcher declarations, global exception handling, or global Coil
 configuration. The host application remains responsible for its own

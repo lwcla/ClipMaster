@@ -27,8 +27,8 @@ interface TorrentSearchNetworkClient {
     /** HTTPS GET 文本；解压后超过 5 MiB 抛出 ResponseTooLargeException。 */
     suspend fun getText(url: String): String
 
-    /** HTTPS GET JSON；与文本共用严格大小和取消边界。 */
-    suspend fun getJson(url: String): String
+    /** HTTPS GET JSON；固定请求头由调用方显式传入，正文仍共用严格大小和取消边界。 */
+    suspend fun getJson(url: String, headers: Map<String, String> = emptyMap()): String
 
     /** HTTPS POST JSON；正文不得进入日志。 */
     suspend fun postJson(url: String, json: String): String
@@ -97,8 +97,16 @@ class OkHttpTorrentSearchNetworkClient internal constructor(
     /** 在 OkHttp callback 线程完成状态校验与限量 body 读取。 */
     override suspend fun getText(url: String): String = executeText(newRequest(url))
 
-    /** JSON 与文本共用相同网络安全边界。 */
-    override suspend fun getJson(url: String): String = executeText(newRequest(url))
+    /** JSON 与文本共用相同网络安全边界，并由 OkHttp 校验固定请求头名称和值。 */
+    override suspend fun getJson(url: String, headers: Map<String, String>): String {
+        /** Headers.Builder 统一拒绝非法名称或换行值，避免字符串拼接请求头。 */
+        val headerBuilder = okhttp3.Headers.Builder()
+        /** name 和 value 是调用方明确提供的固定头字段，只交给 OkHttp 校验与编码。 */
+        headers.forEach { (name, value) -> headerBuilder.add(name, value) }
+        /** 请求只替换显式 header，后续同来源重定向继续由统一 Request 编排保留。 */
+        val request = newRequest(url).newBuilder().headers(headerBuilder.build()).build()
+        return executeText(request)
+    }
 
     /** 构造 JSON 请求并在同一 Call 生命周期读取有上限响应。 */
     override suspend fun postJson(url: String, json: String): String {

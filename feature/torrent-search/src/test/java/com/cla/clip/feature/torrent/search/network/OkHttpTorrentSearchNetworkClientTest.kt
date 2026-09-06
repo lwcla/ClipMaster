@@ -498,6 +498,33 @@ class OkHttpTorrentSearchNetworkClientTest {
         }
     }
 
+    /** getJson 默认不附加 AJAX header，显式 headers 则由 OkHttp 安全写入请求。 */
+    @Test
+    fun getJsonUsesEmptyHeadersByDefaultAndSendsExplicitHeaders() = runBlocking {
+        /** 本地 HTTPS fixture 隔离验证真实 Request header。 */
+        val fixture = HttpsNetworkFixture()
+        fixture.use {
+            /** 两个固定空对象响应分别对应默认与显式 header 请求。 */
+            fixture.server.enqueue(MockResponse.Builder().body("{}").build())
+            fixture.server.enqueue(MockResponse.Builder().body("{}").build())
+
+            assertEquals("{}", fixture.networkClient.getJson(fixture.url("/default-json")))
+            assertEquals(
+                "{}",
+                fixture.networkClient.getJson(
+                    fixture.url("/ajax-json"),
+                    mapOf("X-Requested-With" to "XMLHttpRequest"),
+                ),
+            )
+            /** 默认请求用于确认接口扩展没有改变既有 Provider 行为。 */
+            val defaultRequest = fixture.server.takeRequest()
+            /** AJAX 请求用于确认固定 header 精确发送。 */
+            val headerRequest = fixture.server.takeRequest()
+            assertEquals(null, defaultRequest.headers["X-Requested-With"])
+            assertEquals("XMLHttpRequest", headerRequest.headers["X-Requested-With"])
+        }
+    }
+
     /** SocketTimeoutException 必须映射稳定 timeout，而不是笼统 network。 */
     @Test
     fun socketTimeoutMapsToStableTimeoutReason() {
