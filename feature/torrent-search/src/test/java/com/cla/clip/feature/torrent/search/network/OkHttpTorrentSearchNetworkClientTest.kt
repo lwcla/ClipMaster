@@ -525,6 +525,23 @@ class OkHttpTorrentSearchNetworkClientTest {
         }
     }
 
+    /** Eztv 的固定样式 Cookie 只显式发送，默认文本 GET 保持无头。 */
+    @Test
+    fun getTextUsesEmptyHeadersByDefaultAndKeepsCookieAcrossRedirect() = runBlocking {
+        /** 本地受信 HTTPS 响应覆盖默认与同源跳转请求。 */
+        val fixture = HttpsNetworkFixture()
+        fixture.use {
+            fixture.server.enqueue(MockResponse.Builder().body("default").build())
+            fixture.server.enqueue(MockResponse.Builder().code(302).addHeader("Location", "/final").build())
+            fixture.server.enqueue(MockResponse.Builder().body("styled").build())
+            assertEquals("default", fixture.networkClient.getText(fixture.url("/default")))
+            assertEquals("styled", fixture.networkClient.getText(fixture.url("/styled"), mapOf("Cookie" to "layout=def_wlinks")))
+            assertEquals(null, fixture.server.takeRequest().headers["Cookie"])
+            assertEquals("layout=def_wlinks", fixture.server.takeRequest().headers["Cookie"])
+            assertEquals("layout=def_wlinks", fixture.server.takeRequest().headers["Cookie"])
+        }
+    }
+
     /** SocketTimeoutException 必须映射稳定 timeout，而不是笼统 network。 */
     @Test
     fun socketTimeoutMapsToStableTimeoutReason() {

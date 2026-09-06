@@ -9,6 +9,8 @@ import com.cla.clip.feature.torrent.search.network.TorrentSearchNetworkClient
 internal class FakeTorrentSearchNetworkClient(
     /** GET 文本的合成响应逻辑；默认返回空文本便于单一边界测试。 */
     private val textHandler: suspend (String) -> String = { "" },
+    /** 带固定头的文本回调，默认复用无头 handler 保持已有来源测试行为。 */
+    private val textWithHeadersHandler: suspend (String, Map<String, String>) -> String = { url, _ -> textHandler(url) },
     /** GET JSON 的无 header 合成响应逻辑；默认返回空数组。 */
     private val jsonHandler: suspend (String) -> String = { "[]" },
     /** 带固定 header 的 GET JSON 合成响应逻辑；默认回退同一 JSON handler。 */
@@ -32,9 +34,14 @@ internal class FakeTorrentSearchNetworkClient(
     val redirectUrls = mutableListOf<String>()
 
     /** 记录 URL 后返回合成 HTML。 */
-    override suspend fun getText(url: String): String {
+    override suspend fun getText(
+        /** 已经通过 Provider URL 策略的请求地址。 */
+        url: String,
+        /** 固定公开请求头，不进入日志或其他持久状态。 */
+        headers: Map<String, String>,
+    ): String {
         textUrls += url
-        return textHandler(url)
+        return if (headers.isEmpty()) textHandler(url) else textWithHeadersHandler(url, headers)
     }
 
     /** 记录 URL 后返回合成 JSON；header 直接交给受控测试回调且不额外持久化。 */

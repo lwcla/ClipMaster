@@ -63,3 +63,16 @@ handling, and image-loading setup.
 The manifest is a fixed local audit artifact. It permits no remote delivery of
 code, selectors, or scripts; future Provider runtime work must remain pinned to
 this reviewed source baseline and local HTTPS-only network policy.
+
+The fifth runtime batch ports Eztv, FileMood, and InternetArchive from the same
+pinned sources and verified manifest hashes. Local adaptations isolate parsing
+from networking, encode query/path data structurally, validate exact HTTPS
+hosts and hashes, and reuse cancellable mapping and UTC/Long value parsers.
+Eztv retains its fixed public layout Cookie through the shared text client;
+this is a presentation option, not a user session. FileMood safely reads
+nonstandard peer counts and derives identity only from a validated .html path.
+InternetArchive follows the local NSFW/default-off audit, bounds identifiers
+and exact metadata routes, skips invalid file candidates, and intentionally
+fixes the upstream metadata.metadata category typo to metadata.mediatype.
+Fixtures are synthetic and offline. No registry, UI, persistence, or backup
+behavior is added in this batch.

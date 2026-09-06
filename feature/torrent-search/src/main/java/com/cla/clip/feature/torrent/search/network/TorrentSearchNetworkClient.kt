@@ -24,8 +24,13 @@ import kotlin.coroutines.resumeWithException
 
 /** Provider 唯一可依赖的网络接口，禁止向调用方暴露原始请求或响应对象。 */
 interface TorrentSearchNetworkClient {
-    /** HTTPS GET 文本；解压后超过 5 MiB 抛出 ResponseTooLargeException。 */
-    suspend fun getText(url: String): String
+    /** HTTPS GET 文本；默认不增加头，固定样式头显式传入，解压后超过 5 MiB 拒绝。 */
+    suspend fun getText(
+        /** 已经通过 Provider URL 策略的请求地址。 */
+        url: String,
+        /** 固定公开请求头；默认空值保持既有来源行为。 */
+        headers: Map<String, String> = emptyMap(),
+    ): String
 
     /** HTTPS GET JSON；固定请求头由调用方显式传入，正文仍共用严格大小和取消边界。 */
     suspend fun getJson(url: String, headers: Map<String, String> = emptyMap()): String
@@ -94,8 +99,13 @@ class OkHttpTorrentSearchNetworkClient internal constructor(
         .followSslRedirects(false)
         .build()
 
-    /** 在 OkHttp callback 线程完成状态校验与限量 body 读取。 */
-    override suspend fun getText(url: String): String = executeText(newRequest(url))
+    /** 文本与 JSON 均返回受限原文，共用固定请求头、状态、同源跳转和取消边界。 */
+    override suspend fun getText(
+        /** 已经通过 Provider URL 策略的请求地址。 */
+        url: String,
+        /** 固定公开请求头，不进入日志或其他持久状态。 */
+        headers: Map<String, String>,
+    ): String = getJson(url, headers)
 
     /** JSON 与文本共用相同网络安全边界，并由 OkHttp 校验固定请求头名称和值。 */
     override suspend fun getJson(url: String, headers: Map<String, String>): String {

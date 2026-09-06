@@ -213,3 +213,21 @@ BlueRoms 固定 SAFE、GAMES、默认关闭并实现 search/details；Base64 `da
 - 2026-08-30：重写为 TorrentSearch 固定快照完整接入主方案，并明确废弃旧 Academic Torrents 单源磁力方案；原因是项目已确认以独立 Activity、43 Provider、安全边界和 schemaVersion 4 完整替换旧模块。
 - 2026-08-31：记录任务 2 的实际空壳边界、双构建路径、系统 Intent alias、宿主入口与下载历史迁出结果；原因是旧模块删除和新稳定契约已经落地，需要让方案与当前代码保持一致。
 - 2026-09-06：完成 04A2 重定向修复复审；循环身份改为方法与 URL，允许同地址 POST→303→GET，并保留同来源、20 次上限、取消与响应关闭边界。重新验证 154 项模块单测零失败、模块编译、中文注释扫描及功能开启 App 编译通过；未新增持久数据、日志或反射契约，设备与 R8 仍按发布阶段验收。
+
+### 任务 04C2：Eztv、FileMood、InternetArchive（2026-09-06）
+
+状态：已完成。此状态仅指本批实现与本地验证，待根代理独立复审后纳入提交。固定上游提交与 manifest SHA 逐文件核对通过；只移植三站 search/details，不注册来源、不接 UI 或持久化。请求编排与 HTML/JSON parser 分离；网络留调用协程，解析和领域映射进入可注入且默认 Default 的计算调度器。复用公共 HTTPS 精确 host policy、查询清洗、hash/magnet/tracker、日期/字节格式化与协作取消。
+
+Eztv 保留搜索表格丢弃前两行及固定 `Cookie: layout=def_wlinks`，该 Cookie 只选列表样式，不是登录态。共享 getText 增加默认空 headers，并复用 getJson 的固定头构建模式，不改变状态、重定向、5 MiB 与取消边界。详情 Filesize/Released 读取标签后 TextNode，日期去序数后使用 UTC。FileMood 保留标题限制 `in:title`，修复 seeders/peers 拆分不足两个字段崩溃；详情 hash 公共规范化并用固定 tracker 构造 magnet。
+
+InternetArchive 按本地 manifest 为 NSFW、默认关闭。搜索保留固定字段、分页和分类映射，JSON response.docs 必须为数组，合法空数组返回空；坏条目跳过、坏顶层抛无正文 ProviderParseException。identifier 限制为非空单路径段（最多 512），拒绝点段、斜杠、反斜杠与控制符；详情只接受精确 `/details/{identifier}` 且无 query/fragment，元数据 identifier 必须匹配请求。下载文件名单独编码且拒绝空/点段。files 的非法首条不能挡住后续合法 torrent。大小保持 Long，epoch 秒转毫秒复用溢出保护；有意修复上游 `metadata.metadata` 分类字段笔误，读取 `metadata.mediatype`，未知类型 OTHER、缺失可空。
+
+日志与诊断计划：本批不新增逐站日志，现有协调器开始/完成/失败及低敏 reasonCode 已覆盖；parser 不输出 HTML/JSON、URL、Cookie、magnet、查询或异常 message，避免隐私与噪声。描述保持不可信 HTML/文本，后续统一禁脚本展示。三站产出链接均受同站 HTTPS 约束，可选非法字段降级为空，必填非法条目跳过；HTML 零结果沿用上游 selector 的空集合语义，不发明哨兵。
+
+测试：选择性 TDD 覆盖三站正常、空、缺字段、异常结构、请求与产出 URL、编码、元数据、线程边界，以及固定 Cookie、序数日期、人数非标准字段、IA 分类笔误/标识匹配/坏文件候选/溢出。使用合成离线 fixture；迭代定向运行，最后全模块一次并运行模块与开启 App 编译、中文注释扫描、git diff --check。没有持久数据，备份无需变动；显式 JSON key 与纯编译期对象无需 keep，设备/API24、真实站点和 release/R8 留发布验证。
+
+变更记录：2026-09-06，开始 04C2 移植，记录固定上源适配与 FileMood/IA 已知错误修复，防止机械移植保留协议缺陷。
+
+04C2 路径补充（2026-09-06）：复审确认 FileMood 不应从 URL query/fragment 尾部取 hash；改为 HttpUrl 最后路径文件名必须 `.html` 后缀，从最后连字符后读取 hash，存在 query/fragment 的候选直接跳过。IA 详情额外校验归一化前恰好两段和默认 HTTPS 443 端口，避免点段折叠或非标准端口改变元数据目标。这两项先跑 2 tests / 2 failures 的真实 RED 再修复。
+
+04C2 验证记录（2026-09-06）：最终全模块 225 tests / 28 suites，0 failures/errors/skipped；模块 Kotlin、中文注释门禁与开启功能的 App Kotlin 编译通过（BUILD SUCCESSFUL in 1m 3s）。仅运行合成离线测试，真实站点、设备和 release/R8 未验证。
