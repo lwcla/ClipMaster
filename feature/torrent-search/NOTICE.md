@@ -168,3 +168,17 @@ that selected poster node is removed from the returned description, so nested
 body images remain intact; this is an intentional local correction to the pinned
 source's broader descendant-image removal. XXXTracker retains its reviewed rule
 of removing the first three direct description elements.
+
+The eleventh runtime batch ports TokyoToshokan, UIndex, and TorrentDatabase from
+the same pinned sources and verified manifest hashes. Each provider uses separate
+URL, category, result, and detail collaborators, with network calls retained in
+the caller coroutine and static parsing on injected computation dispatchers.
+TokyoToshokan pairs only a title row with an immediately following metadata row
+and strictly parses 24-hour zoned dates. UIndex uses the first reviewed result
+table and an injected clock for relative dates. TorrentDatabase accepts hashes
+only from its exact same-origin marker path, preserves the distinct `e-books`
+search and `ebooks` browse routes, and appends its tracker with one URL-encoding
+pass. The three providers follow the local NSFW/default-disabled audit even
+though the pinned sources label them safe. Synthetic fixtures are neutral and
+offline. This batch adds no registry, UI, persistence, backup, reflection, or
+runtime remote-code behavior.

@@ -328,6 +328,26 @@ TorrentKitty 保留 SAFE、默认关闭、仅 OTHER 输入分类和 search/detai
 
 变更记录：2026-09-07，独立复审 round1 修复海报直属元素边界：Rutor 保留嵌套正文图且仅删除实际选中的直属海报，XXXTracker 可识别其他直属元素之后的首个直属海报并继续只删除前三个直属元素。三站原合并 HTML parser 各自拆为具名 `ResultsParser` 与 `DetailsParser` 文件，不新增跨站抽象或改变 selector 契约。三项公开 Provider 回归先取得 3 failures，再全部转绿；本批定向扩展到 50 tests / 5 suites 全绿。round1 唯一一轮完整组合验证 `BUILD SUCCESSFUL in 22s`，JUnit XML 为 372 tests / 46 suites、0 failures/errors/skipped，保留 round0 的 369 项并增加 3 项回归。
 
+### 任务 04E3：TokyoToshokan、UIndex、TorrentDatabase（2026-09-07）
+
+状态：已完成。固定上游提交 `ba82e889637027f7bed82715ec4d2106cbce5a28` 与 manifest 中三份 SHA 已逐文件核对；本批只移植 TokyoToshokan、UIndex、TorrentDatabase 的 search/details/latest/top 能力，不接注册表、UI、Room、备份或其他来源。三个 Provider 按本地 manifest 统一标记 NSFW 且默认关闭；UIndex 与 TorrentDatabase 保留 Cloudflare 静态元数据，但本批不启动 WebView 或新增解锁请求。入口只编排调用协程中的网络，URL/category、结果 parser 与详情 parser 分别放在具名文件，DOM、日期和领域映射进入可注入且默认 `Dispatchers.Default` 的计算调度器。
+
+TokyoToshokan 只允许 `tokyotosho.info`。search 使用 `/search.php` 的 `terms`、`type`、`searchName=true` 结构化参数，latest 使用 `/index.php` 的可选 `cat`，top 每次重新发起独立 latest 形状请求。列表以 `td.desc-top` 识别记录起始，只把紧邻且包含 `td.desc-bot` 的下一行作为元数据，避免 `zipWithNext` 重叠、广告或相邻标题串行；缺元数据或奇数尾标题仍保留合法名称与 magnet，大小、日期、人数降级为空。类别从已解析 URL 的 `cat` 查询参数映射；详情固定序号 selector 保留，hash 规范化必填，现有 magnet 必须与 hash 一致，缺 magnet 时使用公共固定 tracker 生成。torrent 文件仅接受同站 HTTPS 且 MIME 为 `application/x-bittorrent`。日期列表与详情都按 `yyyy-MM-dd HH:mm z` 严格解析 24 小时值并尊重显式时区。
+
+UIndex 只允许 `uindex.org`，Cloudflare solver 元数据固定为 `/search.php?search=ubuntu`。search/latest/top 分别使用 `/search.php?search=&c=`、`/search.php?c=`、`/top.php?t=24h&c=`，十类输入完整映射且 BOOKS/未知回退 `0`，禁止拼出 `null`。列表只解析首个 `table.sr-table, table.top-table` 容器及固定 `sr-*` selector，名称和合法 magnet 必填，人数去除逗号后安全转 UInt，相对日期使用注入时钟。详情括号日期先裁剪空白并仅移除完整包围括号，再按 UTC `yyyy-MM-dd HH:mm:ss` 严格解析；坏可选日期独立降级。类别 `XXX` 映射 PORN、`TV` 映射 SERIES；可选海报只保留同站合法 HTTPS，描述保持不可信 HTML 且不执行脚本。
+
+TorrentDatabase 只允许 `developify.ca`，保留 Cloudflare 元数据。search 使用 `/newest?q=&category=` 且仅在有映射时发送 category；latest/top 使用固定后缀路径，BOOKS 分别锁定 `e-books` 查询与 `newest_ebooks`/`top_seeded_ebooks`，ALL top 每次独立请求 `/newest`，未知 top 直接空返回且不联网。列表名称固定取第一格第二 anchor，其 href 必须解析为同站 HTTPS 默认端口、无 userinfo、精确 `/track/magnet/{hash}` 路径；query 不参与 hash 提取。合法 hash 先交公共 builder 生成含 20 个公共 tracker 的 magnet，再追加一次编码的 `https://developify.ca/announce`，避免已编码常量二次编码。详情名称与合法 magnet 必填；上传时间先把空格日期与 `Z`/`±HH:mm` 归一化为 ISO 后复用公共 ISO parser，失败再按无偏移 UTC 严格解析，lastChecked 保持无偏移 UTC；`E-Books` 与 `AudioBooks` 均映射 BOOKS，不虚构文件下载字段。
+
+日志与诊断计划：本批不新增逐站或逐条日志，沿用协调器的低敏 Provider ID、阶段、结果数、耗时与 reasonCode。Provider/parser 禁止输出搜索词、URL/query、magnet/hash、日期原文、HTML、描述、海报、header、Cookie/Token 或异常 message；响应只在内存中静态解析，不执行脚本。没有新增持久数据、外部序列化/反射模型或数据库字段，因此备份与 keep/R8 不变。
+
+测试：采用选择性 TDD，在可编译空实现上先取得行为断言 RED，再完成生产逻辑。三站覆盖 descriptor、十分类请求、正常/空/缺失/异常结构、必填坏条目、查询编码、安全输入输出 URL、计算 dispatcher 与取消；Tokyo 额外覆盖非重叠双行、奇数尾、广告、缺单个元数据、相邻标题、24 小时/显式时区和 hash 冲突；UIndex 覆盖 BOOKS 回退、sr/top 首容器、逗号人数、固定时钟与坏括号日期；TorrentDatabase 覆盖精确 hash marker、query 不冒充 hash、tracker 解码值/无双编码、BOOKS 两类路径、ALL top 独立请求、未知 top 无请求与偏移时间。fixture 使用中性合成 HTML，不访问真实站点；复用共享 5 MiB 网络上限测试。设备/API 24、真实联网与 release/R8 留发布阶段。
+
+变更记录：2026-09-07，启动 04E3 固定快照移植；锁定 Tokyo 非重叠双行和 24 小时日期、UIndex 精确 selector 与注入时钟、TorrentDatabase 严格 marker 路径与单次 tracker 编码，并保持结果/详情 parser 独立，避免入口或万能 HTML parser 膨胀。
+
+变更记录：2026-09-07，完成 04E3 实现与离线验证。最小可编译骨架上的行为 RED 为 36 tests / 36 failures；完成三站 URL、类别、结果 parser、详情 parser 与薄入口后，同一组 36 tests 全绿。最终唯一一轮组合验证 `BUILD SUCCESSFUL in 32s`，JUnit XML 汇总为 408 tests / 50 suites、0 failures/errors/skipped，完整保留 04E2 round1 的 372 tests / 46 suites 并新增 36 tests / 4 suites；模块 Kotlin、中文注释门禁和开启磁力功能的 App Kotlin 编译均通过。fixture 全部为中性合成 HTML；设备/API 24、真实联网与 release/R8 仍按发布阶段计划保留。
+
+变更记录：2026-09-07，04E3 独立复审发现详情午夜测试缺口，补充通过 TokyoToshokan `getDetails` 公开入口解析 `2024-02-29 00:15 UTC` 的回归，期望 epochMillis 为 `1709165700000`。复用现有详情 fixture 和网络 fake，不改生产日期规则；本次仅补既有正确行为的测试，不另造生产故障作为 RED。TokyoToshokan 定向 11 tests 零失败、中文注释门禁通过；此前完整 408 项测试与模块/App 编译通过，本次只增一项测试，未重复无关编译或整套测试。
+
 ### 任务 04A3：内置来源共同 URL authority 边界（2026-09-06）
 
 状态：已完成。内置来源共同 `BuiltinProviderUrlPolicy` 在既有 HTTPS 与精确 host 白名单之外，统一要求解析后的有效端口为 443 且用户名、密码均为空。默认 443 与显式 `:443` 等价允许；非 443 端口、username-only、password-only、组合及编码 userinfo 均在网络前以无正文 `HttpDeniedException` 拒绝。`resolveOptionalHttpsUrl` 继续复用同一 policy 校验 base 与解析后的 candidate，覆盖网络路径、相对/绝对地址和污染 base；`null`/空白 candidate 保持原有 `null` 短路，非法非空 candidate 保持抛异常契约。
