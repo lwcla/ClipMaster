@@ -1,0 +1,15 @@
+{
+  "episode": {
+    "fixture": {
+      "episode": "01",
+      "release_date": "Tuesday, 02 Jan 2024 12:00 UTC",
+      "downloads": [
+        {
+          "res": "1080",
+          "magnet": "magnet:?xt=urn:btih:0123456789ABCDEF0123456789ABCDEF01234567&xl=1073741824",
+          "torrent": "https://subsplease.org/torrents/fixture.torrent"
+        }
+      ]
+    }
+  }
+}

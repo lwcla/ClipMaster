@@ -366,6 +366,24 @@ OxTorrent 保留 `/recherche/{category?}/{query}`、`/torrents/{slug}`、`/top`�
 
 变更记录：2026-09-08，完成 04E4：接入 OxTorrent、Torrent9 与 0Magnet，新增中性离线 fixture 和 34 项定向回归，修正 0Magnet 列表磁力保留与 Torrent9 容量单位边界，抽取详情结构化并发协作者，并修复供应链快照的 Windows 换行可移植性；不接注册表、UI、数据层、备份或其他来源。
 
+### 任务 04E5：SubsPlease、TheRarBg、1337x（2026-09-08）
+
+状态：已完成。固定上游提交 `ba82e889637027f7bed82715ec4d2106cbce5a28` 与 manifest 中三份来源元数据已核对；本批只移植 SubsPlease、TheRarBg 与 1337x 的既有 search/details/latest/top 能力，不接注册表、UI、Room、备份或其他来源。SubsPlease 按本地审计为 SAFE/default-off，只支持 ANIME；TheRarBg 为 UNSAFE/default-off；1337x 为 NSFW/default-off 并保留 Cloudflare 静态元数据。入口只编排调用协程中的网络，URL/category、列表 parser 与详情 parser 按站点拆分，JSON/DOM、日期和领域映射进入可注入且默认 `Dispatchers.Default` 的计算调度器。
+
+三站复用共享网络客户端、5 MiB 响应边界、`BuiltinProviderUrlPolicy`、`sanitizeProviderQuery`、`MagnetInfoHashParser`、`ProviderDateParser`、`TorrentFileSizeFormatter`、协作遍历、测试 fake 与 `loadDetailDraftsInSourceOrder`。TheRarBg 和 1337x 先在计算调度器解析、校验列表草稿，再在调用协程中结构化并发补详情，保持来源顺序；坏单条或空详情只跳过当前草稿，真实网络失败和父取消继续传播。两站 DOM selector、类别和日期协议不同，分别保留具名 parser，不抽取跨站万能 HTML 解析器。SubsPlease 的搜索/最新 JSON、详情页参数、show API 二次读取与 magnet `xl` 大小是站点专属契约，只在该包内拆分，不扩大公共 API。
+
+SubsPlease 以结构化参数构造 `/api?f=search&tz=$&s=` 与 `/api/?f=latest&tz=$`；列表要求对象顶层、非空 show 名、episode、resolution 与合法 magnet，详情 URL 只保留同站 HTTPS，并显式附加唯一 `ep`/`res`。详情入口在网络前校验同站 authority 和参数，再从静态 HTML 读取 show ID、标题、描述和可选海报，调用 `/api/?f=show&tz=$&sid=` 精确匹配 episode/resolution；名称与合法 magnet 必填，torrent 文件和海报仅接受同站 HTTPS，坏日期、大小或可选媒体独立降级。
+
+TheRarBg 保留 `/get-posts/keywords:{query}`、`/time:2D`、`/time:2D:order:-se` 和九类路径后缀；查询作为单个路径语义编码，ALL 不附分类。列表只解析 `tr.list-entry`，详情地址先校验同站 HTTPS，再并发补充 magnet；列表大小使用非负字节数格式化，epoch seconds 安全转毫秒，人数 UInt 溢出降级。详情按固定标签表读取，上传日期只接受上游 `a.m.`/`p.m.` 形状并严格 UTC 解析，缺名称或合法 magnet 返回空详情。
+
+1337x 保留 `/search/{query}/1/`、`/category-search/{query}/{category}/1/` 与 `/top-100`；八类映射完整，BOOKS 等不支持搜索分类回退全部搜索而不崩溃。列表草稿先校验 `1337x.to` 详情 URL，再并发补详情；日期支持注入时钟下的当日时间、当年无年份和显式两位年份三种严格形状。详情名称与 magnet 必填，相对日期使用注入时钟；可选 torrent 文件只接受 `itorrents.org` HTTPS 默认端口且无 userinfo，海报只接受本站 HTTPS，描述按不可信 HTML 保留且不执行脚本。
+
+日志与诊断计划：本批不新增逐站、逐详情或逐条日志，沿用协调器的低敏 Provider ID、阶段、结果数、耗时与 reasonCode。Provider/parser 禁止输出搜索词、URL/query、magnet/hash、剧集号、show ID、日期原文、JSON/HTML、描述、海报、下载地址、header、Cookie/Token 或异常 message；响应只在内存静态解析。三站所有请求和产出 URL 在网络或领域输出前校验审计 host、HTTPS、有效端口 443 和空 userinfo。没有新增持久数据、外部序列化/反射模型或数据库字段，因此备份与 keep/R8 不变。
+
+测试：采用选择性 TDD，先创建公开 Provider 行为测试和最小可编译空实现，取得断言层面的 RED，再完成最小生产逻辑。本批新增 18 个测试，覆盖描述符、十分类/不支持分类、查询编码、正常解析、缺失/坏单条、恶意 authority、magnet 身份、详情二次请求、三形态日期、N+1 并发机会、逆序完成稳定顺序、父取消和计算 dispatcher；网络失败与空详情跳过继续由复用的共享详情加载器回归覆盖。fixture 使用中性合成 JSON/HTML，不访问真实站点；设备/API 24、真实联网和 release/R8 留发布阶段。最终组合验证通过，JUnit XML 汇总为 461 tests / 55 suites、0 failures/errors/skipped；模块 Kotlin、中文注释门禁及开启功能 App Kotlin 编译通过（BUILD SUCCESSFUL in 2m 3s），`git diff --check` 无错误。
+
+变更记录：2026-09-08，启动 04E5 固定快照移植；确认复用结构化详情并发与公共安全/解析能力，同时锁定 SubsPlease 二次 show API、TheRarBg 标签日期和 1337x 三形态列表日期为站点专属职责。2026-09-08，完成三站 Provider、URL/category、列表/详情 parser、离线 fixture、行为/调度器回归与 NOTICE，同步记录最终验证结果；原因是该子批已达到独立可审查、但尚未注册到用户入口的完成边界。
+
 ### 任务 04A3：内置来源共同 URL authority 边界（2026-09-06）
 
 状态：已完成。内置来源共同 `BuiltinProviderUrlPolicy` 在既有 HTTPS 与精确 host 白名单之外，统一要求解析后的有效端口为 443 且用户名、密码均为空。默认 443 与显式 `:443` 等价允许；非 443 端口、username-only、password-only、组合及编码 userinfo 均在网络前以无正文 `HttpDeniedException` 拒绝。`resolveOptionalHttpsUrl` 继续复用同一 policy 校验 base 与解析后的 candidate，覆盖网络路径、相对/绝对地址和污染 base；`null`/空白 candidate 保持原有 `null` 短路，非法非空 candidate 保持抛异常契约。

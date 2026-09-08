@@ -197,3 +197,17 @@ and intentionally fixes the pinned source's omission by retaining the validated
 detail magnet in list results. Fixtures are neutral, synthetic, and offline.
 This batch adds no registry, UI, persistence, backup, reflection, or runtime
 remote-code behavior.
+
+The thirteenth runtime batch ports SubsPlease, TheRarBg, and 1337x from the
+same pinned sources and verified manifest hashes. SubsPlease keeps its
+search/latest JSON endpoint and validates the episode and resolution carried by
+same-origin detail URLs before requesting the show API. TheRarBg and 1337x
+parse validated list drafts before structured concurrent detail requests,
+preserve source order, propagate cancellation and transport failures, and run
+static parsing and result mapping on injected computation dispatchers. 1337x
+additionally validates optional torrent files against the exact itorrents.org
+HTTPS authority and the magnet identity. All requested and optional output
+links require their reviewed HTTPS authority, effective port 443, and empty
+user information. The three providers follow the local safety/default-disabled
+audit; synthetic fixtures are neutral and offline. This batch adds no registry,
+UI, persistence, backup, reflection, or runtime remote-code behavior.

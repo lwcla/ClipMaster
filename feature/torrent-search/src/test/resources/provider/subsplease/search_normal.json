@@ -1,0 +1,13 @@
+{
+  "Fixture Show": {
+    "release_date": "Tue, 2 Jan 2024 00:00:00 GMT",
+    "page": "shows/fixture",
+    "episode": "01",
+    "downloads": [
+      {
+        "res": "1080",
+        "magnet": "magnet:?xt=urn:btih:0123456789ABCDEF0123456789ABCDEF01234567&xl=1073741824"
+      }
+    ]
+  }
+}
