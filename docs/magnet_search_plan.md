@@ -384,6 +384,20 @@ TheRarBg 保留 `/get-posts/keywords:{query}`、`/time:2D`、`/time:2D:order:-se
 
 变更记录：2026-09-08，启动 04E5 固定快照移植；确认复用结构化详情并发与公共安全/解析能力，同时锁定 SubsPlease 二次 show API、TheRarBg 标签日期和 1337x 三形态列表日期为站点专属职责。2026-09-08，完成三站 Provider、URL/category、列表/详情 parser、离线 fixture、行为/调度器回归与 NOTICE，同步记录最终验证结果；原因是该子批已达到独立可审查、但尚未注册到用户入口的完成边界。
 
+### 任务 04E6：TorrentDownload、TorrentDownloads、Torrentz（2026-09-08）
+
+状态：已完成。固定上游提交 `ba82e889637027f7bed82715ec4d2106cbce5a28` 与 manifest 中三份 CRLF 字节口径 SHA-256 已核对；本批只移植 TorrentDownload、TorrentDownloads 与 Torrentz 的既有 search/details/latest/top 能力，不接注册表、UI、Room、备份或其他来源。三站按本地审计统一为 NSFW/default-off；TorrentDownloads 保留 Cloudflare 元数据，但不在本批接 WebView 解锁流程。
+
+三站继续复用共享网络客户端、5 MiB 响应边界、`BuiltinProviderUrlPolicy`、`sanitizeProviderQuery`、`MagnetInfoHashParser`、`ProviderDateParser`、协作遍历、测试 fake 与 `loadDetailDraftsInSourceOrder`。TorrentDownload 的列表已携带可验证 infoHash，只做单页静态解析；TorrentDownloads 与 Torrentz 先在计算调度器解析并校验列表详情 URL，再在调用协程中结构化并发补详情，保持来源顺序。坏单条或空详情只跳过当前草稿，真实网络失败和父取消继续传播。三站 DOM、分类和详情字段协议不同，分别保留具名 parser，不抽取跨站万能 HTML 解析器。
+
+TorrentDownload 使用 `/search?q=`、`/latest`、`/top`，搜索分类按固定上游忽略；列表详情路径倒数第二段必须是合法 infoHash，详情页名称与 magnet 必填，`itorrent.net` torrent 链接只作为通过精确 HTTPS authority 校验的可选媒体。TorrentDownloads 使用 `/search/?s_cat=&search=`、`/view/today/{category}.html`、`/view/popular/{category}.html` 及无分类回退页，列表先跳过固定两行头部，再并发读取同站详情；上传与最后检查时间只接受严格 UTC `yyyy-MM-dd HH:mm:ss`。Torrentz 使用 `/search?q=&category=`、`/latest?category=`、`/trending?category=`，列表只承载同站详情草稿，详情名称与合法 magnet 必填；可选 torrent 链接只接受同站 HTTPS，日期只接受严格 UTC `M/d/yyyy`。
+
+日志与诊断计划：本批不新增逐站、逐详情或逐条日志，沿用协调器的低敏 Provider ID、阶段、结果数、耗时与 reasonCode。Provider/parser 禁止输出搜索词、URL/query、magnet/hash、日期原文、HTML、描述、下载地址、header、Cookie/Token 或异常 message；响应只在内存静态解析。三站所有请求和产出 URL 在网络或领域输出前校验 manifest 审计 host、HTTPS、有效端口 443 和空 userinfo。没有新增持久数据、外部序列化/反射模型或数据库字段，因此备份与 keep/R8 不变。
+
+测试：采用选择性 TDD，先写公开 Provider 行为测试并观察缺实现失败，再用最小可编译空实现取得断言层面的 RED，最后补生产逻辑。新增 10 项行为测试与 4 项调度/取消测试，覆盖描述符、本地安全审计、分类/查询编码、search/latest/top 路径、正常解析、必填字段、恶意 authority、详情文件 URL、日期、逐条详情并发机会、逆序完成稳定顺序、父取消和计算 dispatcher；fixture 使用中性合成 HTML，不访问真实站点。收尾同时把既有 BitSearch 跨站详情拒绝测试从依赖协程调度时机的固定 5 次搜索计数，收敛为取消前 1..5 次合法搜索请求且恶意详情 URL 永不联网的安全契约，生产行为未改。最终模块全量 57 个 suite、475 项测试零失败，并通过模块编译、中文注释门禁及启用功能后的 app 编译；设备/API 24、真实联网和 release/R8 留发布阶段。
+
+变更记录：2026-09-08，启动 04E6 固定快照移植；确认三份源码按 manifest 的 CRLF 字节口径校验通过，锁定 TorrentDownload 列表 hash、TorrentDownloads 固定头部与详情日期、Torrentz 纯详情结果为站点专属职责，并沿用结构化并发、严格 URL、低敏日志和无持久化边界。2026-09-08，完成三站 Provider、URL/category、列表/详情 parser、离线 fixture、14 项行为/调度器回归与 NOTICE；同时修正一个既有并发安全测试的时序假设，原因是批次已达到独立可审查、但尚未注册到用户入口的完成边界。
+
 ### 任务 04A3：内置来源共同 URL authority 边界（2026-09-06）
 
 状态：已完成。内置来源共同 `BuiltinProviderUrlPolicy` 在既有 HTTPS 与精确 host 白名单之外，统一要求解析后的有效端口为 443 且用户名、密码均为空。默认 443 与显式 `:443` 等价允许；非 443 端口、username-only、password-only、组合及编码 userinfo 均在网络前以无正文 `HttpDeniedException` 拒绝。`resolveOptionalHttpsUrl` 继续复用同一 policy 校验 base 与解析后的 candidate，覆盖网络路径、相对/绝对地址和污染 base；`null`/空白 candidate 保持原有 `null` 短路，非法非空 candidate 保持抛异常契约。

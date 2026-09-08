@@ -211,3 +211,17 @@ links require their reviewed HTTPS authority, effective port 443, and empty
 user information. The three providers follow the local safety/default-disabled
 audit; synthetic fixtures are neutral and offline. This batch adds no registry,
 UI, persistence, backup, reflection, or runtime remote-code behavior.
+
+The fourteenth runtime batch ports TorrentDownload, TorrentDownloads, and
+Torrentz from the same pinned sources and manifest hashes verified against the
+upstream CRLF byte representation. TorrentDownload derives and validates the
+info hash carried by its list detail path without per-result network requests.
+TorrentDownloads and Torrentz parse validated list drafts before structured
+concurrent detail requests, preserve source order, and propagate cancellation
+and transport failures. Static parsing and mapping run on injected computation
+dispatchers. Requested and optional output links require each reviewed HTTPS
+authority, effective port 443, and empty user information. The three providers
+follow the local NSFW/default-disabled audit; TorrentDownloads retains only its
+Cloudflare metadata and does not add a WebView unlock flow. Synthetic fixtures
+are neutral and offline. This batch adds no registry, UI, persistence, backup,
+reflection, or runtime remote-code behavior.

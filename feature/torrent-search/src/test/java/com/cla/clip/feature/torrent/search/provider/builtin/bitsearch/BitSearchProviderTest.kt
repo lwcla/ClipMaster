@@ -130,7 +130,8 @@ class BitSearchProviderTest {
 
         assertTrue(searchFailure is HttpDeniedException)
         assertTrue(detailsFailure is HttpDeniedException)
-        assertEquals(5, networkClient.textUrls.size)
+        assertTrue(networkClient.textUrls.size in 1..5)
+        assertFalse(networkClient.textUrls.contains("https://evil.invalid/torrent"))
     }
 
     /** 详情必须要求合法 btih，映射日期/分类/下载链接；非法日期只降级为空。 */
