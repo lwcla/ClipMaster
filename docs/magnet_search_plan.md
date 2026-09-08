@@ -348,6 +348,24 @@ TorrentDatabase 只允许 `developify.ca`，保留 Cloudflare 元数据。search
 
 变更记录：2026-09-07，04E3 独立复审发现详情午夜测试缺口，补充通过 TokyoToshokan `getDetails` 公开入口解析 `2024-02-29 00:15 UTC` 的回归，期望 epochMillis 为 `1709165700000`。复用现有详情 fixture 和网络 fake，不改生产日期规则；本次仅补既有正确行为的测试，不另造生产故障作为 RED。TokyoToshokan 定向 11 tests 零失败、中文注释门禁通过；此前完整 408 项测试与模块/App 编译通过，本次只增一项测试，未重复无关编译或整套测试。
 
+### 任务 04E4：OxTorrent、Torrent9、0Magnet（2026-09-08）
+
+状态：已完成。续接已有三站草稿，仅实现本批来源与必要协作者，不接注册表、UI、数据层或备份。OxTorrent（`oxtorrent.co`）与 Torrent9（`www6.torrent9.to`）均 SAFE/default-off，支持 search/details/latest/top；0Magnet（`9mag.net`，ID `0magnet`）为 NSFW/default-off、PORN，仅 search/details。三个固定源码 SHA 与 manifest 核对一致。
+
+复用公共网络、HTTPS 精确主机/443/no-userinfo 策略、magnet 身份、日期、大小排版、协作遍历与测试 fake。两法语站仅共享固定分类映射，结果与详情 DOM 各自独立；列表先校验详情 URL，再在调用协程中结构化并发补详情，顺序与列表一致。无效详情只跳单条，真实网络错误与父取消传播。相同的详情调度收敛为具名协作者，所有 DOM 与领域映射进入注入且默认 Default 的计算调度器，避免合并阶段回落到调用线程。
+
+OxTorrent 保留 `/recherche/{category?}/{query}`、`/torrents/{slug}`、`/top`；Torrent9 保留 `/search_torrent/{category?}/{query}.html`、`/torrents_{slug}.html`、`/top_torrent.html`。查询按单段编码，latest 不支持类别时无请求返回空，top 忽略类别但每次独立请求。各自按固定法语标签与 sibling 结构解析，类别只来自同站精确路径。Torrent9 仅将合法法语 o 单位转换为 B，已为 B 的容量保持量级，坏值空；0Magnet 大小坏值空、日期严格 UTC，列表必须保留合法 magnet，修复固定上游遗漏。可选海报只保留同站 HTTPS，不虚构下载字段。
+
+日志与诊断计划：沿用协调器低敏 Provider ID、阶段、数量、耗时、reasonCode；不新增逐详情或逐条日志。禁止输出搜索词、URL、magnet、正文、图片链接、异常 message。响应仅在内存静态解析。无新持久数据或反射协议，备份与 keep 无需调整；真实站点、设备/API24、release/R8 留发布阶段，不能视为已验证。
+
+测试计划：先补公开 Provider 回归，检查正常/空/缺失/坏字段、十类别路径、合法磁力保留、恶意 authority 拒绝、海报降级、N+1 并发机会、逆序完成、单条跳过、网络失败与取消；另验证独立 mapper 的计算调度契约。现有草稿无本批 RED 证据，恢复时据实记录已有测试通过与真实缺陷失败，不把编译失败或准备材料当作 RED。完成后运行模块全量单测、模块编译、中文注释、开启功能 App 编译及 diff 检查。
+
+测试结果：三站公开入口、fixture 解析与批处理调度共 34 项定向测试零失败；覆盖正常/空/坏字段、分类与查询编码、latest/top 能力、同站 URL、magnet、海报降级、详情并发与稳定顺序、单条跳过、网络失败、父取消及网络/解析调度边界。恢复的 24 项草稿测试首次运行有 9 项失败，根因是第二个测试 hash 误写为 42 位，不代表生产行为 RED；修正为合法 40 位后 24 项通过。其余 10 项回归落地时继承实现已满足预期，未伪造生产 RED，作为本批测试先行例外记录。
+
+完整验证首次执行 443 项测试时发现 3 项既有供应链基线失败：Windows `core.autocrlf=true` 将同一 Git 文本检出为 CRLF，而测试直接摘要工作树字节，manifest 还固定了历史混合换行。已将 manifest、XML 与 `resources.properties` 的文本摘要统一到 LF，二进制资源仍逐字节校验；基线 8 项定向回归通过，完整 JUnit XML 汇总为 53 suites / 443 tests / 0 failures / 0 errors / 0 skipped。模块 Kotlin 编译、中文注释门禁及开启功能的 App Kotlin 编译均纳入最终组合验证；设备/API 24、真实站点联网和 release/R8 未验证，继续留发布阶段。
+
+变更记录：2026-09-08，完成 04E4：接入 OxTorrent、Torrent9 与 0Magnet，新增中性离线 fixture 和 34 项定向回归，修正 0Magnet 列表磁力保留与 Torrent9 容量单位边界，抽取详情结构化并发协作者，并修复供应链快照的 Windows 换行可移植性；不接注册表、UI、数据层、备份或其他来源。
+
 ### 任务 04A3：内置来源共同 URL authority 边界（2026-09-06）
 
 状态：已完成。内置来源共同 `BuiltinProviderUrlPolicy` 在既有 HTTPS 与精确 host 白名单之外，统一要求解析后的有效端口为 443 且用户名、密码均为空。默认 443 与显式 `:443` 等价允许；非 443 端口、username-only、password-only、组合及编码 userinfo 均在网络前以无正文 `HttpDeniedException` 拒绝。`resolveOptionalHttpsUrl` 继续复用同一 policy 校验 base 与解析后的 candidate，覆盖网络路径、相对/绝对地址和污染 base；`null`/空白 candidate 保持原有 `null` 短路，非法非空 candidate 保持抛异常契约。

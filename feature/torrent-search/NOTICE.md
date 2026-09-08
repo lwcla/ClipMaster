@@ -182,3 +182,18 @@ pass. The three providers follow the local NSFW/default-disabled audit even
 though the pinned sources label them safe. Synthetic fixtures are neutral and
 offline. This batch adds no registry, UI, persistence, backup, reflection, or
 runtime remote-code behavior.
+
+The twelfth runtime batch ports OxTorrent, Torrent9, and 0Magnet from the same
+pinned sources and verified manifest hashes. OxTorrent and Torrent9 share only
+their fixed French category mapping; each site keeps separate URL, list, and
+detail collaborators. All three parse validated list drafts before structured
+concurrent detail requests, preserve source order, propagate cancellation and
+transport failures, and run static parsing and result mapping on injected
+computation dispatchers. Requested and optional output links require each
+site's exact reviewed HTTPS host, effective port 443, and empty user
+information. Torrent9 preserves already normalized byte units while converting
+its reviewed French unit suffixes. 0Magnet remains NSFW and default-disabled,
+and intentionally fixes the pinned source's omission by retaining the validated
+detail magnet in list results. Fixtures are neutral, synthetic, and offline.
+This batch adds no registry, UI, persistence, backup, reflection, or runtime
+remote-code behavior.

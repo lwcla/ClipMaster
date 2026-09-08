@@ -229,7 +229,7 @@ class TorrentSearchUpstreamBaselineContractTest {
         /** AGP 固定元数据文件不生成 R ID，必须保留其约定名称和默认语言语义。 */
         val metadataPath = resDirectory.resolve("resources.properties")
         assertTrue("缺少 AGP resources.properties 元数据", Files.isRegularFile(metadataPath))
-        assertEquals("unqualifiedResLocale=en\n", readUtf8(metadataPath))
+        assertEquals("unqualifiedResLocale=en\n", normalizeTextLineEndings(readUtf8(metadataPath)))
         /** paths 是 res 树的受控流，use 结束时必须关闭文件系统资源。 */
         Files.walk(resDirectory).use { paths ->
             /** 只检查普通文件；values XML 的 ID 已由独立契约逐项检查。 */
@@ -314,7 +314,7 @@ class TorrentSearchUpstreamBaselineContractTest {
     /** 精确核验 manifest 摘要、43 个 code/path 对和关键文件 SHA，拒绝合法格式的错误事实。 */
     private fun assertReviewedManifestContent(manifestText: String, reviewedSnapshot: JsonObject) {
         /** manifest 字节摘要一次性锁定所有展示名、能力、安全级、NSFW、域名和策略字段。 */
-        val manifestSha256 = sha256(manifestText.toByteArray(Charsets.UTF_8))
+        val manifestSha256 = sha256(normalizeTextLineEndings(manifestText).toByteArray(Charsets.UTF_8))
         assertEquals(reviewedSnapshot.requiredString("manifestSha256"), manifestSha256)
 
         /** 待测对象仍单独解析 code/path，避免摘要误改时难以指出 Provider 注册边界。 */
@@ -358,8 +358,19 @@ class TorrentSearchUpstreamBaselineContractTest {
                 .map { resourcePath ->
                     /** Windows 分隔符归一为 /，确保 fixture 不随测试机变化。 */
                     val relativePath = resDirectory.relativize(resourcePath).toString().replace('\\', '/')
-                    /** 每个资源的字节摘要保护翻译文本和二进制图标内容。 */
-                    val contentSha256 = sha256(Files.readAllBytes(resourcePath))
+                    /** 原始字节保留二进制资源的逐字节完整性。 */
+                    val resourceBytes = Files.readAllBytes(resourcePath)
+                    /** 文本资源先统一换行，避免 Git 检出策略改变同一内容的摘要。 */
+                    val canonicalBytes = if (
+                        resourcePath.fileName.toString() == "resources.properties" ||
+                        resourcePath.fileName.toString().endsWith(".xml")
+                    ) {
+                        normalizeTextLineEndings(resourceBytes.toString(Charsets.UTF_8)).toByteArray(Charsets.UTF_8)
+                    } else {
+                        resourceBytes
+                    }
+                    /** 每个资源的规范摘要保护翻译文本和二进制图标内容。 */
+                    val contentSha256 = sha256(canonicalBytes)
                     relativePath + "|" + contentSha256
                 }
                 .sorted()
@@ -401,6 +412,12 @@ class TorrentSearchUpstreamBaselineContractTest {
         val encodedDigest = digest.digest(bytes).joinToString(separator = "") { byte -> "%02x".format(byte) }
         return encodedDigest
     }
+
+    /** 将 Git 可能检出的 CRLF 或裸 CR 统一为 LF，只消除跨平台文本换行差异。 */
+    private fun normalizeTextLineEndings(
+        /** 等待计算稳定摘要或进行精确断言的文本。 */
+        text: String,
+    ): String = text.replace("\r\n", "\n").replace('\r', '\n')
 
     /** 以 UTF-8 读取清单和 XML，并兼容 Android 单测使用的 Java API 基线。 */
     private fun readUtf8(path: Path): String {
