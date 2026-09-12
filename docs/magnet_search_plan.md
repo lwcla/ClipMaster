@@ -594,8 +594,10 @@ dirty 与首次披露：书签、历史、已查看 Repository 仅在成功且�
 
 状态：已完成（本机可执行范围）。新增 `checkTorrentSearchReleaseSafety`，检查生产日志中的高风险字段、fixture 凭据、资源前缀、Feature Manifest 越界声明和许可清单；Gradle wrapper 固定发行包 SHA-256，并生成 dependency verification metadata。功能开关关闭与开启两条 Debug/AndroidTest 编译和 Release/R8 均通过，启用版 mapping 已保存。
 
-真实联网冒烟使用生产网络客户端并发检查固定 43 个内置 Provider，只输出 Provider ID、状态、数量、耗时、可选 HTTP 状态和未分类异常类型。2026-09-12 结果为 24 个 `ok`、10 个 `cloudflare_locked`、7 个 `http_denied`、2 个 `parse_failed`、0 个 `code_failure`；第三方站点临时状态不阻断发布，未分类代码异常会阻断。
+真实联网冒烟使用生产网络客户端并发检查固定 43 个内置 Provider，只输出 Provider ID、状态、数量、耗时、可选 HTTP 状态和未分类异常类型。2026-09-12 收尾复跑结果为 25 个 `ok`、10 个 `cloudflare_locked`、6 个 `http_denied`、1 个 `network_failed`、1 个 `parse_failed`、0 个 `code_failure`；AudioBookBay 已兼容当前 `#content` 结果容器并真实返回 9 条，SubsPlease 搜索 API 对多个查询返回 HTTP 200 空正文但同站 latest/schedule 正常，故保留外部端点解析失败而不伪装空成功。第三方站点临时状态不阻断发布，未分类代码异常会阻断。
 
 最终 APK 对比：关闭版 4,849,592 bytes，启用版 5,738,045 bytes，增加 888,453 bytes（18.32%）；权限集合相同。启用版只新增非导出 `TorrentSearchActivity` 和三个受限外部 alias，并在最终 Manifest 设置 `usesCleartextTraffic=true`，因此公网域名/IP、局域网、`.local`、回环、链路本地和自定义端口上的合法 HTTP/HTTPS 都可真实请求，HTTP 仅提示风险、不拦截。
 
 设备限制：当前主机没有 Android 设备、AVD 或 system image，故 API 24/36 instrumentation、真实磁力客户端、SAF Provider、Cloudflare WebView 交互与冷启动计时未执行；对应 instrumentation 已在功能开关开/关两条路径编译通过。静态初始化边界确认 Application 类、权限及后台 service/receiver/provider 不变，只有用户主动入口组件增加。完整证据见 `docs/torrent_search_release_report.md`。
+
+收尾变更记录：2026-09-12，为 AudioBookBay 搜索与详情 parser 复用固定快照 `#primary`、当前站点 `#content` 双容器选择器，分别以当前 DOM 形状回归取得 RED，再由最小 selector 调整转为 GREEN；真实搜索冒烟确认该来源恢复并返回 9 条。SubsPlease 不放宽对象顶层 JSON 契约，因为公开脚本仍调用同一路径且其 search 端点当前返回空正文，放宽只会掩盖外站故障；既有低敏 Provider 状态日志已覆盖，本次不新增运行时日志。

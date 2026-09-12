@@ -25,6 +25,9 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 
+/** 固定快照与当前站点共用的内容根选择器；只兼容已实证的 primary/content 两种容器。 */
+private const val AUDIOBOOK_BAY_CONTENT_ROOT_SELECTOR = "#primary, #content"
+
 /**
  * 固定快照 AudioBookBay search/details/latest Provider；结果 DOM 先解析 draft，
  * 再由调用协程按页面顺序读取详情 hash，避免把网络请求包进计算调度器。
@@ -133,10 +136,10 @@ private class AudioBookBayResultsParser(
     suspend fun parse(html: String, pageUrl: String): List<AudioBookBayResultDraft> = withContext(parsingDispatcher) {
         /** Jsoup 只构建 DOM，不执行页面脚本。 */
         val document = Jsoup.parse(html, pageUrl)
-        /** 固定页面主容器缺失代表挑战或协议漂移。 */
-        val primary = document.selectFirst("#primary") ?: throw ProviderParseException()
+        /** resultsRoot 兼容固定快照 primary 与当前站点 content，二者都缺失才视为挑战或协议漂移。 */
+        val resultsRoot = document.selectFirst(AUDIOBOOK_BAY_CONTENT_ROOT_SELECTOR) ?: throw ProviderParseException()
         /** post 是当前结果节点，缺必填字段时由 parseDraft 返回 null。 */
-        primary.select("div.post").mapNotNullCancellable { post -> parseDraft(post, pageUrl) }
+        resultsRoot.select("div.post").mapNotNullCancellable { post -> parseDraft(post, pageUrl) }
     }
 
     /** 将 draft 与规范化 hash 映射为 Torrent，继续保持计算调度器边界。 */
@@ -211,7 +214,7 @@ private class AudioBookBayDetailsParser(
     suspend fun parse(html: String, pageUrl: String): TorrentDetails? = withContext(parsingDispatcher) {
         /** Jsoup 只解析静态 DOM。 */
         val document = Jsoup.parse(html, pageUrl)
-        if (document.selectFirst("#primary") == null) throw ProviderParseException()
+        if (document.selectFirst(AUDIOBOOK_BAY_CONTENT_ROOT_SELECTOR) == null) throw ProviderParseException()
         /** 名称为空则详情不完整。 */
         val name = document.selectFirst("div.postTitle > h1")?.ownText()?.takeIf(String::isNotBlank)
             ?: return@withContext null

@@ -58,12 +58,15 @@ Application 类保持 `com.cla.clip.master.App`，没有新增启动期 provider
 
 真实冒烟使用生产 `OkHttpTorrentSearchNetworkClient`、固定中性查询词和全部 43 个内置 Provider。报告只包含 Provider ID、状态、结果数量、耗时、可选 HTTP 状态与未分类异常类型，不包含 URL、查询原文、标题、magnet、响应正文或异常 message。
 
-结果：
+2026-09-12 收尾复跑时，AudioBookBay 搜索与详情 parser 已兼容当前站点把主容器从 `#primary` 改为 `#content` 的 DOM 漂移，并由真实搜索请求返回 9 条结果。SubsPlease 的公开 `search` API 对多个查询词均返回 HTTP 200 空正文，而同站 `latest` 与 `schedule` API 仍返回正常 JSON；因此继续准确分类为外部搜索端点 `parse_failed`，不通过放宽 JSON parser 伪装成成功。
 
-- `ok`：24
+最新结果：
+
+- `ok`：25
 - `cloudflare_locked`：10
-- `http_denied`：7
-- `parse_failed`：2
+- `http_denied`：6
+- `network_failed`：1
+- `parse_failed`：1
 - `code_failure`：0
 
 低敏报告位于 `feature/torrent-search/build/reports/torrent-search/provider-live-smoke.json`。第三方站点的挑战、拒绝和解析漂移记录为健康状态，不阻断发布；未分类代码异常为发布阻断项。
@@ -82,3 +85,4 @@ Application 类保持 `com.cla.clip.master.App`，没有新增启动期 provider
 ## 变更记录
 
 - 2026-09-12：建立最终发布报告；原因是任务 8 需要把构建、依赖、许可、真实联网、APK/权限/Manifest 差异、mapping 和设备限制统一形成可审计结论。
+- 2026-09-12：收尾修复 AudioBookBay 搜索与详情当前 `#content` 容器并复跑 43 Provider；AudioBookBay 真实搜索返回 9 条，整体更新为 25 ok、10 Cloudflare、6 HTTP 拒绝、1 网络失败、1 SubsPlease 搜索空正文解析失败。原因是发布报告必须区分可修复的 DOM 漂移与第三方端点自身异常，不能把 HTTP 200 空正文当作成功。

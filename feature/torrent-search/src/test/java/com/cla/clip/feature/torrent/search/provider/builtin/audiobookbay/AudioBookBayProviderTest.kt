@@ -64,6 +64,26 @@ class AudioBookBayProviderTest {
         assertEquals(listOf("https://audiobookbay.lu/"), networkClient.textUrls)
     }
 
+    /** 当前站点使用 content 作为结果主容器时仍应解析结果，避免把真实页面漂移误报为协议失败。 */
+    @Test
+    fun searchAcceptsCurrentContentContainer() = runTest {
+        /** 当前页面形状只把旧 primary 容器替换为 content，结果节点和详情协议保持不变。 */
+        val searchFixture = readProviderFixture("provider/audiobookbay/search_normal.html")
+            .replace("id=\"primary\"", "id=\"content\"")
+        /** 详情页继续返回与请求地址对应的稳定合成 hash。 */
+        val hashFixture = readProviderFixture("provider/audiobookbay/hash_normal.html")
+        /** 网络 fake 按搜索页和详情页返回各自的合成响应。 */
+        val networkClient = FakeTorrentSearchNetworkClient(
+            /** url 只用于区分搜索响应与详情 hash 响应。 */
+            textHandler = { url -> if (url.contains("?s=")) searchFixture else hashFixture.replace("HASH_TOKEN", hashFor(url)) },
+        )
+
+        /** 当前 content 容器内的两条结果名称必须完整保留。 */
+        val names = AudioBookBayProvider(networkClient).search("fixture", Category.BOOKS).map { torrent -> torrent.name }
+
+        assertEquals(listOf("Synthetic Book One", "Synthetic Book Two"), names)
+    }
+
     /** 单条缺字段或详情缺 hash 时只跳过该条，不能阻断后续结果。 */
     @Test
     fun searchSkipsMissingRowsAndMissingHashes() = runTest {
@@ -154,6 +174,22 @@ class AudioBookBayProviderTest {
         assertEquals("<p>Synthetic description</p>", details.description)
         assertEquals("https://audiobookbay.lu/images/one.jpg", details.posterUrl)
         assertTrue(details.magnetUri.startsWith("magnet:?xt=urn:btih:00112233445566778899aabbccddeeff00112233"))
+    }
+
+    /** 当前站点详情页使用 content 主容器时仍应映射完整详情，避免搜索恢复后点击详情再次失败。 */
+    @Test
+    fun detailsAcceptCurrentContentContainer() = runTest {
+        /** 当前详情形状只替换根容器，标题、hash 和可选字段继续沿用固定协议。 */
+        val fixture = readProviderFixture("provider/audiobookbay/details_normal.html")
+            .replace("id=\"primary\"", "id=\"content\"")
+        /** 网络 fake 返回当前容器形状的合成详情。 */
+        val provider = AudioBookBayProvider(FakeTorrentSearchNetworkClient(textHandler = { fixture }))
+
+        /** 详情必须保留规范化 hash 与名称，证明当前根容器被接受。 */
+        val details = checkNotNull(provider.getDetails("https://audiobookbay.lu/book/one"))
+
+        assertEquals("00112233445566778899aabbccddeeff00112233", details.infoHash)
+        assertEquals("Synthetic Book Detail", details.name)
     }
 }
 
