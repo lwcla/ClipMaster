@@ -22,6 +22,8 @@ shizuku = "13.1.5"
 hiddenApiBypass = "6.1"
 # Room (数据库) 版本
 room = "2.8.4"
+# Preferences DataStore 稳定版，用于 TorrentSearch 独立设置文件。
+datastore = "1.2.1"
 # Hilt 版本
 hilt = "2.59.2"
 # Google ML Kit (OCR) 版本
@@ -91,6 +93,8 @@ room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 room-paging = { group = "androidx.room", name = "room-paging", version.ref = "room" }
 # Room的编译器，通过KSP在编译时生成DAO和数据库实现的模板代码
 room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+# Preferences DataStore 以异步事务方式保存 feature-local 小型设置。
+androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
 # --- Hilt 依赖注入 ---
 # Hilt核心库，用于在Android类中注入依赖
 hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }

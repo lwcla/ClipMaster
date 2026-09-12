@@ -225,3 +225,16 @@ follow the local NSFW/default-disabled audit; TorrentDownloads retains only its
 Cloudflare metadata and does not add a WebView unlock flow. Synthetic fixtures
 are neutral and offline. This batch adds no registry, UI, persistence, backup,
 reflection, or runtime remote-code behavior.
+
+The fifteenth runtime batch ports XXXClub from the same pinned source and
+manifest hash verified against the upstream CRLF byte representation. The
+provider keeps dedicated URL, list, and detail collaborators while reusing the
+shared exact-host policy and structured concurrent detail loader. Network calls
+stay in the caller coroutine; static parsing and mapping run on an injected
+computation dispatcher. Requested and optional output links require the exact
+reviewed xxxclub.to HTTPS authority, effective port 443, and empty user
+information. Local metadata intentionally overrides the pinned source's safe
+label with the reviewed NSFW and default-disabled policy. Synthetic fixtures are
+neutral and offline. This batch completes the 43 pinned provider implementations
+but does not add the registry, UI, persistence, backup, reflection, or runtime
+remote-code behavior.

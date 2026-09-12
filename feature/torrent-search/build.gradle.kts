@@ -39,6 +39,11 @@ android {
     }
 }
 
+/** Room schema 固定输出到源码目录，供版本审查和后续迁移测试使用。 */
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
     // 实现模块只消费 API 契约；与现有 adapter 模块一致使用 implementation，确保 Hilt KSP 解析本模块绑定返回类型。
     implementation(project(":feature:torrent-search-api"))
@@ -63,6 +68,12 @@ dependencies {
     implementation(libs.jsoup)
     // AniLibria Provider 使用 kotlinx JSON DOM 解析合成响应，不依赖反射或类名协议。
     implementation(libs.kotlinx.serialization.json)
+    // 独立 Room v1 保存书签、搜索历史和已查看记录，不把可选功能表混入宿主主库。
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
+    // Preferences DataStore 保存 Provider 开关、安全模式与排序稳定 code。
+    implementation(libs.androidx.datastore.preferences)
 
     testImplementation(libs.junit)
     // JVM 单测用虚拟调度器与本地 MockWebServer 固定并发、取消和解压边界，不访问互联网。

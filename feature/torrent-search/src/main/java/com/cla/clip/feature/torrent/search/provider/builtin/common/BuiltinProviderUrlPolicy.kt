@@ -1,5 +1,6 @@
 package com.cla.clip.feature.torrent.search.provider.builtin.common
 
+import com.cla.clip.feature.torrent.search.input.sanitizeTorrentSearchText
 import com.cla.clip.feature.torrent.search.network.HttpDeniedException
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -49,9 +50,4 @@ internal class BuiltinProviderUrlPolicy(
 }
 
 /** 删除查询中的 Unicode 控制字符并裁剪边界空白；参数编码仍交给 HttpUrl。 */
-internal fun sanitizeProviderQuery(rawQuery: String): String = buildString(rawQuery.length) {
-    /** 逐个字符判定能覆盖 CR/LF/NUL 及其他控制类别，不会改写普通 Unicode 查询。 */
-    rawQuery.forEach { character ->
-        if (!character.isISOControl()) append(character)
-    }
-}.trim()
+internal fun sanitizeProviderQuery(rawQuery: String): String = sanitizeTorrentSearchText(rawQuery)

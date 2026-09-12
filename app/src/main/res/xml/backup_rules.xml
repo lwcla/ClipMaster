@@ -19,6 +19,14 @@
     <exclude
         domain="file"
         path="clipboard_bridge_clip_payloads/" />
+    <!-- TorrentSearch 独立数据库含书签、搜索历史和 magnet 快照，必须只经后续字段白名单自定义备份。 -->
+    <exclude
+        domain="database"
+        path="torrent_search_feature.db" />
+    <!-- TorrentSearch DataStore 含本机 Provider 与安全模式选择，禁止系统 Auto Backup 整文件恢复。 -->
+    <exclude
+        domain="file"
+        path="datastore/torrent_search_settings.preferences_pb" />
     <!--
    <include domain="sharedpref" path="."/>
    <exclude domain="sharedpref" path="device.xml"/>

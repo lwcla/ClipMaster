@@ -2,17 +2,15 @@
 
 ## Current task scope
 
-Task 04B1 adds the first three fixed-snapshot Provider implementations and their
-shared pure parsers on top of the Task 04A search kernel. It still does not add
-UI data, Room, Torznab, WebView, downloads, backup, or the complete Provider
-registry.
+Task 05B adds Android Intent consumption, the independent Room v1 user-data
+store, and the feature-local Preferences DataStore on top of the completed
+43-Provider search kernel. It still does not add the complete UI, Torrent/Bencode
+import, Torznab, WebView, downloads, or the custom backup contributor.
 
-The Task 04B1 review fixes add no dependency. Coroutine dispatcher isolation,
-cooperative parsing cancellation, ISO normalization, base32/magnet handling,
-and tracker URL encoding use the Kotlin/JDK and already declared coroutine,
-OkHttp, Jsoup, and kotlinx.serialization dependencies. The 20 public tracker
-values are restored from the pinned MIT-licensed `TorrentUtils.kt` source; they
-are a static application snapshot and are never fetched from the network.
+Task 05B adds AndroidX Room 2.8.4 and Preferences DataStore 1.2.1 through the
+version catalog. Existing Provider parsing and network behavior continue to use
+the already declared coroutine, OkHttp, Jsoup, and kotlinx.serialization
+dependencies.
 
 The existing `:feature:torrent-search` module directly declares the following
 dependencies in `feature/torrent-search/build.gradle.kts`; all external versions
@@ -23,6 +21,8 @@ and coordinates remain owned by `gradle/libs.versions.toml`:
 | `:feature:torrent-search-api` | Stable host/API contract | ClipMaster internal module |
 | AndroidX Core, Activity, Compose UI/Foundation/Material3 and Compose icons | Existing Activity and Compose shell | [AndroidX / AOSP Apache-2.0 notices](https://source.android.com/docs/setup/about/licenses) |
 | Hilt Android and Hilt compiler | Existing host DI integration shell | [Dagger Apache-2.0 license](https://github.com/google/dagger/blob/master/LICENSE.txt) |
+| AndroidX Room runtime/KTX/compiler 2.8.4 | Independent v1 database, generated DAO implementation and reviewed schema export | [AndroidX / AOSP Apache-2.0 notices](https://source.android.com/docs/setup/about/licenses) |
+| AndroidX Preferences DataStore 1.2.1 | Atomic Provider, safe-mode and stable sort-code settings | [AndroidX / AOSP Apache-2.0 notices](https://source.android.com/docs/setup/about/licenses) |
 | JUnit 4.13.2 (test-only) | `TorrentSearchUpstreamBaselineContractTest` contract and mutation tests | [JUnit official EPL-1.0 license](https://github.com/junit-team/junit4/blob/main/LICENSE-junit.txt) |
 | kotlinx-serialization-json 1.11.0 | Parse AniLibria JSON responses and static manifest/snapshot fixtures without reflection | [kotlinx.serialization official Apache-2.0 license](https://github.com/Kotlin/kotlinx.serialization/blob/master/LICENSE.txt) |
 | kotlinx-coroutines-android 1.10.2 | Provider 协调器的 Flow、超时和取消传播 | [Kotlinx Coroutines Apache-2.0 license](https://github.com/Kotlin/kotlinx.coroutines/blob/master/LICENSE.txt) |
@@ -34,7 +34,7 @@ and coordinates remain owned by `gradle/libs.versions.toml`:
 
 JUnit 4.13.2, `kotlinx-coroutines-test` 1.10.2, MockWebServer 5.3.2 and okhttp-tls 5.3.2 are test-only
 dependencies used by local synthetic contract tests; they are not runtime
-dependencies introduced by Task 04B1. Network fixtures use a loopback HTTPS
+dependencies. Network fixtures use a loopback HTTPS
 server and a test-only certificate trust configuration; production exposes no
 cleartext test bypass.
 

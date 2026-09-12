@@ -1,0 +1,97 @@
+package com.cla.clip.feature.torrent.search.settings
+
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.preferencesOf
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
+import com.cla.clip.feature.torrent.search.model.contract.SortCriteria
+import com.cla.clip.feature.torrent.search.model.contract.SortOrder
+import com.cla.clip.feature.torrent.search.provider.ProviderId
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/** TorrentSearch Preferences DataStore 的默认值、稳定 code 与写入测试。 */
+class TorrentSearchSettingsRepositoryTest {
+    /** 损坏或未知持久值必须安全回退，非法 Provider ID 不得进入运行时设置。 */
+    @Test
+    fun settingsFlowFallsBackAndFiltersMalformedProviderIds() = runTest {
+        /** initialPreferences 使用同名 key 模拟已有 DataStore 文件中的未知值。 */
+        val initialPreferences = preferencesOf(
+            stringSetPreferencesKey("enabled_provider_ids") to setOf("nyaa", "bad id", "Nyaa"),
+            booleanPreferencesKey("safe_mode_enabled") to false,
+            stringPreferencesKey("sort_criteria_code") to "future-sort",
+            stringPreferencesKey("sort_order_code") to SortOrder.ASCENDING.code,
+        )
+        /** repository 读取真实 Preferences 快照，只有存储介质由内存 fake 替代。 */
+        val repository = TorrentSearchSettingsRepository(FakePreferencesDataStore(initialPreferences))
+
+        /** settings 是映射后的首个运行时快照。 */
+        val settings = repository.settings.first()
+        assertEquals(setOf(ProviderId("nyaa")), settings.enabledProviderIds)
+        assertFalse(settings.safeModeEnabled)
+        assertEquals(SortCriteria.SEEDERS, settings.sortCriteria)
+        assertEquals(SortOrder.ASCENDING, settings.sortOrder)
+    }
+
+    /** 空文件默认必须开启安全模式并采用做种数降序。 */
+    @Test
+    fun settingsFlowUsesSafeDefaultsForEmptyStore() = runTest {
+        /** repository 从空 Preferences 文件构造默认设置。 */
+        val repository = TorrentSearchSettingsRepository(FakePreferencesDataStore(preferencesOf()))
+
+        /** settings 锁定新安装的保守默认行为。 */
+        val settings = repository.settings.first()
+        assertTrue(settings.enabledProviderIds.isEmpty())
+        assertTrue(settings.safeModeEnabled)
+        assertEquals(SortCriteria.SEEDERS, settings.sortCriteria)
+        assertEquals(SortOrder.DESCENDING, settings.sortOrder)
+    }
+
+    /** 原子更新必须只写稳定 Provider ID 和排序 code，并立即反映到 Flow。 */
+    @Test
+    fun updatesPersistStableIdsAndCodes() = runTest {
+        /** dataStore 允许测试读取 Repository 更新后的真实 Preferences。 */
+        val dataStore = FakePreferencesDataStore(preferencesOf())
+        /** repository 执行三个公开设置更新。 */
+        val repository = TorrentSearchSettingsRepository(dataStore)
+
+        repository.setEnabledProviderIds(setOf(ProviderId("nyaa"), ProviderId("yts")))
+        repository.setSafeModeEnabled(false)
+        repository.setSort(SortCriteria.DATE, SortOrder.ASCENDING)
+
+        /** settings 验证更新后的运行时契约，不断言 fake 调用次数。 */
+        val settings = repository.settings.first()
+        assertEquals(setOf(ProviderId("nyaa"), ProviderId("yts")), settings.enabledProviderIds)
+        assertFalse(settings.safeModeEnabled)
+        assertEquals(SortCriteria.DATE, settings.sortCriteria)
+        assertEquals(SortOrder.ASCENDING, settings.sortOrder)
+    }
+}
+
+/** 内存 DataStore 保留真实 updateData 变换与 Flow 语义，只替代磁盘 IO。 */
+private class FakePreferencesDataStore(
+    /** 初始 Preferences 快照。 */
+    initialPreferences: Preferences,
+) : DataStore<Preferences> {
+    /** state 保存当前不可变 Preferences。 */
+    private val state = MutableStateFlow(initialPreferences)
+
+    /** 对外暴露每次原子更新后的快照。 */
+    override val data: Flow<Preferences> = state
+
+    /** 在当前快照上执行真实 Repository 提供的原子变换。 */
+    override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences {
+        /** updated 是变换完成后的不可变设置快照。 */
+        val updated = transform(state.value)
+        state.value = updated
+        return updated
+    }
+}

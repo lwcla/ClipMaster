@@ -1,0 +1,182 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "ee2e43da60fc2ad70b58e5fb87fa17c3",
+    "entities": [
+      {
+        "tableName": "torrent_search_bookmarks",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`info_hash` TEXT NOT NULL, `name` TEXT NOT NULL, `provider_id` TEXT NOT NULL, `provider_name` TEXT NOT NULL, `size_text` TEXT, `seeders` INTEGER, `peers` INTEGER, `upload_epoch_millis` INTEGER, `category_code` TEXT, `description_page_url` TEXT, `magnet_uri` TEXT, `file_download_link` TEXT, `bookmarked_at_epoch_millis` INTEGER NOT NULL, PRIMARY KEY(`info_hash`))",
+        "fields": [
+          {
+            "fieldPath": "infoHash",
+            "columnName": "info_hash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "providerId",
+            "columnName": "provider_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "providerName",
+            "columnName": "provider_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sizeText",
+            "columnName": "size_text",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "seeders",
+            "columnName": "seeders",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "peers",
+            "columnName": "peers",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "uploadEpochMillis",
+            "columnName": "upload_epoch_millis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "categoryCode",
+            "columnName": "category_code",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "descriptionPageUrl",
+            "columnName": "description_page_url",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "magnetUri",
+            "columnName": "magnet_uri",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "fileDownloadLink",
+            "columnName": "file_download_link",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "bookmarkedAtEpochMillis",
+            "columnName": "bookmarked_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "info_hash"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_torrent_search_bookmarks_bookmarked_at_epoch_millis",
+            "unique": false,
+            "columnNames": [
+              "bookmarked_at_epoch_millis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_torrent_search_bookmarks_bookmarked_at_epoch_millis` ON `${TABLE_NAME}` (`bookmarked_at_epoch_millis`)"
+          }
+        ]
+      },
+      {
+        "tableName": "torrent_search_histories",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`normalized_query` TEXT NOT NULL, `query` TEXT NOT NULL, `updated_at_epoch_millis` INTEGER NOT NULL, PRIMARY KEY(`normalized_query`))",
+        "fields": [
+          {
+            "fieldPath": "normalizedQuery",
+            "columnName": "normalized_query",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "query",
+            "columnName": "query",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updated_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "normalized_query"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_torrent_search_histories_updated_at_epoch_millis",
+            "unique": false,
+            "columnNames": [
+              "updated_at_epoch_millis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_torrent_search_histories_updated_at_epoch_millis` ON `${TABLE_NAME}` (`updated_at_epoch_millis`)"
+          }
+        ]
+      },
+      {
+        "tableName": "torrent_search_viewed",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`info_hash` TEXT NOT NULL, `viewed_at_epoch_millis` INTEGER NOT NULL, PRIMARY KEY(`info_hash`))",
+        "fields": [
+          {
+            "fieldPath": "infoHash",
+            "columnName": "info_hash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "viewedAtEpochMillis",
+            "columnName": "viewed_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "info_hash"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_torrent_search_viewed_viewed_at_epoch_millis",
+            "unique": false,
+            "columnNames": [
+              "viewed_at_epoch_millis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_torrent_search_viewed_viewed_at_epoch_millis` ON `${TABLE_NAME}` (`viewed_at_epoch_millis`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'ee2e43da60fc2ad70b58e5fb87fa17c3')"
+    ]
+  }
+}

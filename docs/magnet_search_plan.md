@@ -398,6 +398,38 @@ TorrentDownload 使用 `/search?q=`、`/latest`、`/top`，搜索分类按固定
 
 变更记录：2026-09-08，启动 04E6 固定快照移植；确认三份源码按 manifest 的 CRLF 字节口径校验通过，锁定 TorrentDownload 列表 hash、TorrentDownloads 固定头部与详情日期、Torrentz 纯详情结果为站点专属职责，并沿用结构化并发、严格 URL、低敏日志和无持久化边界。2026-09-08，完成三站 Provider、URL/category、列表/详情 parser、离线 fixture、14 项行为/调度器回归与 NOTICE；同时修正一个既有并发安全测试的时序假设，原因是批次已达到独立可审查、但尚未注册到用户入口的完成边界。
 
+### 任务 04E7：XXXClub（2026-09-12）
+
+状态：已完成。固定上游提交 `ba82e889637027f7bed82715ec4d2106cbce5a28` 的 `XXXClub.kt` 已按 manifest 记录的 CRLF 字节口径复核 SHA-256 `71bba7a809f1d6cf2c50dcf55d7ad92774fb28df1ef19721209c7c33f51b6e7e`；本批只补齐第 43 个内置 Provider 的 search/details/latest/top 能力，不接注册表、UI、Room、备份、Torznab 或 Cloudflare WebView。安全元数据以本地 manifest 审计为准，固定为 NSFW/default-off、PORN，覆盖上游源码中的 Safe 标记。
+
+XXXClub 复用共享网络客户端、5 MiB 响应边界、`BuiltinProviderUrlPolicy`、`sanitizeProviderQuery`、`ProviderDateParser`、`MagnetInfoHashParser`、协作遍历、测试 fake 与 `loadDetailDraftsInSourceOrder`。列表只生成名称、大小、人数、严格 UTC 日期和已校验详情 URL 草稿；详情请求在调用协程结构化并发，逆序完成后仍保持列表顺序，空详情只跳过当前条目，真实网络失败和父取消传播。DOM、固定 `dd MMM yyyy HH:mm:ss` 日期与详情字段协议属于站点专属职责，分别放入独立 URL、结果 parser、详情 parser，不与 MyPornClub 或 1337x 合并为跨站解析器。
+
+所有搜索、浏览、详情、文件与海报地址只允许 `xxxclub.to` 的 HTTPS、有效端口 443 和空 userinfo；查询作为单个路径段编码。详情名称和合法 magnet/infoHash 必填，`Pending` 的 last-checked、坏日期、坏人数及不安全可选媒体独立降级。描述保留为不可信 HTML，仅供后续展示层执行禁脚本渲染。
+
+日志与诊断计划：本批不新增逐站、逐详情或逐条日志，继续由协调器记录低敏 Provider ID、阶段、结果数、耗时和 reasonCode。Provider/parser 禁止输出搜索词、URL、magnet/hash、日期原文、HTML/描述、海报、下载地址、header、Cookie/Token 或异常 message；响应只在内存静态解析。没有新增持久数据、外部序列化/反射模型或数据库字段，因此备份与 keep/R8 不变。
+
+测试：采用选择性 TDD，先以公开 Provider 行为测试固定描述符、查询编码、search/latest/top 路径、正常/坏字段、详情必填、同站媒体、恶意 authority、严格日期、结构化并发、稳定顺序、网络失败、计算 dispatcher 和父取消，再实现最小生产逻辑。fixture 使用中性合成 HTML，不访问真实站点；最终运行模块全量单测、模块编译、中文注释门禁、开启功能 App 编译与 `git diff --check`。设备/API 24、真实联网和 release/R8 仍留发布阶段。
+
+验证结果：测试文件先因生产类型缺失产生编译 RED，补最小可编译骨架后 11 项中 10 项按请求、解析、安全、并发、dispatcher 和取消契约失败；修正一个会被空实现满足的坏输入测试后取得 11/11 行为 RED，完整实现后相同 11 项全部 GREEN。最终组合验证 `BUILD SUCCESSFUL in 26s`，JUnit XML 汇总为 486 tests / 59 suites、0 failures/errors/skipped；模块 Kotlin、中文注释门禁及启用功能后的 App Kotlin 编译均通过。首轮全量测试曾因误删既有 1337x 的 `provider/thirteen` fixture 出现 4 项失败，根因经引用与删除 diff 确认后仅恢复原 fixture，同一完整门禁复跑通过。当前主代码中 43 个 `*Provider.kt` 与 manifest 43 项数量一致；注册表仍是下一子批，不在本批伪装为已完成。
+
+变更记录：2026-09-12，启动并完成 04E7 固定快照移植；确认 XXXClub 是 43 个 manifest 来源中唯一尚未落地的 Provider，新增独立 URL、列表/详情 parser、入口、11 项行为/调度器回归和中性离线 fixture，锁定本地 NSFW 审计、严格同站 URL、两阶段详情补全、线程/取消与低敏日志边界，避免把站点 DOM 协议错误并入 MyPornClub 或 1337x。
+
+### 任务 04F：43 Provider 固定注册表（2026-09-12）
+
+状态：已完成。`BuiltinProviderRegistry` 按 `upstream-manifest.json` 的固定顺序构造恰好 43 个内置 Provider，所有实例复用功能内 `TorrentSearchNetworkClient`，需要相对日期的来源共享可注入毫秒时间源；注册过程不联网、不读取设置、不创建页面状态。`TorrentSearchCoreModule` 只把只读 `List<SearchProvider>` 接入 Hilt，协调器仍由调用方显式传入启用来源快照，避免注册表承担筛选或搜索流程职责。
+
+测试：采用 TDD，注册表测试先因生产符号缺失产生 RED；最小实现首次编译进一步暴露 1337x 与 TorrentDownload 的必需时钟契约，补为注册表统一可注入时间源后转为 GREEN。固定 ID 列表使用人工核对的 43 项字面量，能同时防止遗漏、重复与顺序漂移；最终模块全量单测、Kotlin 编译和中文注释门禁通过。注册表没有持久化、外部序列化、反射、网络调用或新增日志，因此备份、keep/R8 与日志计划不变。
+
+变更记录：2026-09-12，完成任务 4 的最后注册缺口；原因是 43 份独立实现只有进入固定、可测试、无副作用的构造入口后，后续页面和设置层才能消费完整来源集合。
+
+### 任务 05A：入口输入与外部链接基础安全（2026-09-12）
+
+状态：实现中。已新增纯 Kotlin `TorrentSearchInputNormalizer`：统一删除 Unicode 控制字符、裁剪边界空白并限制为 512 个 Kotlin 字符；清洗后空白输入不得自动搜索，超限输入只保留前 512 字符用于预填并通过 `wasTruncated` 阻止自动搜索或历史写入。既有 43 Provider 查询构造复用同一底层文本清洗能力，URL 编码仍交给 OkHttp `HttpUrl`，避免复制不同的控制字符规则。
+
+`ExternalLinkPolicy` 只允许语法完整的绝对 `http`、`https` 与 `magnet` URI 交给系统组件；脚本、文件、相对路径、空白和语法损坏输入返回 `false`，不抛出包含原文的异常。测试先因类型缺失 RED，最小实现首次运行暴露 `URI(String)` 的 `URISyntaxException` 失败契约，收窄捕获后转为 GREEN。两项能力均为无副作用纯规则，不新增运行时日志；禁止记录输入和链接原文。强制重跑组合门禁为 492 tests / 62 suites、0 failures/errors/skipped，模块 Kotlin、中文注释门禁及启用功能后的 App Kotlin 编译通过。Activity 消费与 Room/DataStore 已在任务 05B 完成；Torrent/Bencode、导入、Torznab Keystore 仍属于任务 5 后续子批，当前不得标记任务 5 完成。
+
+变更记录：2026-09-12，启动任务 5 并完成输入与外部 scheme 基础边界；原因是先建立可独立测试且可被 Provider/Activity 共同复用的纯规则，再接入 Android Intent、持久化和页面流程。
+
 ### 任务 04A3：内置来源共同 URL authority 边界（2026-09-06）
 
 状态：已完成。内置来源共同 `BuiltinProviderUrlPolicy` 在既有 HTTPS 与精确 host 白名单之外，统一要求解析后的有效端口为 443 且用户名、密码均为空。默认 443 与显式 `:443` 等价允许；非 443 端口、username-only、password-only、组合及编码 userinfo 均在网络前以无正文 `HttpDeniedException` 拒绝。`resolveOptionalHttpsUrl` 继续复用同一 policy 校验 base 与解析后的 candidate，覆盖网络路径、相对/绝对地址和污染 base；`null`/空白 candidate 保持原有 `null` 短路，非法非空 candidate 保持抛异常契约。
@@ -407,3 +439,15 @@ TorrentDownload 使用 `/search?q=`、`/latest`、`/top`，搜索分类按固定
 日志与诊断计划：不新增运行时日志，共用协调器的低敏 Provider ID 与 reasonCode 已覆盖拒绝结果；异常禁止携带 URL、host、userinfo、query、body 或底层异常 message。测试仅使用 `fixture.example`、Eztv 合成地址和现有网络 fake，不访问真实网络。没有持久字段、数据库、备份、序列化、反射或外部 ABI 变化，备份与 keep/R8 无需调整；设备/API 24、真实联网和 release/R8 仍留发布阶段。
 
 测试与变更记录：2026-09-06，先增加共同 policy 与 Eztv 入口回归，定向执行 6 tests 得到 3 failures，分别证明直接校验、optional resolve 与真实 Provider 会放行 userinfo/8443；随后仅补共同 guard，相同 6 tests 定向 GREEN。最终唯一一轮组合验证通过，JUnit XML 汇总为 273 tests / 33 suites、0 failures/errors/skipped；模块 Kotlin、中文注释门禁及开启功能 App Kotlin 编译通过（BUILD SUCCESSFUL in 40s），`git diff --check` 无错误。仅使用合成离线测试；设备/API 24、真实联网与 release/R8 未验证，仍按发布阶段计划处理。
+
+### 任务 05B：Intent 消费、Room v1 与 DataStore（2026-09-12）
+
+状态：已完成。`TorrentSearchIntentResolver` 把显式 feature extra、`ACTION_SEARCH`、`ACTION_SEND` 与 `ACTION_PROCESS_TEXT` 映射为无 Android 依赖的启动请求；系统 action 只读取自己的系统 extra，SEND/PROCESS_TEXT 仅接受 `text/plain`。所有输入继续复用 512 字符规范化器，超限文本只用于预填且 `canAutoSearch = false`。`TorrentSearchActivity` 在 `onCreate` 和 `onNewIntent` 消费最新请求，当前仍是占位页，只展示安全预填结果，不自动联网、不执行搜索、不写历史；完整生命周期感知 ViewModel 与页面留任务 6。
+
+独立 Room `torrent_search_feature.db` v1 包含 `torrent_search_bookmarks`、`torrent_search_histories`、`torrent_search_viewed` 三张表。书签和已查看使用规范化 40 位小写十六进制 `info_hash` 主键，历史使用去控制字符、trim、`Locale.ROOT` 小写后的 `normalized_query` 主键并固定最多 100 条；时间字段统一为带单位后缀的 UTC epochMillis。领域 Repository 隐藏 Room 实体/DAO，书签逐行映射时跳过损坏 Provider ID，数值快照越界降级为空，写入失败原样传播，协程取消独立记录后继续抛出。Room schema JSON 已纳入版本审查；批量恢复、high-water mark 分页和 backup dirty 触发器随任务 7 的真实备份管线一并补充，避免提前制造未使用协议。
+
+Preferences DataStore 文件为 `datastore/torrent_search_settings.preferences_pb`，只保存 Provider 稳定 ID 集合、安全模式布尔值、排序标准 code 与排序方向 code。缺失或损坏值分别回退为空 Provider 集合、安全模式开启、做种数、降序；非法 Provider ID 逐项丢弃，不影响其余设置。Provider 本机选择和安全模式状态不进入自定义备份；任务 7 只对白名单中的非敏感设置（当前为排序）及三类用户数据实现导出、幂等恢复、计数与报告。
+
+备份与隐私：`backup_rules.xml` 和 `data_extraction_rules.xml` 已按精确路径排除数据库与 DataStore，云备份和设备迁移都不能整文件复制查询、magnet 快照或本机安全选择。系统 Intent 解析不记录输入；Room/DataStore 写入日志只包含固定 operationCode、started/completed/cancelled/failed/fallback 状态与可选影响行数，禁止输出查询、名称、hash、magnet、URL、Provider 集合或设置值。未新增序列化/反射模型，Room 由生成代码访问，故本批不新增 keep 规则；release/R8、API 24/36 设备与真实联网仍按任务 8 执行。
+
+测试与变更记录：2026-09-12，采用选择性 TDD 分别为 Intent resolver、三类 Repository 和 DataStore 设置仓库取得缺类型/缺实现 RED，再补最小生产实现转为定向 GREEN；覆盖 action 优先级、MIME 拒绝、超限预填、稳定 hash/查询去重、历史上限、损坏设置回退与稳定 code 写入。新增 AndroidX Room 2.8.4 与 Preferences DataStore 1.2.1，并同步直接依赖许可证清单。最终组合验证 `BUILD SUCCESSFUL in 2m 9s`，JUnit XML 汇总为 503 tests / 65 suites、0 failures/errors/skipped；模块 Kotlin、中文注释门禁、Room schema 生成、系统备份资源合并及开启功能后的 App Kotlin 编译均通过，`git diff --check` 无错误。关闭功能编译、release/R8、API 24/36 设备与真实联网按任务 8 保留。

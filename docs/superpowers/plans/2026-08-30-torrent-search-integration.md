@@ -68,6 +68,8 @@
 
 ## 任务 4：测试先行接入搜索内核与 43 个 Provider
 
+**状态：** 已完成（2026-09-12）。43 个 Provider、共享协调器/网络边界、固定注册表及 Hilt 接线均已落地并通过模块全量单测、编译与中文注释门禁。
+
 **文件：**
 
 - 修改 `feature/torrent-search/src/main/**/data/**`
@@ -86,6 +88,8 @@
 
 ## 任务 5：测试先行接入数据、协议与输入安全
 
+**状态：** 实现中（2026-09-12）。已完成 512 字符输入规范化、自动搜索阻断状态、Provider 共用控制字符清洗、外部 HTTP/HTTPS/magnet scheme 白名单、三类系统 Intent 消费、独立 Room v1 与 Preferences DataStore；Torrent/Bencode、书签导入和 Torznab Keystore 尚未完成。
+
 **文件：**
 
 - 新增 Room `torrent_search_feature.db` v1 及 DAO/Repository
@@ -101,6 +105,8 @@
 - Torrent 验证顶层字典和 `info` 字典；导入逐项容错、稳定键去重。
 - Provider/category/sort/launch source/failure reason 均使用稳定 code，不依赖 ordinal/name/类名。
 - API Key 用 Android Keystore 加密；URL、Key、Cookie、查询原文和响应正文不写日志。
+
+**05B 已完成边界：** `TorrentSearchActivity` 的 `onCreate` / `onNewIntent` 已把显式启动、`ACTION_SEARCH`、`ACTION_SEND`、`ACTION_PROCESS_TEXT` 解析成同一安全启动快照；当前占位页只显示预填查询，不自动联网也不写搜索历史。Room v1 使用 `info_hash` / `normalized_query` 稳定主键保存书签、搜索历史与已查看记录，Repository 隐藏 DAO/实体并统一清洗、去重、100 条历史上限及低敏写入日志。DataStore 保存 Provider 稳定 ID、安全模式和排序稳定 code，损坏值回退为空来源、安全模式开启、做种数降序。系统 Auto Backup 与设备迁移已精确排除独立数据库和 DataStore 整文件；任务 7 再实现书签、历史、已查看及非敏感排序设置的字段白名单导出、dirty 标记、幂等恢复和报告，Provider 选择与安全模式状态不恢复。
 
 ## 任务 6：移植完整 Activity 与页面
 
@@ -165,3 +171,5 @@
 ## 变更记录
 
 - 2026-08-30：根据已确认的最终产品与工程决策建立可执行任务清单；原因是进入固定快照的正式替换实施阶段。
+- 2026-09-12：同步任务 4 完成与任务 5 启动状态；原因是 43 Provider 已具备固定运行时注册入口，而数据、协议和 Android 消费层仍需按后续检查点继续实现。
+- 2026-09-12：完成任务 05B 的 Intent 消费、Room v1、Repository、DataStore 与系统备份排除；原因是先建立完整页面可以直接消费的稳定输入和持久化边界，并避免新敏感数据被系统整文件备份。

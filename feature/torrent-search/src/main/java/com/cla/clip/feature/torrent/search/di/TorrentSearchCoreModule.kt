@@ -4,6 +4,8 @@ import com.cla.clip.feature.torrent.search.logging.AndroidProviderLogger
 import com.cla.clip.feature.torrent.search.logging.ProviderLogger
 import com.cla.clip.feature.torrent.search.network.OkHttpTorrentSearchNetworkClient
 import com.cla.clip.feature.torrent.search.network.TorrentSearchNetworkClient
+import com.cla.clip.feature.torrent.search.provider.SearchProvider
+import com.cla.clip.feature.torrent.search.provider.builtin.BuiltinProviderRegistry
 import com.cla.clip.feature.torrent.search.search.SearchCoordinator
 import dagger.Module
 import dagger.Provides
@@ -35,6 +37,14 @@ object TorrentSearchCoreModule {
         /** 功能内限定的共享客户端，不接管宿主 OkHttp 绑定。 */
         @TorrentSearchHttpClient client: OkHttpClient,
     ): TorrentSearchNetworkClient = OkHttpTorrentSearchNetworkClient(client)
+
+    /** 提供按固定 manifest 顺序构造的 43 个内置 Provider；构造过程不联网。 */
+    @Provides
+    @Singleton
+    fun provideBuiltinProviders(
+        /** 功能内共享网络边界，全部内置 Provider 复用同一 Dispatcher 与取消语义。 */
+        networkClient: TorrentSearchNetworkClient,
+    ): List<SearchProvider> = BuiltinProviderRegistry.create(networkClient)
 
     /** 提供结构化脱敏日志出口；测试可直接注入 fake Logger。 */
     @Provides
