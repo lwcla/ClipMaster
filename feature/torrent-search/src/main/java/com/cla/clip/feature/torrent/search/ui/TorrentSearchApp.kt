@@ -17,6 +17,7 @@ import com.cla.clip.feature.torrent.search.provider.ProviderId
 import com.cla.clip.feature.torrent.search.ui.browse.TorrentBrowseScreen
 import com.cla.clip.feature.torrent.search.ui.browse.TorrentBrowseViewModel
 import com.cla.clip.feature.torrent.search.ui.component.DestinationLifecycleEffect
+import com.cla.clip.feature.torrent.search.ui.component.rememberDestinationActiveState
 import com.cla.clip.feature.torrent.search.ui.details.TorrentDetailSelectionViewModel
 import com.cla.clip.feature.torrent.search.ui.details.TorrentDetailsScreen
 import com.cla.clip.feature.torrent.search.ui.details.TorrentDetailsViewModel
@@ -109,9 +110,11 @@ internal fun TorrentSearchApp(
             LaunchedEffect(selectedTorrent, routeProviderId, detailsViewModel) {
                 detailsViewModel.setCandidate(selectedTorrent, routeProviderId)
             }
-            DestinationLifecycleEffect(detailsViewModel::setScreenActive)
+            /** destinationActiveState 直接来自详情 NavBackStackEntry，STOP 时即刻释放图片子 Composition。 */
+            val destinationActiveState = rememberDestinationActiveState(detailsViewModel::setScreenActive)
             TorrentDetailsScreen(
                 state = uiState,
+                imagesActive = destinationActiveState.value,
                 onRetry = detailsViewModel::retry,
                 onBack = navController::popBackStack,
             )

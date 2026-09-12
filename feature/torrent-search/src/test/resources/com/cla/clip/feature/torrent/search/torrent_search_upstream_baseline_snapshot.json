@@ -357,7 +357,7 @@
     },
     {
       "path": "values-zh-rCN/strings.xml",
-      "sha256": "cc6363b6d67f5cda78d9126752d93b9809633ea5c7ba033124451979e29d3066"
+      "sha256": "286904837cfaa7d85102d86486d0f85d3eecc06868a97d5fb68666a373b8133a"
     },
     {
       "path": "values-v31/themes.xml",
@@ -449,7 +449,7 @@
     },
     {
       "path": "values/strings.xml",
-      "sha256": "de53f45ee5972a08cde53ae367fe012de93a287cb42abb69b8cfe443d95f581c"
+      "sha256": "f2ddf918f1131b738068ad8b6082599e83342c8eecb84a5e48479fbc1dbbe3da"
     },
     {
       "path": "values-ar/strings.xml",

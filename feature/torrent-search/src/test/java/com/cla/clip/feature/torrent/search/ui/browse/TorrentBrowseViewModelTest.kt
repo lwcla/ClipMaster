@@ -15,6 +15,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -62,6 +63,68 @@ class TorrentBrowseViewModelTest {
         assertEquals(1, provider.latestCalls)
         assertEquals(BrowsePhase.COMPLETED, viewModel.uiState.value.phase)
         assertEquals(1, viewModel.uiState.value.results.size)
+    }
+
+    /** 先激活、后收到默认首快照时必须立即加载且首快照只能触发一次。 */
+    @Test
+    fun defaultFirstSettingsEmissionLoadsWhenDestinationIsAlreadyActive() = runTest(dispatcher.scheduler) {
+        /** provider 记录默认首快照到达后的实际 Latest 调用。 */
+        val provider = FakeBrowseProvider(suspendLatest = false)
+        /** dataStore 延迟首个空 Preferences，复现目的地先 START 的合法时序。 */
+        val dataStore = DelayedPreferencesDataStore()
+        /** viewModel 在设置未就绪时先收到 active。 */
+        val viewModel = createViewModel(provider, dataStore)
+        viewModel.setScreenActive(true)
+        runCurrent()
+        assertEquals(0, provider.latestCalls)
+
+        dataStore.emit(preferencesOf())
+        runCurrent()
+
+        assertEquals(1, provider.latestCalls)
+        assertEquals(BrowsePhase.COMPLETED, viewModel.uiState.value.phase)
+    }
+
+    /** 默认首快照先到、随后激活时只能由激活入口加载一次。 */
+    @Test
+    fun defaultFirstSettingsEmissionBeforeActivationDoesNotLoadTwice() = runTest(dispatcher.scheduler) {
+        /** provider 记录设置与激活两个入口是否重复发起请求。 */
+        val provider = FakeBrowseProvider(suspendLatest = false)
+        /** dataStore 由测试显式控制首快照顺序。 */
+        val dataStore = DelayedPreferencesDataStore()
+        /** viewModel 初始仍不可见。 */
+        val viewModel = createViewModel(provider, dataStore)
+        runCurrent()
+
+        dataStore.emit(preferencesOf())
+        runCurrent()
+        assertEquals(0, provider.latestCalls)
+        viewModel.setScreenActive(true)
+        runCurrent()
+
+        assertEquals(1, provider.latestCalls)
+    }
+
+    /** 首快照在离页后到达时不得后台加载，重新进入只加载一次。 */
+    @Test
+    fun defaultFirstSettingsEmissionAfterLeavingWaitsForReentry() = runTest(dispatcher.scheduler) {
+        /** provider 记录离页与重进边界的实际请求数。 */
+        val provider = FakeBrowseProvider(suspendLatest = false)
+        /** dataStore 把默认首快照延迟到 STOP 之后。 */
+        val dataStore = DelayedPreferencesDataStore()
+        /** viewModel 先经历 START/STOP，再接收首快照。 */
+        val viewModel = createViewModel(provider, dataStore)
+        viewModel.setScreenActive(true)
+        viewModel.setScreenActive(false)
+        runCurrent()
+
+        dataStore.emit(preferencesOf())
+        runCurrent()
+        assertEquals(0, provider.latestCalls)
+        viewModel.setScreenActive(true)
+        runCurrent()
+
+        assertEquals(1, provider.latestCalls)
     }
 
     /** 离开目的地取消当前加载，重新进入按当前模式和分类重新加载。 */
@@ -113,10 +176,42 @@ class TorrentBrowseViewModelTest {
     private fun createViewModel(
         /** 本次测试唯一浏览来源。 */
         provider: FakeBrowseProvider,
+        /** 可控制首快照时序的真实 DataStore 边界。 */
+        dataStore: DataStore<Preferences> = FakePreferencesDataStore(preferencesOf()),
     ): TorrentBrowseViewModel {
         /** repository 以空设置表示首次使用注册表默认来源。 */
-        val repository = TorrentSearchSettingsRepository(FakePreferencesDataStore(preferencesOf()))
+        val repository = TorrentSearchSettingsRepository(dataStore)
         return TorrentBrowseViewModel(listOf(provider), BrowseCoordinator(), repository)
+    }
+}
+
+/** 延迟首快照的内存 DataStore，用于覆盖 Lifecycle 与 DataStore 的合法竞态顺序。 */
+private class DelayedPreferencesDataStore : DataStore<Preferences> {
+    /** emissions 不在 collector 启动时自动发值，由测试显式推进。 */
+    private val emissions = MutableSharedFlow<Preferences>(extraBufferCapacity = 1)
+    /** current 保存 updateData 所需的最新 Preferences。 */
+    private var current: Preferences = preferencesOf()
+    /** data 暴露无隐式首值的连续设置流。 */
+    override val data: Flow<Preferences> = emissions
+
+    /** 向真实 Repository 发出一份确定性设置快照。 */
+    suspend fun emit(
+        /** 本次发出的 Preferences 快照。 */
+        preferences: Preferences,
+    ) {
+        current = preferences
+        emissions.emit(preferences)
+    }
+
+    /** 原子应用设置变换并发出新快照。 */
+    override suspend fun updateData(
+        /** Repository 提供的真实设置变换。 */
+        transform: suspend (t: Preferences) -> Preferences,
+    ): Preferences {
+        /** updated 是当前设置事务结果。 */
+        val updated = transform(current)
+        emit(updated)
+        return updated
     }
 }
 

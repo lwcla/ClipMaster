@@ -25,6 +25,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,6 +40,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import coil3.ImageLoader
 import coil3.request.ImageRequest
 import com.cla.clip.feature.torrent.search.R
 import com.cla.clip.feature.torrent.search.model.contract.TorrentDetails
@@ -53,6 +55,8 @@ import java.util.Date
 internal fun TorrentDetailsScreen(
     /** 已经过 URL、身份与富文本安全收窄的详情状态。 */
     state: TorrentDetailsUiState,
+    /** 由当前 NavBackStackEntry 直接驱动的图片 Composition 许可。 */
+    imagesActive: Boolean,
     /** 固定失败态的显式重试事件。 */
     onRetry: () -> Unit,
     /** 返回上级列表事件。 */
@@ -60,6 +64,13 @@ internal fun TorrentDetailsScreen(
     /** 页面外部布局约束。 */
     modifier: Modifier = Modifier,
 ) {
+    /** context 只用于构造不会修改应用全局配置的详情图片加载器。 */
+    val context = LocalContext.current
+    /** imageLoader 以详情 Composition 为边界复用，并在离开详情时关闭。 */
+    val imageLoader = remember(context) { TorrentDetailsImageLoaderFactory.createImageLoader(context) }
+    DisposableEffect(imageLoader) {
+        onDispose { imageLoader.shutdown() }
+    }
     Scaffold(
         modifier = modifier,
         topBar = {
@@ -92,6 +103,8 @@ internal fun TorrentDetailsScreen(
                     description = state.description,
                     posterUrl = state.posterUrl,
                     screenshotUrls = state.screenshotUrls,
+                    imagesActive = imagesActive,
+                    imageLoader = imageLoader,
                     modifier = Modifier.fillMaxSize().padding(paddingValues),
                 )
             } ?: TorrentDetailsError(
@@ -151,6 +164,10 @@ private fun TorrentDetailsContent(
     posterUrl: String?,
     /** 已通过同源 HTTPS 校验且去重的截图 URL。 */
     screenshotUrls: List<String>,
+    /** 直接生命周期状态决定是否创建所有网络图片子 Composition。 */
+    imagesActive: Boolean,
+    /** 详情 feature 专用且禁止自动重定向的 Coil 加载器。 */
+    imageLoader: ImageLoader,
     /** 详情内容布局约束。 */
     modifier: Modifier = Modifier,
 ) {
@@ -164,8 +181,10 @@ private fun TorrentDetailsContent(
         item(key = "details_title") {
             Text(text = details.name, style = MaterialTheme.typography.headlineSmall)
         }
-        posterUrl?.let { /** safePosterUrl 是已校验同源 HTTPS 的海报。 */ safePosterUrl ->
-            item(key = "details_poster") { ConstrainedNetworkImage(safePosterUrl) }
+        if (TorrentDetailsImagePresentationPolicy.shouldComposeImages(imagesActive)) {
+            posterUrl?.let { /** safePosterUrl 是已校验同源 HTTPS 的海报。 */ safePosterUrl ->
+                item(key = "details_poster") { ConstrainedNetworkImage(safePosterUrl, imageLoader) }
+            }
         }
         item(key = "details_info") { TorrentDetailsInfo(details) }
         if (!description?.text.isNullOrBlank()) {
@@ -177,8 +196,15 @@ private fun TorrentDetailsContent(
             }
             item(key = "details_description") { SafeRichText(description!!) }
         }
-        items(items = descriptionImages, key = { /** imageUrl 是正文已规范化的图片稳定地址。 */ imageUrl -> imageUrl }) { /** imageUrl 是当前受限正文图片。 */ imageUrl ->
-            ConstrainedNetworkImage(imageUrl)
+        if (TorrentDetailsImagePresentationPolicy.shouldComposeImages(imagesActive)) {
+            items(
+                items = descriptionImages,
+                key = { /** imageUrl 是正文已规范化的图片稳定地址。 */ imageUrl ->
+                    TorrentDetailsImagePresentationPolicy.lazyItemKey(TorrentDetailsImageSection.DESCRIPTION, imageUrl)
+                },
+            ) { /** imageUrl 是当前受限正文图片。 */ imageUrl ->
+                ConstrainedNetworkImage(imageUrl, imageLoader)
+            }
         }
         if (screenshotUrls.isNotEmpty()) {
             item(key = "details_screenshots_title") {
@@ -187,8 +213,15 @@ private fun TorrentDetailsContent(
                     style = MaterialTheme.typography.titleMedium,
                 )
             }
-            items(items = screenshotUrls, key = { /** imageUrl 是截图的规范化稳定地址。 */ imageUrl -> imageUrl }) { /** imageUrl 是当前受限截图。 */ imageUrl ->
-                ConstrainedNetworkImage(imageUrl)
+            if (TorrentDetailsImagePresentationPolicy.shouldComposeImages(imagesActive)) {
+                items(
+                    items = screenshotUrls,
+                    key = { /** imageUrl 是截图的规范化稳定地址。 */ imageUrl ->
+                        TorrentDetailsImagePresentationPolicy.lazyItemKey(TorrentDetailsImageSection.SCREENSHOT, imageUrl)
+                    },
+                ) { /** imageUrl 是当前受限截图。 */ imageUrl ->
+                    ConstrainedNetworkImage(imageUrl, imageLoader)
+                }
             }
         }
         if (details.files.isNotEmpty()) {
@@ -273,7 +306,11 @@ private fun DetailsValueRow(
     value: String,
 ) {
     Text(
-        text = "${stringResource(labelResource)}: $value",
+        text = stringResource(
+            R.string.torrent_search_torrent_details_field_format,
+            stringResource(labelResource),
+            value,
+        ),
         style = MaterialTheme.typography.bodyMedium,
     )
 }
@@ -326,6 +363,8 @@ private fun buildSafeAnnotatedString(
 private fun ConstrainedNetworkImage(
     /** 已通过同源 HTTPS 校验的图片 URL。 */
     imageUrl: String,
+    /** 专用加载器关闭自动重定向，避免首个同源地址跳出白名单。 */
+    imageLoader: ImageLoader,
 ) {
     /** context 只用于构建当前 Composition 的 Coil 请求。 */
     val context = LocalContext.current
@@ -338,6 +377,7 @@ private fun ConstrainedNetworkImage(
     }
     AsyncImage(
         model = request,
+        imageLoader = imageLoader,
         contentDescription = null,
         modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 360.dp),
         contentScale = ContentScale.Fit,
@@ -350,9 +390,11 @@ private fun TorrentFileRow(
     /** 当前文件领域条目。 */
     file: TorrentFile,
 ) {
-    /** sizeText 是字节数存在时的本地展示后缀。 */
-    val sizeText = file.sizeBytes?.let { /** sizeBytes 是非格式化文件字节数。 */ sizeBytes -> " ($sizeBytes B)" }.orEmpty()
-    Text(text = file.name + sizeText, style = MaterialTheme.typography.bodyMedium)
+    /** fileText 使用命名资源格式化可选字节数，避免在 Kotlin 中拼接 UI 文案。 */
+    val fileText = file.sizeBytes?.let { /** sizeBytes 是非格式化文件字节数。 */ sizeBytes ->
+        stringResource(R.string.torrent_search_torrent_details_file_with_size_format, file.name, sizeBytes)
+    } ?: file.name
+    Text(text = fileText, style = MaterialTheme.typography.bodyMedium)
 }
 
 /** 以设备区域设置格式化 UTC epochMillis 展示值。 */

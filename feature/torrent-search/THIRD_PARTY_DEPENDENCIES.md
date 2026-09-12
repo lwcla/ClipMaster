@@ -29,7 +29,7 @@ and coordinates remain owned by `gradle/libs.versions.toml`:
 | kotlinx-coroutines-test 1.10.2 (test-only) | 用虚拟调度器验证 Provider 超时、并发启动和取消 | [Kotlinx Coroutines Apache-2.0 license](https://github.com/Kotlin/kotlinx.coroutines/blob/master/LICENSE.txt) |
 | OkHttp 5.3.2 | 直接 HTTP 边界、HTTPS 限制和协程取消联动 | [OkHttp Apache-2.0 license](https://github.com/square/okhttp/blob/master/LICENSE.txt) |
 | Jsoup 1.22.1 | Parse AnimeTosho and AniRena HTML with selectors without executing site scripts | [jsoup MIT license](https://github.com/jhy/jsoup/blob/master/LICENSE) |
-| Coil Compose and Coil network-okhttp 3.4.0 | Decode validated same-host HTTPS detail images at an explicit request and layout size, with Composition-bound cancellation | [Coil Apache-2.0 license](https://github.com/coil-kt/coil/blob/main/LICENSE.txt) |
+| Coil Compose and Coil network-okhttp 3.4.0 | Decode validated same-host HTTPS detail images at an explicit request and layout size; a feature-local OkHttp client disables HTTP and SSL redirects, and destination STOP removes image sub-Compositions to cancel requests | [Coil Apache-2.0 license](https://github.com/coil-kt/coil/blob/main/LICENSE.txt) |
 | MockWebServer 5.3.2 (test-only) | 本地合成 HTTPS/gzip 响应，不进行真实联网 | [OkHttp Apache-2.0 license](https://github.com/square/okhttp/blob/master/LICENSE.txt) |
 | okhttp-tls 5.3.2 (test-only) | 为 MockWebServer 生成仅测试使用的本地 HTTPS 证书 | [OkHttp Apache-2.0 license](https://github.com/square/okhttp/blob/master/LICENSE.txt) |
 

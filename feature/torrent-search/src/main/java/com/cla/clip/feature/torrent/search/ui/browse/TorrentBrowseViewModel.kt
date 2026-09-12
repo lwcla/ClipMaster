@@ -79,8 +79,10 @@ internal class TorrentBrowseViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             settingsRepository.settings.collect { /** settings 是当前本机安全设置快照。 */ settings ->
-                /** settingsChanged 标记来源或安全边界是否发生实际变化。 */
-                val settingsChanged = settings != currentSettings
+                /** firstSettingsSnapshot 显式标记设置由未就绪变为就绪，不能用默认值相等代替。 */
+                val firstSettingsSnapshot = !mutableUiState.value.settingsReady
+                /** settingsChanged 只表示首快照之后来源或安全边界发生实际变化。 */
+                val settingsChanged = !firstSettingsSnapshot && settings != currentSettings
                 currentSettings = settings
                 mutableUiState.update { /** state 是合并设置就绪标志前的页面状态。 */ state ->
                     state.copy(
@@ -89,7 +91,10 @@ internal class TorrentBrowseViewModel @Inject constructor(
                         category = if (settings.safeModeEnabled && state.category.isNsfw) Category.ALL else state.category,
                     )
                 }
-                if (settingsChanged && mutableUiState.value.isScreenActive) reload()
+                /** shouldLoadAfterSettings 同时覆盖先激活后首快照与可见期间设置变化。 */
+                val shouldLoadAfterSettings = mutableUiState.value.isScreenActive &&
+                    ((firstSettingsSnapshot && mutableUiState.value.phase == BrowsePhase.IDLE) || settingsChanged)
+                if (shouldLoadAfterSettings) reload()
             }
         }
     }

@@ -59,7 +59,7 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.hilt.navigation.compose)
-    // 详情页复用仓库既有 Coil 栈并限制请求解码尺寸；network-okhttp 提供 HTTPS 图片抓取与 Composition 取消。
+    // 详情页复用仓库既有 Coil 栈并限制请求解码尺寸；专用 OkHttp 客户端禁用重定向并由 Composition 取消图片请求。
     implementation(libs.io.coil.compose)
     implementation(libs.io.coil.network.okhttp)
 

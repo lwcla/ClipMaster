@@ -142,6 +142,8 @@
     <string name="torrent_search_torrent_details_label_uploader">Uploader</string>
     <string name="torrent_search_torrent_details_label_last_checked">Last checked</string>
     <string name="torrent_search_torrent_details_label_info_hash">Info hash</string>
+    <string name="torrent_search_torrent_details_field_format">%1$s: %2$s</string>
+    <string name="torrent_search_torrent_details_file_with_size_format">%1$s (%2$d B)</string>
     <string name="torrent_search_torrent_details_message_link_copied">Link copied to clipboard!</string>
     <string name="torrent_search_torrent_details_message_info_hash_copied">Info hash copied to clipboard</string>
     <string name="torrent_search_torrent_details_message_description_hidden">Description hidden</string>
