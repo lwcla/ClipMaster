@@ -39,6 +39,8 @@ class TorrentSearchSettingsRepositoryTest {
         assertFalse(settings.safeModeEnabled)
         assertEquals(SortCriteria.SEEDERS, settings.sortCriteria)
         assertEquals(SortOrder.ASCENDING, settings.sortOrder)
+        assertFalse(settings.providerSelectionInitialized)
+        assertFalse(settings.multiSourceDisclosureAccepted)
     }
 
     /** 空文件默认必须开启安全模式并采用做种数降序。 */
@@ -53,6 +55,8 @@ class TorrentSearchSettingsRepositoryTest {
         assertTrue(settings.safeModeEnabled)
         assertEquals(SortCriteria.SEEDERS, settings.sortCriteria)
         assertEquals(SortOrder.DESCENDING, settings.sortOrder)
+        assertFalse(settings.providerSelectionInitialized)
+        assertFalse(settings.multiSourceDisclosureAccepted)
     }
 
     /** 原子更新必须只写稳定 Provider ID 和排序 code，并立即反映到 Flow。 */
@@ -66,6 +70,7 @@ class TorrentSearchSettingsRepositoryTest {
         repository.setEnabledProviderIds(setOf(ProviderId("nyaa"), ProviderId("yts")))
         repository.setSafeModeEnabled(false)
         repository.setSort(SortCriteria.DATE, SortOrder.ASCENDING)
+        repository.setMultiSourceDisclosureAccepted(true)
 
         /** settings 验证更新后的运行时契约，不断言 fake 调用次数。 */
         val settings = repository.settings.first()
@@ -73,6 +78,26 @@ class TorrentSearchSettingsRepositoryTest {
         assertFalse(settings.safeModeEnabled)
         assertEquals(SortCriteria.DATE, settings.sortCriteria)
         assertEquals(SortOrder.ASCENDING, settings.sortOrder)
+        assertTrue(settings.providerSelectionInitialized)
+        assertTrue(settings.multiSourceDisclosureAccepted)
+    }
+
+    /** 首次推荐来源初始化只能执行一次，用户后续明确关闭全部来源时不得被默认值覆盖。 */
+    @Test
+    fun initializeProviderSelectionDoesNotOverwriteExplicitEmptySelection() = runTest {
+        /** repository 从未初始化的空设置开始。 */
+        val repository = TorrentSearchSettingsRepository(FakePreferencesDataStore(preferencesOf()))
+        /** recommendedIds 是首次披露后准备启用的安全默认来源。 */
+        val recommendedIds = setOf(ProviderId("nyaa"), ProviderId("yts"))
+
+        assertTrue(repository.initializeProviderSelection(recommendedIds))
+        repository.setEnabledProviderIds(emptySet())
+        assertFalse(repository.initializeProviderSelection(setOf(ProviderId("btdigg"))))
+
+        /** settings 必须保留用户明确提交的空集合和已初始化标记。 */
+        val settings = repository.settings.first()
+        assertTrue(settings.providerSelectionInitialized)
+        assertTrue(settings.enabledProviderIds.isEmpty())
     }
 }
 

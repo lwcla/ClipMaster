@@ -28,6 +28,10 @@ internal data class TorrentSearchSettings(
     val sortCriteria: SortCriteria = SortCriteria.SEEDERS,
     /** 默认使用降序。 */
     val sortOrder: SortOrder = SortOrder.DESCENDING,
+    /** 是否已经写入过用户可编辑的 Provider 选择，区分新安装与明确关闭全部来源。 */
+    val providerSelectionInitialized: Boolean = false,
+    /** 首次多源查询隐私披露是否已在本机确认。 */
+    val multiSourceDisclosureAccepted: Boolean = false,
 )
 
 /** Preferences DataStore 设置仓库，集中处理稳定 code、损坏降级和原子写入。 */
@@ -59,6 +63,38 @@ internal class TorrentSearchSettingsRepository(
         update("settings_provider_ids") { preferences ->
             /** providerId lambda 只提取已验证的稳定 ID 字符串。 */
             preferences[ENABLED_PROVIDER_IDS] = providerIds.mapTo(linkedSetOf()) { providerId -> providerId.value }
+            preferences[PROVIDER_SELECTION_INITIALIZED] = true
+        }
+    }
+
+    /** 首次确认后原子写入推荐来源；已初始化时保持用户当前选择并返回 false。 */
+    suspend fun initializeProviderSelection(
+        /** 注册表中标记默认启用且已通过安全筛选的稳定 Provider ID。 */
+        recommendedProviderIds: Set<ProviderId>,
+    ): Boolean {
+        /** initialized 标记本次事务是否真正写入默认来源。 */
+        var initialized = false
+        logger.log("settings_provider_defaults", "started")
+        try {
+            /** preferences lambda 在单事务内检查哨兵并写入默认集合。 */
+            dataStore.edit { preferences ->
+                if (preferences[PROVIDER_SELECTION_INITIALIZED] != true) {
+                    /** providerId lambda 只提取注册表已验证的稳定字符串。 */
+                    preferences[ENABLED_PROVIDER_IDS] = recommendedProviderIds.mapTo(linkedSetOf()) { providerId -> providerId.value }
+                    preferences[PROVIDER_SELECTION_INITIALIZED] = true
+                    initialized = true
+                }
+            }
+            logger.log("settings_provider_defaults", "completed")
+            return initialized
+        /** cancellation 保持设置事务的结构化取消语义。 */
+        } catch (cancellation: CancellationException) {
+            logger.log("settings_provider_defaults", "cancelled")
+            throw cancellation
+        /** exception 不记录设置值或来源集合。 */
+        } catch (exception: Exception) {
+            logger.log("settings_provider_defaults", "failed")
+            throw exception
         }
     }
 
@@ -82,6 +118,17 @@ internal class TorrentSearchSettingsRepository(
         update("settings_sort") { preferences ->
             preferences[SORT_CRITERIA_CODE] = criteria.code
             preferences[SORT_ORDER_CODE] = order.code
+        }
+    }
+
+    /** 保存首次多源隐私披露确认；该本机状态不进入任务 7 自定义备份。 */
+    suspend fun setMultiSourceDisclosureAccepted(
+        /** true 表示用户已明确知晓查询将发送到多个第三方来源。 */
+        accepted: Boolean,
+    ) {
+        /** preferences lambda 只写入本机确认布尔值。 */
+        update("settings_multi_source_disclosure") { preferences ->
+            preferences[MULTI_SOURCE_DISCLOSURE_ACCEPTED] = accepted
         }
     }
 
@@ -120,6 +167,8 @@ internal class TorrentSearchSettingsRepository(
             safeModeEnabled = preferences[SAFE_MODE_ENABLED] ?: true,
             sortCriteria = SortCriteria.fromCode(preferences[SORT_CRITERIA_CODE]),
             sortOrder = SortOrder.fromCode(preferences[SORT_ORDER_CODE]),
+            providerSelectionInitialized = preferences[PROVIDER_SELECTION_INITIALIZED] ?: false,
+            multiSourceDisclosureAccepted = preferences[MULTI_SOURCE_DISCLOSURE_ACCEPTED] ?: false,
         )
     }
 
@@ -133,5 +182,9 @@ internal class TorrentSearchSettingsRepository(
         private val SORT_CRITERIA_CODE = stringPreferencesKey("sort_criteria_code")
         /** 排序方向稳定 code key。 */
         private val SORT_ORDER_CODE = stringPreferencesKey("sort_order_code")
+        /** Provider 选择初始化哨兵，防止默认值覆盖用户明确提交的空集合。 */
+        private val PROVIDER_SELECTION_INITIALIZED = booleanPreferencesKey("provider_selection_initialized")
+        /** 首次多源查询隐私披露的本机确认状态。 */
+        private val MULTI_SOURCE_DISCLOSURE_ACCEPTED = booleanPreferencesKey("multi_source_disclosure_accepted")
     }
 }

@@ -451,3 +451,43 @@ Preferences DataStore 文件为 `datastore/torrent_search_settings.preferences_p
 备份与隐私：`backup_rules.xml` 和 `data_extraction_rules.xml` 已按精确路径排除数据库与 DataStore，云备份和设备迁移都不能整文件复制查询、magnet 快照或本机安全选择。系统 Intent 解析不记录输入；Room/DataStore 写入日志只包含固定 operationCode、started/completed/cancelled/failed/fallback 状态与可选影响行数，禁止输出查询、名称、hash、magnet、URL、Provider 集合或设置值。未新增序列化/反射模型，Room 由生成代码访问，故本批不新增 keep 规则；release/R8、API 24/36 设备与真实联网仍按任务 8 执行。
 
 测试与变更记录：2026-09-12，采用选择性 TDD 分别为 Intent resolver、三类 Repository 和 DataStore 设置仓库取得缺类型/缺实现 RED，再补最小生产实现转为定向 GREEN；覆盖 action 优先级、MIME 拒绝、超限预填、稳定 hash/查询去重、历史上限、损坏设置回退与稳定 code 写入。新增 AndroidX Room 2.8.4 与 Preferences DataStore 1.2.1，并同步直接依赖许可证清单。最终组合验证 `BUILD SUCCESSFUL in 2m 9s`，JUnit XML 汇总为 503 tests / 65 suites、0 failures/errors/skipped；模块 Kotlin、中文注释门禁、Room schema 生成、系统备份资源合并及开启功能后的 App Kotlin 编译均通过，`git diff --check` 无错误。关闭功能编译、release/R8、API 24/36 设备与真实联网按任务 8 保留。
+
+### 任务 05C：Torrent、书签导入与 Torznab 密钥边界（2026-09-12）
+
+状态：已完成。本子批关闭任务 5 剩余输入安全能力，不接入页面、真实 Torznab 网络请求、分享下载或备份恢复。Torrent 与书签文件均由 feature-local 的有界流读取器消费，调用方继续拥有并关闭输入流；读取器分别在 20 MiB 和 10 MiB 后立即拒绝，不能依赖不可信 `Content-Length`，也不能在异常或日志中回显文件内容、URI 或路径。
+
+Torrent 校验器只接受完整且无尾随数据的 Bencode 顶层字典，字典键必须使用规范字节串并严格递增，整数拒绝前导零、负零和空值，递归深度固定限制为 128。顶层必须恰好包含一个 `info` 键且其值必须是字典；infoHash 对原文件中 `info` 字典的精确原始字节区间计算 BitTorrent v1 规定的 SHA-1，并输出 40 位小写十六进制，不做 decode/re-encode，避免非文本字段或编码差异改变身份。失败通过稳定 reasonCode 区分空文件、超限、结构损坏、顶层非字典、缺少/重复 `info` 和 `info` 非字典；SHA-1 仅用于协议兼容身份，不用于新的安全签名或凭据保护。
+
+书签导入接受本仓库固定版本 1 envelope（`version`、`bookmarks`）及固定上游兼容的无版本顶层数组。新 envelope 每项使用稳定 `providerId`、category code 与 `uploadEpochMillis`；旧数组兼容上游 `id`、`providerName`、`uploadDate` 及 `Movies` 等枚举展示名，因为上游文件没有稳定 Provider ID，导入时统一映射为符合 Provider ID 协议的固定 `legacy_import`，不得从可变展示名派生身份。导入器先以单次扫描验证 JSON 语法并定位条目，递归深度限制为 64、条目数限制为 10,000、envelope key 限制为 64 字符，再逐项构造临时 JSON 对象；单条原始 JSON 超过 256 KiB 时在创建 substring/DOM 前直接计为跳过，避免把接近 10 MiB 的整棵 DOM 或单个恶意大对象与结果列表同时保留在内存。每个元素独立读取 `infoHash`、名称、Provider、大小、人数、时间、分类和可选链接；身份字段类型错误不能按缺失处理，缺失 infoHash 时才可从合法 magnet 的 btih 恢复，显式 magnet 与 infoHash 不一致则跳过该项。非法对象、坏字段、超长名称、非法 Provider ID、非法 URL 或非法数值只计入跳过数量，不阻断后续条目；同一文件按规范化 infoHash 保留首个合法条目并单列重复数量。解析结果不直接写 Room，任务 6 的导入页面再逐项交给既有 `BookmarkRepository`，因此数据库失败、用户取消和最终新增/覆盖计数仍由页面编排处理。
+
+Torznab 将非敏感配置与 API Key 分离。`TorznabConfig` 只承载稳定配置 ID、展示名、无 userinfo/query/fragment 的 HTTP/HTTPS feed URL、分类、安全等级和是否存在密钥；配置 ID 复用 `ProviderId` 校验并强制使用 `torznab_` 前缀，避免与 43 个内置 Provider 的稳定 ID 冲突。允许局域网 HTTP 以兼容 Jackett/Prowlarr，但任务 6 发请求前仍需做网络安全确认和明文风险提示。API Key 只通过 `TorznabApiKeyStore` 访问：生产实现使用 Android Keystore 内不可导出的 AES-256 GCM 密钥，配置 ID 作为 AAD，随机 IV 与密文以版本化字符串写入独立 SharedPreferences；测试只替换 cipher 和密文介质，不向生产类加入测试清理入口。空 Key 等价删除并返回真实删除结果，过长 Key 拒绝；读取介质异常、密文损坏、Key 失效或系统恢复后不可解均被仓库边界收敛为缺失，解密失败时尝试删除对应密文，清理自身失败也不会逃逸到页面，页面后续提示用户重新输入。
+
+备份与反混淆：书签本身仍按任务 7 的字段白名单进入自定义 schema v4；导入临时字节、解析计数和失败原因不持久化。Torznab 配置、API Key、Keystore alias、IV/密文和本机安全选择均不进入自定义备份，独立密文 SharedPreferences 同步从 Auto Backup 和设备迁移排除。新增类型仅由编译期调用，不依赖反射、类名或自动序列化，JSON 导入使用显式字段读取，因此不新增 keep/R8 规则。
+
+日志与诊断计划：Torrent、导入和 Keystore 仅记录固定 operationCode、started/completed/cancelled/failed、输入字节数、合法/跳过/重复数量及稳定 reasonCode；禁止记录文件名、SAF URI、书签名称、infoHash、magnet、URL、API Key、密文、IV、alias、JSON/Bencode 正文或底层异常 message。纯解析器默认不主动写 Android 日志，由任务 6 的 IO 编排层在操作边界记录一次，避免逐项高频噪声；密钥仓库仅在写入、读取恢复和删除边界记录低敏状态。
+
+测试与验证计划：选择性 TDD 先固定 20/10 MiB 边界、Bencode 正常/损坏/深度/重复键/原始 infoHash、导入 envelope/上游数组/逐项容错/去重/magnet 一致性、Torznab 配置 URL 和稳定 code、密钥密文不含明文/AAD 隔离/损坏清理/空值删除，再实现最小生产逻辑。最终运行定向 JVM 单测、模块全量 `testDebugUnitTest`、模块 Kotlin 编译、中文注释门禁、开启功能 App 编译、备份资源合并和 `git diff --check`；真实 Android Keystore、API 24/36 设备与 release/R8 留任务 8。
+
+变更记录：2026-09-12，明确任务 5 最后子批的原始字节 infoHash、逐项导入、Torznab 非敏感配置与设备绑定密钥分层；原因是完整页面接入前必须先固定可测试的文件大小、失败契约、去重身份和凭据恢复边界。独立复审后补充 JSON 深度/条目数、256 KiB 单项、64 字符 envelope key 及逐项 DOM 边界、Torznab ID 命名空间、身份字段严格类型和密钥介质异常收敛；原因是避免大输入内存放大、内置 Provider 冲突及损坏本机状态导致页面崩溃。
+
+验证记录：2026-09-12，最终组合门禁 `:feature:torrent-search:testDebugUnitTest`、`:feature:torrent-search:compileDebugKotlin`、`:feature:torrent-search:checkTorrentSearchChineseComments`、`:app:processDebugResources` 与开启功能后的 `:app:compileDebugKotlin` 通过；JUnit XML 汇总为 527 tests / 69 suites、0 failures/errors/skipped，`git diff --check` 无错误。真实 Android Keystore、功能关闭编译、release/R8、API 24/36 设备与真实联网按任务 8 保留。
+
+### 任务 06A：搜索主链路与页面生命周期（2026-09-12）
+
+状态：已完成。本切片把独立 Activity 的占位内容替换为 feature-local Compose 导航壳和 Hilt `TorrentSearchViewModel`，只完成搜索主链路及进入后续页面的稳定导航入口；Latest/Top、详情、本地数据页、Provider 管理、设置、下载/SAF、DoH、Torznab 网络和 Cloudflare WebView 分别在 06B–06E 接入，不用占位实现伪装为已完成能力。
+
+用户体验：主页提供查询输入、分类、排序、搜索/停止操作和渐进结果列表；系统 Intent 只更新预填查询，不自动联网。首次准备向多个已启用第三方 Provider 发送查询时，先展示全局隐私披露，明确查询会发送到当前启用数量的第三方来源、确认状态只保存在本机；用户取消时不启动任何 Provider。安全模式默认开启，关闭时必须单独二次确认，并明确可能出现不安全或成人内容；取消确认保持安全模式开启。重新开启安全模式会立即取消仍可能包含不安全来源的旧搜索，把成人分类回退到全部分类，且安全模式开启期间不展示也不接受成人分类。无启用来源、空查询、运行中、部分来源失败、无结果和完成结果使用明确 UI state，不用异常 message 或响应正文作为文案。
+
+生命周期与职责：Activity 只负责不可信 Intent 到启动快照的映射、主题容器和根页面装配；ViewModel 负责搜索状态编排，但构造和 `init` 不执行网络。Compose 通过 `collectAsStateWithLifecycle` 收集状态，并在页面进入 `STARTED` 时允许用户发起任务、离开时调用可见性入口取消搜索；分类、排序和当前 Tab 只能决定用户查看内容，不能替代页面生命周期。共享结果卡接收稳定 `TorrentSearchResultUiState` 和 callback，不直接依赖 ViewModel、NavController、Repository 或 Android Intent。
+
+数据流：页面提交先经既有 `TorrentSearchInputNormalizer`，再根据设置快照选择启用 Provider；首次多源披露未确认时进入待确认状态，确认后才调用 `SearchCoordinator.search`。`Started/Results/Failed/Skipped/Completed` 事件统一由 ViewModel reducer 合并为不可变 UI state；新搜索和停止操作取消上一个 Job，页面不可见也取消 Job，底层结构化取消继续传到 OkHttp Call。结果按 infoHash 稳定去重，再按 `SortCriteria`/`SortOrder` 生成展示列表；查询正文、结果名称、URL 与 magnet 不进入日志。
+
+测试与验证：选择性 TDD 先覆盖 reducer 的渐进合并、去重、失败隔离、排序、停止和完成状态，再覆盖首次多源披露与安全模式确认状态机；ViewModel 协程测试使用 fake Provider/设置仓库和虚拟调度器，证明构造、预填 Intent、取消披露及页面离开均不联网。实现后运行模块全量 JVM 单测、Kotlin 编译、中文注释门禁、资源合并及开启功能 App 编译；Compose 视觉、旋转、动态字体和 API 24/36 生命周期设备验证保留任务 8 汇总执行。
+
+日志与诊断计划：继续复用 `SearchCoordinator` 与设置 Repository 已有的低敏 operationCode/stateCode、Provider 阶段、数量和稳定 reasonCode 日志；06A 页面层不新增运行时日志，因为提交、披露、停止与生命周期事件会高频携带用户上下文，额外记录容易形成隐私和重组噪声，改由明确 UI phase、固定错误分类和合成协程测试定位。禁止记录查询、书签名、infoHash、magnet、URL、API Key、Cookie、响应正文、Intent extra 或异常 message；纯 reducer 与 Compose 组件不主动打印日志。
+
+变更记录：2026-09-12，完成 06A 并固定 Activity、ViewModel、共享结果组件、首次多源披露及生命周期取消边界；补充安全模式重新开启时取消旧搜索、回退成人分类，以及安全模式期间 UI/状态双层拒绝成人分类。原因是搜索网络副作用必须先具备可验证的用户授权和可见性控制，后续页面才能安全复用同一导航与状态结构。
+
+独立复审收口：首个 DataStore 快照到达前通过 `settingsReady` 禁止搜索；披露保存提交时冻结的来源数量，启动前按最新设置、安全模式和披露快照重新收紧；前置持久化使用可取消 Job 与 generation，搜索目的地使用 `NavBackStackEntry` 生命周期，离页或新 Intent 永久废弃旧请求。安全模式开启同步 fail-closed，设置写失败收敛为固定低敏错误；`IDLE/SEARCHING/STOPPED/COMPLETED` 区分初始、运行、部分结果停止与完成空态。共享结果卡改用不携带 URL/magnet 的展示模型，06A 暂不提供无语义的默认点击。
+
+验证记录：2026-09-12，最终组合门禁 `:feature:torrent-search:testDebugUnitTest`、`:feature:torrent-search:compileDebugKotlin`、`:feature:torrent-search:checkTorrentSearchChineseComments`、`:app:processDebugResources` 与开启功能后的 `:app:compileDebugKotlin` 通过；JUnit XML 汇总为 542 tests / 71 suites、0 failures/errors/skipped，`git diff --check` 无错误。WebDAV 流程 HTML `--check` 通过；最终独立复审无 Critical、Important 或 Minor。Compose 视觉、功能关闭编译、release/R8、API 24/36 设备和真实联网仍按任务 8 执行。

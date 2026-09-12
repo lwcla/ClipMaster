@@ -252,4 +252,29 @@
     <string name="torrent_search_search_providers_protection_unlocked">已解锁</string>
     <string name="torrent_search_search_providers_search_hint">搜索搜索源</string>
 
+    <string name="torrent_search_safe_mode">安全模式</string>
+    <string name="torrent_search_enabled_provider_count">当前可用 %1$d 个来源</string>
+    <string name="torrent_search_results_count">%1$d 个结果</string>
+    <string name="torrent_search_provider_failures_count">%1$d 个来源失败或被跳过</string>
+    <string name="torrent_search_multi_source_disclosure_title">搜索多个来源前请确认</string>
+    <string name="torrent_search_multi_source_disclosure_message">搜索词会发送到 %1$d 个已启用的第三方 Torrent 来源。本次确认只保存在此设备。</string>
+    <string name="torrent_search_multi_source_disclosure_confirm">我已了解并搜索</string>
+    <string name="torrent_search_disable_safe_mode_title">关闭安全模式？</string>
+    <string name="torrent_search_disable_safe_mode_message">关闭后可能启用不安全来源并显示成人内容。仅在接受风险时继续。</string>
+    <string name="torrent_search_disable_safe_mode_confirm">确认关闭</string>
+    <string name="torrent_search_error_screen_inactive">请返回当前页面后再发起搜索。</string>
+    <string name="torrent_search_error_settings_loading">正在加载本机安全设置，请稍后重试。</string>
+    <string name="torrent_search_error_empty_query">请输入搜索内容。</string>
+    <string name="torrent_search_error_query_too_long">搜索内容超过 512 字符。请检查截短后的文本，再次搜索。</string>
+    <string name="torrent_search_error_no_providers">当前安全模式下没有可用的已启用来源。</string>
+    <string name="torrent_search_error_settings_write_failed">无法保存本机设置，未启动新的搜索。</string>
+    <string name="torrent_search_idle_prompt">请输入关键词后开始搜索。</string>
+    <string name="torrent_search_empty_results">搜索已完成，没有找到结果。</string>
+    <string name="torrent_search_stopped">搜索已停止。</string>
+    <string name="torrent_search_result_seeders">做种：%1$s</string>
+    <string name="torrent_search_result_peers">下载：%1$s</string>
+    <string name="torrent_search_value_unknown">未知</string>
+    <string name="torrent_search_sort_ascending">升序</string>
+    <string name="torrent_search_sort_descending">降序</string>
+    <string name="torrent_search_action_back">返回</string>
 </resources>

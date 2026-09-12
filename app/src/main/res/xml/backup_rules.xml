@@ -27,6 +27,10 @@
     <exclude
         domain="file"
         path="datastore/torrent_search_settings.preferences_pb" />
+    <!-- Torznab API Key 只保存 Android Keystore 认证密文，跨安装恢复后不可解且不得上传云端。 -->
+    <exclude
+        domain="sharedpref"
+        path="torrent_search_torznab_secrets.xml" />
     <!--
    <include domain="sharedpref" path="."/>
    <exclude domain="sharedpref" path="device.xml"/>

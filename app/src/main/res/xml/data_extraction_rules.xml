@@ -26,6 +26,10 @@
         <exclude
             domain="file"
             path="datastore/torrent_search_settings.preferences_pb" />
+        <!-- Torznab 设备绑定密文不得由系统云备份恢复。 -->
+        <exclude
+            domain="sharedpref"
+            path="torrent_search_torznab_secrets.xml" />
         <!--
         <include .../>
         <exclude .../>
@@ -48,5 +52,9 @@
         <exclude
             domain="file"
             path="datastore/torrent_search_settings.preferences_pb" />
+        <!-- 设备迁移同样排除无法由新设备 Keystore 解开的 Torznab 密文。 -->
+        <exclude
+            domain="sharedpref"
+            path="torrent_search_torznab_secrets.xml" />
     </device-transfer>
 </data-extraction-rules>

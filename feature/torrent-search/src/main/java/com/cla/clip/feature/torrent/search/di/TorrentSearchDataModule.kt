@@ -19,6 +19,11 @@ import com.cla.clip.feature.torrent.search.data.repository.TorrentSearchHistoryR
 import com.cla.clip.feature.torrent.search.data.repository.ViewedTorrentRepository
 import com.cla.clip.feature.torrent.search.data.repository.ViewedTorrentRepositoryImpl
 import com.cla.clip.feature.torrent.search.settings.TorrentSearchSettingsRepository
+import com.cla.clip.feature.torrent.search.torznab.security.AndroidKeystoreTorznabApiKeyCipher
+import com.cla.clip.feature.torrent.search.torznab.security.EncryptedTorznabApiKeyStore
+import com.cla.clip.feature.torrent.search.torznab.security.SharedPreferencesTorznabEncryptedSecretBlobStore
+import com.cla.clip.feature.torrent.search.torznab.security.TorznabApiKeyStore
+import com.cla.clip.feature.torrent.search.torznab.security.TorznabSecurityLogger
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -45,6 +50,19 @@ private object AndroidTorrentSearchDataLogger : TorrentSearchDataLogger {
         /** message 只由固定 code 和可选数量组成。 */
         val message = "数据操作 operationCode=$operationCode stateCode=$stateCode affectedCount=${affectedCount ?: -1}"
         if (stateCode == "failed") Log.w(TAG, message) else Log.d(TAG, message)
+    }
+}
+
+/** Android Torznab 安全日志实现，只输出固定阶段和 reasonCode。 */
+private object AndroidTorznabSecurityLogger : TorznabSecurityLogger {
+    /** 日志 TAG 不含配置或密钥数据。 */
+    private const val TAG = "TorrentSearchSecret"
+
+    /** 输出低敏安全阶段；失败/降级使用 warning，其余使用 debug。 */
+    override fun log(operationCode: String, stateCode: String, reasonCode: String?) {
+        /** message 只由固定 code 组成。 */
+        val message = "Torznab 密钥操作 operationCode=$operationCode stateCode=$stateCode reasonCode=${reasonCode ?: "none"}"
+        if (stateCode == "failed" || stateCode == "fallback") Log.w(TAG, message) else Log.d(TAG, message)
     }
 }
 
@@ -124,5 +142,19 @@ internal object TorrentSearchDataModule {
     @Singleton
     fun provideViewedRepository(dao: ViewedTorrentDao, logger: TorrentSearchDataLogger): ViewedTorrentRepository {
         return ViewedTorrentRepositoryImpl(dao = dao, logger = logger, nowMillis = System::currentTimeMillis)
+    }
+
+    /** 提供 Android Keystore + 独立密文介质组合的 API Key 仓库。 */
+    @Provides
+    @Singleton
+    fun provideTorznabApiKeyStore(
+        /** 应用 Context 用于打开已排除备份的私有 SharedPreferences。 */
+        @ApplicationContext context: Context,
+    ): TorznabApiKeyStore {
+        /** cipher 只持有系统 Keystore alias，不持有 Context 或明文。 */
+        val cipher = AndroidKeystoreTorznabApiKeyCipher()
+        /** blobStore 只保存版本化 IV 与密文。 */
+        val blobStore = SharedPreferencesTorznabEncryptedSecretBlobStore.create(context)
+        return EncryptedTorznabApiKeyStore(cipher, blobStore, AndroidTorznabSecurityLogger)
     }
 }
