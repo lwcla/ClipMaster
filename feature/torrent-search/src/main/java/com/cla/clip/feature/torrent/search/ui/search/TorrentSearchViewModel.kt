@@ -3,6 +3,8 @@ package com.cla.clip.feature.torrent.search.ui.search
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cla.clip.feature.torrent.search.input.TorrentSearchInputNormalizer
+import com.cla.clip.feature.torrent.search.data.repository.NoOpTorrentSearchHistoryRepository
+import com.cla.clip.feature.torrent.search.data.repository.TorrentSearchHistoryRepository
 import com.cla.clip.feature.torrent.search.input.TorrentSearchLaunchRequest
 import com.cla.clip.feature.torrent.search.model.contract.Category
 import com.cla.clip.feature.torrent.search.model.contract.ProviderFailureReason
@@ -117,6 +119,8 @@ internal class TorrentSearchViewModel @Inject constructor(
     private val coordinator: SearchCoordinator,
     /** 本机 Provider、安全模式、排序和披露状态仓库。 */
     private val settingsRepository: TorrentSearchSettingsRepository,
+    /** 搜索真正启动时异步保存历史，介质失败不阻断 Provider。 */
+    private val historyRepository: TorrentSearchHistoryRepository = NoOpTorrentSearchHistoryRepository,
 ) : ViewModel() {
     /** 页面唯一可变状态出口。 */
     private val mutableUiState = MutableStateFlow(TorrentSearchUiState())
@@ -132,6 +136,10 @@ internal class TorrentSearchViewModel @Inject constructor(
     private var searchGeneration = 0L
     /** 等待首次多源披露确认的搜索，不含任何外部响应。 */
     private var pendingSearch: PendingSearch? = null
+    /** 历史写入任务独立于网络任务，失败不会阻断 Provider，离页仍统一取消。 */
+    private var historyWriteJob: Job? = null
+    /** 从历史页返回后等待搜索目的地重新进入前台的一次性查询。 */
+    private var pendingHistoryReplay: String? = null
 
     /** 只收集轻量 DataStore；网络始终由显式 submitSearch 启动。 */
     init {
@@ -167,6 +175,7 @@ internal class TorrentSearchViewModel @Inject constructor(
         request: TorrentSearchLaunchRequest,
     ) {
         pendingSearch = null
+        pendingHistoryReplay = null
         stopSearch()
         mutableUiState.update { /** state 是当前页面快照。 */ state ->
             state.copy(
@@ -180,6 +189,15 @@ internal class TorrentSearchViewModel @Inject constructor(
                 error = null,
             )
         }
+    }
+
+    /** 接收历史页回放请求；只预填并等待搜索目的地下一次进入可见前台后提交一次。 */
+    fun requestHistoryReplay(query: String) {
+        /** normalizedInput 先复用统一输入边界，非法记录不会形成待联网动作。 */
+        val normalizedInput = TorrentSearchInputNormalizer.normalize(query)
+        if (!normalizedInput.canAutoSearch || normalizedInput.query.isEmpty()) return
+        pendingHistoryReplay = normalizedInput.query
+        updateQuery(normalizedInput.query)
     }
 
     /** 更新输入框文本；用户重新编辑后清除系统截断标记。 */
@@ -230,6 +248,8 @@ internal class TorrentSearchViewModel @Inject constructor(
                 state.copy(showMultiSourceDisclosure = false, pendingDisclosureProviderCount = 0)
             }
             stopSearch()
+        } else {
+            consumePendingHistoryReplay()
         }
     }
 
@@ -356,6 +376,8 @@ internal class TorrentSearchViewModel @Inject constructor(
         preflightJob = null
         searchJob?.cancel(CancellationException("torrent_search_stopped"))
         searchJob = null
+        historyWriteJob?.cancel(CancellationException("torrent_search_history_write_stopped"))
+        historyWriteJob = null
         mutableUiState.update { /** state 是待停止的搜索快照。 */ state ->
             state.copy(
                 phase = if (state.phase == TorrentSearchPhase.SEARCHING) TorrentSearchPhase.STOPPED else state.phase,
@@ -427,6 +449,20 @@ internal class TorrentSearchViewModel @Inject constructor(
                 error = null,
             )
         }
+        /** 历史写入与 Provider 网络并行，介质异常由 Repository 日志覆盖且不改变搜索状态。 */
+        historyWriteJob = viewModelScope.launch {
+            try {
+                historyRepository.saveQuery(request.query)
+            /** 新搜索或离页时保持历史写入任务的结构化取消。 */
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            /** 历史介质异常不得阻断已启动的网络搜索。 */
+            } catch (exception: Exception) {
+                Unit
+            } finally {
+                historyWriteJob = null
+            }
+        }
         searchJob = viewModelScope.launch {
             try {
                 coordinator.search(
@@ -448,6 +484,16 @@ internal class TorrentSearchViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    /** 仅在搜索目的地 active 时消费一次历史回放，并继续走完整隐私与 Provider 门禁。 */
+    private fun consumePendingHistoryReplay() {
+        if (!mutableUiState.value.isScreenActive) return
+        /** replayQuery 在清空待处理字段前固定，确保同一次 START 不重复提交。 */
+        val replayQuery = pendingHistoryReplay ?: return
+        pendingHistoryReplay = null
+        updateQuery(replayQuery)
+        submitSearch()
     }
 
     /** 将单个渐进事件归并到不可变 UI state。 */

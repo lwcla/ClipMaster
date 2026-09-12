@@ -11,6 +11,7 @@ import com.cla.clip.feature.torrent.search.provider.ProviderId
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -38,6 +39,19 @@ class TorrentSearchRepositoriesTest {
         assertEquals("updated", storedBookmarks.first { item -> item.infoHash == HASH_A }.name)
         /** item lambda 提取稳定身份集合，验证同名不同 hash 共存。 */
         assertEquals(setOf(HASH_A, HASH_B), storedBookmarks.map { item -> item.infoHash }.toSet())
+    }
+
+    /** 详情书签状态必须使用精确 infoHash 查询，不依赖整表快照判断。 */
+    @Test
+    fun bookmarkRepositoryObservesOneCanonicalInfoHashExactly() = runTest {
+        /** dao 使用内存主键语义提供精确存在状态。 */
+        val dao = FakeBookmarkedTorrentDao()
+        /** repository 负责把大写输入规范化成 DAO 稳定键。 */
+        val repository = BookmarkRepositoryImpl(dao = dao, nowMillis = { 100L })
+
+        assertFalse(repository.observeBookmarked(HASH_A.uppercase()).first())
+        assertTrue(repository.save(bookmark(hash = HASH_A, name = "Synthetic")))
+        assertTrue(repository.observeBookmarked(HASH_A.uppercase()).first())
     }
 
     /** 非法 hash 不得进入书签或已查看稳定键。 */
@@ -128,6 +142,13 @@ private class FakeBookmarkedTorrentDao : BookmarkedTorrentDao {
 
     /** 观察按书签时间倒序的全部记录。 */
     override fun observeAll(): Flow<List<BookmarkedTorrentEntity>> = state
+
+    /** 精确观察指定稳定 hash 是否存在。 */
+    override fun observeExistsByInfoHash(infoHash: String): Flow<Boolean> {
+        return state.map { /** entities 是每次主键变化后的完整 fake 快照。 */ entities ->
+            entities.any { /** entity 是待与精确稳定键比较的行。 */ entity -> entity.infoHash == infoHash }
+        }
+    }
 
     /** 插入或替换同 hash 书签。 */
     override suspend fun upsert(entity: BookmarkedTorrentEntity) {

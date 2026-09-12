@@ -4,6 +4,8 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.preferencesOf
 import com.cla.clip.feature.torrent.search.api.TorrentSearchLaunchSource
+import com.cla.clip.feature.torrent.search.data.model.TorrentSearchHistory
+import com.cla.clip.feature.torrent.search.data.repository.TorrentSearchHistoryRepository
 import com.cla.clip.feature.torrent.search.input.TorrentSearchLaunchRequest
 import com.cla.clip.feature.torrent.search.model.contract.Category
 import com.cla.clip.feature.torrent.search.model.contract.ProviderSafetyLevel
@@ -73,6 +75,59 @@ class TorrentSearchViewModelTest {
 
         assertEquals("linux", viewModel.uiState.value.query)
         assertEquals(0, provider.searchCalls)
+    }
+
+    /** 历史写入失败不得阻断已经通过门禁的 Provider 搜索。 */
+    @Test
+    fun historyWriteFailureDoesNotBlockSearch() = runTest(dispatcher.scheduler) {
+        /** provider 记录真实网络边界是否仍被调用。 */
+        val provider = FakeSearchProvider("nyaa", emptyList())
+        /** repository 预置单来源以跳过多源披露。 */
+        val settingsRepository = TorrentSearchSettingsRepository(FakePreferencesDataStore(preferencesOf()))
+        settingsRepository.setEnabledProviderIds(setOf(provider.descriptor.id))
+        /** historyRepository 固定抛出介质失败。 */
+        val historyRepository = FakeHistoryRepository(throwOnSave = true)
+        /** viewModel 同时连接真实搜索协调器与失败历史仓库。 */
+        val viewModel = TorrentSearchViewModel(listOf(provider), SearchCoordinator(), settingsRepository, historyRepository)
+        runCurrent()
+        viewModel.setScreenActive(true)
+        viewModel.updateQuery("linux")
+
+        viewModel.submitSearch()
+        advanceUntilIdle()
+
+        assertEquals(1, provider.searchCalls)
+        assertEquals(1, historyRepository.savedQueries.size)
+        assertEquals(TorrentSearchPhase.COMPLETED, viewModel.uiState.value.phase)
+    }
+
+    /** 历史回放必须等搜索页恢复前台后只触发一次，并继续走正常提交入口。 */
+    @Test
+    fun historyReplayWaitsForSearchDestinationToBecomeActiveAndRunsOnce() = runTest(dispatcher.scheduler) {
+        /** provider 记录回放是否在不可见阶段提前联网。 */
+        val provider = FakeSearchProvider("nyaa", emptyList())
+        /** settingsRepository 预置单来源避免多源弹窗遮蔽生命周期断言。 */
+        val settingsRepository = TorrentSearchSettingsRepository(FakePreferencesDataStore(preferencesOf()))
+        settingsRepository.setEnabledProviderIds(setOf(provider.descriptor.id))
+        /** historyRepository 记录真正启动搜索后的历史写入。 */
+        val historyRepository = FakeHistoryRepository()
+        /** viewModel 模拟导航过渡期仍短暂 active 的搜索目的地。 */
+        val viewModel = TorrentSearchViewModel(listOf(provider), SearchCoordinator(), settingsRepository, historyRepository)
+        runCurrent()
+
+        viewModel.setScreenActive(true)
+        viewModel.requestHistoryReplay("linux")
+        runCurrent()
+        assertEquals(0, provider.searchCalls)
+
+        viewModel.setScreenActive(false)
+        viewModel.setScreenActive(true)
+        advanceUntilIdle()
+        viewModel.setScreenActive(true)
+        advanceUntilIdle()
+
+        assertEquals(1, provider.searchCalls)
+        assertEquals(listOf("linux"), historyRepository.savedQueries)
     }
 
     /** 首次多源搜索必须先披露，确认后才联网，并按稳定 hash 去重排序。 */
@@ -407,6 +462,31 @@ class TorrentSearchViewModelTest {
         /** 第二条合成 SHA-1 infoHash。 */
         private const val HASH_B = "abcdefabcdefabcdefabcdefabcdefabcdefabcd"
     }
+}
+
+/** 搜索 ViewModel 测试专用历史仓库。 */
+private class FakeHistoryRepository(
+    /** true 时保存查询抛出合成介质失败。 */
+    private val throwOnSave: Boolean = false,
+) : TorrentSearchHistoryRepository {
+    /** 按实际调用顺序记录安全合成查询。 */
+    val savedQueries = mutableListOf<String>()
+
+    /** 本测试不观察历史页。 */
+    override fun observeHistory(): Flow<List<TorrentSearchHistory>> = kotlinx.coroutines.flow.emptyFlow()
+
+    /** 记录调用后按配置成功或抛错。 */
+    override suspend fun saveQuery(query: String): Boolean {
+        savedQueries += query
+        if (throwOnSave) throw IllegalStateException("synthetic_history_failure")
+        return true
+    }
+
+    /** 本测试不删除历史。 */
+    override suspend fun deleteQuery(query: String): Boolean = false
+
+    /** 本测试不清空历史。 */
+    override suspend fun clear(): Int = 0
 }
 
 /** 可记录调用和取消的合成 Provider，不访问网络。 */

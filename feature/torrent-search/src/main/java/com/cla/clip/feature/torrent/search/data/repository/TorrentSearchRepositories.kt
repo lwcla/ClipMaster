@@ -22,6 +22,9 @@ internal interface BookmarkRepository {
     /** 观察最近书签领域模型。 */
     fun observeBookmarks(): Flow<List<BookmarkedTorrent>>
 
+    /** 精确观察合法 infoHash 的书签存在状态；非法身份返回固定 false 流。 */
+    fun observeBookmarked(infoHash: String): Flow<Boolean>
+
     /** 校验并保存书签；非法稳定身份返回 false 且不写数据库。 */
     suspend fun save(bookmark: BookmarkedTorrent): Boolean
 
@@ -59,6 +62,32 @@ internal interface ViewedTorrentRepository {
     suspend fun clear(): Int
 }
 
+/** 仅供既有 JVM 构造调用兼容的空书签仓库；Hilt 生产始终注入 Room 实现。 */
+internal object NoOpBookmarkRepository : BookmarkRepository {
+    /** 空实现不产生整表记录。 */
+    override fun observeBookmarks(): Flow<List<BookmarkedTorrent>> = kotlinx.coroutines.flow.flowOf(emptyList())
+    /** 空实现始终报告未收藏。 */
+    override fun observeBookmarked(infoHash: String): Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
+    /** 空实现不保存数据。 */
+    override suspend fun save(bookmark: BookmarkedTorrent): Boolean = false
+    /** 空实现不删除数据。 */
+    override suspend fun delete(infoHash: String): Boolean = false
+    /** 空实现清空数量固定为零。 */
+    override suspend fun clear(): Int = 0
+}
+
+/** 仅供既有 JVM 构造调用兼容的空历史仓库；Hilt 生产始终注入 Room 实现。 */
+internal object NoOpTorrentSearchHistoryRepository : TorrentSearchHistoryRepository {
+    /** 空实现不产生历史列表。 */
+    override fun observeHistory(): Flow<List<TorrentSearchHistory>> = kotlinx.coroutines.flow.flowOf(emptyList())
+    /** 空实现不保存查询。 */
+    override suspend fun saveQuery(query: String): Boolean = false
+    /** 空实现不删除查询。 */
+    override suspend fun deleteQuery(query: String): Boolean = false
+    /** 空实现清空数量固定为零。 */
+    override suspend fun clear(): Int = 0
+}
+
 /** 数据写入的低敏日志出口；只接收固定操作和状态 code。 */
 internal interface TorrentSearchDataLogger {
     /** 记录数据库写入阶段，不得附带查询、hash、URL 或正文。 */
@@ -84,6 +113,13 @@ internal class BookmarkRepositoryImpl(
     override fun observeBookmarks(): Flow<List<BookmarkedTorrent>> {
         /** entities lambda 逐项容错，单条损坏记录不会终止整个书签流。 */
         return dao.observeAll().map { entities -> entities.mapNotNull(::toDomainBookmark) }
+    }
+
+    /** 规范化稳定身份后委托 DAO 精确查询，避免详情页订阅整张书签表。 */
+    override fun observeBookmarked(infoHash: String): Flow<Boolean> {
+        /** normalizedHash 是 DAO 查询使用的唯一小写稳定身份。 */
+        val normalizedHash = normalizeStoredInfoHash(infoHash) ?: return kotlinx.coroutines.flow.flowOf(false)
+        return dao.observeExistsByInfoHash(normalizedHash)
     }
 
     /** 使用规范化 hash 替换同一 torrent 书签。 */

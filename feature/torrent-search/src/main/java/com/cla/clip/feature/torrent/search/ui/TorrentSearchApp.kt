@@ -23,6 +23,13 @@ import com.cla.clip.feature.torrent.search.ui.details.TorrentDetailsScreen
 import com.cla.clip.feature.torrent.search.ui.details.TorrentDetailsViewModel
 import com.cla.clip.feature.torrent.search.ui.search.TorrentSearchScreen
 import com.cla.clip.feature.torrent.search.ui.search.TorrentSearchViewModel
+import com.cla.clip.feature.torrent.search.ui.local.BookmarksScreen
+import com.cla.clip.feature.torrent.search.ui.local.BookmarksViewModel
+import com.cla.clip.feature.torrent.search.ui.local.LocalDataHomeScreen
+import com.cla.clip.feature.torrent.search.ui.local.SearchHistoryScreen
+import com.cla.clip.feature.torrent.search.ui.local.SearchHistoryViewModel
+import com.cla.clip.feature.torrent.search.ui.local.ViewedTorrentsScreen
+import com.cla.clip.feature.torrent.search.ui.local.ViewedTorrentsViewModel
 
 /** TorrentSearch feature-local 导航根；只用稳定 Provider ID 作为详情路由参数。 */
 @Composable
@@ -64,6 +71,7 @@ internal fun TorrentSearchApp(
                 onSearch = searchViewModel::submitSearch,
                 onStop = searchViewModel::stopSearch,
                 onBrowse = { navController.navigate(ROUTE_BROWSE) },
+                onLocalData = { navController.navigate(ROUTE_LOCAL_DATA) },
                 onResultClick = { /** torrent 是待保存在 Activity 内存的搜索结果。 */ torrent ->
                     openDetails(navController, selectionViewModel, torrent)
                 },
@@ -73,6 +81,73 @@ internal fun TorrentSearchApp(
                 onConfirmDisableSafeMode = searchViewModel::confirmDisableSafeMode,
                 onDismissDisableSafeMode = searchViewModel::dismissDisableSafeModeConfirmation,
                 onBack = onFinish,
+            )
+        }
+        composable(ROUTE_LOCAL_DATA) {
+            LocalDataHomeScreen(
+                onBookmarks = { navController.navigate(ROUTE_BOOKMARKS) },
+                onHistory = { navController.navigate(ROUTE_HISTORY) },
+                onViewed = { navController.navigate(ROUTE_VIEWED) },
+                onBack = navController::popBackStack,
+            )
+        }
+        composable(ROUTE_BOOKMARKS) {
+            /** bookmarksViewModel 属于当前书签 NavBackStackEntry。 */
+            val bookmarksViewModel = hiltViewModel<BookmarksViewModel>()
+            /** lifecycleOwner 是当前书签 NavBackStackEntry。 */
+            val lifecycleOwner = LocalLifecycleOwner.current
+            /** uiState 只在书签目的地至少 STARTED 时收集。 */
+            val uiState by bookmarksViewModel.uiState.collectAsStateWithLifecycle(lifecycleOwner = lifecycleOwner)
+            DestinationLifecycleEffect(bookmarksViewModel::setScreenActive)
+            BookmarksScreen(
+                state = uiState,
+                onOpenDetails = { /** torrent 是从书签快照映射的完整内存候选。 */ torrent ->
+                    openDetails(navController, selectionViewModel, torrent)
+                },
+                onRemove = bookmarksViewModel::remove,
+                onRequestClear = bookmarksViewModel::requestClear,
+                onConfirmClear = bookmarksViewModel::confirmClear,
+                onDismissClear = bookmarksViewModel::dismissClear,
+                onImportDocument = bookmarksViewModel::importFrom,
+                onExportDocument = bookmarksViewModel::exportTo,
+                onBack = navController::popBackStack,
+            )
+        }
+        composable(ROUTE_HISTORY) {
+            /** historyViewModel 属于当前搜索历史 NavBackStackEntry。 */
+            val historyViewModel = hiltViewModel<SearchHistoryViewModel>()
+            /** lifecycleOwner 是当前搜索历史 NavBackStackEntry。 */
+            val lifecycleOwner = LocalLifecycleOwner.current
+            /** uiState 只在搜索历史目的地至少 STARTED 时收集。 */
+            val uiState by historyViewModel.uiState.collectAsStateWithLifecycle(lifecycleOwner = lifecycleOwner)
+            DestinationLifecycleEffect(historyViewModel::setScreenActive)
+            SearchHistoryScreen(
+                state = uiState,
+                onReplay = { /** query 只交给搜索 ViewModel 内存待处理，不在历史页联网。 */ query ->
+                    searchViewModel.requestHistoryReplay(query)
+                    navController.popBackStack(ROUTE_SEARCH, false)
+                },
+                onRemove = historyViewModel::remove,
+                onRequestClear = historyViewModel::requestClear,
+                onConfirmClear = historyViewModel::confirmClear,
+                onDismissClear = historyViewModel::dismissClear,
+                onBack = navController::popBackStack,
+            )
+        }
+        composable(ROUTE_VIEWED) {
+            /** viewedViewModel 属于当前已查看 NavBackStackEntry。 */
+            val viewedViewModel = hiltViewModel<ViewedTorrentsViewModel>()
+            /** lifecycleOwner 是当前已查看 NavBackStackEntry。 */
+            val lifecycleOwner = LocalLifecycleOwner.current
+            /** uiState 只在已查看目的地至少 STARTED 时收集。 */
+            val uiState by viewedViewModel.uiState.collectAsStateWithLifecycle(lifecycleOwner = lifecycleOwner)
+            DestinationLifecycleEffect(viewedViewModel::setScreenActive)
+            ViewedTorrentsScreen(
+                state = uiState,
+                onRequestClear = viewedViewModel::requestClear,
+                onConfirmClear = viewedViewModel::confirmClear,
+                onDismissClear = viewedViewModel::dismissClear,
+                onBack = navController::popBackStack,
             )
         }
         composable(ROUTE_BROWSE) {
@@ -116,6 +191,7 @@ internal fun TorrentSearchApp(
                 state = uiState,
                 imagesActive = destinationActiveState.value,
                 onRetry = detailsViewModel::retry,
+                onToggleBookmark = detailsViewModel::toggleBookmark,
                 onBack = navController::popBackStack,
             )
         }
@@ -141,5 +217,13 @@ private const val ROUTE_SEARCH = "search"
 private const val ROUTE_BROWSE = "browse"
 /** 原生详情稳定内部路由前缀。 */
 private const val ROUTE_DETAILS = "details"
+/** 本地数据轻量主页稳定内部路由。 */
+private const val ROUTE_LOCAL_DATA = "local_data"
+/** 书签独立目的地稳定内部路由。 */
+private const val ROUTE_BOOKMARKS = "bookmarks"
+/** 搜索历史独立目的地稳定内部路由。 */
+private const val ROUTE_HISTORY = "history"
+/** 已查看独立目的地稳定内部路由。 */
+private const val ROUTE_VIEWED = "viewed"
 /** 详情路由唯一参数，只允许 ProviderId 构造器批准的文本。 */
 private const val ARG_PROVIDER_ID = "providerId"

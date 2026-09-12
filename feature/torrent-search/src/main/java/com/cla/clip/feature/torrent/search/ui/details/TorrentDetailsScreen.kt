@@ -24,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
@@ -59,6 +60,8 @@ internal fun TorrentDetailsScreen(
     imagesActive: Boolean,
     /** 固定失败态的显式重试事件。 */
     onRetry: () -> Unit,
+    /** 保存或移除当前候选书签。 */
+    onToggleBookmark: () -> Unit,
     /** 返回上级列表事件。 */
     onBack: () -> Unit,
     /** 页面外部布局约束。 */
@@ -81,6 +84,15 @@ internal fun TorrentDetailsScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.torrent_search_action_back),
+                        )
+                    }
+                },
+                actions = {
+                    TextButton(onClick = onToggleBookmark, enabled = !state.isBookmarkBusy) {
+                        Text(
+                            stringResource(
+                                if (state.isBookmarked) R.string.torrent_search_bookmark_remove else R.string.torrent_search_bookmark_save,
+                            ),
                         )
                     }
                 },
@@ -112,6 +124,13 @@ internal fun TorrentDetailsScreen(
                 modifier = Modifier.fillMaxSize().padding(paddingValues),
             )
         }
+    }
+    if (state.bookmarkWriteFailed) {
+        Text(
+            text = stringResource(R.string.torrent_search_bookmark_error),
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(16.dp),
+        )
     }
 }
 

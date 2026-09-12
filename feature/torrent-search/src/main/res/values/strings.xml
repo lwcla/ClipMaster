@@ -308,4 +308,23 @@
     <string name="torrent_search_sort_ascending">Ascending</string>
     <string name="torrent_search_sort_descending">Descending</string>
     <string name="torrent_search_action_back">Back</string>
+    <string name="torrent_search_local_data_title">Local data</string>
+    <string name="torrent_search_local_data_action">Local data</string>
+    <string name="torrent_search_viewed_title">Viewed torrents</string>
+    <string name="torrent_search_viewed_clear">Clear</string>
+    <string name="torrent_search_viewed_clear_title">Clear viewed torrents?</string>
+    <string name="torrent_search_viewed_clear_message">Viewed torrent records will be permanently removed.</string>
+    <string name="torrent_search_viewed_hash">Identity: %1$s</string>
+    <string name="torrent_search_viewed_time">Viewed: %1$s</string>
+    <string name="torrent_search_viewed_empty">No viewed torrents</string>
+    <string name="torrent_search_local_data_read_failed">Could not load local data.</string>
+    <string name="torrent_search_local_data_write_failed">Could not update local data.</string>
+    <string name="torrent_search_local_data_import_failed">Could not import bookmarks.</string>
+    <string name="torrent_search_local_data_export_failed">Could not export bookmarks.</string>
+    <string name="torrent_search_bookmark_import_report">Imported %1$d, skipped %2$d, duplicates %3$d, write failures %4$d</string>
+    <string name="torrent_search_remove_bookmark">Remove bookmark</string>
+    <string name="torrent_search_remove_item">Remove</string>
+    <string name="torrent_search_bookmark_save">Save bookmark</string>
+    <string name="torrent_search_bookmark_remove">Remove bookmark</string>
+    <string name="torrent_search_bookmark_error">Could not update bookmark.</string>
 </resources>

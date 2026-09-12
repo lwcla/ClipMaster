@@ -64,6 +64,8 @@ internal fun TorrentSearchScreen(
     onStop: () -> Unit,
     /** 用户进入 Latest/Top 浏览页。 */
     onBrowse: () -> Unit,
+    /** 用户进入书签、历史与已查看的本地数据主页。 */
+    onLocalData: () -> Unit,
     /** 用户选择结果进入原生详情。 */
     onResultClick: (com.cla.clip.feature.torrent.search.model.contract.Torrent) -> Unit,
     /** 用户请求安全模式目标值。 */
@@ -91,6 +93,9 @@ internal fun TorrentSearchScreen(
                 actions = {
                     TextButton(onClick = onBrowse) {
                         Text(stringResource(R.string.torrent_search_browse_screen_title))
+                    }
+                    TextButton(onClick = onLocalData) {
+                        Text(stringResource(R.string.torrent_search_local_data_action))
                     }
                 },
             )

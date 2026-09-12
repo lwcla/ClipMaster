@@ -444,6 +444,8 @@ manifest 简化示例：
 
 任务 06B 点击搜索或 Browse 结果时复用现有 viewed 表刷新已查看时间，不新增 Room 表、列或 DAO 契约；该写入在任务 7 contributor 落地前仍不触发自定义备份 dirty，已查看记录的字段白名单、dirty 标记和按 infoHash 幂等恢复继续由任务 7 一并实现。原生详情候选、正文、图片 URL、文件与 Tracker 只保存在页面内存或网络缓存，不进入备份。本次只补充边界说明，不改变 WebDAV schema、Mermaid 节点或流程 HTML。
 
+任务 06C 已提供书签、搜索历史、已查看三个本地数据目的地，并会通过保存、删除、清空、历史记录和书签文件导入实际新增或修改三类可恢复用户数据；这些写入当前仍只进入 TorrentSearch Room v1。`BackupFeatureContributor`、dirty 触发、分页 DAO、字段白名单导出、稳定键幂等恢复、预检计数和恢复报告继续由任务 7 统一落地，06C 不提前改变 WebDAV schema 或恢复语义。书签 SAF URI 仅是选择器返回后的单次方法参数，原始输入 JSON、输出目标、选择器授权和解析中间态永不进入数据库、DataStore、自定义备份或系统云备份；只有成功写入 Repository 的书签记录才在任务 7 实现后具备白名单恢复资格。
+
 旧磁力备份在预检与报告中应标为“不兼容并跳过”，不得迁移或计为成功；首次手动备份或开启自动备份前披露未加密 ZIP/WebDAV 风险。完整数据字段、旧数据清理和日志脱敏规则以 [TorrentSearch 主方案](magnet_search_plan.md) 为准。本次只补充文字接入说明，现有 Mermaid 的备份/恢复节点语义未改变，故不重新生成 `docs/flows` HTML。
 
 ## 日志与诊断计划
@@ -576,6 +578,7 @@ manifest 简化示例：
 
 ## 验证记录
 
+- 2026-09-12：运行 `python tools/render_doc_flow_html.py --check docs/webdav_backup_plan.md` 通过；本次只补充 TorrentSearch 06C 三类本地数据写入与一次性 SAF URI 排除边界，未改变 Mermaid 备份/恢复节点，因此无需重新生成 HTML。
 - 2026-09-12：运行 `python tools/render_doc_flow_html.py --check docs/webdav_backup_plan.md` 通过；本次仅补充 TorrentSearch 06B 已查看与详情内存数据边界，未改变 Mermaid 备份/恢复节点，因此无需重生成 HTML。
 - 2026-09-12：运行 `python tools/render_doc_flow_html.py --check docs/webdav_backup_plan.md` 通过；本次只补充 TorrentSearch 06A 本机隐私/安全设置的备份排除文字，未改变 Mermaid 备份、恢复或媒体关联流程节点，因此无需重生成 HTML。
 - 2026-05-26：新增 Shizuku Provider 图标传输临时目录备份排除说明；原因是 `files/clipboard_bridge_icons/` 只保存 Provider 验证通道的临时 PNG，不具备跨安装意义，已同步规划 `backup_rules.xml` 与 `data_extraction_rules.xml` 排除。
@@ -627,6 +630,7 @@ manifest 简化示例：
 
 ## 变更记录
 
+- 2026-09-12：补充 TorrentSearch 06C 三类本地数据页与书签 SAF 导入导出的备份边界；原因是本切片已经会新增、删除和清空可恢复数据，但 contributor、dirty、分页与幂等恢复仍必须留在任务 7，且一次性 SAF URI 和原始文档不得进入任何备份。
 - 2026-09-12：补充 TorrentSearch 06B 已查看写入与原生详情内存数据的备份边界；原因是本切片复用 viewed 表但任务 7 尚未接入 contributor、dirty 与幂等恢复，需要明确不提前改变 WebDAV 协议。
 - 2026-09-12：补充 TorrentSearch 06A 的 Provider 选择初始化、首次多源披露确认和安全模式均为本机状态、不参与自定义备份或 dirty；原因是跨安装恢复这些隐私/安全选择可能在用户未重新确认时恢复第三方联网范围，排序设置仍按任务 7 白名单处理。
 - 2026-09-12：同步 TorrentSearch Room v1/DataStore 的实际落地状态并精确排除系统云备份与设备迁移；原因是新数据库已经会保存查询、书签和 magnet 快照，必须在自定义 contributor 完成前阻止系统整文件恢复，同时明确任务 7 才负责白名单、dirty、幂等恢复、计数和报告。

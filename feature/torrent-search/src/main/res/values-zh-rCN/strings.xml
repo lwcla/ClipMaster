@@ -281,4 +281,23 @@
     <string name="torrent_search_sort_ascending">升序</string>
     <string name="torrent_search_sort_descending">降序</string>
     <string name="torrent_search_action_back">返回</string>
+    <string name="torrent_search_local_data_title">本地数据</string>
+    <string name="torrent_search_local_data_action">本地数据</string>
+    <string name="torrent_search_viewed_title">已查看</string>
+    <string name="torrent_search_viewed_clear">清空</string>
+    <string name="torrent_search_viewed_clear_title">清空已查看记录？</string>
+    <string name="torrent_search_viewed_clear_message">已查看记录将被永久移除。</string>
+    <string name="torrent_search_viewed_hash">身份：%1$s</string>
+    <string name="torrent_search_viewed_time">查看时间：%1$s</string>
+    <string name="torrent_search_viewed_empty">暂无已查看记录</string>
+    <string name="torrent_search_local_data_read_failed">无法读取本地数据。</string>
+    <string name="torrent_search_local_data_write_failed">无法更新本地数据。</string>
+    <string name="torrent_search_local_data_import_failed">无法导入书签。</string>
+    <string name="torrent_search_local_data_export_failed">无法导出书签。</string>
+    <string name="torrent_search_bookmark_import_report">已导入 %1$d 条，跳过 %2$d 条，重复 %3$d 条，写入失败 %4$d 条</string>
+    <string name="torrent_search_remove_bookmark">移除书签</string>
+    <string name="torrent_search_remove_item">移除</string>
+    <string name="torrent_search_bookmark_save">保存书签</string>
+    <string name="torrent_search_bookmark_remove">移除书签</string>
+    <string name="torrent_search_bookmark_error">无法更新书签。</string>
 </resources>

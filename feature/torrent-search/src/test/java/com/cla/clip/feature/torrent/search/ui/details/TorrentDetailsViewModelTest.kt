@@ -1,6 +1,8 @@
 package com.cla.clip.feature.torrent.search.ui.details
 
 import com.cla.clip.feature.torrent.search.data.model.ViewedTorrent
+import com.cla.clip.feature.torrent.search.data.model.BookmarkedTorrent
+import com.cla.clip.feature.torrent.search.data.repository.BookmarkRepository
 import com.cla.clip.feature.torrent.search.data.repository.ViewedTorrentRepository
 import com.cla.clip.feature.torrent.search.model.contract.Category
 import com.cla.clip.feature.torrent.search.model.contract.ProviderSafetyLevel
@@ -13,6 +15,8 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -102,6 +106,37 @@ class TorrentDetailsViewModelTest {
         assertEquals(2, provider.calls)
     }
 
+    /** 详情书签只在页面可见时精确观察，保存/移除后更新且离页取消。 */
+    @Test
+    fun bookmarkActionUsesExactObservationAndStopsWhenLeaving() = runTest(dispatcher.scheduler) {
+        /** provider 正常完成详情，避免网络挂起遮蔽书签断言。 */
+        val provider = FakeDetailsProvider(suspendUntilCancelled = false)
+        /** bookmarkRepository 提供可观察精确存在状态。 */
+        val bookmarkRepository = FakeBookmarkRepository()
+        /** viewModel 注入真实详情 loader 与可控书签仓库。 */
+        val viewModel = TorrentDetailsViewModel(listOf(provider), TorrentDetailsLoader(), bookmarkRepository)
+        viewModel.setCandidate(candidate(), ProviderId("details_fixture"))
+        runCurrent()
+        assertEquals(0, bookmarkRepository.observeCalls)
+
+        viewModel.setScreenActive(true)
+        runCurrent()
+        assertEquals(1, bookmarkRepository.observeCalls)
+        assertFalse(viewModel.uiState.value.isBookmarked)
+
+        viewModel.toggleBookmark()
+        runCurrent()
+        assertTrue(viewModel.uiState.value.isBookmarked)
+
+        viewModel.toggleBookmark()
+        runCurrent()
+        assertFalse(viewModel.uiState.value.isBookmarked)
+
+        viewModel.setScreenActive(false)
+        runCurrent()
+        assertEquals(1, bookmarkRepository.cancelCount)
+    }
+
     /** 可观察已查看写入的内存 Repository。 */
     private class FakeViewedRepository : ViewedTorrentRepository {
         /** 按调用顺序保存合成 hash。 */
@@ -117,6 +152,40 @@ class TorrentDetailsViewModelTest {
         }
 
         /** 本测试不清空数据。 */
+        override suspend fun clear(): Int = 0
+    }
+
+    /** 可观察单个稳定身份的书签 Repository fake。 */
+    private class FakeBookmarkRepository : BookmarkRepository {
+        /** exactState 表示当前候选是否已保存。 */
+        private val exactState = MutableStateFlow(false)
+        /** observeCalls 记录精确 Flow 的订阅创建次数。 */
+        var observeCalls = 0
+        /** cancelCount 记录详情离页取消次数。 */
+        var cancelCount = 0
+
+        /** 本测试禁止整表订阅。 */
+        override fun observeBookmarks(): Flow<List<BookmarkedTorrent>> = error("unexpected full table observation")
+
+        /** 返回精确存在流并记录取消。 */
+        override fun observeBookmarked(infoHash: String): Flow<Boolean> {
+            observeCalls += 1
+            return exactState.onCompletion { cancelCount += 1 }
+        }
+
+        /** 保存后发布存在状态。 */
+        override suspend fun save(bookmark: BookmarkedTorrent): Boolean {
+            exactState.value = true
+            return true
+        }
+
+        /** 删除后发布不存在状态。 */
+        override suspend fun delete(infoHash: String): Boolean {
+            exactState.value = false
+            return true
+        }
+
+        /** 本测试不清空整表。 */
         override suspend fun clear(): Int = 0
     }
 

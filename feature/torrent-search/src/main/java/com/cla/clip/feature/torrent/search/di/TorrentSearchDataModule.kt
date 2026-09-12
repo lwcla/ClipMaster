@@ -8,6 +8,8 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.room.Room
 import com.cla.clip.feature.torrent.search.data.local.BookmarkedTorrentDao
+import com.cla.clip.feature.torrent.search.data.document.AndroidBookmarkDocumentGateway
+import com.cla.clip.feature.torrent.search.data.document.BookmarkDocumentGateway
 import com.cla.clip.feature.torrent.search.data.local.TorrentSearchDatabase
 import com.cla.clip.feature.torrent.search.data.local.TorrentSearchHistoryDao
 import com.cla.clip.feature.torrent.search.data.local.ViewedTorrentDao
@@ -98,6 +100,14 @@ internal object TorrentSearchDataModule {
     /** 提供低敏数据日志出口。 */
     @Provides
     fun provideDataLogger(): TorrentSearchDataLogger = AndroidTorrentSearchDataLogger
+
+    /** 提供 feature-local 一次性 SAF 文档网关，禁止页面直接触碰 ContentResolver。 */
+    @Provides
+    @Singleton
+    fun provideBookmarkDocumentGateway(
+        /** Android 实现仅持有应用 Context，不持有任何用户选择 URI。 */
+        gateway: AndroidBookmarkDocumentGateway,
+    ): BookmarkDocumentGateway = gateway
 
     /** 提供 feature-local Preferences DataStore 单例；应用级 SupervisorJob 随进程结束释放。 */
     @Provides

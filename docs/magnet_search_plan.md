@@ -513,3 +513,19 @@ Torznab 将非敏感配置与 API Key 分离。`TorznabConfig` 只承载稳定�
 审查修复：2026-09-12，I1 为详情图片增加 feature-local 无自动重定向客户端，并以合成 HTTPS MockWebServer 锁定跨 host/HTTPS 降级 302 不产生第二跳；I2 为“先 START 后默认首设置快照”补确定性竞态测试，并显式拆分首次 ready 与后续值变化；I3 让 NavBackStackEntry START/STOP 直接控制图片子 Composition 创建与释放；I4 为正文图/截图 key 增加稳定区段命名空间；M1 把字段和文件大小格式迁入中英文资源占位符。JVM 环境没有 instrumentation，生命周期可验证边界由事件 reducer 和实际展示策略纯逻辑测试锁定，模块及 App Compose 编译证明接线路径；API 24/36 实机切后台/返回栈视觉与网络取消仍按任务 8 验收。
 
 验证记录：2026-09-12，最终组合门禁 `:feature:torrent-search:testDebugUnitTest`、`:feature:torrent-search:compileDebugKotlin`、`:feature:torrent-search:checkTorrentSearchChineseComments` 与开启功能后的 `:app:compileDebugKotlin` 通过；审查修复后 JUnit XML 汇总为 574 tests / 80 suites、0 failures/errors/skipped，`git diff --check` 与 WebDAV 流程 HTML `--check` 通过。Compose 视觉、功能关闭编译、release/R8、API 24/36 设备和真实站点仍按任务 8 执行。
+
+### 任务 06C：本地数据页、清空确认与书签 SAF 导入导出（2026-09-12）
+
+状态：已完成。本切片在 06B 导航骨架中增加轻量本地数据主页，以及书签、搜索历史和已查看三个独立目的地；搜索页只新增本地数据入口。三个数据目的地分别使用导航作用域 ViewModel，并复用 feature-local `DestinationLifecycleEffect` 与 `collectAsStateWithLifecycle`：只有当前目的地至少 `STARTED` 才收集 Room Flow，离开后取消收集、清空确认和页面 IO。当前整表 Flow 是可编译的阶段性接入，分页 DAO 与轻量聚合计数仍由任务 7 落地，06C 不修改 Room schema。
+
+用户体验与导航：书签页复用 `TorrentResultCard` 展示完整快照，点击仍通过 Activity 内存选择态进入 06B 原生详情；支持精确移除、带确认的清空、导入与导出。详情页通过 DAO/Repository 的精确 infoHash Flow 观察存在状态并提供保存/移除，不加载整张书签表。搜索历史支持单项删除、清空确认和点击回放；回放只在内存中设置待处理查询并返回搜索目的地，搜索页重新进入可见前台后才复用既有规范化、Provider 选择、首次多源披露与安全模式门禁提交一次，历史页不会后台联网。真正开始搜索时异步写入历史，数据库失败与网络搜索隔离。已查看页只展示 infoHash 首尾四位缩略身份与本地化时间，不提供复制、分享或其他系统动作。三类 `LazyColumn` 分别以 infoHash、规范化查询和 infoHash 为稳定 key；清空确认是只接收字符串与 callback 的 feature 共享组件。
+
+导入导出与职责：`AndroidBookmarkDocumentGateway` 是 feature-local ContentResolver IO 边界，所有阻塞流操作固定切到 `Dispatchers.IO`；URI 只作为 `read`/`write` 一次性参数，不进入 UI state、SavedState、日志或持久层，也不调用 `takePersistableUriPermission`。Compose 分别使用 `OpenDocument` 与 `CreateDocument("application/json")`，只有选择器返回非空 URI 后才启动 ViewModel IO；首个书签快照到达前或页面 IO 运行中禁用不安全动作。导入继续复用 05C `BookmarkImportParser` 的 10 MiB、64 层、10,000 条、256 KiB 单项和旧数组/v1 包络兼容边界，再由 `BookmarkImportCoordinator` 逐项精确查重和写 Repository；单项异常继续下一项并报告导入、跳过、重复、写失败四类计数，协程取消原样传播。纯 Kotlin `BookmarkExportSerializer` 以固定字段顺序生成 `version = 1` 紧凑 JSON，完整序列化后先检查 10,000 条与最终 UTF-8 10 MiB 上限，只有成功结果的完整 bytes 才交给文档网关打开输出流；超限整体失败，不打开输出流或写出部分字节，SAF Provider 是否在用户确认文件名时预建空目标由系统实现决定。`BookmarkedTorrentMapper` 独立承担页面 `Torrent` 与书签快照转换，不把协议逻辑塞进页面或 ViewModel。
+
+错误、日志与诊断：页面只展示 `READ_FAILED`、`WRITE_FAILED`、`IMPORT_FAILED`、`EXPORT_FAILED` 四类固定错误和低敏导入计数，不展示异常 message、URI、文件名、查询词、infoHash、标题、magnet 或 Provider 响应。书签、历史与已查看数据库写入继续复用 Repository 的固定 operation/state/count 日志；导入导出只记录 `bookmark_import`/`bookmark_export` 的 started/completed/partial/failed/cancelled 与总数。页面收集、Compose 重组、缩略格式和 mapper 不新增日志，避免高频噪声或把业务数据带入诊断；生命周期、取消、上限与失败契约由合成单元测试定位。
+
+测试、性能与备份边界：选择性 TDD 先为 v1 serializer、精确书签观察、详情书签动作、导入协调、页面生命周期和历史回放取得缺实现或行为 RED，再转为定向 GREEN；测试同时覆盖特殊字符往返、10,000 条/10 MiB 不可截断、重复/跳过/单项写失败、取消传播、URI 不进入状态、纯 mapper、固定错误与安全 hash 缩略。06C 已经会新增或修改书签、搜索历史和已查看三类可恢复用户数据，但本切片不实现 `BackupFeatureContributor`、dirty、分页 DAO、幂等恢复或恢复报告，也不改变 WebDAV schema；这些继续由任务 7 一并完成，SAF URI 与原始导入文件永不进入备份。Compose 视觉、动态字体、旋转、API 24/36 设备、功能关闭编译与 release/R8 仍由任务 8 汇总验证；新增 serializer 使用显式 JSON key 且内部状态只靠编译期调用，不依赖反射类名，因此本切片不新增 keep 规则。
+
+变更记录：2026-09-12，完成任务 06C 本地数据闭环；原因是 Provider/设置和系统外部副作用接入前，需要先让三类用户数据具备独立生命周期、精确身份、显式确认、有界 SAF 传输和可恢复错误契约，同时保持任务 7 备份边界不被提前实现。
+
+验证记录：2026-09-12，最终组合门禁 `:feature:torrent-search:testDebugUnitTest`、`:feature:torrent-search:compileDebugKotlin`、`:feature:torrent-search:checkTorrentSearchChineseComments` 与开启功能后的 `:app:compileDebugKotlin` 通过（`BUILD SUCCESSFUL in 29s`）；JUnit XML 汇总为 591 tests / 85 suites、0 failures/errors/skipped，`git diff --check` 与 WebDAV 流程 HTML `--check` 通过。首次模块全量回归唯一失败为 06C 新增中英文字符串后固定资源清单 SHA 未同步，核对实际变更后只更新两份 values XML 摘要，定向与全量复跑均通过。收尾自审再为导航过渡期搜索目的地仍短暂 active 的历史回放时序取得 1 项 RED，移除请求入口的即时消费后定向与最终组合门禁转为 GREEN，确保只在搜索目的地下一次激活时提交。Compose 视觉、功能关闭编译、release/R8、API 24/36 设备和真实 SAF Provider 仍按任务 8 执行。

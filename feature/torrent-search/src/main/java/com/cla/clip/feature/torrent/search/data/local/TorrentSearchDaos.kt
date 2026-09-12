@@ -13,6 +13,10 @@ internal interface BookmarkedTorrentDao {
     @Query("SELECT * FROM torrent_search_bookmarks ORDER BY bookmarked_at_epoch_millis DESC")
     fun observeAll(): Flow<List<BookmarkedTorrentEntity>>
 
+    /** 精确观察单个 infoHash 是否存在，供详情页避免订阅整表。 */
+    @Query("SELECT EXISTS(SELECT 1 FROM torrent_search_bookmarks WHERE info_hash = :infoHash)")
+    fun observeExistsByInfoHash(infoHash: String): Flow<Boolean>
+
     /** 按 infoHash 插入或替换书签，允许同名但不同 hash 共存。 */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: BookmarkedTorrentEntity)
