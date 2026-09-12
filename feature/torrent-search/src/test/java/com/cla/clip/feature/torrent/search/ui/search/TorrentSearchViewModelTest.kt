@@ -15,8 +15,13 @@ import com.cla.clip.feature.torrent.search.model.contract.Torrent
 import com.cla.clip.feature.torrent.search.provider.ProviderDescriptor
 import com.cla.clip.feature.torrent.search.provider.ProviderId
 import com.cla.clip.feature.torrent.search.provider.SearchProvider
+import com.cla.clip.feature.torrent.search.provider.builtin.testing.FakeTorrentSearchNetworkClient
 import com.cla.clip.feature.torrent.search.search.SearchCoordinator
 import com.cla.clip.feature.torrent.search.settings.TorrentSearchSettingsRepository
+import com.cla.clip.feature.torrent.search.torznab.TorznabConfig
+import com.cla.clip.feature.torrent.search.torznab.TorznabConfigId
+import com.cla.clip.feature.torrent.search.torznab.TorznabProviderFactory
+import com.cla.clip.feature.torrent.search.torznab.security.TorznabApiKeyStore
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
@@ -192,6 +197,51 @@ class TorrentSearchViewModelTest {
         assertEquals(2, firstProvider.searchCalls + secondProvider.searchCalls)
         assertEquals(listOf(HASH_B, HASH_A), viewModel.uiState.value.results.map { /** result 是排序后的展示结果。 */ result -> result.infoHash })
         assertFalse(viewModel.uiState.value.isSearching)
+        assertEquals(TorrentSearchPhase.COMPLETED, viewModel.uiState.value.phase)
+    }
+
+    /** 当前设置中的已启用 Torznab 配置必须进入同一搜索协调器。 */
+    @Test
+    fun enabledTorznabConfigParticipatesInSearch() = runTest(dispatcher.scheduler) {
+        /** config 是安全且无密钥的动态 HTTP 来源。 */
+        val config = TorznabConfig(
+            id = TorznabConfigId("torznab_fixture"),
+            name = "Fixture",
+            feedUrl = "http://indexer.example:9117/api",
+            category = Category.BOOKS,
+            safetyLevel = ProviderSafetyLevel.SAFE,
+            hasApiKey = false,
+        )
+        /** repository 保存完整动态配置并只启用该稳定身份。 */
+        val repository = TorrentSearchSettingsRepository(FakePreferencesDataStore(preferencesOf()))
+        repository.setTorznabConfigs(listOf(config))
+        repository.setEnabledProviderIds(setOf(ProviderId("torznab_fixture")))
+        repository.setMultiSourceDisclosureAccepted(true)
+        /** networkClient 返回空 RSS 并记录动态来源是否真正执行。 */
+        val networkClient = FakeTorrentSearchNetworkClient(textHandler = { "<rss><channel /></rss>" })
+        /** factory 使用无密钥 fake 构造当前设置快照对应的 Provider。 */
+        val factory = TorznabProviderFactory(
+            networkClient = networkClient,
+            apiKeyStore = EmptyTorznabApiKeyStore,
+            parsingDispatcher = dispatcher,
+            secretDispatcher = dispatcher,
+        )
+        /** viewModel 没有内置来源，确保唯一网络调用来自动态配置。 */
+        val viewModel = TorrentSearchViewModel(
+            providers = emptyList(),
+            coordinator = SearchCoordinator(),
+            settingsRepository = repository,
+            torznabProviderFactory = factory,
+        )
+        runCurrent()
+        viewModel.setScreenActive(true)
+        viewModel.updateQuery("linux")
+
+        viewModel.submitSearch()
+        advanceUntilIdle()
+
+        assertEquals(1, networkClient.textUrls.size)
+        assertTrue(networkClient.textUrls.single().startsWith("http://indexer.example:9117/api?"))
         assertEquals(TorrentSearchPhase.COMPLETED, viewModel.uiState.value.phase)
     }
 
@@ -565,6 +615,18 @@ private class FakeSearchProvider(
             wasCancelled = true
         }
     }
+}
+
+/** 动态 Provider 搜索测试使用的无密钥安全仓库。 */
+private object EmptyTorznabApiKeyStore : TorznabApiKeyStore {
+    /** 测试不执行密钥写入。 */
+    override fun save(configId: TorznabConfigId, apiKey: String?): Boolean = true
+
+    /** 当前配置无密钥，读取固定返回 null。 */
+    override fun read(configId: TorznabConfigId): String? = null
+
+    /** 测试不执行密钥删除。 */
+    override fun remove(configId: TorznabConfigId): Boolean = true
 }
 
 /** 内存 DataStore 仅替代磁盘，保留真实 Preferences updateData 与 Flow 语义。 */

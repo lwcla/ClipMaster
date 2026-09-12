@@ -7,11 +7,15 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
+import com.cla.clip.feature.torrent.search.backup.NoOpTorrentSearchBackupDirtyMarker
+import com.cla.clip.feature.torrent.search.backup.TorrentSearchBackupDirtyMarker
 import com.cla.clip.feature.torrent.search.data.repository.NoOpTorrentSearchDataLogger
 import com.cla.clip.feature.torrent.search.data.repository.TorrentSearchDataLogger
 import com.cla.clip.feature.torrent.search.model.contract.SortCriteria
 import com.cla.clip.feature.torrent.search.model.contract.SortOrder
 import com.cla.clip.feature.torrent.search.provider.ProviderId
+import com.cla.clip.feature.torrent.search.torznab.TorznabConfig
+import com.cla.clip.feature.torrent.search.torznab.TorznabConfigId
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -32,6 +36,10 @@ internal data class TorrentSearchSettings(
     val providerSelectionInitialized: Boolean = false,
     /** 首次多源查询隐私披露是否已在本机确认。 */
     val multiSourceDisclosureAccepted: Boolean = false,
+    /** DNS 解析模式默认跟随系统，Cloudflare DoH 必须由用户主动选择。 */
+    val dnsMode: TorrentSearchDnsMode = TorrentSearchDnsMode.SYSTEM,
+    /** 不含 API Key 明文的动态 Torznab 配置列表。 */
+    val torznabConfigs: List<TorznabConfig> = emptyList(),
 )
 
 /** Preferences DataStore 设置仓库，集中处理稳定 code、损坏降级和原子写入。 */
@@ -40,6 +48,10 @@ internal class TorrentSearchSettingsRepository(
     private val dataStore: DataStore<Preferences>,
     /** 只接收固定操作/状态 code 的低敏日志出口。 */
     private val logger: TorrentSearchDataLogger = NoOpTorrentSearchDataLogger,
+    /** 将首个及后续设置快照幂等同步给共享 DNS 路由。 */
+    private val dnsModeApplier: TorrentSearchDnsModeApplier = NoOpTorrentSearchDnsModeApplier,
+    /** 仅排序白名单变化时写入统一备份 dirty 标记。 */
+    private val backupDirtyMarker: TorrentSearchBackupDirtyMarker = NoOpTorrentSearchBackupDirtyMarker,
 ) {
     /** 设置 Flow；磁盘读取失败降级为安全默认，其他编程错误继续传播。 */
     val settings: Flow<TorrentSearchSettings> = dataStore.data
@@ -52,7 +64,13 @@ internal class TorrentSearchSettingsRepository(
                 throw exception
             }
         }
-        .map(::toSettings)
+        /** preferences 是当前磁盘快照，先映射强类型值再同步无网络运行时状态。 */
+        .map { preferences ->
+            /** mappedSettings 是页面与网络共同消费的单一设置快照。 */
+            val mappedSettings = toSettings(preferences)
+            dnsModeApplier.applyMode(mappedSettings.dnsMode)
+            mappedSettings
+        }
 
     /** 原子替换启用 Provider 集合，只写稳定 ID 字符串。 */
     suspend fun setEnabledProviderIds(
@@ -63,6 +81,22 @@ internal class TorrentSearchSettingsRepository(
         update("settings_provider_ids") { preferences ->
             /** providerId lambda 只提取已验证的稳定 ID 字符串。 */
             preferences[ENABLED_PROVIDER_IDS] = providerIds.mapTo(linkedSetOf()) { providerId -> providerId.value }
+            preferences[PROVIDER_SELECTION_INITIALIZED] = true
+        }
+    }
+
+    /** 基于事务内最新集合切换单个 Provider，避免连续点击覆盖其他开关。 */
+    suspend fun setProviderEnabled(
+        /** 待切换来源的稳定身份。 */
+        providerId: ProviderId,
+        /** true 加入启用集合，false 从集合移除。 */
+        enabled: Boolean,
+    ) {
+        /** preferences lambda 在最新磁盘快照上修改单个身份。 */
+        update("settings_provider_toggle") { preferences ->
+            /** currentIds 是事务开始时的完整启用 ID 集合。 */
+            val currentIds = preferences[ENABLED_PROVIDER_IDS].orEmpty()
+            preferences[ENABLED_PROVIDER_IDS] = if (enabled) currentIds + providerId.value else currentIds - providerId.value
             preferences[PROVIDER_SELECTION_INITIALIZED] = true
         }
     }
@@ -119,6 +153,7 @@ internal class TorrentSearchSettingsRepository(
             preferences[SORT_CRITERIA_CODE] = criteria.code
             preferences[SORT_ORDER_CODE] = order.code
         }
+        backupDirtyMarker.markDirty()
     }
 
     /** 保存首次多源隐私披露确认；该本机状态不进入任务 7 自定义备份。 */
@@ -129,6 +164,70 @@ internal class TorrentSearchSettingsRepository(
         /** preferences lambda 只写入本机确认布尔值。 */
         update("settings_multi_source_disclosure") { preferences ->
             preferences[MULTI_SOURCE_DISCLOSURE_ACCEPTED] = accepted
+        }
+    }
+
+    /** 保存 DNS 模式稳定 code；切换只影响后续新建网络请求。 */
+    suspend fun setDnsMode(
+        /** 用户明确选择的系统 DNS 或固定 Cloudflare DoH。 */
+        mode: TorrentSearchDnsMode,
+    ) {
+        /** preferences lambda 只写稳定 code，不依赖枚举名称。 */
+        update("settings_dns_mode") { preferences -> preferences[DNS_MODE_CODE] = mode.code }
+    }
+
+    /** 原子替换全部 Torznab 非敏感配置；API Key 明文不在该类型或编码器中。 */
+    suspend fun setTorznabConfigs(
+        /** 已经由页面协调器校验且按用户顺序排列的配置快照。 */
+        configs: List<TorznabConfig>,
+    ) {
+        /** encodedConfigs 在进入 DataStore 前按固定显式字段生成。 */
+        val encodedConfigs = TorznabConfigCodec.encode(configs)
+        /** preferences lambda 只替换单个版本内 JSON 字段，避免部分列表状态。 */
+        update("settings_torznab_configs") { preferences -> preferences[TORZNAB_CONFIGS_JSON] = encodedConfigs }
+    }
+
+    /** 在单事务中新增或替换 Torznab 配置并启用其稳定 Provider ID。 */
+    suspend fun upsertTorznabConfig(
+        /** 已通过正式校验且不含 API Key 明文的配置。 */
+        config: TorznabConfig,
+    ) {
+        /** preferences lambda 同时维护配置列表和启用集合的一致性。 */
+        update("settings_torznab_upsert") { preferences ->
+            /** existingConfigs 是当前仍可通过正式校验恢复的配置。 */
+            val existingConfigs = TorznabConfigCodec.decode(preferences[TORZNAB_CONFIGS_JSON])
+            /** updatedConfigs 保留原位置替换；新配置追加到用户列表末尾。 */
+            val updatedConfigs = if (existingConfigs.any { existing -> existing.id == config.id }) {
+                existingConfigs.map { /** existing 是待按稳定 ID 替换的既有配置。 */ existing ->
+                    if (existing.id == config.id) config else existing
+                }
+            } else {
+                existingConfigs + config
+            }
+            /** enabledIds 在原集合上加入动态 Provider 稳定身份。 */
+            val enabledIds = preferences[ENABLED_PROVIDER_IDS].orEmpty() + config.id.value
+            preferences[TORZNAB_CONFIGS_JSON] = TorznabConfigCodec.encode(updatedConfigs)
+            preferences[ENABLED_PROVIDER_IDS] = enabledIds
+            preferences[PROVIDER_SELECTION_INITIALIZED] = true
+        }
+    }
+
+    /** 在单事务中删除 Torznab 配置并移除对应启用身份。 */
+    suspend fun removeTorznabConfig(
+        /** 待删除动态来源的稳定身份。 */
+        configId: TorznabConfigId,
+    ) {
+        /** preferences lambda 同时删除配置和悬空启用 ID。 */
+        update("settings_torznab_remove") { preferences ->
+            /** remainingConfigs 保留其他用户配置的原有顺序。 */
+            val remainingConfigs = TorznabConfigCodec.decode(preferences[TORZNAB_CONFIGS_JSON])
+                /** existing 是当前检查是否保留的动态配置。 */
+                .filterNot { existing -> existing.id == configId }
+            /** enabledIds 删除同一稳定身份，其他内置与动态选择不变。 */
+            val enabledIds = preferences[ENABLED_PROVIDER_IDS].orEmpty() - configId.value
+            preferences[TORZNAB_CONFIGS_JSON] = TorznabConfigCodec.encode(remainingConfigs)
+            preferences[ENABLED_PROVIDER_IDS] = enabledIds
+            preferences[PROVIDER_SELECTION_INITIALIZED] = true
         }
     }
 
@@ -169,6 +268,8 @@ internal class TorrentSearchSettingsRepository(
             sortOrder = SortOrder.fromCode(preferences[SORT_ORDER_CODE]),
             providerSelectionInitialized = preferences[PROVIDER_SELECTION_INITIALIZED] ?: false,
             multiSourceDisclosureAccepted = preferences[MULTI_SOURCE_DISCLOSURE_ACCEPTED] ?: false,
+            dnsMode = TorrentSearchDnsMode.fromCode(preferences[DNS_MODE_CODE]),
+            torznabConfigs = TorznabConfigCodec.decode(preferences[TORZNAB_CONFIGS_JSON]),
         )
     }
 
@@ -186,5 +287,9 @@ internal class TorrentSearchSettingsRepository(
         private val PROVIDER_SELECTION_INITIALIZED = booleanPreferencesKey("provider_selection_initialized")
         /** 首次多源查询隐私披露的本机确认状态。 */
         private val MULTI_SOURCE_DISCLOSURE_ACCEPTED = booleanPreferencesKey("multi_source_disclosure_accepted")
+        /** DNS 模式稳定 code key。 */
+        private val DNS_MODE_CODE = stringPreferencesKey("dns_mode_code")
+        /** Torznab 非敏感配置显式 JSON key；密钥明文永不进入此字段。 */
+        private val TORZNAB_CONFIGS_JSON = stringPreferencesKey("torznab_configs_json")
     }
 }

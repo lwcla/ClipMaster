@@ -182,6 +182,13 @@ class BackupVm @Inject constructor(
         _uiState.update { it.copy(autoBackupEnabled = value, backupDirty = AppSetting.backupDirty) }
     }
 
+    /** 记录用户已阅读未加密备份风险，并立即同步页面状态以继续当前动作。 */
+    fun acceptBackupPlaintextDisclosure() {
+        AppSetting.backupPlaintextDisclosureAccepted = true
+        _uiState.update { it.copy(backupPlaintextDisclosureAccepted = true) }
+        logI(TAG) { "用户已确认未加密备份风险" }
+    }
+
     /** 更新普通备份保留份数，保存后刷新本地/WebDAV 列表以便立即按新配置清理。 */
     fun updateRetentionCount(value: Int) {
         AppSetting.backupRetentionCount = value
@@ -523,6 +530,7 @@ class BackupVm @Inject constructor(
                 AppSetting.localBackupDirUri.takeIf { it.isNotBlank() }?.let { resolveLocalBackupDirLabel(Uri.parse(it)) } ?: ""
             },
             autoBackupEnabled = AppSetting.autoBackupEnabled,
+            backupPlaintextDisclosureAccepted = AppSetting.backupPlaintextDisclosureAccepted,
             backupRetentionCount = AppSetting.backupRetentionCount,
             autoBackupOnlyWifi = AppSetting.autoBackupOnlyWifi,
             backupDirty = AppSetting.backupDirty,
@@ -587,6 +595,8 @@ data class BackupUiState(
     val localBackups: List<LocalBackupFile> = emptyList(),
     /** 自动备份统一开关。 */
     val autoBackupEnabled: Boolean = false,
+    /** 是否已确认本地 ZIP 与 WebDAV 备份不会加密；仅用于决定首次生成前是否展示披露。 */
+    val backupPlaintextDisclosureAccepted: Boolean = false,
     /** 普通备份保留份数。 */
     val backupRetentionCount: Int = AppSetting.DEFAULT_BACKUP_RETENTION_COUNT,
     /** WebDAV 自动备份仅 Wi-Fi。 */

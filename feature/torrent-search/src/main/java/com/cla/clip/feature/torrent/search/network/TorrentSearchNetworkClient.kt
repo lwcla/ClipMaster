@@ -7,6 +7,9 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.Dispatcher
+import okhttp3.Dns
+import com.cla.clip.feature.torrent.search.cloudflare.WebViewCookieHeaderProvider
+import com.cla.clip.feature.torrent.search.cloudflare.WebViewCookieRequestInterceptor
 import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
@@ -24,7 +27,7 @@ import kotlin.coroutines.resumeWithException
 
 /** Provider 唯一可依赖的网络接口，禁止向调用方暴露原始请求或响应对象。 */
 interface TorrentSearchNetworkClient {
-    /** HTTPS GET 文本；默认不增加头，固定样式头显式传入，解压后超过 5 MiB 拒绝。 */
+    /** HTTP/HTTPS GET 文本；默认不增加头，固定样式头显式传入，解压后超过 5 MiB 拒绝。 */
     suspend fun getText(
         /** 已经通过 Provider URL 策略的请求地址。 */
         url: String,
@@ -32,23 +35,31 @@ interface TorrentSearchNetworkClient {
         headers: Map<String, String> = emptyMap(),
     ): String
 
-    /** HTTPS GET JSON；固定请求头由调用方显式传入，正文仍共用严格大小和取消边界。 */
+    /** HTTP/HTTPS GET JSON；固定请求头由调用方显式传入，正文仍共用严格大小和取消边界。 */
     suspend fun getJson(url: String, headers: Map<String, String> = emptyMap()): String
 
-    /** HTTPS POST JSON；正文不得进入日志。 */
+    /** HTTP/HTTPS POST JSON；正文不得进入日志。 */
     suspend fun postJson(url: String, json: String): String
 
-    /** HTTPS 表单提交；字段不得进入日志。 */
+    /** HTTP/HTTPS 表单提交；字段不得进入日志。 */
     suspend fun submitForm(url: String, fields: Map<String, String>): String
 
     /** 获取合法重定向的 Location；不存在时为空。 */
     suspend fun redirectLocation(url: String): String?
+
+    /** HTTP/HTTPS GET 二进制；透明解压后的原始字节严格受调用方上限约束。 */
+    suspend fun getBytes(
+        /** 已通过业务策略的下载地址。 */
+        url: String,
+        /** 允许的最大响应字节数。 */
+        maxBytes: Int,
+    ): ByteArray
 }
 
 /** 网络边界稳定异常基类，聚合器据此映射失败原因。 */
 sealed class TorrentSearchNetworkException : IOException()
 
-/** HTTPS 策略或 HTTP 状态拒绝。 */
+/** URL scheme、来源策略或 HTTP 状态拒绝。 */
 class HttpDeniedException(
     /** 可进入低敏日志的状态码；scheme 或地址解析拒绝时为空。 */
     val statusCode: Int? = null,
@@ -78,6 +89,23 @@ private sealed interface TextResponseOutcome {
         /** 原始 Location 只供 HttpUrl.resolve，禁止写入日志或异常。 */
         val location: String?,
     ) : TextResponseOutcome
+}
+
+/** 二进制响应的受限处理结果。 */
+private sealed interface BinaryResponseOutcome {
+    /** 最终成功字节已经过调用方上限校验。 */
+    data class Success(
+        /** 完整原始响应字节。 */
+        val bytes: ByteArray,
+    ) : BinaryResponseOutcome
+
+    /** 同源跳转继续复用统一构造规则。 */
+    data class Redirect(
+        /** 当前低敏 HTTP 状态码。 */
+        val statusCode: Int,
+        /** 原始 Location 只供 HttpUrl.resolve。 */
+        val location: String?,
+    ) : BinaryResponseOutcome
 }
 
 /** 跳转循环身份由 HTTP method 与 URL 共同组成，允许同 URL 的合法 POST 转 GET。 */
@@ -149,15 +177,23 @@ class OkHttpTorrentSearchNetworkClient internal constructor(
         }
     }
 
-    /** 创建严格 HTTPS 请求；无效或明文地址在创建 Call 前拒绝。 */
+    /** 创建真实 HTTP/HTTPS 请求；其他 scheme 或无效地址在创建 Call 前拒绝。 */
     private fun newRequest(url: String): Request {
         /** 解析结果仅用于 scheme 校验，不进入日志。 */
         val parsedUrl = runCatching { url.toHttpUrl() }.getOrElse { throw HttpDeniedException() }
-        if (!parsedUrl.isHttps) throw HttpDeniedException()
+        /** supportedScheme 按自用场景允许任意合法 host 的 HTTP 与 HTTPS。 */
+        val supportedScheme = parsedUrl.scheme == "http" || parsedUrl.scheme == "https"
+        if (!supportedScheme) throw HttpDeniedException()
         return Request.Builder().url(parsedUrl).build()
     }
 
-    /** 显式编排同来源 HTTPS 跳转，并在每次创建后续 Call 前重新检查取消与来源边界。 */
+    /** 下载二进制响应并复用 HTTP/HTTPS、同源重定向与可取消 Call 边界。 */
+    override suspend fun getBytes(url: String, maxBytes: Int): ByteArray {
+        require(maxBytes >= 0)
+        return executeBytes(newRequest(url), maxBytes)
+    }
+
+    /** 显式编排同来源同协议跳转，并在每次创建后续 Call 前重新检查取消与来源边界。 */
     private suspend fun executeText(initialRequest: Request): String {
         /** 首次请求 URL 固定整条跳转链的 scheme、host 与有效 port 来源。 */
         val originUrl = initialRequest.url
@@ -197,6 +233,47 @@ class OkHttpTorrentSearchNetworkClient internal constructor(
                         request = currentRequest,
                         originUrl = originUrl,
                         outcome = outcome,
+                        visitedRequests = visitedRequests,
+                        redirectCount = redirectCount,
+                    )
+                    redirectCount += 1
+                }
+            }
+        }
+    }
+
+    /** 显式编排二进制同源跳转，并在 callback 线程完成严格字节上限读取。 */
+    private suspend fun executeBytes(initialRequest: Request, maxBytes: Int): ByteArray {
+        /** originUrl 固定整条二进制跳转链来源。 */
+        val originUrl = initialRequest.url
+        /** visitedRequests 在真实重复请求前拒绝循环。 */
+        val visitedRequests = mutableSetOf(RedirectRequestIdentity(initialRequest.method, originUrl))
+        /** currentRequest 是当前待执行二进制请求。 */
+        var currentRequest = initialRequest
+        /** redirectCount 是已跟随的跳转次数。 */
+        var redirectCount = 0
+        while (true) {
+            currentCoroutineContext().ensureActive()
+            /** call 是当前跳转阶段唯一可取消请求。 */
+            val call = client.newCall(currentRequest)
+            /** outcome 只携带最终字节或低敏跳转信息。 */
+            val outcome = executeInCallback(call) { /** response 在 callback/use 作用域内消费。 */ response ->
+                if (response.code.isFollowableRedirectStatus()) {
+                    BinaryResponseOutcome.Redirect(response.code, response.header("Location"))
+                } else {
+                    response.requireAcceptedStatus(allowRedirect = false)
+                    /** body 为空按空字节交给 Torrent 校验器分类。 */
+                    val body = response.body ?: return@executeInCallback BinaryResponseOutcome.Success(ByteArray(0))
+                    BinaryResponseOutcome.Success(body.readLimitedBytes(maxBytes))
+                }
+            }
+            when (outcome) {
+                is BinaryResponseOutcome.Success -> return outcome.bytes
+                is BinaryResponseOutcome.Redirect -> {
+                    currentRequest = buildRedirectRequest(
+                        request = currentRequest,
+                        originUrl = originUrl,
+                        outcome = TextResponseOutcome.Redirect(outcome.statusCode, outcome.location),
                         visitedRequests = visitedRequests,
                         redirectCount = redirectCount,
                     )
@@ -298,19 +375,27 @@ class OkHttpTorrentSearchNetworkClient internal constructor(
         private const val MAX_REDIRECT_FOLLOW_UPS = 20
 
         /** 建立共享客户端，只配置 Dispatcher 和超时且不执行网络。 */
-        fun createOkHttpClient(): OkHttpClient {
+        internal fun createOkHttpClient(
+            /** 运行时 DNS 路由；测试和独立调用默认跟随系统。 */
+            dns: Dns = Dns.SYSTEM,
+            /** 可选 WebView Cookie 桥；生产共享客户端接入，DoH bootstrap 与独立测试可省略。 */
+            cookieHeaderProvider: WebViewCookieHeaderProvider? = null,
+        ): OkHttpClient {
             /** Dispatcher 固定整个功能最大并发 64、同 host 5。 */
             val dispatcher = Dispatcher().apply {
                 maxRequests = 64
                 maxRequestsPerHost = 5
             }
-            return OkHttpClient.Builder()
+            /** builder 汇总共享网络配置，并按需接入挑战 Cookie。 */
+            val builder = OkHttpClient.Builder()
                 .dispatcher(dispatcher)
+                .dns(dns)
                 .followRedirects(false)
                 .followSslRedirects(false)
                 .connectTimeout(10L, TimeUnit.SECONDS)
                 .readTimeout(30L, TimeUnit.SECONDS)
-                .build()
+            if (cookieHeaderProvider != null) builder.addInterceptor(WebViewCookieRequestInterceptor(cookieHeaderProvider))
+            return builder.build()
         }
     }
 }
@@ -357,6 +442,26 @@ private fun ResponseBody.readLimitedText(): String {
         if (totalBytes > OkHttpTorrentSearchNetworkClient.MAX_TEXT_RESPONSE_BYTES) throw ResponseTooLargeException()
     }
     return output.readUtf8()
+}
+
+/** 在 OkHttp 透明解压后的 source 上读取严格有界原始字节。 */
+private fun ResponseBody.readLimitedBytes(maxBytes: Int): ByteArray {
+    /** source 是解压后的响应流。 */
+    val source = source()
+    /** output 最多保留 maxBytes 字节。 */
+    val output = Buffer()
+    /** chunkSize 固定 8 KiB，且额外读取一字节用于识别超限。 */
+    val chunkSize = 8_192L
+    /** totalBytes 是当前累计解压后字节数。 */
+    var totalBytes = 0L
+    while (true) {
+        /** readBytes 为 -1 表示结束。 */
+        val readBytes = source.read(output, chunkSize)
+        if (readBytes == -1L) break
+        totalBytes += readBytes
+        if (totalBytes > maxBytes.toLong()) throw ResponseTooLargeException()
+    }
+    return output.readByteArray()
 }
 
 /** 将网络异常映射稳定失败原因；协程取消由协调器单独处理。 */

@@ -118,6 +118,8 @@ paging-common = { group = "androidx.paging", name = "paging-common", version.ref
 #okhttp
 okhttp-client = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 okhttp-logger = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
+# TorrentSearch 可选 Cloudflare DNS-over-HTTPS 使用 OkHttp 同版本官方实现。
+okhttp-dnsoverhttps = { group = "com.squareup.okhttp3", name = "okhttp-dnsoverhttps", version.ref = "okhttp" }
 # 搜索内核仅通过直接 OkHttp 实现网络边界，避免引入 Ktor 或其他 HTTP 栈。
 okhttp-mockwebserver = { group = "com.squareup.okhttp3", name = "mockwebserver3", version.ref = "okhttp" }
 # HTTPS MockWebServer fixture 使用 OkHttp 官方证书工具，生产代码不依赖该测试组件。

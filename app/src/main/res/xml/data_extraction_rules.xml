@@ -22,6 +22,10 @@
         <exclude
             domain="database"
             path="torrent_search_feature.db" />
+        <!-- SQLite 运行时 sidecar 与主库一起排除，防止备份窗口复制 WAL/SHM/journal。 -->
+        <exclude domain="database" path="torrent_search_feature.db-wal" />
+        <exclude domain="database" path="torrent_search_feature.db-shm" />
+        <exclude domain="database" path="torrent_search_feature.db-journal" />
         <!-- TorrentSearch DataStore 含本机来源和安全模式状态，禁止系统云备份。 -->
         <exclude
             domain="file"
@@ -30,6 +34,10 @@
         <exclude
             domain="sharedpref"
             path="torrent_search_torznab_secrets.xml" />
+        <!-- Cloudflare WebView Cookie 与挑战状态不上传系统云备份。 -->
+        <exclude
+            domain="root"
+            path="app_webview/" />
         <!--
         <include .../>
         <exclude .../>
@@ -48,6 +56,10 @@
         <exclude
             domain="database"
             path="torrent_search_feature.db" />
+        <!-- 设备迁移也排除 SQLite sidecar，避免与新安装主库形成不一致组合。 -->
+        <exclude domain="database" path="torrent_search_feature.db-wal" />
+        <exclude domain="database" path="torrent_search_feature.db-shm" />
+        <exclude domain="database" path="torrent_search_feature.db-journal" />
         <!-- 设备迁移不继承本机 Provider 与安全模式选择。 -->
         <exclude
             domain="file"
@@ -56,5 +68,9 @@
         <exclude
             domain="sharedpref"
             path="torrent_search_torznab_secrets.xml" />
+        <!-- 设备迁移不复制 Cloudflare WebView Cookie 与挑战状态。 -->
+        <exclude
+            domain="root"
+            path="app_webview/" />
     </device-transfer>
 </data-extraction-rules>

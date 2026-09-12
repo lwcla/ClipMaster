@@ -1,5 +1,6 @@
 package com.cla.clip.feature.torrent.search.data.repository
 
+import com.cla.clip.feature.torrent.search.backup.TorrentSearchBackupDirtyMarker
 import com.cla.clip.feature.torrent.search.data.local.BookmarkedTorrentDao
 import com.cla.clip.feature.torrent.search.data.local.BookmarkedTorrentEntity
 import com.cla.clip.feature.torrent.search.data.local.TorrentSearchHistoryDao
@@ -20,6 +21,29 @@ import org.junit.Test
 
 /** TorrentSearch 三类用户数据 Repository 的规范化、去重和边界测试。 */
 class TorrentSearchRepositoriesTest {
+    /** 只有成功写入白名单数据才标记备份 dirty，非法输入不得触发。 */
+    @Test
+    fun successfulWritesMarkBackupDirty() = runTest {
+        /** marker 记录三类 Repository 的成功写入次数。 */
+        val marker = RecordingBackupDirtyMarker()
+        /** bookmarkRepository 验证合法与非法书签分支。 */
+        val bookmarkRepository = BookmarkRepositoryImpl(FakeBookmarkedTorrentDao(), nowMillis = { 1L }, backupDirtyMarker = marker)
+        /** historyRepository 验证清洗失败不会误标记。 */
+        val historyRepository = TorrentSearchHistoryRepositoryImpl(FakeTorrentSearchHistoryDao(), nowMillis = { 2L }, backupDirtyMarker = marker)
+        /** viewedRepository 验证非法 hash 不会误标记。 */
+        val viewedRepository = ViewedTorrentRepositoryImpl(FakeViewedTorrentDao(), nowMillis = { 3L }, backupDirtyMarker = marker)
+
+        assertFalse(bookmarkRepository.save(bookmark("bad", "bad")))
+        assertFalse(historyRepository.saveQuery(" "))
+        assertFalse(viewedRepository.markViewed("bad"))
+        assertEquals(0, marker.count)
+
+        assertTrue(bookmarkRepository.save(bookmark(HASH_A, "valid")))
+        assertTrue(historyRepository.saveQuery("valid"))
+        assertTrue(viewedRepository.markViewed(HASH_B))
+        assertEquals(3, marker.count)
+    }
+
     /** 书签必须按规范化 infoHash 替换，同名但不同 hash 仍允许共存。 */
     @Test
     fun bookmarkRepositoryUsesCanonicalInfoHashAsStableIdentity() = runTest {
@@ -165,6 +189,17 @@ class TorrentSearchRepositoriesTest {
     }
 }
 
+/** 测试用 dirty 标记器，只记录调用次数且不接触 MMKV。 */
+private class RecordingBackupDirtyMarker : TorrentSearchBackupDirtyMarker {
+    /** count 是已成功写入跨安装数据的次数。 */
+    var count: Int = 0
+
+    /** 每次标记只增加确定性计数。 */
+    override fun markDirty() {
+        count += 1
+    }
+}
+
 /** 内存书签 DAO，通过 Map 主键语义模拟 Room REPLACE 和时间倒序。 */
 private class FakeBookmarkedTorrentDao : BookmarkedTorrentDao {
     /** rows 保存规范化 infoHash 到实体的当前快照。 */
@@ -204,6 +239,28 @@ private class FakeBookmarkedTorrentDao : BookmarkedTorrentDao {
         rows.clear()
         state.value = emptyList()
         return count
+    }
+
+    /** 返回 fake 当前最大书签时间；空表与 Room 一致为 -1。 */
+    override suspend fun readBackupHighWaterMark(): Long = rows.values.maxOfOrNull(BookmarkedTorrentEntity::bookmarkedAtEpochMillis) ?: -1L
+
+    /** 按生产游标规则返回一页书签。 */
+    override suspend fun readBackupPage(highWaterMark: Long, cursorTime: Long, cursorKey: String, limit: Int): List<BookmarkedTorrentEntity> {
+        return rows.values
+            /** entity 是待检查时间上界和游标位置的书签行。 */
+            .filter { entity -> entity.bookmarkedAtEpochMillis <= highWaterMark && (entity.bookmarkedAtEpochMillis > cursorTime || entity.bookmarkedAtEpochMillis == cursorTime && entity.infoHash > cursorKey) }
+            .sortedWith(compareBy(BookmarkedTorrentEntity::bookmarkedAtEpochMillis, BookmarkedTorrentEntity::infoHash))
+            .take(limit)
+    }
+
+    /** 批量返回命中稳定身份的 fake 书签。 */
+    override suspend fun findByInfoHashes(infoHashes: List<String>): List<BookmarkedTorrentEntity> = infoHashes.mapNotNull(rows::get)
+
+    /** 批量替换 fake 书签。 */
+    override suspend fun upsertAll(entities: List<BookmarkedTorrentEntity>) {
+        /** entity 是当前按主键替换的恢复行。 */
+        entities.forEach { entity -> rows[entity.infoHash] = entity }
+        state.value = rows.values.sortedByDescending(BookmarkedTorrentEntity::bookmarkedAtEpochMillis)
     }
 }
 
@@ -253,6 +310,28 @@ private class FakeTorrentSearchHistoryDao : TorrentSearchHistoryDao {
         state.value = retained
         return removedCount
     }
+
+    /** 返回 fake 当前最大历史时间；空表与 Room 一致为 -1。 */
+    override suspend fun readBackupHighWaterMark(): Long = rows.values.maxOfOrNull(TorrentSearchHistoryEntity::updatedAtEpochMillis) ?: -1L
+
+    /** 按生产游标规则返回一页历史。 */
+    override suspend fun readBackupPage(highWaterMark: Long, cursorTime: Long, cursorKey: String, limit: Int): List<TorrentSearchHistoryEntity> {
+        return rows.values
+            /** entity 是待检查时间上界和游标位置的历史行。 */
+            .filter { entity -> entity.updatedAtEpochMillis <= highWaterMark && (entity.updatedAtEpochMillis > cursorTime || entity.updatedAtEpochMillis == cursorTime && entity.normalizedQuery > cursorKey) }
+            .sortedWith(compareBy(TorrentSearchHistoryEntity::updatedAtEpochMillis, TorrentSearchHistoryEntity::normalizedQuery))
+            .take(limit)
+    }
+
+    /** 批量返回命中稳定身份的 fake 历史。 */
+    override suspend fun findByNormalizedQueries(normalizedQueries: List<String>): List<TorrentSearchHistoryEntity> = normalizedQueries.mapNotNull(rows::get)
+
+    /** 批量替换 fake 历史。 */
+    override suspend fun upsertAll(entities: List<TorrentSearchHistoryEntity>) {
+        /** entity 是当前按主键替换的恢复行。 */
+        entities.forEach { entity -> rows[entity.normalizedQuery] = entity }
+        state.value = rows.values.sortedByDescending(TorrentSearchHistoryEntity::updatedAtEpochMillis)
+    }
 }
 
 /** 内存已查看 DAO，通过 infoHash 主键语义模拟重复查看刷新。 */
@@ -279,5 +358,27 @@ private class FakeViewedTorrentDao : ViewedTorrentDao {
         rows.clear()
         state.value = emptyList()
         return count
+    }
+
+    /** 返回 fake 当前最大查看时间；空表与 Room 一致为 -1。 */
+    override suspend fun readBackupHighWaterMark(): Long = rows.values.maxOfOrNull(ViewedTorrentEntity::viewedAtEpochMillis) ?: -1L
+
+    /** 按生产游标规则返回一页已查看记录。 */
+    override suspend fun readBackupPage(highWaterMark: Long, cursorTime: Long, cursorKey: String, limit: Int): List<ViewedTorrentEntity> {
+        return rows.values
+            /** entity 是待检查时间上界和游标位置的已查看行。 */
+            .filter { entity -> entity.viewedAtEpochMillis <= highWaterMark && (entity.viewedAtEpochMillis > cursorTime || entity.viewedAtEpochMillis == cursorTime && entity.infoHash > cursorKey) }
+            .sortedWith(compareBy(ViewedTorrentEntity::viewedAtEpochMillis, ViewedTorrentEntity::infoHash))
+            .take(limit)
+    }
+
+    /** 批量返回命中稳定身份的 fake 已查看记录。 */
+    override suspend fun findByInfoHashes(infoHashes: List<String>): List<ViewedTorrentEntity> = infoHashes.mapNotNull(rows::get)
+
+    /** 批量替换 fake 已查看记录。 */
+    override suspend fun upsertAll(entities: List<ViewedTorrentEntity>) {
+        /** entity 是当前按主键替换的恢复行。 */
+        entities.forEach { entity -> rows[entity.infoHash] = entity }
+        state.value = rows.values.sortedByDescending(ViewedTorrentEntity::viewedAtEpochMillis)
     }
 }

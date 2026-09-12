@@ -23,6 +23,10 @@
     <exclude
         domain="database"
         path="torrent_search_feature.db" />
+    <!-- SQLite 运行时 sidecar 与主库具有相同敏感边界，显式排除避免备份窗口残留。 -->
+    <exclude domain="database" path="torrent_search_feature.db-wal" />
+    <exclude domain="database" path="torrent_search_feature.db-shm" />
+    <exclude domain="database" path="torrent_search_feature.db-journal" />
     <!-- TorrentSearch DataStore 含本机 Provider 与安全模式选择，禁止系统 Auto Backup 整文件恢复。 -->
     <exclude
         domain="file"
@@ -31,6 +35,10 @@
     <exclude
         domain="sharedpref"
         path="torrent_search_torznab_secrets.xml" />
+    <!-- Cloudflare 挑战页 Cookie/WebView 状态只属于本机解锁会话，禁止系统整目录迁移。 -->
+    <exclude
+        domain="root"
+        path="app_webview/" />
     <!--
    <include domain="sharedpref" path="."/>
    <exclude domain="sharedpref" path="device.xml"/>

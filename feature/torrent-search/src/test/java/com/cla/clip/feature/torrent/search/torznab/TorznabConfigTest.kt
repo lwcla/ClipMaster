@@ -8,14 +8,45 @@ import org.junit.Test
 
 /** Torznab 非敏感配置的稳定身份、URL 与协议 code 测试。 */
 class TorznabConfigTest {
-    /** 合法局域网 HTTP feed 应保留端口、路径和稳定分类/安全 code。 */
+    /** 自用索引器允许公网、回环、私网、链路本地、local 域名和自定义端口上的真实 HTTP/HTTPS。 */
     @Test
-    fun validateAcceptsLocalHttpFeedWithoutEmbeddingApiKey() {
-        /** result 使用中性文档地址模拟 Jackett/Prowlarr 局域网入口。 */
+    fun validateAcceptsAllUserReachableHttpAndHttpsHosts() {
+        /** validFeedUrls 固定全部不得被重新收紧为“仅 localhost 或私网”的可用性契约。 */
+        val validFeedUrls = listOf(
+            "http://public.example/api",
+            "https://203.0.113.8:9443/torznab",
+            "http://localhost:9117/api",
+            "http://127.0.0.1:9117/api",
+            "http://192.168.1.20:9117/api",
+            "http://169.254.10.20:9117/api",
+            "http://indexer.local:9117/api",
+            "http://[::1]:9117/api",
+        )
+
+        /** rawFeedUrl 是当前必须通过校验且保持协议、主机、端口和路径的真实地址。 */
+        validFeedUrls.forEachIndexed { index, rawFeedUrl ->
+            /** result 验证 URL 可进入配置；HTTP 风险只由 UI 提示，不在校验层阻断。 */
+            val result = TorznabConfigValidator.validate(
+                rawId = "torznab_fixture_$index",
+                rawName = "Fixture $index",
+                rawFeedUrl = rawFeedUrl,
+                category = Category.ALL,
+                safetyLevel = ProviderSafetyLevel.SAFE,
+                hasApiKey = false,
+            )
+
+            assertTrue("应接受真实可达的 HTTP/HTTPS 地址：$rawFeedUrl", result is TorznabConfigValidationResult.Valid)
+        }
+    }
+
+    /** 合法公网域名 HTTP feed 应保留端口、路径和稳定分类/安全 code。 */
+    @Test
+    fun validateAcceptsPublicHostHttpFeedWithoutEmbeddingApiKey() {
+        /** result 使用中性域名模拟仍只提供明文入口的自用索引器。 */
         val result = TorznabConfigValidator.validate(
             rawId = "torznab_fixture",
             rawName = "  Fixture\nIndexer  ",
-            rawFeedUrl = "http://192.0.2.10:9117/api/v2.0/indexers/fixture/results/torznab/",
+            rawFeedUrl = "http://indexer.example:9117/api/v2.0/indexers/fixture/results/torznab/",
             category = Category.BOOKS,
             safetyLevel = ProviderSafetyLevel.UNSAFE,
             hasApiKey = true,
@@ -26,7 +57,7 @@ class TorznabConfigTest {
         val config = (result as TorznabConfigValidationResult.Valid).config
         assertEquals(TorznabConfigId("torznab_fixture"), config.id)
         assertEquals("FixtureIndexer", config.name)
-        assertEquals("http://192.0.2.10:9117/api/v2.0/indexers/fixture/results/torznab/", config.feedUrl)
+        assertEquals("http://indexer.example:9117/api/v2.0/indexers/fixture/results/torznab/", config.feedUrl)
         assertEquals("books", config.category.code)
         assertEquals("unsafe", config.safetyLevel.code)
         assertTrue(config.hasApiKey)

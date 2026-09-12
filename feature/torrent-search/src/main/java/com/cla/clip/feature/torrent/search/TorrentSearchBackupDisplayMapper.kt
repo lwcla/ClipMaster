@@ -1,31 +1,8 @@
 package com.cla.clip.feature.torrent.search
 
 import androidx.annotation.StringRes
+import com.cla.clip.feature.torrent.search.backup.TorrentSearchBackupContract
 import com.cla.clip.feature.torrent.search.api.TorrentSearchBackupCountItem
-
-/** TorrentSearch 书签在备份 featureCounts 中的稳定计数 key。 */
-private const val TORRENT_SEARCH_BOOKMARK_COUNT_KEY = "torrent_search_bookmark_count"
-
-/** TorrentSearch 搜索历史在备份 featureCounts 中的稳定计数 key。 */
-private const val TORRENT_SEARCH_SEARCH_HISTORY_COUNT_KEY = "torrent_search_search_history_count"
-
-/** TorrentSearch 已查看条目在备份 featureCounts 中的稳定计数 key。 */
-private const val TORRENT_SEARCH_VIEWED_ITEM_COUNT_KEY = "torrent_search_viewed_item_count"
-
-/** TorrentSearch 非敏感设置在备份 featureCounts 中的稳定计数 key。 */
-private const val TORRENT_SEARCH_SETTING_COUNT_KEY = "torrent_search_setting_count"
-
-/** TorrentSearch 书签恢复报告的稳定分类 code。 */
-private const val TORRENT_SEARCH_BOOKMARK_CATEGORY = "torrent_search_bookmarks"
-
-/** TorrentSearch 搜索历史恢复报告的稳定分类 code。 */
-private const val TORRENT_SEARCH_SEARCH_HISTORY_CATEGORY = "torrent_search_search_histories"
-
-/** TorrentSearch 已查看条目恢复报告的稳定分类 code。 */
-private const val TORRENT_SEARCH_VIEWED_ITEM_CATEGORY = "torrent_search_viewed_items"
-
-/** TorrentSearch 非敏感设置恢复报告的稳定分类 code。 */
-private const val TORRENT_SEARCH_SETTING_CATEGORY = "torrent_search_settings"
 
 /**
  * TorrentSearch 备份预检与恢复报告的纯展示映射器。
@@ -36,10 +13,11 @@ private const val TORRENT_SEARCH_SETTING_CATEGORY = "torrent_search_settings"
 internal object TorrentSearchBackupDisplayMapper {
     /** 恢复报告按书签、搜索历史、已查看和设置的固定顺序展示。 */
     val restoreReportCategoryCodes: List<String> = listOf(
-        TORRENT_SEARCH_BOOKMARK_CATEGORY,
-        TORRENT_SEARCH_SEARCH_HISTORY_CATEGORY,
-        TORRENT_SEARCH_VIEWED_ITEM_CATEGORY,
-        TORRENT_SEARCH_SETTING_CATEGORY,
+        TorrentSearchBackupContract.BOOKMARK_REPORT_CODE,
+        TorrentSearchBackupContract.HISTORY_REPORT_CODE,
+        TorrentSearchBackupContract.VIEWED_REPORT_CODE,
+        TorrentSearchBackupContract.SETTINGS_REPORT_CODE,
+        TorrentSearchBackupContract.LEGACY_INCOMPATIBLE_REPORT_CODE,
     )
 
     /** 按稳定 featureCounts key 生成宿主备份预检的四行计数，缺失 key 一律返回零。 */
@@ -47,19 +25,19 @@ internal object TorrentSearchBackupDisplayMapper {
         return listOf(
             TorrentSearchBackupCountItem(
                 labelRes = R.string.torrent_search_backup_bookmarks,
-                count = featureCounts[TORRENT_SEARCH_BOOKMARK_COUNT_KEY] ?: 0,
+                count = featureCounts[TorrentSearchBackupContract.BOOKMARK_COUNT_KEY] ?: 0,
             ),
             TorrentSearchBackupCountItem(
                 labelRes = R.string.torrent_search_backup_search_histories,
-                count = featureCounts[TORRENT_SEARCH_SEARCH_HISTORY_COUNT_KEY] ?: 0,
+                count = featureCounts[TorrentSearchBackupContract.HISTORY_COUNT_KEY] ?: 0,
             ),
             TorrentSearchBackupCountItem(
                 labelRes = R.string.torrent_search_backup_viewed_items,
-                count = featureCounts[TORRENT_SEARCH_VIEWED_ITEM_COUNT_KEY] ?: 0,
+                count = featureCounts[TorrentSearchBackupContract.VIEWED_COUNT_KEY] ?: 0,
             ),
             TorrentSearchBackupCountItem(
                 labelRes = R.string.torrent_search_backup_settings,
-                count = featureCounts[TORRENT_SEARCH_SETTING_COUNT_KEY] ?: 0,
+                count = featureCounts[TorrentSearchBackupContract.SETTINGS_COUNT_KEY] ?: 0,
             ),
         )
     }
@@ -68,10 +46,11 @@ internal object TorrentSearchBackupDisplayMapper {
     @StringRes
     fun restoreCategoryLabelRes(categoryCode: String): Int? {
         return when (categoryCode) {
-            TORRENT_SEARCH_BOOKMARK_CATEGORY -> R.string.torrent_search_backup_bookmarks
-            TORRENT_SEARCH_SEARCH_HISTORY_CATEGORY -> R.string.torrent_search_backup_search_histories
-            TORRENT_SEARCH_VIEWED_ITEM_CATEGORY -> R.string.torrent_search_backup_viewed_items
-            TORRENT_SEARCH_SETTING_CATEGORY -> R.string.torrent_search_backup_settings
+            TorrentSearchBackupContract.BOOKMARK_REPORT_CODE -> R.string.torrent_search_backup_bookmarks
+            TorrentSearchBackupContract.HISTORY_REPORT_CODE -> R.string.torrent_search_backup_search_histories
+            TorrentSearchBackupContract.VIEWED_REPORT_CODE -> R.string.torrent_search_backup_viewed_items
+            TorrentSearchBackupContract.SETTINGS_REPORT_CODE -> R.string.torrent_search_backup_settings
+            TorrentSearchBackupContract.LEGACY_INCOMPATIBLE_REPORT_CODE -> R.string.torrent_search_backup_legacy_incompatible
             else -> null
         }
     }

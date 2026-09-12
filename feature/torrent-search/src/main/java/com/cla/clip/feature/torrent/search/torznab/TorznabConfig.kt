@@ -107,7 +107,7 @@ internal object TorznabConfigValidator {
         /** parsedUrl 交给 OkHttp 处理 IPv6、端口和编码细节。 */
         val parsedUrl = normalizedFeedUrl.toHttpUrlOrNull()
             ?: return TorznabConfigValidationResult.Invalid(TorznabConfigFailureReason.INVALID_URL)
-        /** validScheme 允许局域网 Jackett/Prowlarr HTTP，同时保留公网 HTTPS。 */
+        /** validScheme 按自用可用性约定接受任意合法主机的 HTTP 与 HTTPS。 */
         val validScheme = parsedUrl.scheme == "http" || parsedUrl.scheme == "https"
         /** containsSecretBearingParts 拒绝 userinfo、query 和 fragment，避免密钥进入普通配置。 */
         val containsSecretBearingParts = parsedUrl.username.isNotEmpty() ||

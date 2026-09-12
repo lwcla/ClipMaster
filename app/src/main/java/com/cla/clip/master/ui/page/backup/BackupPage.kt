@@ -31,7 +31,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -70,6 +72,9 @@ fun BackupPage(
     val normalRemoteBackups = state.remoteBackups.filter { it.isRegularBackup }
     val pageActionsEnabled = !state.isBusy
 
+    // 待确认的备份创建动作只保留在当前页面生命周期内；持久化的仅是用户是否已经确认风险。
+    var pendingDisclosureAction by remember { mutableStateOf<BackupPlaintextDisclosureAction?>(null) }
+
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/zip"),
         onResult = { uri -> uri?.let { backupVm.exportToUri(it) } }
@@ -87,6 +92,21 @@ fun BackupPage(
         contract = ActivityResultContracts.OpenDocumentTree(),
         onResult = { uri -> uri?.let { backupVm.updateLocalBackupDir(it) } }
     )
+
+    // 所有会生成未加密备份包的入口统一经过这里，action 表示确认后应继续执行的原始动作。
+    val requestBackupCreationAction: (BackupPlaintextDisclosureAction) -> Unit = { action ->
+        if (action.requiresDisclosure(state.backupPlaintextDisclosureAccepted)) {
+            pendingDisclosureAction = action
+        } else {
+            when (action) {
+                BackupPlaintextDisclosureAction.ManualLocal -> {
+                    exportLauncher.launch(backupVm.suggestedBackupFileName())
+                }
+                BackupPlaintextDisclosureAction.ManualWebDav -> backupVm.uploadWebDavBackup()
+                BackupPlaintextDisclosureAction.EnableAuto -> backupVm.updateAutoBackupEnabled(true)
+            }
+        }
+    }
 
     LaunchedEffect(backupVm) {
         backupVm.messages.collect { message ->
@@ -115,7 +135,14 @@ fun BackupPage(
             item {
                 AutoBackupSection(
                     state = state,
-                    onEnabledChange = backupVm::updateAutoBackupEnabled,
+                    // enabled 表示用户本次希望切换到的自动备份开关状态。
+                    onEnabledChange = { enabled ->
+                        if (enabled) {
+                            requestBackupCreationAction(BackupPlaintextDisclosureAction.EnableAuto)
+                        } else {
+                            backupVm.updateAutoBackupEnabled(false)
+                        }
+                    },
                     onRetentionChange = backupVm::updateRetentionCount,
                     onOnlyWifiChange = backupVm::updateOnlyWifi,
                 )
@@ -125,7 +152,9 @@ fun BackupPage(
                 LocalBackupSection(
                     state = state,
                     isBusy = !pageActionsEnabled,
-                    onExport = { exportLauncher.launch(backupVm.suggestedBackupFileName()) },
+                    onExport = {
+                        requestBackupCreationAction(BackupPlaintextDisclosureAction.ManualLocal)
+                    },
                     onImport = { importLauncher.launch(arrayOf("application/zip", "application/octet-stream")) },
                     onChooseDir = { localDirLauncher.launch(null) },
                     onRefreshLocal = backupVm::refreshLocalBackups,
@@ -157,7 +186,9 @@ fun BackupPage(
                     onRemoteDirChange = backupVm::updateRemoteDir,
                     onAllowHttpChange = backupVm::updateAllowHttp,
                     onTest = backupVm::testWebDav,
-                    onUpload = backupVm::uploadWebDavBackup,
+                    onUpload = {
+                        requestBackupCreationAction(BackupPlaintextDisclosureAction.ManualWebDav)
+                    },
                     onRefresh = backupVm::refreshRemoteBackups,
                     actionsEnabled = pageActionsEnabled
                 )
@@ -189,6 +220,53 @@ fun BackupPage(
         // 备份写入涉及文件/网络副作用；弹窗期间拦截返回，避免用户误以为可以安全中断长任务。
         BackupTaskProgressDialog(operation = state.busyOperation, progress = state.backupProgress)
     }
+
+    // action 是用户确认披露后需要继续执行的一次性动作，不持久化目标或页面状态。
+    pendingDisclosureAction?.let { action ->
+        BackupPlaintextDisclosureDialog(
+            onDismiss = { pendingDisclosureAction = null },
+            onConfirm = {
+                backupVm.acceptBackupPlaintextDisclosure()
+                pendingDisclosureAction = null
+                when (action) {
+                    BackupPlaintextDisclosureAction.ManualLocal -> {
+                        exportLauncher.launch(backupVm.suggestedBackupFileName())
+                    }
+                    BackupPlaintextDisclosureAction.ManualWebDav -> backupVm.uploadWebDavBackup()
+                    BackupPlaintextDisclosureAction.EnableAuto -> backupVm.updateAutoBackupEnabled(true)
+                }
+            },
+        )
+    }
+}
+
+/** 首次创建备份前展示的未加密风险披露；确认状态由 ViewModel 持久化。 */
+@Composable
+private fun BackupPlaintextDisclosureDialog(
+    /** 用户取消披露时只关闭对话框，不继续原动作。 */
+    onDismiss: () -> Unit,
+    /** 用户确认披露后持久化确认状态并继续原动作。 */
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_backup_plaintext_disclosure_title))
+        },
+        text = {
+            Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_backup_plaintext_disclosure_message))
+        },
+        confirmButton = {
+            Button(onClick = onConfirm) {
+                Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_backup_plaintext_disclosure_confirm))
+            }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = onDismiss) {
+                Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_cancel))
+            }
+        },
+    )
 }
 
 /** LazyColumn 的 key 在整条列表内必须唯一；同名备份可能同时存在于本地镜像和 WebDAV 远端。 */

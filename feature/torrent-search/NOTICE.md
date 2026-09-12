@@ -62,7 +62,9 @@ handling, and image-loading setup.
 
 The manifest is a fixed local audit artifact. It permits no remote delivery of
 code, selectors, or scripts; future Provider runtime work must remain pinned to
-this reviewed source baseline and local HTTPS-only network policy.
+this reviewed source baseline. Built-in providers retain their reviewed exact
+HTTPS authorities, while user-configured TorrentSearch providers may use real
+HTTP or HTTPS under the app's explicit self-use cleartext policy.
 
 The fifth runtime batch ports Eztv, FileMood, and InternetArchive from the same
 pinned sources and verified manifest hashes. Local adaptations isolate parsing

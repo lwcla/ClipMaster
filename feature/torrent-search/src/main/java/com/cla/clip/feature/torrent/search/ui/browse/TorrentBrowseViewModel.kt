@@ -58,7 +58,7 @@ internal data class TorrentBrowseUiState(
 @HiltViewModel
 internal class TorrentBrowseViewModel @Inject constructor(
     /** 固定注册表顺序的全部来源。 */
-    private val providers: List<SearchProvider>,
+    private val providers: List<@JvmSuppressWildcards SearchProvider>,
     /** Latest/Top 并发、超时和失败隔离协作者。 */
     private val coordinator: BrowseCoordinator,
     /** 本机 Provider 与安全模式设置仓库。 */

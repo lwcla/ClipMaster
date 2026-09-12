@@ -1,5 +1,6 @@
 package com.cla.clip.feature.torrent.search.network
 
+import com.cla.clip.feature.torrent.search.cloudflare.WebViewCookieHeaderProvider
 import com.cla.clip.feature.torrent.search.model.contract.ProviderFailureReason
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
@@ -44,19 +45,65 @@ class OkHttpTorrentSearchNetworkClientTest {
         assertFalse(client.followSslRedirects)
     }
 
-    /** 明文 HTTP 必须在创建 Call 前拒绝，生产类不得暴露测试绕过参数。 */
+    /** 明文 HTTP 必须创建真实 Call 并返回正文，支持用户自选公网或局域网 Provider。 */
     @Test
-    fun getTextRejectsHttpAndProductionConstructorHasNoBypass() = runBlocking {
-        /** 普通客户端用于确认 scheme 策略由网络边界执行。 */
-        val networkClient = OkHttpTorrentSearchNetworkClient(OkHttpClient())
-        /** 生产构造参数名用于防止测试逃生开关重新进入发布代码。 */
-        val constructorParameterNames = OkHttpTorrentSearchNetworkClient::class.java.declaredConstructors
-            // constructor 是等待收集参数名的单个生产构造函数。
-            .flatMap { constructor -> constructor.parameters.map { parameter -> parameter.name } }
+    fun getTextAllowsHttpAndReturnsRealResponse() = runBlocking {
+        /** cleartextServer 是真实监听回环地址的明文 HTTP 服务。 */
+        val cleartextServer = MockWebServer().apply { start() }
+        try {
+            cleartextServer.enqueue(MockResponse.Builder().body("real-http-body").build())
+            /** networkClient 使用与生产相同的无测试旁路构造。 */
+            val networkClient = OkHttpTorrentSearchNetworkClient(OkHttpClient())
 
-        assertSuspendFailsWith<HttpDeniedException> { networkClient.getText("http://example.invalid/path") }
-        // name 是等待检查明文测试旁路痕迹的单个构造参数名。
-        assertFalse(constructorParameterNames.any { name -> name.contains("allowHttp", ignoreCase = true) })
+            assertEquals("real-http-body", networkClient.getText(cleartextServer.url("/feed").toString()))
+            assertEquals(1, cleartextServer.requestCount)
+        } finally {
+            cleartextServer.close()
+        }
+    }
+
+    /** 二进制 HTTP 下载必须保留原始字节并执行调用方指定的严格上限。 */
+    @Test
+    fun getBytesAllowsHttpAndEnforcesLimit() = runBlocking {
+        /** server 是真实回环 HTTP 二进制服务。 */
+        val server = MockWebServer().apply { start() }
+        try {
+            server.enqueue(MockResponse.Builder().body(Buffer().write(byteArrayOf(0, 1, 2, 3))).build())
+            server.enqueue(MockResponse.Builder().body(Buffer().write(byteArrayOf(0, 1, 2, 3))).build())
+            /** networkClient 使用生产网络边界。 */
+            val networkClient = OkHttpTorrentSearchNetworkClient(OkHttpClient())
+
+            assertTrue(byteArrayOf(0, 1, 2, 3).contentEquals(networkClient.getBytes(server.url("/ok").toString(), 4)))
+            assertSuspendFailsWith<ResponseTooLargeException> {
+                networkClient.getBytes(server.url("/too-large").toString(), 3)
+            }
+            Unit
+        } finally {
+            server.close()
+        }
+    }
+
+    /** WebView 已取得的同 URL Cookie 必须注入后续 OkHttp 请求，使真实 Provider 可复用挑战结果。 */
+    @Test
+    fun createClientBridgesWebViewCookiesIntoRequests() = runBlocking {
+        /** server 接收带 Cloudflare 合成 Cookie 的真实回环请求。 */
+        val server = MockWebServer().apply { start() }
+        try {
+            server.enqueue(MockResponse.Builder().body("ok").build())
+            /** cookieProvider 仅按本次 URL 返回 WebView Cookie 头。 */
+            val cookieProvider = WebViewCookieHeaderProvider { /** url 是 OkHttp 即将访问的完整地址。 */ url ->
+                if (url.startsWith(server.url("/").toString())) "cf_clearance=fixture" else null
+            }
+            /** networkClient 使用生产客户端工厂接入 Cookie 桥。 */
+            val networkClient = OkHttpTorrentSearchNetworkClient(
+                OkHttpTorrentSearchNetworkClient.createOkHttpClient(cookieHeaderProvider = cookieProvider),
+            )
+
+            assertEquals("ok", networkClient.getText(server.url("/protected").toString()))
+            assertEquals("cf_clearance=fixture", server.takeRequest().headers["Cookie"])
+        } finally {
+            server.close()
+        }
     }
 
     /** HTTPS 响应降级到 HTTP 时必须在目标 Call 创建前拒绝，明文服务不得收到请求。 */

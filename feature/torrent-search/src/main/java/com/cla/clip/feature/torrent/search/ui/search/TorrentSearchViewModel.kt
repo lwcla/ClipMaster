@@ -18,6 +18,7 @@ import com.cla.clip.feature.torrent.search.search.SearchCoordinator
 import com.cla.clip.feature.torrent.search.search.SearchEvent
 import com.cla.clip.feature.torrent.search.settings.TorrentSearchSettings
 import com.cla.clip.feature.torrent.search.settings.TorrentSearchSettingsRepository
+import com.cla.clip.feature.torrent.search.torznab.TorznabProviderFactory
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
@@ -114,13 +115,15 @@ private data class PendingSearch(
 @HiltViewModel
 internal class TorrentSearchViewModel @Inject constructor(
     /** 固定注册表顺序的全部内置 Provider。 */
-    private val providers: List<SearchProvider>,
+    private val providers: List<@JvmSuppressWildcards SearchProvider>,
     /** 渐进、多源隔离且可取消的搜索协调器。 */
     private val coordinator: SearchCoordinator,
     /** 本机 Provider、安全模式、排序和披露状态仓库。 */
     private val settingsRepository: TorrentSearchSettingsRepository,
     /** 搜索真正启动时异步保存历史，介质失败不阻断 Provider。 */
     private val historyRepository: TorrentSearchHistoryRepository = NoOpTorrentSearchHistoryRepository,
+    /** 按当前设置快照构造动态 Torznab Provider；纯测试可省略。 */
+    private val torznabProviderFactory: TorznabProviderFactory? = null,
 ) : ViewModel() {
     /** 页面唯一可变状态出口。 */
     private val mutableUiState = MutableStateFlow(TorrentSearchUiState())
@@ -538,8 +541,11 @@ internal class TorrentSearchViewModel @Inject constructor(
         /** 本次选择使用的设置快照。 */
         settings: TorrentSearchSettings,
     ): List<SearchProvider> {
-        /** enabledIds 区分已初始化空集合与新安装推荐集合。 */
-        return ProviderSelectionPolicy.select(providers, settings)
+        /** dynamicProviders 只由当前非敏感配置构造，不读取密钥或启动网络。 */
+        val dynamicProviders = torznabProviderFactory?.create(settings.torznabConfigs).orEmpty()
+        /** allProviders 保持内置注册表顺序，并在末尾追加用户配置顺序。 */
+        val allProviders = providers + dynamicProviders
+        return ProviderSelectionPolicy.select(allProviders, settings)
     }
 
     /** 从固定注册表提取首次推荐稳定 ID；不触发网络或持久化。 */

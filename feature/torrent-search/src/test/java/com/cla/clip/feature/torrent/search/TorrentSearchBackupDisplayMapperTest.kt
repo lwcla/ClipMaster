@@ -16,6 +16,7 @@ class TorrentSearchBackupDisplayMapperTest {
             "torrent_search_search_histories",
             "torrent_search_viewed_items",
             "torrent_search_settings",
+            "torrent_search_legacy_incompatible",
         )
 
         assertEquals(expectedCategories, TorrentSearchBackupDisplayMapper.restoreReportCategoryCodes)
@@ -66,6 +67,7 @@ class TorrentSearchBackupDisplayMapperTest {
             "torrent_search_search_histories" to R.string.torrent_search_backup_search_histories,
             "torrent_search_viewed_items" to R.string.torrent_search_backup_viewed_items,
             "torrent_search_settings" to R.string.torrent_search_backup_settings,
+            "torrent_search_legacy_incompatible" to R.string.torrent_search_backup_legacy_incompatible,
         )
 
         // categoryCode 是备份分类 code，expectedLabelRes 是对应展示资源。

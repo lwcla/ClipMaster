@@ -1,6 +1,6 @@
 # TorrentSearch 完整接入实施计划
 
-> 状态：实现中
+> 状态：已完成
 >
 > 上游基线：`prajwalch/TorrentSearch@ba82e889637027f7bed82715ec4d2106cbce5a28`
 >
@@ -112,7 +112,7 @@
 
 ## 任务 6：移植完整 Activity 与页面
 
-**状态：** 实现中（2026-09-12）。任务 5 的输入、持久化与密钥边界已经关闭；任务 6 按 06A–06E 纵向切片推进，每个切片都必须保持开启功能编译通过，不能先堆页面再补生命周期或安全确认。
+**状态：** 已完成（2026-09-12）。06A–06E 已依次关闭搜索、浏览/详情、本地数据、Provider/设置与系统副作用；真实设备、联网和 Release/R8 验证统一归任务 8。
 
 **文件：**
 
@@ -135,10 +135,12 @@
 1. **06A 搜索主链路（已完成，2026-09-12）：** 将占位 Activity 替换为 Hilt ViewModel + Compose 导航壳；接入查询、分类、排序、Provider 渐进事件、搜索取消、生命周期可见性、首次多源隐私披露和安全模式关闭确认。生产入口不在 `init` 或 Intent 中自动联网；重新开启安全模式立即取消旧搜索并收敛成人分类。
 2. **06B 浏览与详情（已完成，2026-09-12，独立审查修复）：** 接入 Latest/Top、详情页、已查看写入、受限富文本模型、链接白名单和图片尺寸边界；详情图片使用 feature-local 禁自动重定向客户端，NavBackStackEntry START/STOP 直接创建/释放图片子 Composition，正文图与截图使用独立稳定 key 命名空间；Browse 首设置快照与后续值变化显式区分，避免默认值竞态漏载或重复加载。
 3. **06C 本地数据页（已完成，2026-09-12，独立审查修复）：** 接入书签、搜索历史、已查看页面及清空确认；书签导入复用任务 05C 解析器并逐项写 Repository，导出使用后台逐项有界编码并在通过最终规范表示的统一单项协议、10,000 条与 10 MiB 预检后才交由 SAF 创建文档分块写出，不持久化临时 URI；取得实际流后的取消会把唯一关闭责任移交独立并发后台调度，Main 不等待阻塞 close，Provider 打开阶段本身不承诺立即中断，外部 Provider 部分写失败不承诺原子删除。三类目的地只在可见前台收集，历史回放返回搜索页激活后才提交一次；所有可重启任务用 generation 防止旧结果或旧 `finally` 覆盖新任务，详情书签仅在当前候选精确查询就绪后允许切换。
-4. **06D Provider 与设置：** 接入内置/Torznab Provider 管理、安全模式、默认排序、DoH 和本机披露状态；Torznab API Key 只经 `TorznabApiKeyStore`，配置模型不携带明文密钥。
-5. **06E 系统副作用：** 接入分享、复制、磁力 Intent、torrent 下载与 20 MiB 校验、SAF 写出、Cloudflare 挑战 WebView；WebView 禁文件访问、混合内容、SSL 绕过和跨来源跳转，仅受限挑战页允许脚本。
+4. **06D Provider 与设置（已完成，2026-09-12）：** 已接入内置/Torznab Provider 管理、安全模式、默认排序、DoH 和本机披露状态；Torznab API Key 只经 `TorznabApiKeyStore`，配置模型不携带明文密钥。按自用场景的最终确认，TorrentSearch 接受任意合法 host 的 HTTP/HTTPS 配置和真实请求，不再限定 HTTP 为局域网地址；启用功能时由合并 Manifest 开放 cleartext，HTTP 仅提示明文传输风险而不阻止。
+5. **06E 系统副作用（已完成，2026-09-12）：** 已接入分享、复制、磁力 Intent、torrent 下载与 20 MiB 校验、SAF 写出、Cloudflare 挑战 WebView；WebView 禁文件访问、混合内容、SSL 绕过和跨来源跳转，仅受限挑战页允许脚本。HTTP/HTTPS 可用性规则同 06D，下载和挑战入口不按公网/私网限制合法 host。
 
 ## 任务 7：备份、旧数据清理与系统排除
+
+**状态：** 已完成（2026-09-12）。schema v4 contributor、白名单分页导出、dirty、稳定键幂等恢复与分类报告、旧数据精确清理门、首次未加密备份披露和系统排除均已实现并通过全量模块/App 回归与发布静态门禁。
 
 **文件：**
 
@@ -158,6 +160,8 @@
 
 ## 任务 8：门禁、端到端测试与发布验证
 
+**状态：** 已完成（2026-09-12，本机可执行范围）。功能开关开/关 Debug 与 AndroidTest 编译、两条 Release/R8、Gradle dependency verification、静态发布扫描、APK/权限/Manifest/初始化边界差异及 43 Provider 真实联网冒烟均已完成；当前主机没有 Android 设备、AVD 或 system image，因此 API 24/36 instrumentation、真实磁力客户端/SAF/Cloudflare WebView 交互与冷启动计时按发布报告记录为环境受限待补，不伪报通过。
+
 **文件：**
 
 - 新增中文注释扫描任务
@@ -175,6 +179,8 @@
 - 对比启用/关闭 APK 大小、权限、Manifest 和冷启动初始化边界
 
 真实联网冒烟生成 Provider 健康报告，但第三方站点临时故障不阻塞发布；代码异常、契约遗漏、崩溃或敏感信息泄漏不可豁免。回退仅通过发布 `enableMagnetFeature=false` 的新版本。
+
+最终证据、产物摘要、限制与已知警告见 [`docs/torrent_search_release_report.md`](../../torrent_search_release_report.md)。
 
 ## 日志与诊断总则
 
@@ -194,3 +200,6 @@
 - 2026-09-12：完成任务 06C 的本地数据主页、三个独立数据目的地、详情书签动作、历史写入/前台回放、共享清空确认及有界书签 SAF 导入导出；原因是三类用户数据必须在 Provider 设置和系统外部动作之前具备精确身份、生命周期取消、固定错误与不持久化 URI 的安全闭环。任务 6 仍保持实现中，06D–06E 继续按原切片推进。
 - 2026-09-12：完成任务 06C 独立审查修复；为所有可重启任务补 generation 所有权、实际 SAF 流取消关闭、后台逐项有界导出和 parser/save/export 统一单项协议，并补详情书签未知态、历史 key 命名空间及通用二进制 MIME。原因是同一调度回合重启、阻塞 ContentProvider、部分写入和延迟精确查询需要由确定性回归锁定，不能依赖普通结构化取消或默认布尔值推断安全状态。
 - 2026-09-12：完成任务 06C fresh re-review 修复；取消关闭从调用线程移到独立并发后台调度并保留单一所有权，HTTP URL 上限改按 OkHttp 最终规范字符串判断并保证幂等。原因是生命周期 Main 不能同步执行潜在阻塞 close，原始 Unicode 长度也不能代表持久化和导出实际使用的百分号编码长度。
+- 2026-09-12：完成任务 06D；新增设置与 Provider 管理目的地、Torznab 动态配置/解析/运行时 Provider、API Key 安全协调、系统 DNS/Cloudflare DoH 切换和本机披露状态管理，并按用户自用可用性取舍开放任意合法 host 的 HTTP/HTTPS。模块 632 项单测、模块编译、中文注释门禁和启用功能的宿主 App 编译均通过，合并与打包 Manifest 已确认 `usesCleartextTraffic=true`；原因是公开 HTTP 索引器、自定义域名、非标准端口与局域网实例都必须真实可用。
+- 2026-09-12：完成 06E 实现并启动任务 7；系统动作、Torrent 有界校验/SAF 保存和受限 Cloudflare WebView 已闭环，随后接入 schema v4 feature contributor、分页 DAO、白名单恢复、dirty、旧数据确认清理、Auto Backup 排除和首次未加密备份披露。原因是发布门禁前必须先关闭所有持久数据、系统副作用和迁移边界。
+- 2026-09-12：完成任务 7 与任务 8 本机可执行门禁；schema v4 备份、旧数据精确清理和系统排除通过全量回归，功能开关开/关的 Debug、AndroidTest 编译和 Release/R8 均通过，43 个真实 Provider 全部得到可分类结果，依赖校验、许可、APK/权限/Manifest 差异已形成发布报告。当前主机无 Android 设备、AVD 或 system image，API 24/36 instrumentation 与冷启动计时作为明确环境限制待设备可用时补跑。

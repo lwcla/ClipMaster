@@ -420,6 +420,9 @@ object AppSetting {
     /** 自动备份总开关配置 key；默认关闭，避免用户未理解明文风险时后台生成备份。 */
     private const val KEY_AUTO_BACKUP_ENABLED = "auto_backup_enabled"
 
+    /** 未加密备份风险是否已由用户确认；只保存在本机，不进入备份包。 */
+    private const val KEY_BACKUP_PLAINTEXT_DISCLOSURE_ACCEPTED = "backup_plaintext_disclosure_accepted"
+
     /** 普通备份默认保留份数；本地和 WebDAV 目标都会按该值保留最近的普通备份。 */
     const val DEFAULT_BACKUP_RETENTION_COUNT = 5
 
@@ -514,6 +517,13 @@ object AppSetting {
         get() = mmkv.getBoolean(KEY_AUTO_BACKUP_ENABLED, false)
         set(value) {
             mmkv.putBoolean(KEY_AUTO_BACKUP_ENABLED, value)
+        }
+
+    /** 用户是否已确认本地 ZIP 与 WebDAV 备份不会加密；默认 false 以保证首次生成前展示披露。 */
+    var backupPlaintextDisclosureAccepted: Boolean
+        get() = mmkv.getBoolean(KEY_BACKUP_PLAINTEXT_DISCLOSURE_ACCEPTED, false)
+        set(value) {
+            mmkv.putBoolean(KEY_BACKUP_PLAINTEXT_DISCLOSURE_ACCEPTED, value)
         }
 
     /** 普通备份保留份数；保存和读取都裁剪到 1-20，避免异常配置参与删除。 */

@@ -4,6 +4,10 @@ import com.cla.clip.feature.torrent.search.data.model.ViewedTorrent
 import com.cla.clip.feature.torrent.search.data.model.BookmarkedTorrent
 import com.cla.clip.feature.torrent.search.data.repository.BookmarkRepository
 import com.cla.clip.feature.torrent.search.data.repository.ViewedTorrentRepository
+import com.cla.clip.feature.torrent.search.data.document.TorrentDocumentGateway
+import com.cla.clip.feature.torrent.search.data.document.TorrentDocumentTarget
+import com.cla.clip.feature.torrent.search.download.TorrentDownloadPreparation
+import com.cla.clip.feature.torrent.search.download.TorrentDownloadPreparer
 import com.cla.clip.feature.torrent.search.model.contract.Category
 import com.cla.clip.feature.torrent.search.model.contract.ProviderSafetyLevel
 import com.cla.clip.feature.torrent.search.model.contract.Torrent
@@ -226,6 +230,67 @@ class TorrentDetailsViewModelTest {
         assertEquals(2, repository.writeCancellations)
     }
 
+    /** Torrent 必须完成下载和身份校验后才请求 SAF，写出结束后立即清除内存字节。 */
+    @Test
+    fun torrentDownloadValidatesBeforeSafAndClearsPendingBytesAfterWrite() = runTest(dispatcher.scheduler) {
+        /** preparer 返回已校验的合成 Torrent 字节。 */
+        val preparer = FakeTorrentDownloadPreparer(TorrentDownloadPreparation.Ready(byteArrayOf(1, 2, 3), "Synthetic.torrent", HASH))
+        /** documentGateway 记录一次性 SAF 写出内容。 */
+        val documentGateway = FakeTorrentDocumentGateway()
+        /** viewModel 注入下载准备与文档边界。 */
+        val viewModel = TorrentDetailsViewModel(
+            listOf(FakeDetailsProvider(false)),
+            TorrentDetailsLoader(),
+            FakeBookmarkRepository(),
+            preparer,
+            documentGateway,
+        )
+        viewModel.setCandidate(candidate(), ProviderId("details_fixture"))
+        viewModel.setScreenActive(true)
+        runCurrent()
+
+        viewModel.requestTorrentDownload()
+        runCurrent()
+
+        assertEquals(TorrentDownloadPhase.AWAITING_DESTINATION, viewModel.uiState.value.downloadPhase)
+        assertEquals("Synthetic.torrent", viewModel.uiState.value.downloadSuggestedFileName)
+        assertEquals(0, documentGateway.writes.size)
+
+        viewModel.saveTorrentDownload(FakeTorrentDocumentTarget)
+        runCurrent()
+
+        assertEquals(TorrentDownloadPhase.SAVED, viewModel.uiState.value.downloadPhase)
+        assertTrue(documentGateway.writes.single().contentEquals(byteArrayOf(1, 2, 3)))
+        assertFalse(viewModel.hasPendingTorrentBytesForTest())
+    }
+
+    /** 离开详情必须取消下载准备并清除未交付 SAF 的私有字节。 */
+    @Test
+    fun leavingDetailsCancelsTorrentDownloadAndClearsPendingBytes() = runTest(dispatcher.scheduler) {
+        /** preparer 先返回已校验字节，模拟等待用户选择目标文档。 */
+        val preparer = FakeTorrentDownloadPreparer(TorrentDownloadPreparation.Ready(byteArrayOf(9), "Synthetic.torrent", HASH))
+        /** viewModel 使用不应被调用的文档网关。 */
+        val viewModel = TorrentDetailsViewModel(
+            listOf(FakeDetailsProvider(false)),
+            TorrentDetailsLoader(),
+            FakeBookmarkRepository(),
+            preparer,
+            FakeTorrentDocumentGateway(),
+        )
+        viewModel.setCandidate(candidate(), ProviderId("details_fixture"))
+        viewModel.setScreenActive(true)
+        runCurrent()
+        viewModel.requestTorrentDownload()
+        runCurrent()
+        assertTrue(viewModel.hasPendingTorrentBytesForTest())
+
+        viewModel.setScreenActive(false)
+        runCurrent()
+
+        assertEquals(TorrentDownloadPhase.IDLE, viewModel.uiState.value.downloadPhase)
+        assertFalse(viewModel.hasPendingTorrentBytesForTest())
+    }
+
     /** 可观察已查看写入的内存 Repository。 */
     private class FakeViewedRepository : ViewedTorrentRepository {
         /** 按调用顺序保存合成 hash。 */
@@ -371,6 +436,35 @@ class TorrentDetailsViewModelTest {
         override suspend fun clear(): Int = 0
     }
 
+    /** 返回固定下载准备结果的纯测试协作者。 */
+    private class FakeTorrentDownloadPreparer(
+        /** 每次请求返回的固定结果。 */
+        private val result: TorrentDownloadPreparation,
+    ) : TorrentDownloadPreparer {
+        /** 记录调用次数，便于后续扩展断言。 */
+        var calls = 0
+
+        /** 返回固定结果且不执行网络。 */
+        override suspend fun prepare(downloadUrl: String, expectedInfoHash: String, displayName: String): TorrentDownloadPreparation {
+            calls += 1
+            return result
+        }
+    }
+
+    /** 仅记录一次性写出字节的 SAF 网关。 */
+    private class FakeTorrentDocumentGateway : TorrentDocumentGateway {
+        /** writes 保存每次写出内容的防修改副本。 */
+        val writes = mutableListOf<ByteArray>()
+
+        /** 记录写出内容，不保留 URI。 */
+        override suspend fun write(target: TorrentDocumentTarget, bytes: ByteArray) {
+            writes += bytes.copyOf()
+        }
+    }
+
+    /** JVM 单测使用的不透明一次性文档目标。 */
+    private object FakeTorrentDocumentTarget : TorrentDocumentTarget
+
     /** 可挂起的详情 Provider fake。 */
     private class FakeDetailsProvider(
         /** true 时详情调用永久挂起。 */
@@ -408,6 +502,7 @@ class TorrentDetailsViewModelTest {
                 providerId = descriptor.id,
                 providerName = descriptor.displayName,
                 magnetUri = "magnet:?xt=urn:btih:$HASH",
+                fileDownloadLink = "https://fixture.invalid/file.torrent",
                 description = "<p>Visible</p><script>secret()</script>",
             )
         }

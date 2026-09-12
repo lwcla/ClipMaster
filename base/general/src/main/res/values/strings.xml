@@ -307,6 +307,9 @@
     <string name="base_general_preview_backup">预览备份</string>
     <string name="base_general_restore_backup">恢复备份</string>
     <string name="base_general_backup_plaintext_warning">备份文件包含剪贴内容，请保存到可信位置。</string>
+    <string name="base_general_backup_plaintext_disclosure_title">备份不会加密</string>
+    <string name="base_general_backup_plaintext_disclosure_message">本地 ZIP 和 WebDAV 备份不会加密，可能包含剪贴内容、搜索记录和其他用户数据。请仅保存到可信位置，并自行保护备份文件和 WebDAV 账户。</string>
+    <string name="base_general_backup_plaintext_disclosure_confirm">我已了解，继续</string>
     <string name="base_general_backup_export_success">备份已导出</string>
     <string name="base_general_backup_export_failed">导出备份失败</string>
     <string name="base_general_backup_import_failed">读取备份失败</string>

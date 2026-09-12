@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -21,6 +22,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -50,7 +52,7 @@ import com.cla.clip.feature.torrent.search.ui.component.torrentCategoryLabel
 import java.text.DateFormat
 import java.util.Date
 
-/** 原生 Torrent 详情页；不提供 06E 才负责的磁力与下载动作。 */
+/** 原生 Torrent 详情页；系统动作由根路由执行，下载状态由 ViewModel 持有。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun TorrentDetailsScreen(
@@ -62,6 +64,14 @@ internal fun TorrentDetailsScreen(
     onRetry: () -> Unit,
     /** 保存或移除当前候选书签。 */
     onToggleBookmark: () -> Unit,
+    /** 使用系统已注册客户端打开合法磁力。 */
+    onOpenMagnet: () -> Unit,
+    /** 通过系统分享面板发送磁力文本。 */
+    onShareMagnet: () -> Unit,
+    /** 把磁力文本复制到系统剪贴板。 */
+    onCopyMagnet: () -> Unit,
+    /** 下载、校验并准备保存 Torrent 文件。 */
+    onDownloadTorrent: () -> Unit,
     /** 返回上级列表事件。 */
     onBack: () -> Unit,
     /** 页面外部布局约束。 */
@@ -120,6 +130,12 @@ internal fun TorrentDetailsScreen(
                     screenshotUrls = state.screenshotUrls,
                     imagesActive = imagesActive,
                     imageLoader = imageLoader,
+                    downloadPhase = state.downloadPhase,
+                    downloadFailureReason = state.downloadFailureReason,
+                    onOpenMagnet = onOpenMagnet,
+                    onShareMagnet = onShareMagnet,
+                    onCopyMagnet = onCopyMagnet,
+                    onDownloadTorrent = onDownloadTorrent,
                     modifier = Modifier.fillMaxSize().padding(paddingValues),
                 )
             } ?: TorrentDetailsError(
@@ -190,6 +206,18 @@ private fun TorrentDetailsContent(
     imagesActive: Boolean,
     /** 详情 feature 专用且禁止自动重定向的 Coil 加载器。 */
     imageLoader: ImageLoader,
+    /** Torrent 下载与 SAF 保存阶段。 */
+    downloadPhase: TorrentDownloadPhase,
+    /** 固定下载失败分类，仅用于选择资源文案。 */
+    downloadFailureReason: com.cla.clip.feature.torrent.search.download.TorrentDownloadFailureReason?,
+    /** 打开磁力回调。 */
+    onOpenMagnet: () -> Unit,
+    /** 分享磁力回调。 */
+    onShareMagnet: () -> Unit,
+    /** 复制磁力回调。 */
+    onCopyMagnet: () -> Unit,
+    /** 下载 Torrent 回调。 */
+    onDownloadTorrent: () -> Unit,
     /** 详情内容布局约束。 */
     modifier: Modifier = Modifier,
 ) {
@@ -209,6 +237,17 @@ private fun TorrentDetailsContent(
             }
         }
         item(key = "details_info") { TorrentDetailsInfo(details) }
+        item(key = "details_actions") {
+            TorrentDetailsActions(
+                hasDownload = !details.fileDownloadLink.isNullOrBlank(),
+                downloadPhase = downloadPhase,
+                downloadFailureReason = downloadFailureReason,
+                onOpenMagnet = onOpenMagnet,
+                onShareMagnet = onShareMagnet,
+                onCopyMagnet = onCopyMagnet,
+                onDownloadTorrent = onDownloadTorrent,
+            )
+        }
         if (!description?.text.isNullOrBlank()) {
             item(key = "details_description_title") {
                 Text(
@@ -275,6 +314,68 @@ private fun TorrentDetailsContent(
             }
         }
     }
+}
+
+/** 详情系统动作与 Torrent 保存状态卡；不直接访问 Context、URI 或字节。 */
+@Composable
+private fun TorrentDetailsActions(
+    /** 当前详情是否提供 Torrent 文件地址。 */
+    hasDownload: Boolean,
+    /** 下载与保存状态。 */
+    downloadPhase: TorrentDownloadPhase,
+    /** 固定失败分类，不展示网络异常正文。 */
+    downloadFailureReason: com.cla.clip.feature.torrent.search.download.TorrentDownloadFailureReason?,
+    /** 打开磁力回调。 */
+    onOpenMagnet: () -> Unit,
+    /** 分享磁力回调。 */
+    onShareMagnet: () -> Unit,
+    /** 复制磁力回调。 */
+    onCopyMagnet: () -> Unit,
+    /** 下载并保存回调。 */
+    onDownloadTorrent: () -> Unit,
+) {
+    /** busy 表示网络准备、系统目标等待或实际写出尚未结束。 */
+    val busy = downloadPhase == TorrentDownloadPhase.PREPARING ||
+        downloadPhase == TorrentDownloadPhase.AWAITING_DESTINATION ||
+        downloadPhase == TorrentDownloadPhase.SAVING
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(stringResource(R.string.torrent_search_torrent_details_actions_title), style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onOpenMagnet) { Text(stringResource(R.string.torrent_search_open_magnet_action)) }
+                OutlinedButton(onClick = onShareMagnet) { Text(stringResource(R.string.torrent_search_share_action)) }
+                OutlinedButton(onClick = onCopyMagnet) { Text(stringResource(R.string.torrent_search_copy_action)) }
+            }
+            if (hasDownload) {
+                OutlinedButton(onClick = onDownloadTorrent, enabled = !busy) {
+                    Text(stringResource(R.string.torrent_search_download_torrent_action))
+                }
+            }
+            when (downloadPhase) {
+                TorrentDownloadPhase.IDLE -> Unit
+                TorrentDownloadPhase.PREPARING -> Text(stringResource(R.string.torrent_search_download_preparing))
+                TorrentDownloadPhase.AWAITING_DESTINATION -> Text(stringResource(R.string.torrent_search_download_choose_destination))
+                TorrentDownloadPhase.SAVING -> Text(stringResource(R.string.torrent_search_download_saving))
+                TorrentDownloadPhase.SAVED -> Text(stringResource(R.string.torrent_search_download_saved))
+                TorrentDownloadPhase.ERROR -> Text(
+                    text = stringResource(torrentDownloadFailureText(downloadFailureReason)),
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+    }
+}
+
+/** 把固定下载失败原因映射为本地资源，不回显 URL 或异常。 */
+private fun torrentDownloadFailureText(
+    /** 下载状态机的固定失败分类。 */
+    reason: com.cla.clip.feature.torrent.search.download.TorrentDownloadFailureReason?,
+): Int = when (reason) {
+    com.cla.clip.feature.torrent.search.download.TorrentDownloadFailureReason.TOO_LARGE -> R.string.torrent_search_download_error_too_large
+    com.cla.clip.feature.torrent.search.download.TorrentDownloadFailureReason.INVALID_TORRENT -> R.string.torrent_search_download_error_invalid
+    com.cla.clip.feature.torrent.search.download.TorrentDownloadFailureReason.IDENTITY_MISMATCH -> R.string.torrent_search_download_error_identity
+    com.cla.clip.feature.torrent.search.download.TorrentDownloadFailureReason.SAVE_FAILED -> R.string.torrent_search_download_error_save
+    else -> R.string.torrent_search_download_error_network
 }
 
 /** 基础字段卡使用资源化标签并省略未知可选值。 */

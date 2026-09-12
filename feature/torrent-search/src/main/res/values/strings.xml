@@ -7,6 +7,13 @@
     <string name="torrent_search_backup_search_histories">TorrentSearch search history</string>
     <string name="torrent_search_backup_viewed_items">TorrentSearch viewed items</string>
     <string name="torrent_search_backup_settings">TorrentSearch settings</string>
+    <string name="torrent_search_backup_legacy_incompatible">Legacy magnet data (incompatible, skipped)</string>
+    <string name="torrent_search_legacy_cleanup_title">Old magnet data found</string>
+    <string name="torrent_search_legacy_cleanup_message">TorrentSearch cannot migrate the previous magnet database (%1$d files) or Academic Torrents cache (%2$d files). Delete only these old files to continue?</string>
+    <string name="torrent_search_legacy_cleanup_confirm">Delete and continue</string>
+    <string name="torrent_search_legacy_cleanup_failed_title">Couldn’t clean old data</string>
+    <string name="torrent_search_legacy_cleanup_failed_message">The old files were kept. Retry the exact cleanup or exit TorrentSearch.</string>
+    <string name="torrent_search_button_retry">Retry</string>
 
     <string name="torrent_search_app_name" translatable="false">Torrent Search</string>
 
@@ -327,4 +334,43 @@
     <string name="torrent_search_bookmark_save">Save bookmark</string>
     <string name="torrent_search_bookmark_remove">Remove bookmark</string>
     <string name="torrent_search_bookmark_error">Could not update bookmark.</string>
+    <string name="torrent_search_settings_safe_mode_summary">Filters unsafe and adult providers from requests without changing their saved switches.</string>
+    <string name="torrent_search_settings_provider_filtered_by_safe_mode">Enabled, but filtered by Safe mode</string>
+    <string name="torrent_search_settings_dns_system">System DNS</string>
+    <string name="torrent_search_settings_dns_cloudflare">Cloudflare DoH</string>
+    <string name="torrent_search_settings_disclosure_title">Multi-source privacy disclosure</string>
+    <string name="torrent_search_settings_disclosure_accepted">Accepted on this device</string>
+    <string name="torrent_search_settings_disclosure_pending">Not accepted; the next multi-source search will ask first</string>
+    <string name="torrent_search_settings_disclosure_reset">Reset</string>
+    <string name="torrent_search_settings_http_warning">HTTP is allowed and will be used, but traffic and the API key may be visible to the network.</string>
+    <string name="torrent_search_settings_api_key_preserved">Leave blank to keep the stored API key.</string>
+    <string name="torrent_search_settings_remove_api_key">Remove stored API key</string>
+    <string name="torrent_search_settings_torznab_category">Category</string>
+    <string name="torrent_search_settings_torznab_safety">Safety level</string>
+    <string name="torrent_search_settings_safety_safe">Safe</string>
+    <string name="torrent_search_settings_error_invalid_config">Name or URL is invalid. HTTP and HTTPS are both supported.</string>
+    <string name="torrent_search_settings_error_secret_failed">Could not update the protected API key.</string>
+    <string name="torrent_search_settings_error_write_failed">Could not save the local setting.</string>
+    <string name="torrent_search_torrent_details_actions_title">Actions</string>
+    <string name="torrent_search_open_magnet_action">Open magnet</string>
+    <string name="torrent_search_share_action">Share</string>
+    <string name="torrent_search_copy_action">Copy</string>
+    <string name="torrent_search_copy_success">Magnet copied</string>
+    <string name="torrent_search_share_chooser_title">Share magnet</string>
+    <string name="torrent_search_external_action_no_handler">No installed app can handle this action.</string>
+    <string name="torrent_search_external_action_failed">Could not complete this system action.</string>
+    <string name="torrent_search_download_torrent_action">Download .torrent</string>
+    <string name="torrent_search_download_preparing">Downloading and validating…</string>
+    <string name="torrent_search_download_choose_destination">Choose where to save the validated file.</string>
+    <string name="torrent_search_download_saving">Saving…</string>
+    <string name="torrent_search_download_saved">Torrent file saved.</string>
+    <string name="torrent_search_download_error_network">Could not download this torrent file.</string>
+    <string name="torrent_search_download_error_too_large">The torrent file exceeds the 20 MiB limit.</string>
+    <string name="torrent_search_download_error_invalid">The response is not a valid torrent file.</string>
+    <string name="torrent_search_download_error_identity">The downloaded torrent does not match this result.</string>
+    <string name="torrent_search_download_error_save">Could not save the torrent file.</string>
+    <string name="torrent_search_cloudflare_open_action">Unlock</string>
+    <string name="torrent_search_cloudflare_title">Provider unlock</string>
+    <string name="torrent_search_cloudflare_title_format">Unlock %1$s</string>
+    <string name="torrent_search_cloudflare_unavailable">This provider does not expose an unlock page.</string>
 </resources>

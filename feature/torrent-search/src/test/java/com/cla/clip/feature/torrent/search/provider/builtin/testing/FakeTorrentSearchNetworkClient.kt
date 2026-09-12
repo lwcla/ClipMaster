@@ -21,6 +21,8 @@ internal class FakeTorrentSearchNetworkClient(
     private val formHandler: suspend (String, Map<String, String>) -> String = { _, _ -> "" },
     /** 重定向 Location 的合成响应逻辑；只有 AniRena 使用。 */
     private val redirectHandler: suspend (String) -> String? = { null },
+    /** 二进制下载合成响应逻辑；默认返回空字节。 */
+    private val bytesHandler: suspend (String, Int) -> ByteArray = { _, _ -> ByteArray(0) },
 ) : TorrentSearchNetworkClient {
     /** 已请求的文本 URL，用于断言编码和请求前拒绝边界。 */
     val textUrls = mutableListOf<String>()
@@ -32,6 +34,8 @@ internal class FakeTorrentSearchNetworkClient(
     val formUrls = mutableListOf<String>()
     /** 已请求的重定向 URL，用于验证恶意 host 在网络前被拒绝。 */
     val redirectUrls = mutableListOf<String>()
+    /** 已请求的二进制 URL，只用于下载边界断言。 */
+    val bytesUrls = mutableListOf<String>()
 
     /** 记录 URL 后返回合成 HTML。 */
     override suspend fun getText(
@@ -66,6 +70,12 @@ internal class FakeTorrentSearchNetworkClient(
     override suspend fun redirectLocation(url: String): String? {
         redirectUrls += url
         return redirectHandler(url)
+    }
+
+    /** 记录 URL 并把上限直接交给合成二进制回调。 */
+    override suspend fun getBytes(url: String, maxBytes: Int): ByteArray {
+        bytesUrls += url
+        return bytesHandler(url, maxBytes)
     }
 }
 

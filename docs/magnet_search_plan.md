@@ -1,6 +1,6 @@
 # TorrentSearch 固定快照接入主方案
 
-> 状态：实现中
+> 状态：已完成
 >
 > 上游基线：`prajwalch/TorrentSearch@ba82e889637027f7bed82715ec4d2106cbce5a28`
 >
@@ -118,7 +118,7 @@ Koin、Application、Activity 或 launcher 声明，资源可由当前空壳模�
 
 `Torrent` 与 `TorrentDetails` 覆盖上游所需的 infoHash、名称、大小、做种/下载人数、Provider ID/名称、上传时间、分类、详情链接、magnet、种子下载链接，以及详情页 uploader、lastChecked、描述、海报、截图、文件和 tracker。时间字段统一使用带单位后缀的 UTC `epochMillis`，避免为 minSdk 24 引入全局 desugaring。`SearchProvider.search(query, category)` 显式接收分类，详情、Latest、Top 能力扩展基础搜索能力，并带分类或备用域名契约。
 
-Provider 只能依赖 `TorrentSearchNetworkClient`，直接 OkHttp 实现由 Hilt 以功能内限定符延迟提供共享客户端，不复用也不覆盖宿主全局 `OkHttpClient`：Dispatcher 固定全局 64、同主机 5，连接 10 秒、读取 30 秒，OkHttp 不另设总 `callTimeout`，由协调器统一执行 45 秒 Provider 总任务上限；正式构造没有 HTTP 测试旁路并严格 HTTPS-only。状态校验、Cloudflare 分类和透明解压后的 5 MiB 限量读取都在同一个 OkHttp `Call` 的 callback/IO 线程内完成，响应在恢复调用协程前关闭；响应头到达后的慢 body 仍受 Provider 总超时、用户取消和 collector 取消约束，取消会触发 `Call.cancel()` 并处理 continuation 恢复竞争。
+Provider 只能依赖 `TorrentSearchNetworkClient`，直接 OkHttp 实现由 Hilt 以功能内限定符延迟提供共享客户端，不复用也不覆盖宿主全局 `OkHttpClient`：Dispatcher 固定全局 64、同主机 5，连接 10 秒、读取 30 秒，OkHttp 不另设总 `callTimeout`，由协调器统一执行 45 秒 Provider 总任务上限；正式构造直接支持真实 HTTP/HTTPS，不存在仅测试可用的明文旁路。内置 Provider 仍由各自精确 HTTPS authority 策略约束，用户配置来源按 06D 最终规则允许任意合法 host。状态校验、Cloudflare 分类和透明解压后的 5 MiB 限量读取都在同一个 OkHttp `Call` 的 callback/IO 线程内完成，响应在恢复调用协程前关闭；响应头到达后的慢 body 仍受 Provider 总超时、用户取消和 collector 取消约束，取消会触发 `Call.cancel()` 并处理 continuation 恢复竞争。
 
 共享客户端及构造注入客户端都强制关闭 OkHttp 自动 HTTP/SSL 重定向，普通 `getText`、`getJson`、`postJson`、`submitForm` 在原调用协程显式处理 301/302/303/307/308；每一跳先通过既有 callback 边界关闭响应且不消费跳转正文，再检查协程取消并创建下一 `Call`，因此不会重置协调器外层 45 秒总任务预算。来源固定为首次请求 `HttpUrl` 的 scheme、host 和有效 port，不扩大到同主域、子域、其他 Provider 白名单或不同端口；HTTPS 降级、跨 host/port、缺失或非法 `Location`、带用户信息 URL、循环及超过 20 次跳转都在下一 `Call` 前以无正文 `HttpDeniedException` 拒绝。相对 `Location` 只用当前请求 `HttpUrl.resolve`，GET/HEAD 保持方法，POST 的 301/302/303 转 GET 并移除正文及 `Content-Length`、`Content-Type`、`Transfer-Encoding`，307/308 保留原方法和已编码 body。`redirectLocation` 继续只返回一次未信任的 `Location` 且绝不跟随，AniRena 调用方仍须执行精确 host/magnet 校验。最终成功正文继续受解压后 5 MiB 上限，最终拒绝与挑战继续复用状态分类；只有 403/429/503 等挑战状态同时带 Cloudflare 特征头才映射 `cloudflare_locked`，Cloudflare 404 仍为 `http_denied`，`SocketTimeoutException` 映射 `timeout`。测试以 `okhttp-tls` 的 `HeldCertificate` 和 MockWebServer 构造仅测试信任的回环 HTTPS，不为生产暴露明文开关。
 
@@ -424,9 +424,9 @@ XXXClub 复用共享网络客户端、5 MiB 响应边界、`BuiltinProviderUrlPo
 
 ### 任务 05A：入口输入与外部链接基础安全（2026-09-12）
 
-状态：实现中。已新增纯 Kotlin `TorrentSearchInputNormalizer`：统一删除 Unicode 控制字符、裁剪边界空白并限制为 512 个 Kotlin 字符；清洗后空白输入不得自动搜索，超限输入只保留前 512 字符用于预填并通过 `wasTruncated` 阻止自动搜索或历史写入。既有 43 Provider 查询构造复用同一底层文本清洗能力，URL 编码仍交给 OkHttp `HttpUrl`，避免复制不同的控制字符规则。
+状态：已完成。已新增纯 Kotlin `TorrentSearchInputNormalizer`：统一删除 Unicode 控制字符、裁剪边界空白并限制为 512 个 Kotlin 字符；清洗后空白输入不得自动搜索，超限输入只保留前 512 字符用于预填并通过 `wasTruncated` 阻止自动搜索或历史写入。既有 43 Provider 查询构造复用同一底层文本清洗能力，URL 编码仍交给 OkHttp `HttpUrl`，避免复制不同的控制字符规则。
 
-`ExternalLinkPolicy` 只允许语法完整的绝对 `http`、`https` 与 `magnet` URI 交给系统组件；脚本、文件、相对路径、空白和语法损坏输入返回 `false`，不抛出包含原文的异常。测试先因类型缺失 RED，最小实现首次运行暴露 `URI(String)` 的 `URISyntaxException` 失败契约，收窄捕获后转为 GREEN。两项能力均为无副作用纯规则，不新增运行时日志；禁止记录输入和链接原文。强制重跑组合门禁为 492 tests / 62 suites、0 failures/errors/skipped，模块 Kotlin、中文注释门禁及启用功能后的 App Kotlin 编译通过。Activity 消费与 Room/DataStore 已在任务 05B 完成；Torrent/Bencode、导入、Torznab Keystore 仍属于任务 5 后续子批，当前不得标记任务 5 完成。
+`ExternalLinkPolicy` 只允许语法完整的绝对 `http`、`https` 与 `magnet` URI 交给系统组件；脚本、文件、相对路径、空白和语法损坏输入返回 `false`，不抛出包含原文的异常。测试先因类型缺失 RED，最小实现首次运行暴露 `URI(String)` 的 `URISyntaxException` 失败契约，收窄捕获后转为 GREEN。两项能力均为无副作用纯规则，不新增运行时日志；禁止记录输入和链接原文。强制重跑组合门禁为 492 tests / 62 suites、0 failures/errors/skipped，模块 Kotlin、中文注释门禁及启用功能后的 App Kotlin 编译通过。Activity 消费与 Room/DataStore 后续已在任务 05B 完成，Torrent/Bencode、导入与 Torznab Keystore 也已在任务 05C 完成，任务 5 已整体关闭。
 
 变更记录：2026-09-12，启动任务 5 并完成输入与外部 scheme 基础边界；原因是先建立可独立测试且可被 Provider/Activity 共同复用的纯规则，再接入 Android Intent、持久化和页面流程。
 
@@ -537,3 +537,65 @@ Torznab 将非敏感配置与 API Key 分离。`TorznabConfig` 只承载稳定�
 独立审查验证记录：2026-09-12，先运行覆盖 serializer、实际流、Repository、三类本地 ViewModel、详情和历史写入的选择性回归，测试编译按预期因取消流边界、书签就绪态、命名空间 key、通用二进制 MIME 与统一校验错误尚不存在而 RED；实现后扩展定向组合为 55 tests / 7 suites 全部 GREEN。最终组合门禁 `BUILD SUCCESSFUL in 34s`，JUnit XML 汇总为 613 tests / 86 suites、0 failures/errors/skipped，模块全量单测、模块 Kotlin、中文注释门禁和开启功能后的 App Kotlin 编译全部通过；`git diff --check` 与 WebDAV 流程 HTML `--check` 继续通过。实际流测试覆盖阻塞读取取消主动关闭、部分写入后取消关闭及正常写完关闭；外部 Provider 在传输中失败后的半成品删除或原子回滚仍无法由通用 SAF 契约保证，真实 Provider、Compose 视觉、功能关闭编译、release/R8 与 API 24/36 设备验证按任务 8 执行。
 
 Fresh re-review 验证记录：2026-09-12，R1 先以缺少独立关闭 dispatcher 的 4 处测试编译错误取得 RED，最小实现后流边界 7 项全部 GREEN（`BUILD SUCCESSFUL in 42s`）；R2 定向组合先得到 30 tests / 3 failures，准确复现 validator、serializer 和 Repository 对 Unicode URL 规范化扩张的错误放行，补最终规范长度校验后同一 30 项全部 GREEN（`BUILD SUCCESSFUL in 37s`）。最终组合门禁 `BUILD SUCCESSFUL in 40s`，JUnit XML 汇总为 624 tests / 87 suites、0 failures/errors/skipped，模块全量单测、模块 Kotlin、中文注释门禁与开启功能后的 App Kotlin 编译全部通过；WebDAV 流程 HTML `--check` 与 Git diff 检查通过。新增回归确认阻塞 close 不阻塞取消调用线程、关闭独立后台且 exactly once，并覆盖正常 close 异常、部分写失败、打开/取消交错、最终 URL 8192/8193、两个 HTTP 字段 Unicode 扩张、Repository 零写、serializer/parser 零 skipped、规范化幂等及 legacy/v1 普通 Unicode 兼容。
+
+### 任务 06D：Provider/Torznab 管理与搜索设置（2026-09-12）
+
+状态：已完成。06D 在既有 43 个内置 Provider 注册表、`ProviderSelectionPolicy`、Preferences DataStore、共享 `TorrentSearchNetworkClient` 和加密 `TorznabApiKeyStore` 上接入 Provider 管理、Torznab 动态配置、安全模式、默认排序、DoH 与多来源披露状态。设置与 Provider 页面只在目的地可见期间通过生命周期感知方式收集状态；网络请求不在 ViewModel 初始化时启动。Torznab 配置保存稳定 ID、名称、feed URL、分类、安全等级和“是否有密钥”元数据，API Key 明文只在编辑草稿内短暂存在并经独立加密仓库读写，不进入 DataStore、SavedState、导航、日志或异常。
+
+HTTP/HTTPS 最终规则：按用户确认的自用与真实可用优先取舍，TorrentSearch 接受任意合法 authority 的 `http://` 和 `https://` Provider/Torznab 地址，不按公网、私网、域名或字面量 IP 限制；启用 feature 的合并 Manifest 显式开放 cleartext，使公网域名、自定义端口、Jackett/Prowlarr 和局域网服务均能实际请求。配置仍拒绝 userinfo、query 和 fragment，避免 API Key 混入普通配置；重定向继续限制在首个请求的相同 scheme、host 和有效端口并保留 20 跳与 5 MiB 正文上限。HTTP 页面展示明文传输提示但不拦截保存、启用或请求；这是应用级 cleartext 能力，无法由 Android Manifest 按运行时动态 host 精细授权，属于本自用构建明确接受的风险。
+
+DoH 使用稳定设置 code，默认 `system`，可选固定 Cloudflare HTTPS DoH。公共域名解析在 Cloudflare 模式下走独立解析器，字面量 IP 与 localhost 不强制经公共解析服务；DoH 失败直接作为网络失败回显，不暗中切回另一公共 DNS。安全模式继续过滤 UNSAFE/NSFW 来源但不删除用户配置；关闭安全模式和重置多来源披露均是显式用户动作。默认排序只影响新搜索/浏览请求的设置快照，不在后台自动重跑当前页面。
+
+日志与诊断计划：配置新增、更新、删除、密钥替换/清除、DNS 模式切换和连接失败只记录固定 operation、Provider ID、scheme、state、reasonCode 与计数；不得记录名称、host、端口、路径、query、API Key、搜索词、响应正文、Cookie、header、异常 message 或完整 URL。HTTP 明文风险只由 UI 状态表达，不把目标地址写日志。解析与网络仍沿用协调器的低敏阶段日志。
+
+备份与混淆边界：06D 新增的 Provider 开关、Torznab 配置/密钥、安全模式、DoH 和披露确认均属于本机网络、隐私或凭据状态，不进入任务 7 自定义备份，也不触发 backup dirty；仅默认排序条件和方向按任务 7 非敏感白名单恢复。持久枚举使用显式稳定 code，不依赖枚举名、ordinal、反射或类名，因此不新增宽泛 keep；release/R8 仍由任务 8 验证。
+
+测试计划：选择性 TDD 先锁定任意公网域名 HTTP 配置可保存、共享网络客户端可真实请求 HTTP、配置中密钥字段拒绝、DoH 模式稳定 code/损坏降级、Torznab XML 正常与坏条目解析、动态 Provider 请求参数与取消、Provider 管理和设置状态派生，再实现生产逻辑。最终运行定向与模块全量单测、模块 Kotlin 编译、中文注释门禁、开启功能 App 编译及 `git diff --check`；Compose 视觉、API 24/36、真实 Provider 联网及 release/R8 汇总到任务 8。
+
+变更记录：2026-09-12，启动 06D，并根据用户对“所有请求真实可用”的澄清撤销局域网 HTTP 限制，改为接受任意合法 host 的 HTTP/HTTPS；原因是本应用为用户自用，兼容公开 HTTP 索引器、自定义域名与非标准端口的可用性优先于明文传输阻断。
+
+变更记录：2026-09-12，完成 06D 页面、导航、配置、DoH 与动态 Provider 闭环；模块 632 项单测、模块 Kotlin 编译、中文注释门禁及启用功能的宿主 App Kotlin/Manifest 合并验证通过，合并和打包 Manifest 均确认 `usesCleartextTraffic=true`。Compose 视觉、API 24/36 设备验证、真实 Provider 联网与 release/R8 仍按任务 8 集中执行。
+
+### 任务 06E：系统动作、Torrent 下载与 Cloudflare 挑战（2026-09-12）
+
+状态：已完成。分享与磁力打开由独立平台动作工厂构造显式白名单 Intent：分享只使用 `ACTION_SEND`/`text/plain`，磁力只在 `MagnetInfoHashParser` 确认存在合法 btih 后使用 `ACTION_VIEW`。页面不把 magnet、URL 或分享正文写入 ViewModel 状态、SavedState、导航和日志；系统没有可处理磁力链接的应用时只回显固定提示。
+
+Torrent 下载复用功能共享 OkHttp Dispatcher、DNS、HTTP/HTTPS 与同源重定向规则，但新增二进制 20 MiB 上限，不把响应先转换为文本。下载完成后必须先由 `TorrentFileValidator` 校验顶层字典、唯一 `info` 字典和 infoHash，再生成净化后的建议文件名并请求一次性 SAF `CreateDocument`；用户未选择目标、校验失败或页面离开时不打开输出流。已验证字节只短暂保留在当前详情 ViewModel 私有内存，写出完成、失败、取消或页面失活后立即释放，URI 不持久化。
+
+Cloudflare 挑战只允许从标记 `isCloudflareProtected` 的已知 Provider 打开。路由只携带稳定 Provider ID，目标地址从当前注册表重新解析；WebView 禁止文件/内容访问、混合内容、多窗口、任意外部跳转和 SSL 绕过，只允许与初始目标相同 scheme、host、有效端口的页面，并且仅该挑战页面启用 JavaScript/DOM storage。WebView 的适用 Cookie 由系统 `CookieManager` 按请求 URL 即时提供给 TorrentSearch 专用 OkHttp 拦截器，不进入普通设置、备份、日志或页面状态。
+
+日志与诊断计划：外部动作、下载、校验、SAF 写出和挑战页只记录固定 operation/state/reasonCode、Provider ID、HTTP 状态和字节计数；不得记录 magnet、URL、host、Cookie、API Key、分享正文、文件内容、SAF URI、异常 message 或下载文件名。取消使用 debug/cancelled 状态；没有系统处理器、响应超限、校验失败与写出失败使用固定错误分类。
+
+测试计划：选择性 TDD 锁定分享/磁力 Intent 契约、非法 magnet 拒绝、二进制 HTTP 下载与 20 MiB 上限、Torrent 校验后才允许 SAF、文件名净化、WebView 同源导航策略和 SSL 拒绝边界；随后运行模块全量单测、Kotlin/资源/Manifest 编译、中文注释门禁、开启功能宿主 App 编译及 `git diff --check`。真实磁力客户端、SAF Provider、Cloudflare 页面与 API 24/36 设备行为继续由任务 8 instrumentation/设备冒烟验证。
+
+变更记录：2026-09-12，启动 06E；原因是详情内容与 Provider 配置已稳定，可以在不扩大页面/ViewModel 职责的前提下接入系统副作用，并确保 HTTP 可用性约定贯穿 torrent 下载和挑战页。
+
+变更记录：2026-09-12，完成 06E；分享/复制/磁力打开、Torrent 有界下载校验与 SAF 保存、受限 Cloudflare WebView 和 Cookie bridge 已接通，HTTP/HTTPS 继续允许任意合法 host，未新增公网/私网阻断。真实系统客户端、SAF、挑战页与 API 24/36 验证归任务 8。
+
+### 任务 07：schema v4 备份、旧数据清理与系统排除（2026-09-12）
+
+状态：已完成。TorrentSearch 通过 feature-local `TorrentSearchBackupContributor` 接入 base 的 `BackupFeatureContributor` 扩展点，备份主协议保持 `schemaVersion = 4`，子协议固定为 v1。四个白名单 entry 分别保存书签、搜索历史、已查看和默认排序设置；书签保留规范化 infoHash 与用户可见快照，历史按规范化查询键恢复，已查看按 infoHash 恢复，设置只允许稳定的排序条件/方向 code。Provider 开关、Torznab 配置/API Key、Cookie、安全模式、DoH、多来源披露、SAF URI、健康状态、缓存、临时文件和 WebView 数据均不进入自定义备份。
+
+导出与恢复边界：三张 Room 表新增固定 high-water mark 和 `(timestamp, stableKey)` keyset 分页 DAO，每页最多 300 条，避免全量加载；恢复逐页校验协议、折叠同页重复稳定键、批量查询本地状态并在 Room 事务内只插入缺失项或更新严格更新的备份项，本地相同/更新、非法和重复行均计入 skipped。设置恢复复用现有设置仓库；真实新增/更新后标记统一 backup dirty，重复恢复不会产生额外写入或 dirty。manifest 和恢复 UI 只使用四类稳定 count/report code；旧磁力 entry 只根据固定路径和脱敏计数生成“不兼容并跳过”报告，不读取正文、不迁移、不计成功。
+
+dirty 与首次披露：书签、历史、已查看 Repository 仅在成功且实际发生变化的保存、删除、清空或导入写入后标记 dirty；设置仓库仅默认排序变化触发 dirty，本机联网、安全和隐私设置不触发。首次手动本地导出、手动 WebDAV 上传或开启自动备份前，备份页统一展示“本地 ZIP 与 WebDAV 备份不会加密”的确认；确认状态只保存在本机 MMKV，不进入备份包，确认后继续原动作且以后不重复打断。
+
+旧数据与系统备份：功能入口先由 `LegacyMagnetCleanupViewModel` 检测固定旧库 `magnet_feature_database.db` 及 `-wal/-shm/-journal` sidecar、固定 `cache/magnet_source_cache/magnet_source_cache.db` 及 sidecar。存在时必须由用户确认后重新 canonicalize 并逐项核对白名单再删除；伪造路径、未知文件和非空缓存目录均保留，取消则不进入新功能。`backup_rules.xml` 与 `data_extraction_rules.xml` 精确排除新数据库及 sidecar、TorrentSearch DataStore、Torznab 密文和 `app_webview/`；普通 cache 本身不属于 Android Auto Backup 域。
+
+日志与诊断计划：备份生成与恢复复用 base 的 taskId、阶段、schema、分类计数、总 inserted/updated/skipped、耗时和固定 reasonCode 日志；contributor 与旧数据清理不得记录查询、书签、magnet、完整 infoHash、URL、Provider 响应、Cookie、API Key、文件正文或绝对路径。旧数据检测/清理只记录候选数量、删除数量、阶段和稳定失败码；首次未加密披露只记录已确认这一布尔事件，不记录目标位置或 WebDAV 地址。
+
+测试计划：选择性 TDD 覆盖子协议字段白名单与未知字段兼容、稳定键冲突决策、分页内重复键计数、Repository dirty、仅排序 dirty、旧路径精确删除和伪造快照拒绝；再运行 TorrentSearch 模块全量单测、Kotlin 编译、中文注释门禁、App 单测/编译、系统备份 XML 检查、流程 HTML 同步与 `git diff --check`。真实系统备份、WebDAV、卸载重装、API 24/36 与 Release/R8 归任务 8。
+
+变更记录：2026-09-12，启动任务 7 并完成主要实现；原因是 TorrentSearch 的三类用户数据已经会持续写入，发布前必须用 schema v4 字段白名单替代系统整库备份，同时给旧磁力安装留下明确、可确认且只命中固定路径的清理出口。
+
+变更记录：2026-09-12，完成任务 7；模块全量单测、宿主全量单测、Kotlin/AndroidTest 编译、发布静态扫描与两条 Release/R8 均覆盖了 contributor、分页、幂等报告、dirty、首次未加密备份披露、旧数据精确清理和 Auto Backup 排除。备份与恢复流程 Mermaid 节点未改变，因此只执行 HTML 漂移检查，不重新生成图。
+
+### 任务 08：发布门禁与真实联网验证（2026-09-12）
+
+状态：已完成（本机可执行范围）。新增 `checkTorrentSearchReleaseSafety`，检查生产日志中的高风险字段、fixture 凭据、资源前缀、Feature Manifest 越界声明和许可清单；Gradle wrapper 固定发行包 SHA-256，并生成 dependency verification metadata。功能开关关闭与开启两条 Debug/AndroidTest 编译和 Release/R8 均通过，启用版 mapping 已保存。
+
+真实联网冒烟使用生产网络客户端并发检查固定 43 个内置 Provider，只输出 Provider ID、状态、数量、耗时、可选 HTTP 状态和未分类异常类型。2026-09-12 结果为 24 个 `ok`、10 个 `cloudflare_locked`、7 个 `http_denied`、2 个 `parse_failed`、0 个 `code_failure`；第三方站点临时状态不阻断发布，未分类代码异常会阻断。
+
+最终 APK 对比：关闭版 4,849,592 bytes，启用版 5,738,045 bytes，增加 888,453 bytes（18.32%）；权限集合相同。启用版只新增非导出 `TorrentSearchActivity` 和三个受限外部 alias，并在最终 Manifest 设置 `usesCleartextTraffic=true`，因此公网域名/IP、局域网、`.local`、回环、链路本地和自定义端口上的合法 HTTP/HTTPS 都可真实请求，HTTP 仅提示风险、不拦截。
+
+设备限制：当前主机没有 Android 设备、AVD 或 system image，故 API 24/36 instrumentation、真实磁力客户端、SAF Provider、Cloudflare WebView 交互与冷启动计时未执行；对应 instrumentation 已在功能开关开/关两条路径编译通过。静态初始化边界确认 Application 类、权限及后台 service/receiver/provider 不变，只有用户主动入口组件增加。完整证据见 `docs/torrent_search_release_report.md`。

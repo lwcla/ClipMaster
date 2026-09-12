@@ -1,5 +1,7 @@
 package com.cla.clip.feature.torrent.search.data.repository
 
+import com.cla.clip.feature.torrent.search.backup.NoOpTorrentSearchBackupDirtyMarker
+import com.cla.clip.feature.torrent.search.backup.TorrentSearchBackupDirtyMarker
 import com.cla.clip.feature.torrent.search.data.local.BookmarkedTorrentDao
 import com.cla.clip.feature.torrent.search.data.local.BookmarkedTorrentEntity
 import com.cla.clip.feature.torrent.search.data.local.TorrentSearchHistoryDao
@@ -109,6 +111,8 @@ internal class BookmarkRepositoryImpl(
     private val logger: TorrentSearchDataLogger = NoOpTorrentSearchDataLogger,
     /** 可替换 UTC 毫秒时间源，测试避免依赖真实时钟。 */
     private val nowMillis: () -> Long,
+    /** 成功修改白名单数据后写入统一备份 dirty 标记。 */
+    private val backupDirtyMarker: TorrentSearchBackupDirtyMarker = NoOpTorrentSearchBackupDirtyMarker,
 ) : BookmarkRepository {
     /** 映射合法数据库行；损坏 Provider ID 行被安全跳过。 */
     override fun observeBookmarks(): Flow<List<BookmarkedTorrent>> {
@@ -130,6 +134,7 @@ internal class BookmarkRepositoryImpl(
         logger.log("bookmark_upsert", "started")
         return try {
             dao.upsert(canonicalBookmark.toEntity())
+            backupDirtyMarker.markDirty()
             logger.log("bookmark_upsert", "completed", 1)
             true
         /** cancellation 分支保持结构化并发语义，同时留下不含用户数据的状态。 */
@@ -151,6 +156,7 @@ internal class BookmarkRepositoryImpl(
         return try {
             /** affectedCount 是 Room 返回的真实删除行数。 */
             val affectedCount = dao.deleteByInfoHash(normalizedHash)
+            if (affectedCount > 0) backupDirtyMarker.markDirty()
             logger.log("bookmark_delete", "completed", affectedCount)
             affectedCount > 0
         /** cancellation 分支不应被误记为数据库失败。 */
@@ -170,6 +176,7 @@ internal class BookmarkRepositoryImpl(
         return try {
             /** affectedCount 是 Room 返回的真实删除行数。 */
             val affectedCount = dao.clear()
+            if (affectedCount > 0) backupDirtyMarker.markDirty()
             logger.log("bookmark_clear", "completed", affectedCount)
             affectedCount
         /** cancellation 分支不吞掉协程取消。 */
@@ -192,6 +199,8 @@ internal class TorrentSearchHistoryRepositoryImpl(
     private val logger: TorrentSearchDataLogger = NoOpTorrentSearchDataLogger,
     /** 可替换 UTC 毫秒时间源。 */
     private val nowMillis: () -> Long,
+    /** 成功修改白名单数据后写入统一备份 dirty 标记。 */
+    private val backupDirtyMarker: TorrentSearchBackupDirtyMarker = NoOpTorrentSearchBackupDirtyMarker,
 ) : TorrentSearchHistoryRepository {
     /** 历史条目上限，防止误操作长期膨胀数据库。 */
     private val historyLimit = 100
@@ -219,6 +228,7 @@ internal class TorrentSearchHistoryRepositoryImpl(
                 )
             )
             dao.trimToLimit(historyLimit)
+            backupDirtyMarker.markDirty()
             logger.log("history_upsert", "completed", 1)
             true
         /** cancellation 分支维持调用方取消边界。 */
@@ -243,6 +253,7 @@ internal class TorrentSearchHistoryRepositoryImpl(
         return try {
             /** affectedCount 是 DAO 返回的真实删除行数。 */
             val affectedCount = dao.deleteByNormalizedQuery(normalizedQuery)
+            if (affectedCount > 0) backupDirtyMarker.markDirty()
             logger.log("history_delete", "completed", affectedCount)
             affectedCount > 0
         /** cancellation 分支维持调用方取消边界。 */
@@ -262,6 +273,7 @@ internal class TorrentSearchHistoryRepositoryImpl(
         return try {
             /** affectedCount 是 DAO 返回的真实删除行数。 */
             val affectedCount = dao.clear()
+            if (affectedCount > 0) backupDirtyMarker.markDirty()
             logger.log("history_clear", "completed", affectedCount)
             affectedCount
         /** cancellation 分支维持调用方取消边界。 */
@@ -284,6 +296,8 @@ internal class ViewedTorrentRepositoryImpl(
     private val logger: TorrentSearchDataLogger = NoOpTorrentSearchDataLogger,
     /** 可替换 UTC 毫秒时间源。 */
     private val nowMillis: () -> Long,
+    /** 成功修改白名单数据后写入统一备份 dirty 标记。 */
+    private val backupDirtyMarker: TorrentSearchBackupDirtyMarker = NoOpTorrentSearchBackupDirtyMarker,
 ) : ViewedTorrentRepository {
     /** 把 Room 实体映射成页面领域模型。 */
     override fun observeViewed(): Flow<List<ViewedTorrent>> {
@@ -298,6 +312,7 @@ internal class ViewedTorrentRepositoryImpl(
         logger.log("viewed_upsert", "started")
         return try {
             dao.upsert(ViewedTorrentEntity(normalizedHash, nowMillis()))
+            backupDirtyMarker.markDirty()
             logger.log("viewed_upsert", "completed", 1)
             true
         /** cancellation 分支保持结构化并发语义。 */
@@ -317,6 +332,7 @@ internal class ViewedTorrentRepositoryImpl(
         return try {
             /** affectedCount 是 DAO 返回的真实删除行数。 */
             val affectedCount = dao.clear()
+            if (affectedCount > 0) backupDirtyMarker.markDirty()
             logger.log("viewed_clear", "completed", affectedCount)
             affectedCount
         /** cancellation 分支维持调用方取消边界。 */

@@ -15,6 +15,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -66,6 +67,8 @@ internal fun TorrentSearchScreen(
     onBrowse: () -> Unit,
     /** 用户进入书签、历史与已查看的本地数据主页。 */
     onLocalData: () -> Unit,
+    /** 用户进入 TorrentSearch 独立设置页。 */
+    onSettings: () -> Unit,
     /** 用户选择结果进入原生详情。 */
     onResultClick: (com.cla.clip.feature.torrent.search.model.contract.Torrent) -> Unit,
     /** 用户请求安全模式目标值。 */
@@ -91,6 +94,9 @@ internal fun TorrentSearchScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = onSettings) {
+                        Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.torrent_search_search_action_settings))
+                    }
                     TextButton(onClick = onBrowse) {
                         Text(stringResource(R.string.torrent_search_browse_screen_title))
                     }
