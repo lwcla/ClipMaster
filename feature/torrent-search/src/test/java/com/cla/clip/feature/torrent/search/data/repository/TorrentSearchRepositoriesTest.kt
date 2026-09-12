@@ -72,6 +72,23 @@ class TorrentSearchRepositoriesTest {
         assertTrue(viewedDao.observeAll().first().isEmpty())
     }
 
+    /** 实际保存入口必须接受 512 字符名称并拒绝 513 字符及越界可选字段。 */
+    @Test
+    fun bookmarkRepositoryMatchesImportAndExportItemBoundaries() = runTest {
+        /** dao 记录所有通过统一协议校验的真实实体。 */
+        val dao = FakeBookmarkedTorrentDao()
+        /** repository 使用固定合法时间戳。 */
+        val repository = BookmarkRepositoryImpl(dao, nowMillis = { 100L })
+
+        assertTrue(repository.save(bookmark(HASH_A, "n".repeat(512))))
+        assertFalse(repository.save(bookmark(HASH_B, "n".repeat(513))))
+        assertFalse(repository.save(bookmark(HASH_B, "valid").copy(size = "s".repeat(129))))
+        assertFalse(repository.save(bookmark(HASH_B, "valid").copy(uploadEpochMillis = -1L)))
+        assertFalse(repository.save(bookmark(HASH_B, "valid").copy(descriptionPageUrl = "file:///private")))
+        assertFalse(repository.save(bookmark(HASH_B, "valid").copy(magnetUri = "magnet:?xt=urn:btih:$HASH_A")))
+        assertEquals(1, repository.observeBookmarks().first().size)
+    }
+
     /** 搜索历史必须复用入口清洗、按小写稳定键去重，并拒绝超限文本。 */
     @Test
     fun historyRepositorySanitizesDeduplicatesAndRejectsOverLimitQueries() = runTest {

@@ -7,6 +7,7 @@ import com.cla.clip.feature.torrent.search.data.local.TorrentSearchHistoryEntity
 import com.cla.clip.feature.torrent.search.data.local.ViewedTorrentDao
 import com.cla.clip.feature.torrent.search.data.local.ViewedTorrentEntity
 import com.cla.clip.feature.torrent.search.data.model.BookmarkedTorrent
+import com.cla.clip.feature.torrent.search.data.model.BookmarkContractValidator
 import com.cla.clip.feature.torrent.search.data.model.TorrentSearchHistory
 import com.cla.clip.feature.torrent.search.data.model.ViewedTorrent
 import com.cla.clip.feature.torrent.search.input.TorrentSearchInputNormalizer
@@ -124,11 +125,11 @@ internal class BookmarkRepositoryImpl(
 
     /** 使用规范化 hash 替换同一 torrent 书签。 */
     override suspend fun save(bookmark: BookmarkedTorrent): Boolean {
-        /** normalizedHash 是数据库主键允许的 40 位小写十六进制值。 */
-        val normalizedHash = normalizeStoredInfoHash(bookmark.infoHash) ?: return false
+        /** canonicalBookmark 同时满足 05C parser 与 06C exporter 的完整单项契约。 */
+        val canonicalBookmark = BookmarkContractValidator.normalize(bookmark.copy(bookmarkedAtEpochMillis = nowMillis())) ?: return false
         logger.log("bookmark_upsert", "started")
         return try {
-            dao.upsert(bookmark.toEntity(normalizedHash, nowMillis()))
+            dao.upsert(canonicalBookmark.toEntity())
             logger.log("bookmark_upsert", "completed", 1)
             true
         /** cancellation 分支保持结构化并发语义，同时留下不含用户数据的状态。 */
@@ -331,9 +332,9 @@ internal class ViewedTorrentRepositoryImpl(
 }
 
 /** 将书签领域模型写入固定 Room 列协议。 */
-private fun BookmarkedTorrent.toEntity(normalizedHash: String, bookmarkedAt: Long): BookmarkedTorrentEntity {
+private fun BookmarkedTorrent.toEntity(): BookmarkedTorrentEntity {
     return BookmarkedTorrentEntity(
-        infoHash = normalizedHash,
+        infoHash = infoHash,
         name = name,
         providerId = providerId.value,
         providerName = providerName,
@@ -345,7 +346,7 @@ private fun BookmarkedTorrent.toEntity(normalizedHash: String, bookmarkedAt: Lon
         descriptionPageUrl = descriptionPageUrl,
         magnetUri = magnetUri,
         fileDownloadLink = fileDownloadLink,
-        bookmarkedAtEpochMillis = bookmarkedAt,
+        bookmarkedAtEpochMillis = bookmarkedAtEpochMillis,
     )
 }
 

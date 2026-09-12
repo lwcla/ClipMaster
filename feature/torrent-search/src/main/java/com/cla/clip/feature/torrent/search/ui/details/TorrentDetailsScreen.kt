@@ -88,7 +88,10 @@ internal fun TorrentDetailsScreen(
                     }
                 },
                 actions = {
-                    TextButton(onClick = onToggleBookmark, enabled = !state.isBookmarkBusy) {
+                    TextButton(
+                        onClick = onToggleBookmark,
+                        enabled = state.bookmarkPresencePhase == BookmarkPresencePhase.READY && !state.isBookmarkBusy,
+                    ) {
                         Text(
                             stringResource(
                                 if (state.isBookmarked) R.string.torrent_search_bookmark_remove else R.string.torrent_search_bookmark_save,

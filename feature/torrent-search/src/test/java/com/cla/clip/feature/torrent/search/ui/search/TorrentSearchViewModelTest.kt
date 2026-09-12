@@ -101,6 +101,35 @@ class TorrentSearchViewModelTest {
         assertEquals(TorrentSearchPhase.COMPLETED, viewModel.uiState.value.phase)
     }
 
+    /** 同一调度回合离页重进并搜索时，旧历史 finally 不得清除新写入任务。 */
+    @Test
+    fun historyWriteStopThenStartInSameTurnKeepsNewJobOwned() = runTest(dispatcher.scheduler) {
+        /** provider 立即完成，隔离历史写任务所有权。 */
+        val provider = FakeSearchProvider("nyaa", emptyList())
+        /** settingsRepository 预置单来源避免披露分支。 */
+        val settingsRepository = TorrentSearchSettingsRepository(FakePreferencesDataStore(preferencesOf()))
+        settingsRepository.setEnabledProviderIds(setOf(provider.descriptor.id))
+        /** historyRepository 让每代保存挂起直到离页取消。 */
+        val historyRepository = FakeHistoryRepository(suspendOnSave = true)
+        /** viewModel 使用真实搜索与历史并行编排。 */
+        val viewModel = TorrentSearchViewModel(listOf(provider), SearchCoordinator(), settingsRepository, historyRepository)
+        runCurrent()
+        viewModel.setScreenActive(true)
+        viewModel.updateQuery("first")
+        viewModel.submitSearch()
+        runCurrent()
+
+        viewModel.setScreenActive(false)
+        viewModel.setScreenActive(true)
+        viewModel.updateQuery("second")
+        viewModel.submitSearch()
+        runCurrent()
+        viewModel.setScreenActive(false)
+        runCurrent()
+
+        assertEquals(2, historyRepository.cancelCount)
+    }
+
     /** 历史回放必须等搜索页恢复前台后只触发一次，并继续走正常提交入口。 */
     @Test
     fun historyReplayWaitsForSearchDestinationToBecomeActiveAndRunsOnce() = runTest(dispatcher.scheduler) {
@@ -468,9 +497,13 @@ class TorrentSearchViewModelTest {
 private class FakeHistoryRepository(
     /** true 时保存查询抛出合成介质失败。 */
     private val throwOnSave: Boolean = false,
+    /** true 时保存一直挂起到搜索停止。 */
+    private val suspendOnSave: Boolean = false,
 ) : TorrentSearchHistoryRepository {
     /** 按实际调用顺序记录安全合成查询。 */
     val savedQueries = mutableListOf<String>()
+    /** cancelCount 记录每代挂起保存收到的结构化取消。 */
+    var cancelCount = 0
 
     /** 本测试不观察历史页。 */
     override fun observeHistory(): Flow<List<TorrentSearchHistory>> = kotlinx.coroutines.flow.emptyFlow()
@@ -479,6 +512,13 @@ private class FakeHistoryRepository(
     override suspend fun saveQuery(query: String): Boolean {
         savedQueries += query
         if (throwOnSave) throw IllegalStateException("synthetic_history_failure")
+        if (suspendOnSave) {
+            try {
+                awaitCancellation()
+            } finally {
+                cancelCount += 1
+            }
+        }
         return true
     }
 

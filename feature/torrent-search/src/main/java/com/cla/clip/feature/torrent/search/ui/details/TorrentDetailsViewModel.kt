@@ -65,6 +65,16 @@ internal enum class TorrentDetailsPhase {
     ERROR,
 }
 
+/** 当前候选精确书签查询的就绪阶段，未知与失败都禁止推测写入。 */
+internal enum class BookmarkPresencePhase {
+    /** 尚未收到当前候选的首个精确结果。 */
+    UNKNOWN,
+    /** 已收到当前候选的首个精确结果，可安全保存或移除。 */
+    READY,
+    /** 当前候选精确查询失败。 */
+    ERROR,
+}
+
 /** 原生详情不可变 UI 状态。 */
 internal data class TorrentDetailsUiState(
     /** 页面阶段。 */
@@ -83,6 +93,8 @@ internal data class TorrentDetailsUiState(
     val failureReason: TorrentDetailsFailureReason? = null,
     /** 当前候选是否已保存为书签，来自精确 infoHash Flow。 */
     val isBookmarked: Boolean = false,
+    /** 当前候选精确书签查询是否已就绪。 */
+    val bookmarkPresencePhase: BookmarkPresencePhase = BookmarkPresencePhase.UNKNOWN,
     /** 书签保存或移除是否运行中。 */
     val isBookmarkBusy: Boolean = false,
     /** 最近一次书签写入是否失败，不携带异常正文。 */
@@ -114,8 +126,12 @@ internal class TorrentDetailsViewModel @Inject constructor(
     private var loadGeneration = 0L
     /** 精确书签存在状态只在详情目的地可见时收集。 */
     private var bookmarkObserveJob: Job? = null
+    /** 精确书签观察代次，阻止旧候选结果与 finally 覆盖新任务。 */
+    private var bookmarkObserveGeneration = 0L
     /** 书签保存或移除任务离页时取消。 */
     private var bookmarkWriteJob: Job? = null
+    /** 书签写入代次，阻止旧任务结束清除新任务忙碌态。 */
+    private var bookmarkWriteGeneration = 0L
 
     /** 接收导航根提供的内存候选，并校验路由 Provider ID 一致。 */
     fun setCandidate(
@@ -138,6 +154,7 @@ internal class TorrentDetailsViewModel @Inject constructor(
                 screenshotUrls = emptyList(),
                 failureReason = if (candidate == null) TorrentDetailsFailureReason.INVALID_REQUEST else null,
                 isBookmarked = false,
+                bookmarkPresencePhase = BookmarkPresencePhase.UNKNOWN,
                 isBookmarkBusy = false,
                 bookmarkWriteFailed = false,
             )
@@ -174,11 +191,13 @@ internal class TorrentDetailsViewModel @Inject constructor(
     fun toggleBookmark() {
         /** selectedTorrent 固定本次书签操作候选，URL 和磁力不会进入 UI 事件参数。 */
         val selectedTorrent = candidate ?: return
-        if (!mutableUiState.value.isScreenActive || bookmarkWriteJob?.isActive == true) return
+        if (!mutableUiState.value.isScreenActive || mutableUiState.value.bookmarkPresencePhase != BookmarkPresencePhase.READY || bookmarkWriteJob?.isActive == true) return
         /** removeBookmark 固定点击瞬间的目标动作，避免 Flow 更新中途反转语义。 */
         val removeBookmark = mutableUiState.value.isBookmarked
+        /** generation 固定本次写入所有权。 */
+        val generation = ++bookmarkWriteGeneration
         bookmarkWriteJob = viewModelScope.launch {
-            mutableUiState.update { /** state 是书签写入开始前快照。 */ state -> state.copy(isBookmarkBusy = true, bookmarkWriteFailed = false) }
+            if (generation == bookmarkWriteGeneration) mutableUiState.update { /** state 是书签写入开始前快照。 */ state -> state.copy(isBookmarkBusy = true, bookmarkWriteFailed = false) }
             try {
                 /** succeeded 是 Repository 对稳定身份写入或删除的固定结果。 */
                 val succeeded = if (removeBookmark) {
@@ -186,7 +205,7 @@ internal class TorrentDetailsViewModel @Inject constructor(
                 } else {
                     bookmarkRepository.save(selectedTorrent.toBookmarkedTorrent())
                 }
-                if (!succeeded) {
+                if (!succeeded && generation == bookmarkWriteGeneration) {
                     mutableUiState.update { /** state 是书签未命中或拒绝前快照。 */ state -> state.copy(bookmarkWriteFailed = true) }
                 }
             /** 页面离开或候选替换时保持结构化取消。 */
@@ -194,10 +213,12 @@ internal class TorrentDetailsViewModel @Inject constructor(
                 throw cancellation
             /** 书签介质异常只映射为固定页面失败状态。 */
             } catch (exception: Exception) {
-                mutableUiState.update { /** state 是书签介质失败前快照。 */ state -> state.copy(bookmarkWriteFailed = true) }
+                if (generation == bookmarkWriteGeneration) mutableUiState.update { /** state 是书签介质失败前快照。 */ state -> state.copy(bookmarkWriteFailed = true) }
             } finally {
-                mutableUiState.update { /** state 是书签写入结束前快照。 */ state -> state.copy(isBookmarkBusy = false) }
-                bookmarkWriteJob = null
+                if (generation == bookmarkWriteGeneration) {
+                    mutableUiState.update { /** state 是书签写入结束前快照。 */ state -> state.copy(isBookmarkBusy = false) }
+                    bookmarkWriteJob = null
+                }
             }
         }
     }
@@ -207,30 +228,43 @@ internal class TorrentDetailsViewModel @Inject constructor(
         if (bookmarkObserveJob != null) return
         /** selectedTorrent 固定本次观察身份，候选替换会先取消该任务。 */
         val selectedTorrent = candidate ?: return
+        /** generation 固定本次精确观察所有权。 */
+        val generation = ++bookmarkObserveGeneration
+        mutableUiState.update { /** state 是当前候选开始精确查询前快照。 */ state ->
+            state.copy(bookmarkPresencePhase = BookmarkPresencePhase.UNKNOWN, bookmarkWriteFailed = false)
+        }
         bookmarkObserveJob = viewModelScope.launch {
             try {
                 bookmarkRepository.observeBookmarked(selectedTorrent.infoHash).collect { /** bookmarked 是当前精确存在状态。 */ bookmarked ->
-                    mutableUiState.update { /** state 是写入存在状态前快照。 */ state -> state.copy(isBookmarked = bookmarked) }
+                    if (generation == bookmarkObserveGeneration) mutableUiState.update { /** state 是写入存在状态前快照。 */ state ->
+                        state.copy(isBookmarked = bookmarked, bookmarkPresencePhase = BookmarkPresencePhase.READY)
+                    }
                 }
             /** 离页停止精确观察时保持结构化取消。 */
             } catch (cancellation: CancellationException) {
                 throw cancellation
             /** 精确查询异常只映射为固定页面失败状态。 */
             } catch (exception: Exception) {
-                mutableUiState.update { /** state 是存在查询失败前快照。 */ state -> state.copy(bookmarkWriteFailed = true) }
+                if (generation == bookmarkObserveGeneration) mutableUiState.update { /** state 是存在查询失败前快照。 */ state ->
+                    state.copy(bookmarkPresencePhase = BookmarkPresencePhase.ERROR, bookmarkWriteFailed = true)
+                }
             } finally {
-                bookmarkObserveJob = null
+                if (generation == bookmarkObserveGeneration) bookmarkObserveJob = null
             }
         }
     }
 
     /** 取消精确观察和书签写入，离页后不得继续更新状态。 */
     private fun cancelBookmarkWork() {
+        bookmarkObserveGeneration += 1
         bookmarkObserveJob?.cancel(CancellationException("torrent_details_bookmark_observe_cancelled"))
         bookmarkObserveJob = null
+        bookmarkWriteGeneration += 1
         bookmarkWriteJob?.cancel(CancellationException("torrent_details_bookmark_write_cancelled"))
         bookmarkWriteJob = null
-        mutableUiState.update { /** state 是取消书签工作前快照。 */ state -> state.copy(isBookmarkBusy = false) }
+        mutableUiState.update { /** state 是取消书签工作前快照。 */ state ->
+            state.copy(isBookmarkBusy = false, bookmarkPresencePhase = BookmarkPresencePhase.UNKNOWN)
+        }
     }
 
     /** 取消旧任务并启动当前候选的安全详情加载。 */

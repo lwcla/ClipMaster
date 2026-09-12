@@ -1,6 +1,7 @@
 package com.cla.clip.feature.torrent.search.data.importer
 
 import com.cla.clip.feature.torrent.search.data.model.BookmarkedTorrent
+import com.cla.clip.feature.torrent.search.data.model.BookmarkContractValidator
 import com.cla.clip.feature.torrent.search.model.contract.Category
 import com.cla.clip.feature.torrent.search.provider.ProviderId
 import com.cla.clip.feature.torrent.search.provider.builtin.common.MagnetInfoHashParser
@@ -20,7 +21,7 @@ import kotlinx.serialization.json.longOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /** 书签中单个外部链接最大字符数，顶层扩展与解析器共享同一安全边界。 */
-private const val MAX_BOOKMARK_LINK_CHARS = 8192
+private const val MAX_BOOKMARK_LINK_CHARS = BookmarkContractValidator.MAX_LINK_CHARS
 
 /** 书签导入整包失败的稳定协议；单条字段错误只进入 skippedCount。 */
 internal enum class BookmarkImportFailureReason(
@@ -79,11 +80,11 @@ internal object BookmarkImportParser {
     /** envelope 字段名最大 64 字符，未知巨型 key 不得产生大字符串副本。 */
     const val MAX_ENVELOPE_KEY_CHARS = 64
     /** 展示名称上限与搜索输入边界一致，避免单条内容膨胀 UI。 */
-    private const val MAX_NAME_CHARS = 512
+    private const val MAX_NAME_CHARS = BookmarkContractValidator.MAX_NAME_CHARS
     /** Provider 展示名只用于 UI 快照，限制为 128 字符。 */
-    private const val MAX_PROVIDER_NAME_CHARS = 128
+    private const val MAX_PROVIDER_NAME_CHARS = BookmarkContractValidator.MAX_PROVIDER_NAME_CHARS
     /** 大小展示文本限制为 128 字符，禁止借可选字段承载大段内容。 */
-    private const val MAX_SIZE_TEXT_CHARS = 128
+    private const val MAX_SIZE_TEXT_CHARS = BookmarkContractValidator.MAX_SIZE_TEXT_CHARS
     /** 外部链接单字段最大 8192 字符，超出时整项跳过。 */
     private const val MAX_LINK_CHARS = MAX_BOOKMARK_LINK_CHARS
     /** 固定上游导出没有稳定 Provider ID，统一使用此兼容身份。 */
@@ -225,7 +226,8 @@ internal object BookmarkImportParser {
             item.optionalNonNegativeLong("bookmarkedAtEpochMillis")
                 ?: if (item.hasNonNull("bookmarkedAtEpochMillis")) return null else 0L
         }
-        return BookmarkedTorrent(
+        /** bookmark 最后通过保存与导出共用契约，防止三个入口边界漂移。 */
+        val bookmark = BookmarkedTorrent(
             infoHash = infoHash,
             name = name,
             providerId = providerId,
@@ -240,6 +242,7 @@ internal object BookmarkImportParser {
             fileDownloadLink = fileDownloadLink,
             bookmarkedAtEpochMillis = bookmarkedAtEpochMillis,
         )
+        return BookmarkContractValidator.normalize(bookmark)
     }
 
     /** 使用 REPORT 策略严格解码 UTF-8，避免损坏字节被替换后进入字段。 */

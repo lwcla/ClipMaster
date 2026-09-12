@@ -138,6 +138,8 @@ internal class TorrentSearchViewModel @Inject constructor(
     private var pendingSearch: PendingSearch? = null
     /** 历史写入任务独立于网络任务，失败不会阻断 Provider，离页仍统一取消。 */
     private var historyWriteJob: Job? = null
+    /** 历史写入代次阻止旧 finally 清除新搜索对应任务。 */
+    private var historyWriteGeneration = 0L
     /** 从历史页返回后等待搜索目的地重新进入前台的一次性查询。 */
     private var pendingHistoryReplay: String? = null
 
@@ -376,6 +378,7 @@ internal class TorrentSearchViewModel @Inject constructor(
         preflightJob = null
         searchJob?.cancel(CancellationException("torrent_search_stopped"))
         searchJob = null
+        historyWriteGeneration += 1
         historyWriteJob?.cancel(CancellationException("torrent_search_history_write_stopped"))
         historyWriteJob = null
         mutableUiState.update { /** state 是待停止的搜索快照。 */ state ->
@@ -450,6 +453,8 @@ internal class TorrentSearchViewModel @Inject constructor(
             )
         }
         /** 历史写入与 Provider 网络并行，介质异常由 Repository 日志覆盖且不改变搜索状态。 */
+        /** historyGeneration 固定本次搜索的历史写入所有权。 */
+        val historyGeneration = ++historyWriteGeneration
         historyWriteJob = viewModelScope.launch {
             try {
                 historyRepository.saveQuery(request.query)
@@ -460,7 +465,7 @@ internal class TorrentSearchViewModel @Inject constructor(
             } catch (exception: Exception) {
                 Unit
             } finally {
-                historyWriteJob = null
+                if (historyGeneration == historyWriteGeneration) historyWriteJob = null
             }
         }
         searchJob = viewModelScope.launch {

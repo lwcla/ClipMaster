@@ -96,6 +96,8 @@ internal class BookmarksViewModel @Inject constructor(
     private val importCoordinator: BookmarkImportCoordinator,
     /** 既有固定 operation/state/count 日志出口。 */
     private val logger: TorrentSearchDataLogger,
+    /** 在后台逐项生成完整有界文档的导出器。 */
+    private val exportSerializer: BookmarkExportSerializer = BookmarkExportSerializer(),
 ) : ViewModel() {
     /** 页面唯一可变状态。 */
     private val mutableUiState = MutableStateFlow(BookmarksUiState())
@@ -103,8 +105,12 @@ internal class BookmarksViewModel @Inject constructor(
     val uiState: StateFlow<BookmarksUiState> = mutableUiState.asStateFlow()
     /** Room 收集任务只在目的地可见时存在。 */
     private var collectionJob: Job? = null
+    /** Room 收集代次阻止旧 finally 清除重进后的新任务。 */
+    private var collectionGeneration = 0L
     /** 页面 IO/写入任务离页时统一取消。 */
     private var operationJob: Job? = null
+    /** 页面操作代次阻止旧结果或 finally 覆盖新任务状态。 */
+    private var operationGeneration = 0L
 
     /** 同步目的地活跃状态；激活才订阅全量阶段性 Flow，离页立即取消全部工作。 */
     fun setScreenActive(active: Boolean) {
@@ -138,19 +144,21 @@ internal class BookmarksViewModel @Inject constructor(
     /** SAF 选择器回调取得 URI 后才启动读取和逐项写入。 */
     fun importFrom(uri: Uri) {
         if (!canStartOperation() || !mutableUiState.value.snapshotReady) return
+        /** generation 固定本次导入所有权。 */
+        val generation = ++operationGeneration
         operationJob = viewModelScope.launch {
-            setBusy(true)
+            if (generation == operationGeneration) setBusy(true)
             logger.log("bookmark_import", "started")
             try {
                 when (/** parsed 是 05C 解析器提供的有界批次。 */ val parsed = documentGateway.read(uri)) {
                     is BookmarkImportResult.Failure -> {
                         logger.log("bookmark_import", "failed")
-                        setFailure(LocalDataFailure.IMPORT_FAILED)
+                        if (generation == operationGeneration) setFailure(LocalDataFailure.IMPORT_FAILED)
                     }
                     is BookmarkImportResult.Success -> {
                         /** report 是逐项隔离写入后的固定计数。 */
                         val report = importCoordinator.persist(parsed)
-                        mutableUiState.update { /** state 是写入导入计数前页面快照。 */ state ->
+                        if (generation == operationGeneration) mutableUiState.update { /** state 是写入导入计数前页面快照。 */ state ->
                             state.copy(importReport = report, failure = null)
                         }
                         logger.log("bookmark_import", if (report.writeFailureCount == 0) "completed" else "partial", report.importedCount)
@@ -163,9 +171,12 @@ internal class BookmarksViewModel @Inject constructor(
             /** 网关或数据库异常统一映射为固定导入失败。 */
             } catch (exception: Exception) {
                 logger.log("bookmark_import", "failed")
-                setFailure(LocalDataFailure.IMPORT_FAILED)
+                if (generation == operationGeneration) setFailure(LocalDataFailure.IMPORT_FAILED)
             } finally {
-                setBusy(false)
+                if (generation == operationGeneration) {
+                    setBusy(false)
+                    operationJob = null
+                }
             }
         }
     }
@@ -175,14 +186,16 @@ internal class BookmarksViewModel @Inject constructor(
         if (!canStartOperation() || !mutableUiState.value.snapshotReady) return
         /** snapshot 固定选择器返回时的完整列表，后续 Room 更新不改变本次文件。 */
         val snapshot = mutableUiState.value.bookmarks
+        /** generation 固定本次导出所有权。 */
+        val generation = ++operationGeneration
         operationJob = viewModelScope.launch {
-            setBusy(true)
+            if (generation == operationGeneration) setBusy(true)
             logger.log("bookmark_export", "started")
             try {
-                when (/** serialized 在打开输出流前完成全部条数与字节预检。 */ val serialized = BookmarkExportSerializer.serialize(snapshot)) {
+                when (/** serialized 在打开输出流前完成全部条数、单项与字节预检。 */ val serialized = exportSerializer.serialize(snapshot)) {
                     is BookmarkExportResult.Failure -> {
                         logger.log("bookmark_export", "failed")
-                        setFailure(LocalDataFailure.EXPORT_FAILED)
+                        if (generation == operationGeneration) setFailure(LocalDataFailure.EXPORT_FAILED)
                     }
                     is BookmarkExportResult.Success -> {
                         documentGateway.write(uri, serialized.bytes)
@@ -196,9 +209,12 @@ internal class BookmarksViewModel @Inject constructor(
             /** 输出流异常统一映射为固定导出失败。 */
             } catch (exception: Exception) {
                 logger.log("bookmark_export", "failed")
-                setFailure(LocalDataFailure.EXPORT_FAILED)
+                if (generation == operationGeneration) setFailure(LocalDataFailure.EXPORT_FAILED)
             } finally {
-                setBusy(false)
+                if (generation == operationGeneration) {
+                    setBusy(false)
+                    operationJob = null
+                }
             }
         }
     }
@@ -206,10 +222,12 @@ internal class BookmarksViewModel @Inject constructor(
     /** 激活后开始 Room Flow；重复 START 不创建第二个收集者。 */
     private fun startCollecting() {
         if (collectionJob != null) return
+        /** generation 固定本次 Room 收集所有权。 */
+        val generation = ++collectionGeneration
         collectionJob = viewModelScope.launch {
             try {
                 repository.observeBookmarks().collect { /** bookmarks 是当前完整阶段性快照。 */ bookmarks ->
-                    mutableUiState.update { /** state 是写入新快照前的页面状态。 */ state ->
+                    if (generation == collectionGeneration) mutableUiState.update { /** state 是写入新快照前的页面状态。 */ state ->
                         state.copy(bookmarks = bookmarks, snapshotReady = true, failure = null)
                     }
                 }
@@ -218,9 +236,9 @@ internal class BookmarksViewModel @Inject constructor(
                 throw cancellation
             /** Room Flow 异常只进入固定读取失败状态。 */
             } catch (exception: Exception) {
-                setFailure(LocalDataFailure.READ_FAILED)
+                if (generation == collectionGeneration) setFailure(LocalDataFailure.READ_FAILED)
             } finally {
-                collectionJob = null
+                if (generation == collectionGeneration) collectionJob = null
             }
         }
     }
@@ -228,8 +246,10 @@ internal class BookmarksViewModel @Inject constructor(
     /** 启动统一书签写操作并收敛固定错误。 */
     private fun launchWrite(operation: suspend () -> Int) {
         if (!canStartOperation()) return
+        /** generation 固定本次数据库写入所有权。 */
+        val generation = ++operationGeneration
         operationJob = viewModelScope.launch {
-            setBusy(true)
+            if (generation == operationGeneration) setBusy(true)
             try {
                 operation()
             /** 离页时保持书签写任务的结构化取消。 */
@@ -237,9 +257,12 @@ internal class BookmarksViewModel @Inject constructor(
                 throw cancellation
             /** 数据库异常只进入固定写入失败状态。 */
             } catch (exception: Exception) {
-                setFailure(LocalDataFailure.WRITE_FAILED)
+                if (generation == operationGeneration) setFailure(LocalDataFailure.WRITE_FAILED)
             } finally {
-                setBusy(false)
+                if (generation == operationGeneration) {
+                    setBusy(false)
+                    operationJob = null
+                }
             }
         }
     }
@@ -261,8 +284,10 @@ internal class BookmarksViewModel @Inject constructor(
 
     /** 离页取消 Room 收集和未完成 IO，并关闭确认弹窗。 */
     private fun stopWork() {
+        collectionGeneration += 1
         collectionJob?.cancel(CancellationException("bookmarks_collection_stopped"))
         collectionJob = null
+        operationGeneration += 1
         operationJob?.cancel(CancellationException("bookmarks_operation_stopped"))
         operationJob = null
         mutableUiState.update { /** state 是目的地停止前的页面快照。 */ state ->
@@ -283,8 +308,12 @@ internal class SearchHistoryViewModel @Inject constructor(
     val uiState: StateFlow<SearchHistoryUiState> = mutableUiState.asStateFlow()
     /** 可见期间的 Room 收集任务。 */
     private var collectionJob: Job? = null
+    /** 历史收集代次阻止旧任务释放新任务所有权。 */
+    private var collectionGeneration = 0L
     /** 删除或清空任务。 */
     private var operationJob: Job? = null
+    /** 历史写入代次阻止旧任务结束覆盖新任务状态。 */
+    private var operationGeneration = 0L
 
     /** 激活才订阅历史 Flow，离页取消收集与写入。 */
     fun setScreenActive(active: Boolean) {
@@ -316,19 +345,21 @@ internal class SearchHistoryViewModel @Inject constructor(
     /** 可见时启动唯一 Flow 收集。 */
     private fun startCollecting() {
         if (collectionJob != null) return
+        /** generation 固定本次历史收集所有权。 */
+        val generation = ++collectionGeneration
         collectionJob = viewModelScope.launch {
             try {
                 repository.observeHistory().collect { /** items 是当前历史快照。 */ items ->
-                    mutableUiState.update { /** state 是写入列表前快照。 */ state -> state.copy(items = items, failure = null) }
+                    if (generation == collectionGeneration) mutableUiState.update { /** state 是写入列表前快照。 */ state -> state.copy(items = items, failure = null) }
                 }
             /** 离开历史目的地时保持收集任务的结构化取消。 */
             } catch (cancellation: CancellationException) {
                 throw cancellation
             /** Room Flow 异常只进入固定读取失败状态。 */
             } catch (exception: Exception) {
-                mutableUiState.update { /** state 是读取失败前快照。 */ state -> state.copy(failure = LocalDataFailure.READ_FAILED) }
+                if (generation == collectionGeneration) mutableUiState.update { /** state 是读取失败前快照。 */ state -> state.copy(failure = LocalDataFailure.READ_FAILED) }
             } finally {
-                collectionJob = null
+                if (generation == collectionGeneration) collectionJob = null
             }
         }
     }
@@ -336,8 +367,10 @@ internal class SearchHistoryViewModel @Inject constructor(
     /** 启动不可重入历史写入并收敛固定失败。 */
     private fun launchWrite(operation: suspend () -> Int) {
         if (!mutableUiState.value.isScreenActive || operationJob?.isActive == true) return
+        /** generation 固定本次历史写入所有权。 */
+        val generation = ++operationGeneration
         operationJob = viewModelScope.launch {
-            mutableUiState.update { /** state 是写入开始前快照。 */ state -> state.copy(isBusy = true) }
+            if (generation == operationGeneration) mutableUiState.update { /** state 是写入开始前快照。 */ state -> state.copy(isBusy = true) }
             try {
                 operation()
             /** 离页时保持历史写任务的结构化取消。 */
@@ -345,17 +378,22 @@ internal class SearchHistoryViewModel @Inject constructor(
                 throw cancellation
             /** 数据库异常只进入固定写入失败状态。 */
             } catch (exception: Exception) {
-                mutableUiState.update { /** state 是写入失败前快照。 */ state -> state.copy(failure = LocalDataFailure.WRITE_FAILED) }
+                if (generation == operationGeneration) mutableUiState.update { /** state 是写入失败前快照。 */ state -> state.copy(failure = LocalDataFailure.WRITE_FAILED) }
             } finally {
-                mutableUiState.update { /** state 是写入结束前快照。 */ state -> state.copy(isBusy = false) }
+                if (generation == operationGeneration) {
+                    mutableUiState.update { /** state 是写入结束前快照。 */ state -> state.copy(isBusy = false) }
+                    operationJob = null
+                }
             }
         }
     }
 
     /** 离页取消所有工作并关闭确认。 */
     private fun stopWork() {
+        collectionGeneration += 1
         collectionJob?.cancel(CancellationException("history_collection_stopped"))
         collectionJob = null
+        operationGeneration += 1
         operationJob?.cancel(CancellationException("history_operation_stopped"))
         operationJob = null
         mutableUiState.update { /** state 是离页前快照。 */ state -> state.copy(isBusy = false, showClearConfirmation = false) }
@@ -374,8 +412,12 @@ internal class ViewedTorrentsViewModel @Inject constructor(
     val uiState: StateFlow<ViewedUiState> = mutableUiState.asStateFlow()
     /** 可见期间 Room 收集任务。 */
     private var collectionJob: Job? = null
+    /** 已查看收集代次阻止旧任务释放新任务所有权。 */
+    private var collectionGeneration = 0L
     /** 清空任务。 */
     private var operationJob: Job? = null
+    /** 已查看操作代次阻止旧任务结束覆盖新状态。 */
+    private var operationGeneration = 0L
 
     /** 激活才订阅已查看 Flow，离页立即取消。 */
     fun setScreenActive(active: Boolean) {
@@ -397,8 +439,10 @@ internal class ViewedTorrentsViewModel @Inject constructor(
     fun confirmClear() {
         dismissClear()
         if (!mutableUiState.value.isScreenActive || operationJob?.isActive == true) return
+        /** generation 固定本次清空操作所有权。 */
+        val generation = ++operationGeneration
         operationJob = viewModelScope.launch {
-            mutableUiState.update { /** state 是清空开始前快照。 */ state -> state.copy(isBusy = true) }
+            if (generation == operationGeneration) mutableUiState.update { /** state 是清空开始前快照。 */ state -> state.copy(isBusy = true) }
             try {
                 repository.clear()
             /** 离页时保持已查看清空任务的结构化取消。 */
@@ -406,9 +450,12 @@ internal class ViewedTorrentsViewModel @Inject constructor(
                 throw cancellation
             /** 数据库异常只进入固定写入失败状态。 */
             } catch (exception: Exception) {
-                mutableUiState.update { /** state 是清空失败前快照。 */ state -> state.copy(failure = LocalDataFailure.WRITE_FAILED) }
+                if (generation == operationGeneration) mutableUiState.update { /** state 是清空失败前快照。 */ state -> state.copy(failure = LocalDataFailure.WRITE_FAILED) }
             } finally {
-                mutableUiState.update { /** state 是清空结束前快照。 */ state -> state.copy(isBusy = false) }
+                if (generation == operationGeneration) {
+                    mutableUiState.update { /** state 是清空结束前快照。 */ state -> state.copy(isBusy = false) }
+                    operationJob = null
+                }
             }
         }
     }
@@ -416,27 +463,31 @@ internal class ViewedTorrentsViewModel @Inject constructor(
     /** 可见时启动唯一已查看 Flow 收集。 */
     private fun startCollecting() {
         if (collectionJob != null) return
+        /** generation 固定本次已查看收集所有权。 */
+        val generation = ++collectionGeneration
         collectionJob = viewModelScope.launch {
             try {
                 repository.observeViewed().collect { /** items 是当前安全身份快照。 */ items ->
-                    mutableUiState.update { /** state 是写入列表前快照。 */ state -> state.copy(items = items, failure = null) }
+                    if (generation == collectionGeneration) mutableUiState.update { /** state 是写入列表前快照。 */ state -> state.copy(items = items, failure = null) }
                 }
             /** 离开已查看目的地时保持收集任务的结构化取消。 */
             } catch (cancellation: CancellationException) {
                 throw cancellation
             /** Room Flow 异常只进入固定读取失败状态。 */
             } catch (exception: Exception) {
-                mutableUiState.update { /** state 是读取失败前快照。 */ state -> state.copy(failure = LocalDataFailure.READ_FAILED) }
+                if (generation == collectionGeneration) mutableUiState.update { /** state 是读取失败前快照。 */ state -> state.copy(failure = LocalDataFailure.READ_FAILED) }
             } finally {
-                collectionJob = null
+                if (generation == collectionGeneration) collectionJob = null
             }
         }
     }
 
     /** 离页取消收集和清空任务并关闭确认。 */
     private fun stopWork() {
+        collectionGeneration += 1
         collectionJob?.cancel(CancellationException("viewed_collection_stopped"))
         collectionJob = null
+        operationGeneration += 1
         operationJob?.cancel(CancellationException("viewed_operation_stopped"))
         operationJob = null
         mutableUiState.update { /** state 是离页前快照。 */ state -> state.copy(isBusy = false, showClearConfirmation = false) }

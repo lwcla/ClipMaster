@@ -35,6 +35,15 @@ import com.cla.clip.feature.torrent.search.ui.component.toTorrentResultCardState
 import java.text.DateFormat
 import java.util.Date
 
+/** 历史页固定操作区使用类型命名空间，永不与查询 key 相交。 */
+internal const val HISTORY_ACTIONS_ITEM_KEY = "history_header:actions"
+
+/** SAF 导入兼容标准 JSON、常见文本 JSON 与不提供精确类型的文档 Provider。 */
+internal val BOOKMARK_IMPORT_MIME_TYPES = arrayOf("application/json", "text/json", "application/octet-stream")
+
+/** 为合法规范化查询增加独立类型命名空间。 */
+internal fun historyLazyItemKey(normalizedQuery: String): String = "history_query:$normalizedQuery"
+
 /** 轻量本地数据主页，只负责进入三个独立目的地。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -94,7 +103,7 @@ internal fun BookmarksScreen(
         title = stringResource(R.string.torrent_search_bookmarks_screen_title),
         onBack = onBack,
         actions = {
-            TextButton(enabled = state.snapshotReady && !state.isBusy, onClick = { importLauncher.launch(arrayOf("application/json", "text/json")) }) {
+            TextButton(enabled = state.snapshotReady && !state.isBusy, onClick = { importLauncher.launch(BOOKMARK_IMPORT_MIME_TYPES) }) {
                 Text(stringResource(R.string.torrent_search_bookmarks_action_import))
             }
             TextButton(enabled = state.snapshotReady && !state.isBusy, onClick = { exportLauncher.launch("torrent-search-bookmarks-v1.json") }) {
@@ -174,7 +183,7 @@ internal fun SearchHistoryScreen(
 ) {
     LocalDataScaffold(title = stringResource(R.string.torrent_search_search_history_screen_title), onBack = onBack) { /** padding 是页面安全边距。 */ padding ->
         LazyColumn(modifier = Modifier.fillMaxSize().padding(padding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            item(key = "history_actions") {
+            item(key = HISTORY_ACTIONS_ITEM_KEY) {
                 Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = onRequestClear,
@@ -184,7 +193,7 @@ internal fun SearchHistoryScreen(
                     if (state.items.isEmpty()) Text(stringResource(R.string.torrent_search_search_history_empty_message))
                 }
             }
-            items(state.items, key = { /** item 使用规范化查询作为稳定业务身份。 */ item -> item.normalizedQuery }) { /** item 是当前历史行。 */ item ->
+            items(state.items, key = { /** item 使用带类型命名空间的规范化查询作为稳定业务身份。 */ item -> historyLazyItemKey(item.normalizedQuery) }) { /** item 是当前历史行。 */ item ->
                 Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { onReplay(item.query) }, modifier = Modifier.weight(1f)) { Text(item.query) }
                     TextButton(enabled = !state.isBusy, onClick = { onRemove(item.query) }) { Text(stringResource(R.string.torrent_search_remove_item)) }

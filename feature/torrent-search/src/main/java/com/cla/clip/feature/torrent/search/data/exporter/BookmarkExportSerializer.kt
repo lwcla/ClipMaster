@@ -1,9 +1,15 @@
 package com.cla.clip.feature.torrent.search.data.exporter
 
 import com.cla.clip.feature.torrent.search.data.importer.BookmarkImportParser
+import com.cla.clip.feature.torrent.search.data.model.BookmarkContractValidator
 import com.cla.clip.feature.torrent.search.data.model.BookmarkedTorrent
+import java.io.ByteArrayOutputStream
+import javax.inject.Inject
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -14,6 +20,8 @@ internal enum class BookmarkExportFailureReason {
     TOO_MANY_ITEMS,
     /** 最终 UTF-8 文档超过 10 MiB，必须整体失败而不能截断。 */
     TOO_LARGE,
+    /** 单项不满足保存与 05C 解析器共享协议，禁止生成不可恢复文档。 */
+    INVALID_ITEM,
 }
 
 /** 书签导出结果；成功字节可直接交给一次性 SAF 输出流。 */
@@ -32,32 +40,58 @@ internal sealed interface BookmarkExportResult {
 }
 
 /** 生成与 05C 解析器完全兼容的稳定 v1 JSON 包络。 */
-internal object BookmarkExportSerializer {
-    /** 导出全部书签；超过条数或最终字节上限时不返回部分内容。 */
-    fun serialize(
+internal class BookmarkExportSerializer @Inject constructor() {
+    /** 编码固定离开 Main，测试构造可替换以验证调度与取消。 */
+    private var encodingDispatcher: CoroutineDispatcher = Dispatchers.Default
+
+    /** 测试与独立调用方可替换编码 dispatcher。 */
+    internal constructor(
+        /** 受调用方控制的后台编码 dispatcher。 */
+        encodingDispatcher: CoroutineDispatcher,
+    ) : this() {
+        this.encodingDispatcher = encodingDispatcher
+    }
+    /** 逐项导出全部书签；超过条数、单项或字节上限时不返回部分内容。 */
+    suspend fun serialize(
         /** 已取得的同一书签快照，调用期间不会再次读取 Room。 */
         bookmarks: List<BookmarkedTorrent>,
-    ): BookmarkExportResult {
+    ): BookmarkExportResult = withContext(encodingDispatcher) {
         if (bookmarks.size > BookmarkImportParser.MAX_IMPORT_ITEMS) {
-            return BookmarkExportResult.Failure(BookmarkExportFailureReason.TOO_MANY_ITEMS)
+            return@withContext BookmarkExportResult.Failure(BookmarkExportFailureReason.TOO_MANY_ITEMS)
         }
-        /** bookmarkElements 按当前仓库倒序快照顺序固定输出。 */
-        val bookmarkElements = bookmarks.map { /** bookmark 是待转换为稳定字段对象的领域书签。 */ bookmark ->
-            bookmark.toJsonObject()
+        /** output 只保留不超过 parser 上限的最终字节，拒绝先构造巨型 DOM 或字符串。 */
+        val output = ByteArrayOutputStream(minOf(64 * 1024, BookmarkImportParser.MAX_IMPORT_BYTES))
+        if (!output.appendBounded(ENVELOPE_PREFIX)) {
+            return@withContext BookmarkExportResult.Failure(BookmarkExportFailureReason.TOO_LARGE)
         }
-        /** envelope 固定先写 version 再写 bookmarks，便于审查和稳定 fixture。 */
-        val envelope = JsonObject(
-            linkedMapOf(
-                "version" to JsonPrimitive(1),
-                "bookmarks" to JsonArray(bookmarkElements),
-            ),
-        )
-        /** bytes 是紧凑 JSON 的完整 UTF-8 表示，大小判断发生在任何写出之前。 */
-        val bytes = Json.encodeToString(JsonObject.serializer(), envelope).toByteArray(Charsets.UTF_8)
-        if (bytes.size > BookmarkImportParser.MAX_IMPORT_BYTES) {
-            return BookmarkExportResult.Failure(BookmarkExportFailureReason.TOO_LARGE)
+        bookmarks.forEachIndexed { /** index 是当前快照中的稳定输出序号。 */ index, /** bookmark 是待校验与编码的领域书签。 */ bookmark ->
+            coroutineContext.ensureActive()
+            /** canonicalBookmark 由保存、解析和导出共用校验器生成。 */
+            val canonicalBookmark = BookmarkContractValidator.normalize(bookmark)
+                ?: return@withContext BookmarkExportResult.Failure(BookmarkExportFailureReason.INVALID_ITEM)
+            /** itemBytes 只包含单条有界 JSON，不构建整包对象树。 */
+            val itemBytes = Json.encodeToString(JsonObject.serializer(), canonicalBookmark.toJsonObject()).toByteArray(Charsets.UTF_8)
+            /** separator 在第二项开始前写入固定逗号。 */
+            val separator = if (index == 0) EMPTY_BYTES else COMMA_BYTES
+            if (!output.appendBounded(separator) || !output.appendBounded(itemBytes)) {
+                return@withContext BookmarkExportResult.Failure(BookmarkExportFailureReason.TOO_LARGE)
+            }
         }
-        return BookmarkExportResult.Success(bytes)
+        coroutineContext.ensureActive()
+        if (!output.appendBounded(ENVELOPE_SUFFIX)) {
+            return@withContext BookmarkExportResult.Failure(BookmarkExportFailureReason.TOO_LARGE)
+        }
+        return@withContext BookmarkExportResult.Success(output.toByteArray())
+    }
+
+    /** 在写入前检查最终容量，失败时不追加任何当前分块。 */
+    private fun ByteArrayOutputStream.appendBounded(
+        /** 当前待追加 UTF-8 分块。 */
+        bytes: ByteArray,
+    ): Boolean {
+        if (size() > BookmarkImportParser.MAX_IMPORT_BYTES - bytes.size) return false
+        write(bytes)
+        return true
     }
 
     /** 将单个领域书签映射到 v1 固定字段顺序，null 仍显式保留以稳定协议。 */
@@ -83,5 +117,17 @@ internal object BookmarkExportSerializer {
     /** 把可空字符串显式编码为字符串或 JSON null。 */
     private fun String?.toJsonPrimitiveOrNull(): kotlinx.serialization.json.JsonElement {
         return this?.let(::JsonPrimitive) ?: JsonNull
+    }
+
+    /** 紧凑 JSON 固定包络字节。 */
+    companion object {
+        /** v1 包络前缀。 */
+        private val ENVELOPE_PREFIX = "{\"version\":1,\"bookmarks\":[".toByteArray(Charsets.UTF_8)
+        /** v1 包络后缀。 */
+        private val ENVELOPE_SUFFIX = "]}".toByteArray(Charsets.UTF_8)
+        /** 非首项分隔符。 */
+        private val COMMA_BYTES = byteArrayOf(','.code.toByte())
+        /** 首项不需要分隔符。 */
+        private val EMPTY_BYTES = byteArrayOf()
     }
 }
