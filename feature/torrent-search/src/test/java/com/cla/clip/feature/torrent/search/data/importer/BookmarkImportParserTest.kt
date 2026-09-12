@@ -58,6 +58,20 @@ class BookmarkImportParserTest {
         assertEquals(0, result.duplicateCount)
     }
 
+    /** 普通 Unicode HTTP URL 在 legacy 数组中仍应规范化导入而不是被兼容修复误拒绝。 */
+    @Test
+    fun parseAcceptsOrdinaryUnicodeUrlsFromLegacyArray() {
+        /** json 使用固定上游数组和不会触网的保留域 Unicode 路径。 */
+        val json = """[{"infoHash":"$HASH_A","name":"Unicode URL","providerName":"Fixture","descriptionPageUrl":"https://example.invalid/雪","fileDownloadLink":"https://example.invalid/文件/雪"}]"""
+
+        /** result 通过真实 legacy 解析入口验证兼容语义。 */
+        val result = BookmarkImportParser.parse(ByteArrayInputStream(json.toByteArray())) as BookmarkImportResult.Success
+
+        assertEquals(0, result.skippedCount)
+        assertEquals("https://example.invalid/%E9%9B%AA", result.bookmarks.single().descriptionPageUrl)
+        assertEquals("https://example.invalid/%E6%96%87%E4%BB%B6/%E9%9B%AA", result.bookmarks.single().fileDownloadLink)
+    }
+
     /** 显式 infoHash 与 magnet 身份不一致时必须跳过当前项，防止错误下载。 */
     @Test
     fun parseSkipsBookmarkWhoseMagnetDoesNotMatchInfoHash() {

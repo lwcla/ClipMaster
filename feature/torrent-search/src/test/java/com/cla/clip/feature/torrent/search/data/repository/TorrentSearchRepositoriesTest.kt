@@ -89,6 +89,21 @@ class TorrentSearchRepositoriesTest {
         assertEquals(1, repository.observeBookmarks().first().size)
     }
 
+    /** Repository 必须拒绝规范化后超长的两个 HTTP 字段，并保持 DAO 零写入。 */
+    @Test
+    fun bookmarkRepositoryRejectsExpandedHttpUrlsWithoutWriting() = runTest {
+        /** dao 记录任何错误放行造成的实体写入。 */
+        val dao = FakeBookmarkedTorrentDao()
+        /** repository 使用固定合法时间，测试只关注 URL 最终表示。 */
+        val repository = BookmarkRepositoryImpl(dao, nowMillis = { 100L })
+        /** expandingUrl 原始长度低于上限，但百分号编码后超过协议边界。 */
+        val expandingUrl = "https://example.invalid/" + "雪".repeat(1_000)
+
+        assertFalse(repository.save(bookmark(HASH_A, "description").copy(descriptionPageUrl = expandingUrl)))
+        assertFalse(repository.save(bookmark(HASH_B, "file").copy(fileDownloadLink = expandingUrl)))
+        assertTrue(dao.observeAll().first().isEmpty())
+    }
+
     /** 搜索历史必须复用入口清洗、按小写稳定键去重，并拒绝超限文本。 */
     @Test
     fun historyRepositorySanitizesDeduplicatesAndRejectsOverLimitQueries() = runTest {

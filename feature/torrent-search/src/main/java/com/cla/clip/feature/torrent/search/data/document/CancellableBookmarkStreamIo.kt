@@ -12,10 +12,12 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 
-/** 在可替换阻塞 dispatcher 上执行 SAF 分块 IO，并把取消主动连接到底层 close。 */
+/** 在可替换阻塞 dispatcher 上执行 SAF 分块 IO；取得流后取消会在独立后台关闭，打开阶段本身无法由 close 立即打断。 */
 internal class CancellableBookmarkStreamIo(
     /** 真正执行 ContentResolver 流读取与写出的后台 dispatcher。 */
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    /** 专门承载取消关闭的并发后台 dispatcher，不能依赖可能被阻塞读写占满的唯一队列。 */
+    private val closeDispatcher: CoroutineDispatcher = Dispatchers.IO,
     /** 写出分块大小；测试可缩小以稳定覆盖部分写入。 */
     private val chunkSize: Int = DEFAULT_CHUNK_SIZE,
 ) {
@@ -51,7 +53,7 @@ internal class CancellableBookmarkStreamIo(
 
     /** 在独立阻塞线程运行单个流操作；取消回调不等待该线程即可主动 close。 */
     private suspend fun <Stream : Closeable, Output> execute(
-        /** 仅在后台线程执行的流打开器。 */
+        /** 仅在后台线程执行的流打开器；Provider 返回流前取消只能废弃结果，不能立即打断其内部阻塞。 */
         openStream: () -> Stream?,
         /** 接收当前流和无阻塞取消探针的实际操作。 */
         operation: (Stream, () -> Boolean) -> Output,
@@ -61,7 +63,7 @@ internal class CancellableBookmarkStreamIo(
         continuation.invokeOnCancellation {
             /** stream 是取消瞬间仍归本次操作所有的流。 */
             val stream = activeStream.getAndSet(null)
-            runCatching { stream?.close() }
+            if (stream != null) scheduleCancellationClose(stream)
         }
         ioDispatcher.dispatch(EmptyCoroutineContext) {
             if (!continuation.isActive) return@dispatch
@@ -75,7 +77,7 @@ internal class CancellableBookmarkStreamIo(
             }
             activeStream.set(stream)
             if (!continuation.isActive) {
-                activeStream.getAndSet(null)?.let { /** openedStream 是取消与打开竞态中刚取得的流。 */ openedStream -> runCatching { openedStream.close() } }
+                activeStream.getAndSet(null)?.let { /** openedStream 是取消与打开竞态中刚取得的流。 */ openedStream -> scheduleCancellationClose(openedStream) }
                 return@dispatch
             }
             /** operationResult 保留实际读写成功或失败，关闭完成前不向调用方报告成功。 */
@@ -93,6 +95,16 @@ internal class CancellableBookmarkStreamIo(
                 }
                 continuation.resumeWith(finalResult)
             }
+        }
+    }
+
+    /** 把取消路径取得的唯一关闭所有权移交后台；调用 cancel 的 Main 线程永不直接执行阻塞 close。 */
+    private fun scheduleCancellationClose(
+        /** 已从 activeStream 原子取出且不会再由正常路径关闭的流。 */
+        stream: Closeable,
+    ) {
+        closeDispatcher.dispatch(EmptyCoroutineContext) {
+            runCatching { stream.close() }
         }
     }
 

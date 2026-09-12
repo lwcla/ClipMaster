@@ -164,6 +164,39 @@ class BookmarkExportSerializerTest {
         assertEquals(bookmark, parsed.bookmarks.single())
     }
 
+    /** 规范化后超过单字段上限的 Unicode URL 必须拒绝，不能返回 parser 会跳过的 Success。 */
+    @Test
+    fun serializeRejectsUnicodeUrlWhoseNormalizedFormExceedsParserLimit() = runTest {
+        /** expandingUrl 原始长度允许，但百分号编码后的最终字符串超过 8192。 */
+        val expandingUrl = "https://example.invalid/" + "雪".repeat(1_000)
+        /** candidate 复现旧实现会先报告 Success、随后 parser skipped 的坏记录。 */
+        val candidate = bookmark(HASH_A, "Synthetic").copy(descriptionPageUrl = expandingUrl)
+
+        assertEquals(
+            BookmarkExportResult.Failure(BookmarkExportFailureReason.INVALID_ITEM),
+            BookmarkExportSerializer().serialize(listOf(candidate)),
+        )
+    }
+
+    /** 普通 Unicode v1 URL 仍应导出成功并由 parser 以零 skipped 完整恢复。 */
+    @Test
+    fun serializeRoundTripsOrdinaryUnicodeUrlsWithoutSkippedItems() = runTest {
+        /** candidate 的两个 URL 会被 OkHttp 规范化为仍在上限内的百分号表示。 */
+        val candidate = bookmark(HASH_A, "Synthetic").copy(
+            descriptionPageUrl = "https://example.invalid/雪",
+            fileDownloadLink = "https://example.invalid/文件/雪",
+        )
+        /** serialized 必须是 parser 可完整恢复的成功结果。 */
+        val serialized = BookmarkExportSerializer().serialize(listOf(candidate)) as BookmarkExportResult.Success
+        /** parsed 通过真实 05C parser 验证没有单项被静默跳过。 */
+        val parsed = BookmarkImportParser.parse(ByteArrayInputStream(serialized.bytes)) as BookmarkImportResult.Success
+
+        assertEquals(0, parsed.skippedCount)
+        assertEquals(1, parsed.bookmarks.size)
+        assertEquals("https://example.invalid/%E9%9B%AA", parsed.bookmarks.single().descriptionPageUrl)
+        assertEquals("https://example.invalid/%E6%96%87%E4%BB%B6/%E9%9B%AA", parsed.bookmarks.single().fileDownloadLink)
+    }
+
     /** 构造字段完整但不含真实用户数据的书签。 */
     private fun bookmark(
         /** 合成稳定身份。 */

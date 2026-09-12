@@ -64,7 +64,10 @@ private fun String?.normalizeHttpUrlOrNull(): String? {
     /** parsedUrl 复用 OkHttp authority 校验并拒绝 userinfo。 */
     val parsedUrl = value.toHttpUrlOrNull() ?: return null
     if (parsedUrl.username.isNotEmpty() || parsedUrl.password.isNotEmpty()) return null
-    return parsedUrl.toString()
+    /** normalizedUrl 是持久化与导出真正使用的百分号编码表示，必须再次满足字符上限。 */
+    val normalizedUrl = parsedUrl.toString()
+    if (normalizedUrl.length > BookmarkContractValidator.MAX_LINK_CHARS) return null
+    return normalizedUrl
 }
 
 /** 删除 Unicode 控制字符并裁剪边界空白。 */
