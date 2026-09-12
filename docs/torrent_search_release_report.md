@@ -19,8 +19,8 @@ TorrentSearch 任务 6、任务 7 与任务 8 的实现和本机可执行发布�
 - 体积增量：888,453 bytes，18.32%。
 - 功能开启 mapping：已保存，69,577,216 bytes。
 - Gradle wrapper distribution SHA-256：已固定。
-- `gradle/verification-metadata.xml`：399,898 bytes，覆盖 853 个组件；后续未带写入参数的 Debug、AndroidTest 与单测命令均在 dependency verification 开启状态下通过。
-- 依赖许可证：`LICENSE`、`NOTICE.md` 与 `THIRD_PARTY_DEPENDENCIES.md` 存在且通过发布静态门禁。
+- Gradle dependency verification：发布收尾阶段曾生成覆盖 853 个组件的 checksum 基线；后续确认 Android Studio Sync 会额外解析 118 个仅用于源码跳转的 `sources.jar`/Gradle source ZIP，且这些 IDE 动态 `detachedConfiguration` 不会被常规命令行生成流程稳定收录。项目现已移除 `gradle/verification-metadata.xml` 并关闭该全局门禁，避免正常 Sync 被非运行时附件阻断。
+- 依赖许可证：`LICENSE`、`NOTICE.md` 与 `THIRD_PARTY_DEPENDENCIES.md` 已核对并保留。
 
 产物位于 `app/build/reports/torrent-search-release/`：
 
@@ -42,9 +42,9 @@ TorrentSearch 任务 6、任务 7 与任务 8 的实现和本机可执行发布�
 
 Application 类保持 `com.cla.clip.master.App`，没有新增启动期 provider/service/receiver。静态冷启动初始化边界因此未扩大到主动后台组件；真实冷启动时间差必须等设备可用后测量。
 
-## 静态扫描与测试
+## 发布审查与测试
 
-`checkTorrentSearchReleaseSafety` 已通过，覆盖：
+发布阶段曾运行 TorrentSearch 专属静态扫描并通过以下检查；为让该功能保持普通 Android Library 模块结构，专属 Gradle 扫描任务现已移除，后续由代码评审和标准模块验证覆盖：
 
 - 生产日志不得插值 URL、查询、magnet、Cookie、API Key、header/body/response、文件名或异常 message。
 - fixture 不得包含授权头、私钥、AWS key 或疑似明文凭据。
@@ -52,7 +52,7 @@ Application 类保持 `com.cla.clip.master.App`，没有新增启动期 provider
 - Feature Manifest 不得声明权限、provider、service、receiver、备份接管或 `tools:replace`。
 - 上游许可证、署名和直接依赖许可清单必须完整。
 
-功能开关关闭与开启两条路径的 `:app:compileDebugKotlin`、`:app:compileDebugAndroidTestKotlin` 均通过；启用路径的 `:app:testDebugUnitTest` 为 69 tests / 19 suites，0 failures/errors/skipped。TorrentSearch 模块全量 JVM 回归为 654 tests / 98 suites，0 failures/errors/skipped，Kotlin 编译、中文注释门禁和发布静态门禁同时通过。
+功能开关关闭与开启两条路径的 `:app:compileDebugKotlin`、`:app:compileDebugAndroidTestKotlin` 均通过；启用路径的 `:app:testDebugUnitTest` 为 69 tests / 19 suites，0 failures/errors/skipped。TorrentSearch 模块发布时的全量 JVM 回归为 654 tests / 98 suites，0 failures/errors/skipped，Kotlin 编译及当时存在的中文注释、发布静态门禁同时通过。
 
 ## 真实 Provider 联网冒烟
 
@@ -86,3 +86,5 @@ Application 类保持 `com.cla.clip.master.App`，没有新增启动期 provider
 
 - 2026-09-12：建立最终发布报告；原因是任务 8 需要把构建、依赖、许可、真实联网、APK/权限/Manifest 差异、mapping 和设备限制统一形成可审计结论。
 - 2026-09-12：收尾修复 AudioBookBay 搜索与详情当前 `#content` 容器并复跑 43 Provider；AudioBookBay 真实搜索返回 9 条，整体更新为 25 ok、10 Cloudflare、6 HTTP 拒绝、1 网络失败、1 SubsPlease 搜索空正文解析失败。原因是发布报告必须区分可修复的 DOM 漂移与第三方端点自身异常，不能把 HTTP 200 空正文当作成功。
+- 2026-09-12：移除项目级 Gradle dependency verification；原因是其严格校验范围包含 Android Studio 动态下载的 118 个构建脚本源码附件，常规 `--write-verification-metadata sha256` 未覆盖 IDE 的 `detachedConfiguration3`，导致正常 Sync 持续失败。保留 wrapper 发行包 SHA-256、version catalog、固定上游快照、许可证清单和发布静态扫描；本次仅调整构建期安全策略，不新增运行时日志。关闭后 `gradlew help` 与启用 TorrentSearch 的 `:app:compileDebugKotlin` 均通过。
+- 2026-09-12：保留 `enableMagnetFeature` 条件依赖，移除 TorrentSearch 专属中文注释/发布扫描 Gradle 任务、两份任务 fixture 和两个空 ProGuard 文件；原因是这些任务未接入标准 `check` 生命周期，空规则也不产生混淆行为，继续保留只会让该模块受到额外构建期对待。运行时安全、Manifest、备份、网络和许可证文件均未改变；本次标准模块单测、模块编译、功能开启与默认关闭 App 编译、TorrentSearch Release AAR 构建均通过。

@@ -81,7 +81,7 @@ OkHttp Dispatcher 固定全局并发 64、同主机 5；连接超时 10 秒、�
 
 ## 供应链与资源
 
-上游代码、资源和翻译采用机械移植并保留本地修改说明。所有导入资源使用 `torrent_search_` 前缀，禁止覆盖宿主资源；仅 AGP 固定识别的 `src/main/res/resources.properties` 保持原文件名，其 `unqualifiedResLocale=en` 元数据不生成 `R` ID。移植实现不得启动 Koin，不得替换宿主 Application、全局异常处理或全局 Coil。新增依赖必须来自 version catalog，并补齐 dependency verification 与许可证/依赖清单校验。
+上游代码、资源和翻译采用机械移植并保留本地修改说明。所有导入资源使用 `torrent_search_` 前缀，禁止覆盖宿主资源；仅 AGP 固定识别的 `src/main/res/resources.properties` 保持原文件名，其 `unqualifiedResLocale=en` 元数据不生成 `R` ID。移植实现不得启动 Koin，不得替换宿主 Application、全局异常处理或全局 Coil。新增依赖必须来自 version catalog，并补齐许可证与依赖清单校验；项目当前不启用 Gradle dependency verification，避免 Android Studio 为构建脚本下载源码附件时因动态 `detachedConfiguration` 缺少 checksum 而阻断 Sync。
 
 ### 任务 3 固定基线（2026-08-31）
 
@@ -161,12 +161,12 @@ NekoBT 固定 SAFE、默认关闭、ANIME 与唯一 `nekobt.to`；Nyaa 固定 SA
 日志与诊断继续复用 04A 聚合器的低敏 Provider ID、阶段、数量、耗时和 reasonCode；Provider/parser 不新增 logger，禁止记录 URL、查询、magnet、HTML、登录态或异常 message。解析失败通过合成 fixture、断言和统一失败分类定位，避免重复及高敏日志。
 
 1. 删除旧磁力模块，建立 API/实现空壳和宿主发现/启动/备份映射契约测试。
-2. 固定快照、许可证、manifest、资源前缀和依赖验证。
+2. 固定快照、许可证、manifest、资源前缀、version catalog 和 Gradle wrapper 发行包校验。
 3. 先以失败测试固定 43 Provider 注册表、调度器、超时、取消、渐进结果和失败隔离，再接入搜索内核。
 4. 先以失败测试固定输入、URL、响应、Torrent、Bencode、导入、Keystore 与稳定协议，再接入 Room/DataStore。
 5. 迁移完整 Activity、页面、Hilt、系统 Intent、分享、下载、SAF、DoH、Torznab 与 Cloudflare。
 6. 接入 schemaVersion 4、备份贡献者、Auto Backup 排除及旧数据检测/精确清理。
-7. 完成中文注释扫描、资源/Manifest 冲突扫描、测试资源与日志敏感字段扫描，以及端到端与发布验证。
+7. 通过标准模块单测、编译、资源/Manifest 与敏感信息审查完成端到端和发布验证，不为 TorrentSearch 保留专属 Gradle 扫描任务。
 
 ## 日志与诊断计划
 
@@ -592,7 +592,7 @@ dirty 与首次披露：书签、历史、已查看 Repository 仅在成功且�
 
 ### 任务 08：发布门禁与真实联网验证（2026-09-12）
 
-状态：已完成（本机可执行范围）。新增 `checkTorrentSearchReleaseSafety`，检查生产日志中的高风险字段、fixture 凭据、资源前缀、Feature Manifest 越界声明和许可清单；Gradle wrapper 固定发行包 SHA-256，并生成 dependency verification metadata。功能开关关闭与开启两条 Debug/AndroidTest 编译和 Release/R8 均通过，启用版 mapping 已保存。
+状态：已完成（本机可执行范围）。发布阶段曾以 TorrentSearch 专属 Gradle 任务检查生产日志高风险字段、fixture 凭据、资源前缀、Feature Manifest 越界声明和许可清单；为使该功能保持普通 Android Library 模块结构，专属中文注释与发布扫描任务现已移除，后续复用仓库通用评审、单测和编译门禁。Gradle wrapper 仍固定发行包 SHA-256。发布收尾阶段曾生成 dependency verification metadata，但该全局门禁会校验 Android Studio 动态下载的构建脚本源码附件并阻断 Sync，现已按项目维护取舍关闭。功能开关关闭与开启两条 Debug/AndroidTest 编译和 Release/R8 均通过，启用版 mapping 已保存。
 
 真实联网冒烟使用生产网络客户端并发检查固定 43 个内置 Provider，只输出 Provider ID、状态、数量、耗时、可选 HTTP 状态和未分类异常类型。2026-09-12 收尾复跑结果为 25 个 `ok`、10 个 `cloudflare_locked`、6 个 `http_denied`、1 个 `network_failed`、1 个 `parse_failed`、0 个 `code_failure`；AudioBookBay 已兼容当前 `#content` 结果容器并真实返回 9 条，SubsPlease 搜索 API 对多个查询返回 HTTP 200 空正文但同站 latest/schedule 正常，故保留外部端点解析失败而不伪装空成功。第三方站点临时状态不阻断发布，未分类代码异常会阻断。
 
@@ -601,3 +601,7 @@ dirty 与首次披露：书签、历史、已查看 Repository 仅在成功且�
 设备限制：当前主机没有 Android 设备、AVD 或 system image，故 API 24/36 instrumentation、真实磁力客户端、SAF Provider、Cloudflare WebView 交互与冷启动计时未执行；对应 instrumentation 已在功能开关开/关两条路径编译通过。静态初始化边界确认 Application 类、权限及后台 service/receiver/provider 不变，只有用户主动入口组件增加。完整证据见 `docs/torrent_search_release_report.md`。
 
 收尾变更记录：2026-09-12，为 AudioBookBay 搜索与详情 parser 复用固定快照 `#primary`、当前站点 `#content` 双容器选择器，分别以当前 DOM 形状回归取得 RED，再由最小 selector 调整转为 GREEN；真实搜索冒烟确认该来源恢复并返回 9 条。SubsPlease 不放宽对象顶层 JSON 契约，因为公开脚本仍调用同一路径且其 search 端点当前返回空正文，放宽只会掩盖外站故障；既有低敏 Provider 状态日志已覆盖，本次不新增运行时日志。
+
+收尾变更记录：2026-09-12，移除项目级 `gradle/verification-metadata.xml` 并关闭 Gradle dependency verification；原因是 Android Studio Sync 会通过动态 `detachedConfiguration` 下载 118 个仅用于源码跳转的 `sources.jar`/Gradle source ZIP，而命令行生成流程无法稳定覆盖这组 IDE 附件，继续启用会造成高维护成本并阻断开发。保留 version catalog、Gradle wrapper distribution SHA-256、上游固定快照、许可证清单和发布静态扫描作为现有供应链边界；该配置变更不产生运行时日志，也不涉及用户数据或隐私字段。关闭后 `gradlew help` 与启用 TorrentSearch 的 App Debug Kotlin 编译均通过。
+
+收尾变更记录：2026-09-12，保留 `enableMagnetFeature` 条件依赖，移除 TorrentSearch 模块专属中文注释/发布扫描 Gradle 任务、任务专用 comment fixture 和两个空 ProGuard 占位文件；原因是这些配置没有参与标准 `check` 生命周期，且使单个模块的构建脚本显著偏离仓库其他普通 Android Library 模块。后续继续通过仓库通用注释规则、模块单测、功能开关开/关编译和人工发布审查保证质量；不改变运行时日志、Manifest、数据、备份或网络行为。本次标准模块单测、模块编译、功能开启与默认关闭 App 编译、TorrentSearch Release AAR 构建均通过。

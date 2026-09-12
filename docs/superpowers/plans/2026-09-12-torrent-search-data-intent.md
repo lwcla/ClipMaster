@@ -130,7 +130,7 @@
 
 - [x] **Step 2: 运行组合门禁**
 
-  Run: `./gradlew :feature:torrent-search:testDebugUnitTest :feature:torrent-search:compileDebugKotlin :feature:torrent-search:checkTorrentSearchChineseComments :app:compileDebugKotlin -PenableMagnetFeature=true --no-daemon`
+  Run: `./gradlew :feature:torrent-search:testDebugUnitTest :feature:torrent-search:compileDebugKotlin :app:compileDebugKotlin -PenableMagnetFeature=true --no-daemon`
 
 - [x] **Step 3: 运行格式检查**
 
@@ -145,4 +145,5 @@
 - 2026-09-12：三组定向测试均经历缺类型/缺实现 RED 并转为 GREEN；Room v1 schema 已生成并核对三张表的稳定主键与时间索引。
 - 2026-09-12：最终组合门禁 `BUILD SUCCESSFUL in 2m 9s`，JUnit XML 为 503 tests / 65 suites、0 failures/errors/skipped；模块 Kotlin、中文注释门禁、系统备份资源合并及启用功能的 App Kotlin 编译通过。
 - 2026-09-12：`git diff --check` 无错误，仅报告 Windows 工作树 LF/CRLF 转换提示；工作区保持未暂存、未提交，原有 04E7/04F/05A 改动未被覆盖。
+- 2026-09-12：后续普通化 TorrentSearch 模块构建时移除专属中文注释/发布扫描任务和任务 fixture；本计划的可重复组合命令改用标准模块单测、编译与 App 启用路径编译，历史完成记录仍保留当时门禁事实。
 - 未在本批执行：关闭功能编译、release/R8、API 24/36 设备与真实联网；这些属于任务 8 发布门禁。任务 7 仍需补自定义白名单备份、dirty 标记、批量/分页 DAO、幂等恢复计数和报告。

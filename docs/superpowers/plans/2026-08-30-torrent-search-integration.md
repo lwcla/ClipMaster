@@ -57,14 +57,14 @@
 - 新增 `feature/torrent-search/NOTICE.md`
 - 新增 `feature/torrent-search/upstream-manifest.json`
 - 移植上游 Kotlin、资源与翻译文件
-- 修改 version catalog、dependency verification、许可证/依赖清单任务
+- 修改 version catalog 与许可证/依赖清单文档；发布阶段曾生成 dependency verification metadata，后续因其阻断 Android Studio 动态源码附件解析而关闭
 
 **验收：**
 
 - manifest 记录提交、43 个 Provider ID、能力、安全等级、域名、关键文件 SHA-256 和本地改造。
 - 所有资源具有 `torrent_search_` 前缀，不覆盖宿主资源。
 - 移植代码不启动 Koin、不替换宿主 Application/全局异常处理/全局 Coil。
-- 新增依赖只来自 version catalog，验证元数据覆盖新增 artifact。
+- 新增依赖只来自 version catalog，并由许可证/依赖清单记录；项目不启用全局 dependency verification。
 
 ## 任务 4：测试先行接入搜索内核与 43 个 Provider
 
@@ -160,12 +160,11 @@
 
 ## 任务 8：门禁、端到端测试与发布验证
 
-**状态：** 已完成（2026-09-12，本机可执行范围）。功能开关开/关 Debug 与 AndroidTest 编译、两条 Release/R8、Gradle dependency verification、静态发布扫描、APK/权限/Manifest/初始化边界差异及 43 Provider 真实联网冒烟均已完成；当前主机没有 Android 设备、AVD 或 system image，因此 API 24/36 instrumentation、真实磁力客户端/SAF/Cloudflare WebView 交互与冷启动计时按发布报告记录为环境受限待补，不伪报通过。
+**状态：** 已完成（2026-09-12，本机可执行范围）。功能开关开/关 Debug 与 AndroidTest 编译、两条 Release/R8、APK/权限/Manifest/初始化边界差异及 43 Provider 真实联网冒烟均已完成；发布阶段曾通过专属静态扫描并验证 Gradle dependency verification 基线，后续为保持普通模块结构而移除专属扫描任务，并因 Android Studio 动态源码附件导致 Sync 阻断而关闭 dependency verification。当前主机没有 Android 设备、AVD 或 system image，因此 API 24/36 instrumentation、真实磁力客户端/SAF/Cloudflare WebView 交互与冷启动计时按发布报告记录为环境受限待补，不伪报通过。
 
 **文件：**
 
-- 新增中文注释扫描任务
-- 新增资源/Manifest 冲突、测试资源隐私、运行时日志敏感字段扫描
+- 发布阶段曾新增中文注释、资源/Manifest 冲突、测试资源隐私与运行时日志敏感字段扫描，后续为普通化模块构建而移除专属 Gradle 任务
 - 新增 instrumentation 与发布检查脚本/文档
 
 **验收命令：**
@@ -175,7 +174,7 @@
 - 功能开启 `:app:compileDebugKotlin -PenableMagnetFeature=true`
 - Release/R8 两条路径
 - `connectedDebugAndroidTest`（API 24、API 36 环境可用时）
-- 中文注释扫描、依赖验证、资源/Manifest 扫描、`git diff --check`
+- 仓库通用注释/隐私评审、Gradle wrapper distribution SHA-256 与 `git diff --check`
 - 对比启用/关闭 APK 大小、权限、Manifest 和冷启动初始化边界
 
 真实联网冒烟生成 Provider 健康报告，但第三方站点临时故障不阻塞发布；代码异常、契约遗漏、崩溃或敏感信息泄漏不可豁免。回退仅通过发布 `enableMagnetFeature=false` 的新版本。
@@ -203,3 +202,5 @@
 - 2026-09-12：完成任务 06D；新增设置与 Provider 管理目的地、Torznab 动态配置/解析/运行时 Provider、API Key 安全协调、系统 DNS/Cloudflare DoH 切换和本机披露状态管理，并按用户自用可用性取舍开放任意合法 host 的 HTTP/HTTPS。模块 632 项单测、模块编译、中文注释门禁和启用功能的宿主 App 编译均通过，合并与打包 Manifest 已确认 `usesCleartextTraffic=true`；原因是公开 HTTP 索引器、自定义域名、非标准端口与局域网实例都必须真实可用。
 - 2026-09-12：完成 06E 实现并启动任务 7；系统动作、Torrent 有界校验/SAF 保存和受限 Cloudflare WebView 已闭环，随后接入 schema v4 feature contributor、分页 DAO、白名单恢复、dirty、旧数据确认清理、Auto Backup 排除和首次未加密备份披露。原因是发布门禁前必须先关闭所有持久数据、系统副作用和迁移边界。
 - 2026-09-12：完成任务 7 与任务 8 本机可执行门禁；schema v4 备份、旧数据精确清理和系统排除通过全量回归，功能开关开/关的 Debug、AndroidTest 编译和 Release/R8 均通过，43 个真实 Provider 全部得到可分类结果，依赖校验、许可、APK/权限/Manifest 差异已形成发布报告。收尾复跑已修复 AudioBookBay 当前 `#content` DOM 漂移并真实返回 9 条，最新分类为 25 ok、10 Cloudflare、6 HTTP 拒绝、1 网络失败、1 SubsPlease 搜索空正文解析失败、0 代码异常；当前主机无 Android 设备、AVD 或 system image，API 24/36 instrumentation 与冷启动计时作为明确环境限制待设备可用时补跑。
+- 2026-09-12：关闭项目级 Gradle dependency verification；原因是 Android Studio Sync 创建的 `detachedConfiguration3` 下载 118 个 IDE 源码附件，常规 checksum 生成命令未覆盖这组动态构件并持续阻断 Sync。保留 wrapper 发行包 SHA-256、version catalog、固定上游快照、许可证清单和发布静态扫描；该配置调整无运行时日志、用户数据或备份影响。关闭后 Gradle 全项目配置解析和启用 TorrentSearch 的 App Debug Kotlin 编译均通过。
+- 2026-09-12：按普通 Android Library 模块基线清理 TorrentSearch 构建脚本；保留 `enableMagnetFeature` 条件依赖，移除两个专属 Gradle 扫描任务、任务 fixture 和空 ProGuard 文件。原因是专属任务未挂接标准 `check`，空规则不产生构建行为；运行时功能、安全边界、数据与备份契约保持不变。
