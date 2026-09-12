@@ -44,6 +44,7 @@ import com.cla.clip.feature.torrent.search.model.contract.SortCriteria
 import com.cla.clip.feature.torrent.search.model.contract.SortOrder
 import com.cla.clip.feature.torrent.search.ui.component.TorrentResultCard
 import com.cla.clip.feature.torrent.search.ui.component.toTorrentResultCardState
+import com.cla.clip.feature.torrent.search.ui.component.torrentCategoryLabel
 
 /** 搜索主页面纯渲染入口；所有业务状态和副作用由调用方提升。 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -61,6 +62,10 @@ internal fun TorrentSearchScreen(
     onSearch: () -> Unit,
     /** 用户显式停止搜索。 */
     onStop: () -> Unit,
+    /** 用户进入 Latest/Top 浏览页。 */
+    onBrowse: () -> Unit,
+    /** 用户选择结果进入原生详情。 */
+    onResultClick: (com.cla.clip.feature.torrent.search.model.contract.Torrent) -> Unit,
     /** 用户请求安全模式目标值。 */
     onSafeModeChange: (Boolean) -> Unit,
     /** 用户确认首次多源隐私披露。 */
@@ -83,6 +88,11 @@ internal fun TorrentSearchScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.torrent_search_action_back))
                     }
                 },
+                actions = {
+                    TextButton(onClick = onBrowse) {
+                        Text(stringResource(R.string.torrent_search_browse_screen_title))
+                    }
+                },
             )
         },
     ) { /** contentPadding 是 Scaffold 为状态栏和工具栏提供的安全内边距。 */ contentPadding ->
@@ -101,7 +111,7 @@ internal fun TorrentSearchScreen(
                 onStop = onStop,
                 onSafeModeChange = onSafeModeChange,
             )
-            SearchResults(state = state, modifier = Modifier.weight(1f))
+            SearchResults(state = state, onResultClick = onResultClick, modifier = Modifier.weight(1f))
         }
     }
     if (state.showMultiSourceDisclosure) {
@@ -207,7 +217,7 @@ private fun SearchControls(
                 FilterChip(
                     selected = state.category == category,
                     onClick = { onCategoryChange(category) },
-                    label = { Text(categoryLabel(category)) },
+                    label = { Text(torrentCategoryLabel(category)) },
                 )
             }
         }
@@ -246,6 +256,8 @@ private fun SearchControls(
 private fun SearchResults(
     /** 当前页面状态。 */
     state: TorrentSearchUiState,
+    /** 结果点击回调，完整领域对象只留在 Activity 内存选中态。 */
+    onResultClick: (com.cla.clip.feature.torrent.search.model.contract.Torrent) -> Unit,
     /** 结果区域外部布局约束。 */
     modifier: Modifier = Modifier,
 ) {
@@ -302,27 +314,10 @@ private fun SearchResults(
             items = state.results,
             key = { /** index 只满足签名且不参与身份，torrent 的 infoHash 是稳定 key。 */ _, torrent -> torrent.infoHash },
         ) { /** index 仅用于 Compose itemsIndexed 签名，torrent 是当前稳定结果。 */ _, torrent ->
-            TorrentResultCard(state = torrent.toTorrentResultCardState())
+            TorrentResultCard(state = torrent.toTorrentResultCardState(), onClick = { onResultClick(torrent) })
         }
     }
 }
-
-/** 将分类稳定枚举映射为资源文案。 */
-@Composable
-private fun categoryLabel(category: Category): String = stringResource(
-    when (category) {
-        Category.ALL -> R.string.torrent_search_category_all
-        Category.ANIME -> R.string.torrent_search_category_anime
-        Category.APPS -> R.string.torrent_search_category_apps
-        Category.BOOKS -> R.string.torrent_search_category_books
-        Category.GAMES -> R.string.torrent_search_category_games
-        Category.MOVIES -> R.string.torrent_search_category_movies
-        Category.MUSIC -> R.string.torrent_search_category_music
-        Category.PORN -> R.string.torrent_search_category_porn
-        Category.SERIES -> R.string.torrent_search_category_series
-        Category.OTHER -> R.string.torrent_search_category_other
-    },
-)
 
 /** 将排序标准映射为既有资源文案。 */
 @Composable

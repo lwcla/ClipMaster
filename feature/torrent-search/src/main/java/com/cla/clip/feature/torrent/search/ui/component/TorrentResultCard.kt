@@ -50,10 +50,12 @@ internal fun Torrent.toTorrentResultCardState(): TorrentResultCardState {
 internal fun TorrentResultCard(
     /** 已收窄且不含外部链接的展示状态。 */
     state: TorrentResultCardState,
+    /** 点击由页面层选择内存候选并执行导航或本地动作。 */
+    onClick: () -> Unit,
     /** 调用方提供的外部布局约束。 */
     modifier: Modifier = Modifier,
 ) {
-    Card(modifier = modifier.fillMaxWidth()) {
+    Card(onClick = onClick, modifier = modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -112,6 +114,7 @@ private fun TorrentResultCardPreview() {
                 peers = 7u,
                 providerName = "Fixture Provider",
             ),
+            onClick = { },
             modifier = Modifier.padding(12.dp),
         )
     }

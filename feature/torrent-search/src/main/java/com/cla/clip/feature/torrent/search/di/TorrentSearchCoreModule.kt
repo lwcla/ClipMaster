@@ -7,6 +7,8 @@ import com.cla.clip.feature.torrent.search.network.TorrentSearchNetworkClient
 import com.cla.clip.feature.torrent.search.provider.SearchProvider
 import com.cla.clip.feature.torrent.search.provider.builtin.BuiltinProviderRegistry
 import com.cla.clip.feature.torrent.search.search.SearchCoordinator
+import com.cla.clip.feature.torrent.search.ui.browse.BrowseCoordinator
+import com.cla.clip.feature.torrent.search.ui.details.TorrentDetailsLoader
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -55,4 +57,20 @@ object TorrentSearchCoreModule {
     @Provides
     @Singleton
     fun provideSearchCoordinator(logger: ProviderLogger): SearchCoordinator = SearchCoordinator(logger = logger)
+
+    /** 提供默认 45 秒超时的浏览协调器；调用 load 前不执行任何网络。 */
+    @Provides
+    @Singleton
+    internal fun provideBrowseCoordinator(
+        /** Browse 操作复用结构化脱敏日志出口。 */
+        logger: ProviderLogger,
+    ): BrowseCoordinator = BrowseCoordinator(logger = logger)
+
+    /** 提供带同源 HTTPS 与响应身份校验的详情加载器。 */
+    @Provides
+    @Singleton
+    internal fun provideTorrentDetailsLoader(
+        /** Details 操作复用结构化脱敏日志出口。 */
+        logger: ProviderLogger,
+    ): TorrentDetailsLoader = TorrentDetailsLoader(logger = logger)
 }

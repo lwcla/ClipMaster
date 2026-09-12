@@ -491,3 +491,23 @@ Torznab 将非敏感配置与 API Key 分离。`TorznabConfig` 只承载稳定�
 独立复审收口：首个 DataStore 快照到达前通过 `settingsReady` 禁止搜索；披露保存提交时冻结的来源数量，启动前按最新设置、安全模式和披露快照重新收紧；前置持久化使用可取消 Job 与 generation，搜索目的地使用 `NavBackStackEntry` 生命周期，离页或新 Intent 永久废弃旧请求。安全模式开启同步 fail-closed，设置写失败收敛为固定低敏错误；`IDLE/SEARCHING/STOPPED/COMPLETED` 区分初始、运行、部分结果停止与完成空态。共享结果卡改用不携带 URL/magnet 的展示模型，06A 暂不提供无语义的默认点击。
 
 验证记录：2026-09-12，最终组合门禁 `:feature:torrent-search:testDebugUnitTest`、`:feature:torrent-search:compileDebugKotlin`、`:feature:torrent-search:checkTorrentSearchChineseComments`、`:app:processDebugResources` 与开启功能后的 `:app:compileDebugKotlin` 通过；JUnit XML 汇总为 542 tests / 71 suites、0 failures/errors/skipped，`git diff --check` 无错误。WebDAV 流程 HTML `--check` 通过；最终独立复审无 Critical、Important 或 Minor。Compose 视觉、功能关闭编译、release/R8、API 24/36 设备和真实联网仍按任务 8 执行。
+
+### 任务 06B：Browse、原生详情与安全富文本（2026-09-12）
+
+状态：已完成。本切片在 06A 的 feature-local 导航根追加 Latest/Top Browse 与原生详情目的地，结果卡点击先通过既有 `ViewedTorrentRepository.markViewed(infoHash)` 异步刷新已查看时间，再把完整候选保存在 Activity 作用域内存 ViewModel；路由只携带通过 `ProviderId` 校验的稳定来源 ID，不携带 URL、磁力链接、正文或 infoHash。06E 的分享、磁力打开、Torrent 下载、SAF 与 Cloudflare WebView 仍未接入。
+
+用户体验与复用：Browse 提供 Latest/Top 和安全模式约束下的分类选择，复用搜索设置、`ProviderSelectionPolicy`、`TorrentResultSorter` 与共享 `TorrentResultCard`；Latest 默认按日期倒序，Top 默认按做种数倒序，结果按 infoHash 保留首个来源并限制 200 条。详情展示名称、来源、分类、大小、做种/下载数、时间、上传者、infoHash、描述、海报、截图、文件与 Tracker；加载、固定低敏错误和重试均由具名页面状态表达，不展示异常 message。详情暂用 feature-local 图片组件，因为宿主 `app` 中的图片预览组件位于上层模块，反向依赖会破坏模块边界；组件只接受已验证 URL，使用仓库既有 Coil 3.4.0 依赖、固定 1200×800 请求尺寸和 120–360dp 布局边界。
+
+生命周期与数据流：共享 `DestinationLifecycleEffect` 观察每个 `NavBackStackEntry`，只有目的地至少 `STARTED` 才允许 Browse 或 Details 启动网络；离页、模式切换、分类切换和候选替换都会取消旧 Job，取消继续传播到 Provider/OkHttp，重新进入时只恢复未完成加载。Browse 先以最新 DataStore 快照筛选已启用且满足安全等级的 Provider，再并发调用实现 `LatestTorrentsProvider` 或 `TopTorrentsProvider` 的来源；单来源 45 秒超时并隔离失败。Details 按内存候选的精确 Provider ID 选择 `TorrentDetailsProvider`，联网前要求候选详情 URL 为允许 host 的 HTTPS 默认端口且无 user-info，返回后再次校验 Provider ID 与 infoHash 一致；失配内容不得进入 UI。Coil 请求属于详情 Composition，离开详情会随 Composition 释放取消。
+
+安全富文本与资源上限：使用既有 Jsoup 静态解析 HTML，不执行 WebView、JavaScript 或第三方 Markdown 运行时；主动丢弃 `script/style/iframe/object/embed/form/svg/math/noscript/template` 及其内容，并只额外识别最小 Markdown 链接/图片语法。点击链接仅保留规范化成功的 HTTP/HTTPS；图片仅保留详情 host、Provider `baseUrl` 或 `alternateUrlDomains` 精确命中的 HTTPS 默认端口地址，拒绝 user-info、无 host、非网络协议和超长 URL。原始正文最多 65,536 字符，输出纯文本最多 32,768 字符，链接最多 64 个，正文图片最多 32 个，单 URL 最多 2,048 字符；截图规范化、去重后最多 32 张，超限安全截断或丢弃。
+
+职责、测试与备份：`ProviderSelectionPolicy` 是搜索与 Browse 共用的纯选择策略；`BrowseCoordinator` 负责能力筛选、并发、超时、去重与排序；`TorrentDetailsLoader` 负责详情 URL/能力/身份边界；`SafeRichTextParser` 负责不可执行展示模型；两个页面 ViewModel 只编排生命周期和不可变状态，Compose 组件不依赖 Repository 或具体 ViewModel。选择性 TDD 先观察 Provider 策略、Browse、详情、安全富文本 4 组缺实现/行为 RED，再观察两个生命周期 ViewModel 缺实现 RED和日志 operation 契约 RED；实现后定向测试转为 15、6 和日志契约全部 GREEN。06B 不修改 Room schema/DAO，只复用 viewed 表；已查看写入的 dirty、自定义备份 contributor 与幂等恢复仍由任务 7 实现，因此本切片不改变 WebDAV schema、备份字段白名单或流程图。
+
+日志与诊断计划：`ProviderLogEvent` 新增封闭 `operationCode`，Search、Latest、Top、Details 仅记录 Provider ID、阶段、结果数量、耗时、固定 reasonCode、取消或重试状态；不记录查询、URL、正文、磁力链接、infoHash、文件名、Tracker、Cookie/Token 或异常 message。页面层和富文本解析器不新增日志，避免重组、用户点击和不可信正文形成隐私或噪声；生命周期取消、身份失配、超限丢弃和脚本移除以合成单测和稳定 UI phase 定位。
+
+取舍与后续验证：06B 只为成功解析的内存候选提供原生详情，不恢复进程死亡后的敏感候选，也不从路由重新拼接 URL；进程重建会进入固定不可用态。Compose 视觉、动态字体、旋转、API 24/36 设备、真实站点和 release/R8 仍留任务 8；本切片新增模型均为编译期内部状态，不依赖反射、序列化类名或外部协议，因此不新增 keep 规则。
+
+变更记录：2026-09-12，完成 06B 浏览与原生详情闭环，固定目的地生命周期取消、稳定 ID 路由、响应身份校验、安全富文本与同源图片预算；原因是后续外部动作必须建立在已验证的原生详情身份和不可执行展示模型上，避免敏感导航参数、跨来源图片与离页后台网络。
+
+验证记录：2026-09-12，最终组合门禁 `:feature:torrent-search:testDebugUnitTest`、`:feature:torrent-search:compileDebugKotlin`、`:feature:torrent-search:checkTorrentSearchChineseComments` 与开启功能后的 `:app:compileDebugKotlin` 通过；JUnit XML 汇总为 564 tests / 77 suites、0 failures/errors/skipped，`git diff --check` 与 WebDAV 流程 HTML `--check` 通过。Compose 视觉、功能关闭编译、release/R8、API 24/36 设备和真实站点仍按任务 8 执行。

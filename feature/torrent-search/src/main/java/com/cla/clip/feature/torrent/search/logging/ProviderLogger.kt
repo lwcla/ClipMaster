@@ -29,10 +29,27 @@ enum class ProviderLogStage(
     }
 }
 
+/** Provider 操作类型稳定协议；日志只输出固定 code，不接受自由文本模式。 */
+enum class ProviderLogOperation(
+    /** 低敏操作 code。 */
+    val code: String,
+) {
+    /** 关键词搜索。 */
+    SEARCH("search"),
+    /** 最新资源浏览。 */
+    LATEST("latest"),
+    /** 热门资源浏览。 */
+    TOP("top"),
+    /** 原生详情读取。 */
+    DETAILS("details"),
+}
+
 /** Provider 生命周期低敏日志事件；封闭类型和字段白名单共同限制敏感信息入口。 */
 data class ProviderLogEvent(
     /** 强类型稳定 Provider ID，不能填入地址、查询或展示内容。 */
     val providerId: ProviderId,
+    /** 固定操作类型，默认搜索以保持既有调用方契约。 */
+    val operation: ProviderLogOperation = ProviderLogOperation.SEARCH,
     /** 封闭生命周期阶段。 */
     val stage: ProviderLogStage,
     /** 当前批次结果数量；无法统计时为空。 */
@@ -55,7 +72,7 @@ fun interface ProviderLogger {
 
 /** 把封闭事件格式化为 Android 日志文本；只展开稳定 code 和低敏数值。 */
 internal fun ProviderLogEvent.toAndroidLogMessage(): String =
-    "providerId=${providerId.value} stage=${stage.code} resultCount=$resultCount durationMs=$durationMs " +
+    "providerId=${providerId.value} operationCode=${operation.code} stage=${stage.code} resultCount=$resultCount durationMs=$durationMs " +
         "httpStatusCode=$httpStatusCode retried=$retried reasonCode=${reason?.code}"
 
 /** 默认 Android 日志实现，只输出 ProviderLogEvent 的固定白名单字段。 */

@@ -131,6 +131,8 @@
     <string name="torrent_search_torrent_details_title_info">Torrent info</string>
     <string name="torrent_search_torrent_details_title_screenshots">Screenshots</string>
     <string name="torrent_search_torrent_details_title_description">Description</string>
+    <string name="torrent_search_torrent_details_title_files">Files</string>
+    <string name="torrent_search_torrent_details_title_trackers">Trackers</string>
     <string name="torrent_search_torrent_details_label_file_size">File size</string>
     <string name="torrent_search_torrent_details_label_seeders">Seeders</string>
     <string name="torrent_search_torrent_details_label_peers">Peers</string>

@@ -2,14 +2,14 @@
 
 ## Current task scope
 
-Task 05B adds Android Intent consumption, the independent Room v1 user-data
-store, and the feature-local Preferences DataStore on top of the completed
-43-Provider search kernel. It still does not add the complete UI, Torrent/Bencode
-import, Torznab, WebView, downloads, or the custom backup contributor.
+Task 06B adds the native Latest/Top browse and detail pages on top of the completed
+search kernel. It also adds bounded image rendering for already validated same-host
+HTTPS poster, screenshot, and description image URLs. It still does not add magnet
+actions, torrent downloads, SAF, Cloudflare WebView, or the custom backup contributor.
 
-Task 05B adds AndroidX Room 2.8.4 and Preferences DataStore 1.2.1 through the
-version catalog. Existing Provider parsing and network behavior continue to use
-the already declared coroutine, OkHttp, Jsoup, and kotlinx.serialization
+Task 06B adds direct Coil Compose and Coil OkHttp network dependencies at the existing
+catalog version 3.4.0. Existing Provider parsing and network behavior continue to use
+the already declared coroutine, OkHttp, Jsoup, Room, DataStore, and kotlinx.serialization
 dependencies.
 
 The existing `:feature:torrent-search` module directly declares the following
@@ -29,6 +29,7 @@ and coordinates remain owned by `gradle/libs.versions.toml`:
 | kotlinx-coroutines-test 1.10.2 (test-only) | 用虚拟调度器验证 Provider 超时、并发启动和取消 | [Kotlinx Coroutines Apache-2.0 license](https://github.com/Kotlin/kotlinx.coroutines/blob/master/LICENSE.txt) |
 | OkHttp 5.3.2 | 直接 HTTP 边界、HTTPS 限制和协程取消联动 | [OkHttp Apache-2.0 license](https://github.com/square/okhttp/blob/master/LICENSE.txt) |
 | Jsoup 1.22.1 | Parse AnimeTosho and AniRena HTML with selectors without executing site scripts | [jsoup MIT license](https://github.com/jhy/jsoup/blob/master/LICENSE) |
+| Coil Compose and Coil network-okhttp 3.4.0 | Decode validated same-host HTTPS detail images at an explicit request and layout size, with Composition-bound cancellation | [Coil Apache-2.0 license](https://github.com/coil-kt/coil/blob/main/LICENSE.txt) |
 | MockWebServer 5.3.2 (test-only) | 本地合成 HTTPS/gzip 响应，不进行真实联网 | [OkHttp Apache-2.0 license](https://github.com/square/okhttp/blob/master/LICENSE.txt) |
 | okhttp-tls 5.3.2 (test-only) | 为 MockWebServer 生成仅测试使用的本地 HTTPS 证书 | [OkHttp Apache-2.0 license](https://github.com/square/okhttp/blob/master/LICENSE.txt) |
 

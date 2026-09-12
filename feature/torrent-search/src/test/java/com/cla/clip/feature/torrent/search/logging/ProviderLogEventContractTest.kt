@@ -20,7 +20,7 @@ class ProviderLogEventContractTest {
             .associateBy { field -> field.name }
         /** 主方案允许的固定字段集合，新增字段必须先经过隐私评审。 */
         val expectedNames = setOf(
-            "providerId", "stage", "resultCount", "durationMs",
+            "providerId", "operation", "stage", "resultCount", "durationMs",
             "httpStatusCode", "retried", "reason",
         )
 
@@ -31,6 +31,7 @@ class ProviderLogEventContractTest {
             resultCount = null, durationMs = null, httpStatusCode = null, retried = null, reason = null,
         ).providerId
         assertEquals("typed_fixture", typedProviderId.value)
+        assertEquals(ProviderLogOperation::class.java, fields.getValue("operation").type)
         assertEquals(ProviderLogStage::class.java, fields.getValue("stage").type)
         assertEquals(ProviderFailureReason::class.java, fields.getValue("reason").type)
         assertEquals(Boolean::class.javaObjectType, fields.getValue("retried").type)
@@ -72,7 +73,7 @@ class ProviderLogEventContractTest {
         val message = event.toAndroidLogMessage()
 
         assertEquals(
-            "providerId=fixture_provider stage=failed resultCount=2 durationMs=15 httpStatusCode=403 retried=false reasonCode=cloudflare_locked",
+            "providerId=fixture_provider operationCode=search stage=failed resultCount=2 durationMs=15 httpStatusCode=403 retried=false reasonCode=cloudflare_locked",
             message,
         )
         /** forbidden 是不得出现在最终 Android 日志文本中的敏感字段名。 */

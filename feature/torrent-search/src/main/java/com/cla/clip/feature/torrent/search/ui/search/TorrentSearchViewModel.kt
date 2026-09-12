@@ -6,11 +6,11 @@ import com.cla.clip.feature.torrent.search.input.TorrentSearchInputNormalizer
 import com.cla.clip.feature.torrent.search.input.TorrentSearchLaunchRequest
 import com.cla.clip.feature.torrent.search.model.contract.Category
 import com.cla.clip.feature.torrent.search.model.contract.ProviderFailureReason
-import com.cla.clip.feature.torrent.search.model.contract.ProviderSafetyLevel
 import com.cla.clip.feature.torrent.search.model.contract.SortCriteria
 import com.cla.clip.feature.torrent.search.model.contract.SortOrder
 import com.cla.clip.feature.torrent.search.model.contract.Torrent
 import com.cla.clip.feature.torrent.search.provider.ProviderId
+import com.cla.clip.feature.torrent.search.provider.ProviderSelectionPolicy
 import com.cla.clip.feature.torrent.search.provider.SearchProvider
 import com.cla.clip.feature.torrent.search.search.SearchCoordinator
 import com.cla.clip.feature.torrent.search.search.SearchEvent
@@ -488,20 +488,12 @@ internal class TorrentSearchViewModel @Inject constructor(
         settings: TorrentSearchSettings,
     ): List<SearchProvider> {
         /** enabledIds 区分已初始化空集合与新安装推荐集合。 */
-        val enabledIds = if (settings.providerSelectionInitialized) settings.enabledProviderIds else defaultProviderIds()
-        return providers.filter { /** provider 是待执行本机选择和安全级别判断的来源。 */ provider ->
-            provider.descriptor.id in enabledIds &&
-                (!settings.safeModeEnabled || provider.descriptor.safetyLevel == ProviderSafetyLevel.SAFE)
-        }
+        return ProviderSelectionPolicy.select(providers, settings)
     }
 
     /** 从固定注册表提取首次推荐稳定 ID；不触发网络或持久化。 */
     private fun defaultProviderIds(): Set<ProviderId> {
-        return providers
-            /** provider 是当前待检查默认启用标志的注册项。 */
-            .filter { provider -> provider.descriptor.enabledByDefault }
-            /** provider 是当前待提取稳定 ID 的默认来源。 */
-            .mapTo(linkedSetOf()) { provider -> provider.descriptor.id }
+        return ProviderSelectionPolicy.defaultProviderIds(providers)
     }
 
     /** 在 ViewModel 边界收敛设置介质异常，避免普通 launch 把异常交给主线程。 */

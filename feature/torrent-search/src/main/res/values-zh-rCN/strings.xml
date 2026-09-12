@@ -179,6 +179,8 @@
     <string name="torrent_search_torrent_details_title_info">种子信息</string>
     <string name="torrent_search_torrent_details_title_screenshots">屏幕截图</string>
     <string name="torrent_search_torrent_details_title_description">概述</string>
+    <string name="torrent_search_torrent_details_title_files">文件</string>
+    <string name="torrent_search_torrent_details_title_trackers">Tracker</string>
     <string name="torrent_search_search_info_troubleshoot_help">为了帮助排查问题，请从设置界面导出日志，并附上日志在 GitHub 上创建一个 Issue。</string>
     <string name="torrent_search_torrent_details_label_category">类别</string>
     <string name="torrent_search_torrent_details_label_uploader">上传者</string>
