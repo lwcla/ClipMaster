@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-当前仓库没有历史广告实现。本轮新增 `:feature:ad-api` 作为稳定广告抽象，新增 `:feature:ad-debug` 作为调试占位实现，并在详情页接入一个信息流/原生广告位。国内真实广告 adapter 已包含穿山甲 CSJ/Pangle `:feature:ad-csj` 和 uni-ad `:feature:ad-uniad`。当 `local.properties` 或 CI Gradle 属性按 buildType 配置对应广告参数时，对应构建类型默认把该模块编译进 app；临时关闭某个构建类型的真实广告模块时，注释掉对应 buildType 的 AppId 或广告位 ID 即可。广告 SDK 不在 `Application.onCreate()` 初始化，不向普通用户暴露广告源选择 UI。CSJ 与 uni-ad 同一 buildType 默认互斥，避免同包重复塞入两套真实国内广告 SDK。
+当前仓库没有历史广告实现。本轮新增 `:feature:ad-api` 作为稳定广告抽象，新增 `:feature:ad-debug` 作为调试占位实现，并在详情页接入一个信息流/原生广告位。国内真实广告 adapter 已包含穿山甲 CSJ/Pangle `:feature:ad-csj` 和 uni-ad `:feature:ad-uniad`。所有可选实现模块统一由 `gradle.properties` 中的显式布尔开关控制，`gradle/feature-flags.gradle.kts` 负责读取并向各模块暴露；广告 ID 仍由本机 `local.properties` 或 CI Gradle 属性提供。开启某个广告 buildType 开关后，缺少对应 ID 会在 Gradle 配置期失败。广告 SDK 不在 `Application.onCreate()` 初始化，不向普通用户暴露广告源选择 UI。CSJ 与 uni-ad 同一 buildType 保持互斥，避免同包重复塞入两套真实国内广告 SDK。
 
 ## 目标
 
@@ -27,12 +27,12 @@
 ## 穿山甲 CSJ v1 接入
 
 - SDK 依赖使用官方 Maven `com.pangle.cn:ads-sdk-pro:7.6.1.2`，版本来自 2026-06-01 实施时官方 Maven metadata 的 `release/latest`；后续升级按高风险变更处理。
-- `settings.gradle.kts` 增加穿山甲官方 Maven 仓库，`settings.gradle.kts` include `:feature:ad-csj`；`app/build.gradle.kts` 仅在当前 buildType 广告参数已配置时依赖该模块，debug 使用 `debugImplementation`，release 使用 `releaseImplementation`，防止默认/海外包误带国内 SDK。
+- `settings.gradle.kts` 增加穿山甲官方 Maven 仓库，`settings.gradle.kts` include `:feature:ad-csj`；`app/build.gradle.kts` 仅在当前 buildType 显式开关开启且参数校验通过时依赖该模块，debug 使用 `debugImplementation`，release 使用 `releaseImplementation`，防止默认/海外包误带国内 SDK。
 - app manifest 明确 `tools:replace="android:label"`，避免穿山甲 AAR 自带 `application@label` 覆盖宿主应用名；该合并规则只允许宿主品牌名优先，不作为接受 SDK 其它 manifest 声明的兜底。
 - `:feature:ad-csj` consumer rules 透出 R8 自动生成的穿山甲可选依赖 `dontwarn` 规则；当前 SDK POM 没有声明这些包，后续每次升级必须重新检查 `missing_rules.txt`、R8 warning 和官方 consumer rules。
 - merged manifest 显示穿山甲 AAR 会引入 `ACCESS_NETWORK_STATE`、`ACCESS_WIFI_STATE`、`READ/WRITE_EXTERNAL_STORAGE`、`CHANGE_NETWORK_STATE`、`CHANGE_WIFI_STATE`、`WAKE_LOCK`、`VIBRATE`、华硕 MSA 权限、下载服务、`:downloader`、`:bytelive`、`:push` 等声明；v1 虽然 adapter 禁止下载类广告和关闭可选设备能力，但上线前必须按渠道最小化裁剪或完成 SDK 清单/权限说明。
-- `gradle/csj-ad-config.gradle.kts` 统一读取广告构建参数，读取优先级为命令行/CI Gradle 属性高于项目 `local.properties`；debug/internal 只读取 `csjDebugAppId`、`csjDebugDetailNativeAdSlotId`、`csjDebugUseTestAdSlot`，release 只读取 `csjReleaseAppId`、`csjReleaseDetailNativeAdSlotId`、`csjReleaseUseTestAdSlot`。旧的 `csjAppId`、`csjDetailNativeAdSlotId`、`csjUseTestAdSlot` 不再作为兜底，避免 debug/release 误共用同一套后台配置。缺失当前 buildType ID、release 请求仍使用测试位或 SDK 能力未启用时运行时隐藏广告并返回 `csj_config_missing`。
-- 本机 `local.properties` 配置 debug 或 release 对应两项 ID 后，日常 IDE/Gradle 对应构建类型会自动携带 `:feature:ad-csj`；如需临时构建不带广告的包，注释掉对应 buildType 的 AppId 或广告位 ID。仅配置其中一个 ID 不会自动启用，避免半配置状态误带 SDK。
+- `gradle/feature-flags.gradle.kts` 与 TorrentSearch 共用同一种读取方式，从 Gradle 属性读取 `enableCsjDebugAdFeature`、`enableCsjReleaseAdFeature`，默认 `false`；`gradle/csj-ad-config.gradle.kts` 只负责读取和校验广告参数，读取优先级为命令行/CI Gradle 属性高于项目 `local.properties`。debug/internal 只读取 `csjDebugAppId`、`csjDebugDetailNativeAdSlotId`、`csjDebugUseTestAdSlot`，release 只读取 `csjReleaseAppId`、`csjReleaseDetailNativeAdSlotId`、`csjReleaseUseTestAdSlot`。旧的 `csjAppId`、`csjDetailNativeAdSlotId`、`csjUseTestAdSlot` 不再作为兜底，避免 debug/release 误共用同一套后台配置。
+- 本机或 CI 先为目标 buildType 准备两项 ID，再显式开启对应广告 feature 开关；只配置 ID 不再自动打包 SDK，开关开启但 ID 缺失或格式非法时 Gradle 配置期直接失败。临时构建无广告包时只需把对应开关设为 `false`，无需删除或注释本机密钥。
 - debug/internal 包不再使用系统自动生成的 `$HOME/.android/debug.keystore`，而是使用项目固定的 `debug-internal.keystore`，alias 为 `clipmaster_debug`，SHA1 指纹为 `11:17:8B:F7:6D:FA:7F:2F:19:2C:10:0A:16:61:C5:42:BA:05:8E:C2`；穿山甲 debug/internal 应用后台绑定该指纹。release 包继续使用 `keystore.properties` 指向的正式 release keystore，穿山甲 release 应用后台绑定正式签名指纹。
 - `CsjAdConfig`、`CsjAdAvailabilityPolicy`、`CsjAdInitializer`、`CsjSdkClient`、`CsjNativeAdSlot` 分别负责配置、可用性判断、懒初始化、SDK facade 和 Compose/AndroidView 承载，第三方 SDK 类型不泄露到 app。
 - SDK 只在主进程、广告总开关开启、用户广告隐私同意为 `Granted`、隐私政策版本满足配置、详情页非敏感内容且首个广告位需要展示时懒初始化；`AdConsentState.NotRequired` 仅允许调试源，穿山甲不接受该状态。
@@ -48,10 +48,10 @@
 
 - `:feature:ad-uniad` 使用 DCloud uni-ad 原生 SDK 包 `UNI_AD_android_5.5.2.0606`，AAR 固定在 `third_party/uniad/UNI_AD_android_5.5.2.0606/`，并通过 `checksums.sha256` 与 `gradle/uniad-ad-config.gradle.kts` 校验 SHA-256；AAR 只允许保存在当前私有仓库或私有 CI 制品环境中。
 - v1 只打包支持信息流的章鱼 + 泛连：`uniad-native-release.aar`、`android-gif-drawable-1.2.29.aar`、`uniad-zy-release.aar`、`octopus_ad_sdk_2.5.10.5.aar`、`Funlink_2.8.8_76006310_release.aar`、`Funlink_adapter_uniad_2.8.4_74659082_release.aar`；不引入 Sigmob、华夏乐游、优量汇、穿山甲、百度、快手、GroMore。
-- `gradle/uniad-ad-config.gradle.kts` 统一读取 `uniadDebugAppId`、`uniadDebugUnionId`、`uniadDebugDetailNativeAdpid`、`uniadReleaseAppId`、`uniadReleaseUnionId`、`uniadReleaseDetailNativeAdpid` 和 `uniadRequiredPrivacyPolicyVersion`，读取优先级为 CI/Gradle 属性高于本机 `local.properties`。
-- 当前 buildType 的 AppId、联盟 ID、详情页信息流 adpid 三项都齐全时，宿主自动使用 `debugImplementation` 或 `releaseImplementation` 依赖 `:feature:ad-uniad`；未配置三项时默认不把 uni-ad adapter 编进 app。
-- uni-ad 与 CSJ 同一 buildType 同时配置时，Gradle 配置期直接失败并提示只保留一套真实国内广告源；默认/海外包未配置 uni-ad ID 时不会触发 AAR 校验。
-- debug/internal 构建固定视为测试 adpid，release 构建固定视为正式 adpid；release 缺正式 ID、配置不完整或 SDK 能力未启用时运行时隐藏并返回 `uniad_config_missing`。
+- `gradle/feature-flags.gradle.kts` 从 Gradle 属性读取 `enableUniadDebugAdFeature`、`enableUniadReleaseAdFeature`，默认 `false`；`gradle/uniad-ad-config.gradle.kts` 统一读取 `uniadDebugAppId`、`uniadDebugUnionId`、`uniadDebugDetailNativeAdpid`、`uniadReleaseAppId`、`uniadReleaseUnionId`、`uniadReleaseDetailNativeAdpid` 和 `uniadRequiredPrivacyPolicyVersion`，读取优先级为 CI/Gradle 属性高于本机 `local.properties`。
+- 当前 buildType 的显式开关开启且 AppId、联盟 ID、详情页信息流 adpid 三项校验通过时，宿主才使用 `debugImplementation` 或 `releaseImplementation` 依赖 `:feature:ad-uniad`；只配置参数或只开启开关都不会产生半配置广告包。
+- uni-ad 与 CSJ 同一 buildType 的显式开关同时开启时，Gradle 配置期直接失败并提示只保留一套真实国内广告源；默认/海外包开关关闭时不会触发 AAR 校验。
+- debug/internal 构建固定视为测试 adpid，release 构建固定视为正式 adpid；显式开关开启但参数不完整时构建期失败，开关关闭或运行时 SDK 能力不可用时隐藏广告并返回 `uniad_config_missing`。
 - `UniAdConfig`、`UniAdAvailabilityPolicy`、`UniAdInitializer`、`UniAdSdkClient`、`UniAdFeedAdSlot`、`UniAdReleaseGuard` 和 `UniAdEventDeduplicator` 分别负责配置、可用性判断、懒初始化、SDK facade、Compose/AndroidView 承载、释放幂等和事件去重，第三方 SDK 类型只出现在 `UniAdSdkDirectClient`。
 - SDK 只在主进程、广告总开关开启、用户广告隐私同意为 `Granted`、隐私政策版本满足配置、详情页非敏感内容且首个广告位需要展示时懒初始化；`AdConsentState.NotRequired` 仅允许调试源，uni-ad 不接受该状态。
 - 初始化时立即调用 `DCloudAdManager.setPrivacyConfig(...)`，默认关闭 PhoneState、Storage、Location、WifiState、安装列表、运行中应用、MAC、Android ID、OAID、IP、传感器、运营商、录音等可选采集；随后调用 `DCloudAdManager.setPersonalAd(context, false)`，v1 默认关闭个性化广告。
@@ -122,13 +122,13 @@
 - 日志检查：广告事件不得出现剪贴正文、完整 URL、query、SDK 响应体、广告素材内容或设备标识。
 - 穿山甲单元测试覆盖 `CsjAdConfig`、`CsjAdAvailabilityPolicy`、`CsjAdInitializer`、`CsjAdEventDeduplicator`、`CsjAdReleaseGuard` 和详情页敏感内容保护。
 - uni-ad 单元测试覆盖 `UniAdConfig`、`UniAdAvailabilityPolicy`、`UniAdInitializer`、`UniAdEventDeduplicator`、`UniAdReleaseGuard`、`UniAdFeedRequestSpec` 和 AAR 制品校验。
-- 验证命令：`./gradlew :feature:ad-api:testDebugUnitTest`、`./gradlew :feature:ad-api:compileDebugKotlin`、`./gradlew :feature:ad-debug:compileDebugKotlin`、`./gradlew :feature:ad-csj:testDebugUnitTest`、`./gradlew :feature:ad-csj:compileDebugKotlin`、`./gradlew :app:testDebugUnitTest`、`./gradlew :app:compileDebugKotlin`、`./gradlew :app:compileDebugKotlin -PcsjDebugAppId=<test> -PcsjDebugDetailNativeAdSlotId=<test>`、`./gradlew :app:minifyReleaseWithR8 -PcsjReleaseAppId=<official> -PcsjReleaseDetailNativeAdSlotId=<official>`、`git diff --check`。
-- uni-ad 追加验证命令：`./gradlew :feature:ad-uniad:testDebugUnitTest`、`./gradlew :feature:ad-uniad:compileDebugKotlin`、`./gradlew :app:compileDebugKotlin -PcsjDebugAppId=off -PcsjDebugDetailNativeAdSlotId=off -PuniadDebugAppId=<test> -PuniadDebugUnionId=<test> -PuniadDebugDetailNativeAdpid=<test>`、`./gradlew :app:minifyReleaseWithR8 -PcsjReleaseAppId=off -PcsjReleaseDetailNativeAdSlotId=off -PuniadReleaseAppId=<official> -PuniadReleaseUnionId=<official> -PuniadReleaseDetailNativeAdpid=<official>`，并验证同时配置 CSJ 与 uni-ad 时构建失败。
+- 验证命令：`./gradlew :feature:ad-api:testDebugUnitTest`、`./gradlew :feature:ad-api:compileDebugKotlin`、`./gradlew :feature:ad-debug:compileDebugKotlin`、`./gradlew :feature:ad-csj:testDebugUnitTest`、`./gradlew :feature:ad-csj:compileDebugKotlin`、`./gradlew :app:testDebugUnitTest`、`./gradlew :app:compileDebugKotlin`、`./gradlew :app:compileDebugKotlin -PenableCsjDebugAdFeature=true -PcsjDebugAppId=<test> -PcsjDebugDetailNativeAdSlotId=<test>`、`./gradlew :app:minifyReleaseWithR8 -PenableCsjReleaseAdFeature=true -PcsjReleaseAppId=<official> -PcsjReleaseDetailNativeAdSlotId=<official>`、`git diff --check`。另以只开启 feature、不传 ID 的 `help` 命令验证配置期失败。
+- uni-ad 追加验证命令：`./gradlew :feature:ad-uniad:testDebugUnitTest`、`./gradlew :feature:ad-uniad:compileDebugKotlin`、`./gradlew :app:compileDebugKotlin -PenableUniadDebugAdFeature=true -PuniadDebugAppId=<test> -PuniadDebugUnionId=<test> -PuniadDebugDetailNativeAdpid=<test>`、`./gradlew :app:minifyReleaseWithR8 -PenableUniadReleaseAdFeature=true -PuniadReleaseAppId=<official> -PuniadReleaseUnionId=<official> -PuniadReleaseDetailNativeAdpid=<official>`，并验证同一 buildType 的 CSJ 与 uni-ad 开关同时开启时构建失败。
 - 上架前仍需人工检查 merged manifest、权限/provider/activity、是否引入 AD_ID、SDK 清单、广告单元 ID、隐私同意路径、关闭降级路径、包体/方法数/冷启动/详情页耗时、Android 7/10/13/14、深色模式、大字体、弱网、无网和国产 ROM 后台切换。
 
 ## 已知取舍
 
-- 默认构建在未配置广告参数时仍不接真实广告 SDK；debug/internal 和 release 分别通过本机/CI 配置当前 buildType 的 CSJ 或 uni-ad 参数自动编译进对应 adapter。临时关闭真实广告模块时注释掉对应 buildType 的 AppId 或广告位 ID。
+- 默认构建的所有可选实现开关均为 `false`，不接真实广告 SDK；debug/internal 和 release 分别通过显式 feature 开关决定是否编译对应 adapter，广告参数只负责配置与完整性校验。该方式多一个明确开关，但与 `enableMagnetFeature` 的位置和语义一致，也避免本机残留密钥意外改变 APK 组成。
 - 第一版不做远程配置后台；只保留本地 `auto`、`off`、总开关、会话保险丝和远程 kill switch 预留字段。
 - 第一版不在“我的”页暴露广告源选择 UI；后续若要给内部构建开放切换入口，需要先补设置页方案和隐私文案。
 - `AdConsentState.NotRequired` 只用于调试广告源和无真实 SDK 的第一版；真实广告源必须接入明确同意状态。
@@ -154,3 +154,4 @@
 - 2026-06-02：将穿山甲广告 ID 调整为 debug/release 两套 buildType 专属配置，并让 debug 包使用项目固定的 `debug-internal.keystore`；原因是系统自动 debug keystore 换机器会变化，穿山甲后台需要稳定签名指纹，同时正式包必须使用 release 签名和正式代码位。
 - 2026-06-02：删除用户侧广告总启用配置语义，广告模块只由对应 buildType 的 AppId 与广告位 ID 是否齐全决定；原因是临时关闭广告时注释掉 AppId 更直观，也能避免额外总开关和 ID 配置互相矛盾。
 - 2026-06-03：新增 uni-ad 详情页信息流 adapter `:feature:ad-uniad`，固定 `UNI_AD_android_5.5.2.0606` AAR、章鱼 + 泛连渠道、buildType 自动配置、CSJ/uni-ad 互斥、AAR SHA-256 校验、隐私采集关闭、个性化广告关闭、`DCFeedAdLoader` 生命周期、`count(1)` 和单元测试；原因是穿山甲平台不适合当前个人开发者接入，详情页改为优先验证 uni-ad 原生信息流广告。
+- 2026-09-13：新增 `gradle/feature-flags.gradle.kts`，将 TorrentSearch、CSJ debug/release、uni-ad debug/release 五个可选实现开关统一由 `gradle.properties`/`-P` 显式控制；广告参数继续保存在 `local.properties` 或 CI secret，开关开启但参数不完整时配置期失败。原因是模块是否打包不应再由密钥是否存在隐式决定，并需要与 `enableMagnetFeature` 保持一致的配置位置和启用语义。本次只改变构建期依赖选择与错误提示，不新增运行时日志，也不涉及用户数据、备份或隐私日志字段。

@@ -26,7 +26,7 @@
 
 - `:feature:torrent-search-api`：仅放置稳定契约、Hilt 空集合声明、启动来源和备份映射接口；不得泄漏 Compose 页面状态、Room 实体、Repository、Provider 或上游实现类型。
 - `:feature:torrent-search`：承载固定快照、`TorrentSearchActivity`、Hilt DI、页面、数据存储、网络、安全包装、Provider 调度和备份参与者。
-- `app`：默认只依赖轻量 API；`-PenableMagnetFeature=true` 时才依赖实现模块。关闭构建的发现集合为空，入口、备份分类、实现类和 Activity 均不可达。
+- `app`：默认只依赖轻量 API；`gradle/feature-flags.gradle.kts` 与广告 adapter 共用统一的 Gradle 属性读取方式，`-PenableMagnetFeature=true` 时才依赖实现模块。关闭构建的发现集合为空，入口、备份分类、实现类和 Activity 均不可达。
 
 ### 启动与入口契约
 
@@ -605,3 +605,5 @@ dirty 与首次披露：书签、历史、已查看 Repository 仅在成功且�
 收尾变更记录：2026-09-12，移除项目级 `gradle/verification-metadata.xml` 并关闭 Gradle dependency verification；原因是 Android Studio Sync 会通过动态 `detachedConfiguration` 下载 118 个仅用于源码跳转的 `sources.jar`/Gradle source ZIP，而命令行生成流程无法稳定覆盖这组 IDE 附件，继续启用会造成高维护成本并阻断开发。保留 version catalog、Gradle wrapper distribution SHA-256、上游固定快照、许可证清单和发布静态扫描作为现有供应链边界；该配置变更不产生运行时日志，也不涉及用户数据或隐私字段。关闭后 `gradlew help` 与启用 TorrentSearch 的 App Debug Kotlin 编译均通过。
 
 收尾变更记录：2026-09-12，保留 `enableMagnetFeature` 条件依赖，移除 TorrentSearch 模块专属中文注释/发布扫描 Gradle 任务、任务专用 comment fixture 和两个空 ProGuard 占位文件；原因是这些配置没有参与标准 `check` 生命周期，且使单个模块的构建脚本显著偏离仓库其他普通 Android Library 模块。后续继续通过仓库通用注释规则、模块单测、功能开关开/关编译和人工发布审查保证质量；不改变运行时日志、Manifest、数据、备份或网络行为。本次标准模块单测、模块编译、功能开启与默认关闭 App 编译、TorrentSearch Release AAR 构建均通过。
+
+收尾变更记录：2026-09-13，将 `enableMagnetFeature` 的读取从 `app/build.gradle.kts` 局部逻辑迁移到 `gradle/feature-flags.gradle.kts`，与四个广告 adapter 开关共用默认关闭和 `gradle.properties`/`-P` 覆盖语义；TorrentSearch 的属性名、默认值、模块依赖和运行时行为均保持不变。本次不新增运行时日志，也不影响 Manifest、数据或备份契约。

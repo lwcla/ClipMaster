@@ -6,24 +6,25 @@ plugins {
     alias(libs.plugins.google.dagger.hilt.android)
 }
 
+apply(from = rootProject.file("gradle/feature-flags.gradle.kts"))
 apply(from = rootProject.file("gradle/csj-ad-config.gradle.kts"))
 
 /** 把原始字符串转成可安全写入 `buildConfigField` 的 Kotlin 字面量。 */
 fun String.asBuildConfigString(): String = "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
-/** 当前构建是否把穿山甲官方 SDK 依赖编译进 adapter；由任一 buildType 广告参数是否齐全统一决定。 */
-val csjSdkDependencyConfigured: Boolean = extra["csjAdFeatureConfigured"] as Boolean
+/** 当前构建是否把穿山甲官方 SDK 依赖编译进 adapter；由任一 buildType 显式开关统一决定。 */
+val csjSdkDependencyEnabled: Boolean = extra["csjAdFeatureEnabled"] as Boolean
 
-/** debug/internal 穿山甲 AppId；缺失时 debug adapter 编译通过、运行隐藏广告。 */
+/** debug/internal 穿山甲 AppId；开关关闭时允许为空，开启时由配置脚本保证有效。 */
 val csjDebugAppId: String = extra["csjDebugAppId"] as String
 
-/** release 穿山甲 AppId；缺失时 release adapter 编译通过、运行隐藏广告。 */
+/** release 穿山甲 AppId；开关关闭时允许为空，开启时由配置脚本保证有效。 */
 val csjReleaseAppId: String = extra["csjReleaseAppId"] as String
 
-/** debug/internal 详情页信息流/原生广告位 ID；缺失时 debug 包隐藏广告。 */
+/** debug/internal 详情页信息流/原生广告位 ID；开关关闭时允许为空，开启时由配置脚本保证有效。 */
 val csjDebugDetailNativeAdSlotId: String = extra["csjDebugDetailNativeAdSlotId"] as String
 
-/** release 详情页信息流/原生广告位 ID；缺失时 release 包隐藏广告。 */
+/** release 详情页信息流/原生广告位 ID；开关关闭时允许为空，开启时由配置脚本保证有效。 */
 val csjReleaseDetailNativeAdSlotId: String = extra["csjReleaseDetailNativeAdSlotId"] as String
 
 /** debug/internal 构建是否使用测试广告位；默认按测试位处理。 */
@@ -48,7 +49,7 @@ android {
         consumerProguardFiles("consumer-rules.pro")
 
         buildConfigField("String", "CSJ_REQUIRED_PRIVACY_POLICY_VERSION", csjRequiredPrivacyPolicyVersion.asBuildConfigString())
-        buildConfigField("boolean", "CSJ_SDK_DEPENDENCY_ENABLED", csjSdkDependencyConfigured.toString())
+        buildConfigField("boolean", "CSJ_SDK_DEPENDENCY_ENABLED", csjSdkDependencyEnabled.toString())
         buildConfigField("String", "CSJ_SDK_VERSION", libs.versions.csjAds.get().asBuildConfigString())
     }
 

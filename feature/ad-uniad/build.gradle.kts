@@ -6,31 +6,32 @@ plugins {
     alias(libs.plugins.google.dagger.hilt.android)
 }
 
+apply(from = rootProject.file("gradle/feature-flags.gradle.kts"))
 apply(from = rootProject.file("gradle/csj-ad-config.gradle.kts"))
 apply(from = rootProject.file("gradle/uniad-ad-config.gradle.kts"))
 
 /** 把原始字符串转成可安全写入 `buildConfigField` 的 Kotlin 字面量。 */
 fun String.asBuildConfigString(): String = "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
-/** 当前构建是否具备任一 buildType 的 uni-ad 参数；用于运行时诊断 SDK 能力是否启用。 */
-val uniadSdkDependencyConfigured: Boolean = extra["uniadAdFeatureConfigured"] as Boolean
+/** 当前构建是否开启任一 buildType 的 uni-ad adapter；用于运行时诊断 SDK 能力是否启用。 */
+val uniadSdkDependencyEnabled: Boolean = extra["uniadAdFeatureEnabled"] as Boolean
 
-/** debug/internal DCloud AppId；缺失时 debug adapter 编译通过、运行隐藏广告。 */
+/** debug/internal DCloud AppId；开关关闭时允许为空，开启时由配置脚本保证有效。 */
 val uniadDebugAppId: String = extra["uniadDebugAppId"] as String
 
-/** debug/internal uni-ad 联盟 ID；缺失时 debug adapter 编译通过、运行隐藏广告。 */
+/** debug/internal uni-ad 联盟 ID；开关关闭时允许为空，开启时由配置脚本保证有效。 */
 val uniadDebugUnionId: String = extra["uniadDebugUnionId"] as String
 
-/** debug/internal 详情页信息流 adpid；缺失时 debug 包隐藏广告。 */
+/** debug/internal 详情页信息流 adpid；开关关闭时允许为空，开启时由配置脚本保证有效。 */
 val uniadDebugDetailNativeAdpid: String = extra["uniadDebugDetailNativeAdpid"] as String
 
-/** release DCloud AppId；缺失时 release adapter 编译通过、运行隐藏广告。 */
+/** release DCloud AppId；开关关闭时允许为空，开启时由配置脚本保证有效。 */
 val uniadReleaseAppId: String = extra["uniadReleaseAppId"] as String
 
-/** release uni-ad 联盟 ID；缺失时 release adapter 编译通过、运行隐藏广告。 */
+/** release uni-ad 联盟 ID；开关关闭时允许为空，开启时由配置脚本保证有效。 */
 val uniadReleaseUnionId: String = extra["uniadReleaseUnionId"] as String
 
-/** release 详情页信息流 adpid；缺失时 release 包隐藏广告。 */
+/** release 详情页信息流 adpid；开关关闭时允许为空，开启时由配置脚本保证有效。 */
 val uniadReleaseDetailNativeAdpid: String = extra["uniadReleaseDetailNativeAdpid"] as String
 
 /** debug/internal 构建是否使用测试 adpid；固定 true，避免内部测试污染正式收益。 */
@@ -60,7 +61,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
 
-        buildConfigField("boolean", "UNIAD_SDK_DEPENDENCY_ENABLED", uniadSdkDependencyConfigured.toString())
+        buildConfigField("boolean", "UNIAD_SDK_DEPENDENCY_ENABLED", uniadSdkDependencyEnabled.toString())
         buildConfigField("String", "UNIAD_SDK_VERSION", uniadSdkVersion.asBuildConfigString())
         buildConfigField("String", "UNIAD_REQUIRED_PRIVACY_POLICY_VERSION", uniadRequiredPrivacyPolicyVersion.asBuildConfigString())
     }

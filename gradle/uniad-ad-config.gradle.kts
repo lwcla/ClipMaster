@@ -5,7 +5,7 @@ import java.util.Properties
 /** 本机 uni-ad 构建配置文件；只在本机/CI 构建期读取，不进入运行时备份。 */
 val uniadLocalPropertiesFile = rootProject.file("local.properties")
 
-/** 本机 uni-ad 构建配置集合；用于让 Android Studio 普通 debug/run 自动启用已配置的广告包。 */
+/** 本机 uni-ad 构建配置集合；只保存敏感参数，是否打包 uni-ad 由统一 feature flag 决定。 */
 val uniadLocalBuildProperties = Properties().apply {
     if (uniadLocalPropertiesFile.isFile) {
         /** 本机配置输入流；读取完成后立即关闭，避免 Gradle 配置阶段泄漏文件句柄。 */
@@ -35,7 +35,7 @@ fun String.asValidUniAdIdOrEmpty(): String {
     return trimmedValue.takeIf { uniadIdPattern.matches(it) }.orEmpty()
 }
 
-/** 计算文件 SHA-256；只在配置了 uni-ad 广告 ID 时用于 AAR 完整性预检。 */
+/** 计算文件 SHA-256；只在 uni-ad feature 显式开启时用于 AAR 完整性预检。 */
 fun java.io.File.uniadSha256Hex(): String {
     /** SHA-256 摘要器；用于确认本地 AAR 没被替换或损坏。 */
     val digest = MessageDigest.getInstance("SHA-256")
@@ -85,14 +85,28 @@ val uniadReleaseAdParametersConfigured = uniadReleaseAppIdValue.isNotBlank() &&
     uniadReleaseUnionIdValue.isNotBlank() &&
     uniadReleaseDetailNativeAdpidValue.isNotBlank()
 
-/** uni-ad adapter 是否具备任一构建类型的接入参数；用于宿主判断是否依赖真实广告模块。 */
-val uniadAdFeatureConfiguredValue = uniadDebugAdParametersConfigured || uniadReleaseAdParametersConfigured
+/** debug/internal uni-ad 显式开关；由统一 feature flag 脚本读取 `gradle.properties` 或 `-P`。 */
+val enableUniadDebugAdFeatureValue = extra["enableUniadDebugAdFeature"] as Boolean
 
-/** debug/internal 是否具备 uni-ad adapter 接入参数；只由 debug 三项 ID 齐全决定。 */
-val uniadDebugAdFeatureConfiguredValue = uniadDebugAdParametersConfigured
+/** release uni-ad 显式开关；由统一 feature flag 脚本读取 `gradle.properties` 或 `-P`。 */
+val enableUniadReleaseAdFeatureValue = extra["enableUniadReleaseAdFeature"] as Boolean
 
-/** release 是否具备 uni-ad adapter 接入参数；只由 release 三项 ID 齐全决定。 */
-val uniadReleaseAdFeatureConfiguredValue = uniadReleaseAdParametersConfigured
+/** 开启 debug/internal adapter 时拒绝缺失或非法 ID，避免生成已启用但运行时不可用的半配置包。 */
+if (enableUniadDebugAdFeatureValue && !uniadDebugAdParametersConfigured) {
+    throw GradleException(
+        "enableUniadDebugAdFeature=true 时必须配置有效的 uniadDebugAppId、uniadDebugUnionId 和 uniadDebugDetailNativeAdpid。"
+    )
+}
+
+/** 开启 release adapter 时拒绝缺失或非法 ID，避免正式包静默隐藏广告。 */
+if (enableUniadReleaseAdFeatureValue && !uniadReleaseAdParametersConfigured) {
+    throw GradleException(
+        "enableUniadReleaseAdFeature=true 时必须配置有效的 uniadReleaseAppId、uniadReleaseUnionId 和 uniadReleaseDetailNativeAdpid。"
+    )
+}
+
+/** uni-ad adapter 是否为任一构建类型启用；用于 SDK 能力标记和本地 AAR 完整性校验。 */
+val uniadAdFeatureEnabledValue = enableUniadDebugAdFeatureValue || enableUniadReleaseAdFeatureValue
 
 /** debug/internal 默认使用测试 adpid；该值写入 BuildConfig 用于诊断和 release 保护逻辑。 */
 val uniadDebugUseTestAdpidValue = true
@@ -106,7 +120,7 @@ val uniadSdkVersionValue = "5.5.2.0606"
 /** uni-ad AAR 固定目录；只保存 v1 章鱼 + 泛连信息流需要的官方制品。 */
 val uniadArtifactDirValue = rootProject.file("third_party/uniad/UNI_AD_android_5.5.2.0606")
 
-/** uni-ad v1 必需 AAR 与 SHA-256；配置广告 ID 后必须逐项匹配。 */
+/** uni-ad v1 必需 AAR 与 SHA-256；feature 开启后必须逐项匹配。 */
 val uniadRequiredArtifactsValue = linkedMapOf(
     "uniad-native-release.aar" to "a7b2940e976c6618d652899046042d159aa5731d3f0de1d2f5c421dd961db6c5",
     "android-gif-drawable-1.2.29.aar" to "611e2699782ee0d56168b6546962f75a54bdff03136d9db94019a65c0924eddd",
@@ -116,16 +130,16 @@ val uniadRequiredArtifactsValue = linkedMapOf(
     "Funlink_adapter_uniad_2.8.4_74659082_release.aar" to "0d22430179566ee62d82fde84dab2f7bdb800a9f4a224b503b5804567130c789",
 )
 
-/** 校验 uni-ad AAR 制品；默认包未配置广告 ID 时跳过，避免默认/海外包被广告 SDK 卡住。 */
+/** 校验 uni-ad AAR 制品；默认包未开启 feature 时跳过，避免默认/海外包被广告 SDK 卡住。 */
 fun validateUniAdArtifactsIfNeeded() {
-    if (!uniadAdFeatureConfiguredValue) {
+    if (!uniadAdFeatureEnabledValue) {
         return
     }
     uniadRequiredArtifactsValue.forEach { (artifactName, expectedSha256) ->
         /** 当前待校验 AAR 文件；文件名显式列出，禁止 fileTree 泛扫。 */
         val artifactFile = uniadArtifactDirValue.resolve(artifactName)
         if (!artifactFile.isFile) {
-            throw GradleException("uni-ad 已配置广告参数，但缺少 AAR：${artifactFile.absolutePath}")
+            throw GradleException("uni-ad 功能已开启，但缺少 AAR：${artifactFile.absolutePath}")
         }
         /** 当前 AAR 的 SHA-256；只用于构建期校验，不写入运行时日志。 */
         val actualSha256 = artifactFile.uniadSha256Hex()
@@ -135,30 +149,26 @@ fun validateUniAdArtifactsIfNeeded() {
     }
 }
 
-/** 当前 buildType 是否已配置穿山甲 debug 广告；用于阻止同一包同时塞入两套真实国内广告源。 */
-val uniadCsjDebugConfigured = extra.properties["csjDebugAdFeatureConfigured"] as? Boolean ?: false
+/** 当前 buildType 是否已开启穿山甲 debug 广告；用于阻止同一包同时塞入两套真实国内广告源。 */
+val uniadCsjDebugEnabled = extra.properties["enableCsjDebugAdFeature"] as? Boolean ?: false
 
-/** 当前 buildType 是否已配置穿山甲 release 广告；用于阻止同一包同时塞入两套真实国内广告源。 */
-val uniadCsjReleaseConfigured = extra.properties["csjReleaseAdFeatureConfigured"] as? Boolean ?: false
+/** 当前 buildType 是否已开启穿山甲 release 广告；用于阻止同一包同时塞入两套真实国内广告源。 */
+val uniadCsjReleaseEnabled = extra.properties["enableCsjReleaseAdFeature"] as? Boolean ?: false
 
-if (uniadDebugAdFeatureConfiguredValue && uniadCsjDebugConfigured) {
-    throw GradleException("debug/internal 同时配置了 uni-ad 和 CSJ，请只保留一套真实国内广告源。")
+/** 同一 debug/internal 包只允许一个真实国内广告源，避免重复打包 SDK 与 Hilt 来源冲突。 */
+if (enableUniadDebugAdFeatureValue && uniadCsjDebugEnabled) {
+    throw GradleException("debug/internal 同时开启了 uni-ad 和 CSJ，请只保留一套真实国内广告源。")
 }
 
-if (uniadReleaseAdFeatureConfiguredValue && uniadCsjReleaseConfigured) {
-    throw GradleException("release 同时配置了 uni-ad 和 CSJ，请只保留一套真实国内广告源。")
+/** 同一 release 包只允许一个真实国内广告源，避免渠道包同时携带两套 SDK。 */
+if (enableUniadReleaseAdFeatureValue && uniadCsjReleaseEnabled) {
+    throw GradleException("release 同时开启了 uni-ad 和 CSJ，请只保留一套真实国内广告源。")
 }
 
 validateUniAdArtifactsIfNeeded()
 
-/** 对宿主和 adapter 暴露统一的 uni-ad 参数配置结果。 */
-extra["uniadAdFeatureConfigured"] = uniadAdFeatureConfiguredValue
-
-/** 对宿主暴露 debug/internal uni-ad 参数配置结果，用于 debugImplementation 裁剪依赖。 */
-extra["uniadDebugAdFeatureConfigured"] = uniadDebugAdFeatureConfiguredValue
-
-/** 对宿主暴露 release uni-ad 参数配置结果，用于 releaseImplementation 裁剪依赖。 */
-extra["uniadReleaseAdFeatureConfigured"] = uniadReleaseAdFeatureConfiguredValue
+/** 对 adapter 暴露统一的 uni-ad 启用结果，避免 SDK 能力标记与宿主依赖选择不一致。 */
+extra["uniadAdFeatureEnabled"] = uniadAdFeatureEnabledValue
 
 /** 对 adapter 暴露 debug/internal DCloud AppId；仅写入调试构建产物的 BuildConfig。 */
 extra["uniadDebugAppId"] = uniadDebugAppIdValue

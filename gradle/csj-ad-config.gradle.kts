@@ -4,7 +4,7 @@ import java.util.Properties
 /** 本机广告构建配置文件；只在本机/CI 构建期读取，不进入源码和运行时备份。 */
 val csjLocalPropertiesFile = rootProject.file("local.properties")
 
-/** 本机广告构建配置集合；用于让开发者无需命令行参数即可启用穿山甲包。 */
+/** 本机广告构建配置集合；只保存敏感参数，是否打包穿山甲由统一 feature flag 决定。 */
 val csjLocalBuildProperties = Properties().apply {
     if (csjLocalPropertiesFile.isFile) {
         /** 本机配置输入流；读取完成后立即关闭，避免 Gradle 配置阶段泄漏文件句柄。 */
@@ -63,14 +63,28 @@ val csjDebugAdParametersConfigured = csjDebugAppIdValue.isNotBlank() && csjDebug
 /** release 是否已经具备打包穿山甲模块的最小配置。 */
 val csjReleaseAdParametersConfigured = csjReleaseAppIdValue.isNotBlank() && csjReleaseDetailNativeAdSlotIdValue.isNotBlank()
 
-/** 穿山甲 adapter 是否具备任一构建类型的接入参数；用于 adapter 模块判断是否需要编译官方 SDK。 */
-val csjAdFeatureConfiguredValue = csjDebugAdParametersConfigured || csjReleaseAdParametersConfigured
+/** debug/internal 穿山甲显式开关；由统一 feature flag 脚本读取 `gradle.properties` 或 `-P`。 */
+val enableCsjDebugAdFeatureValue = extra["enableCsjDebugAdFeature"] as Boolean
 
-/** debug/internal 是否具备穿山甲 adapter 接入参数；只由 debug ID 齐全决定。 */
-val csjDebugAdFeatureConfiguredValue = csjDebugAdParametersConfigured
+/** release 穿山甲显式开关；由统一 feature flag 脚本读取 `gradle.properties` 或 `-P`。 */
+val enableCsjReleaseAdFeatureValue = extra["enableCsjReleaseAdFeature"] as Boolean
 
-/** release 是否具备穿山甲 adapter 接入参数；只由 release ID 齐全决定。 */
-val csjReleaseAdFeatureConfiguredValue = csjReleaseAdParametersConfigured
+/** 开启 debug/internal adapter 时拒绝缺失或非法 ID，避免生成已启用但运行时不可用的半配置包。 */
+if (enableCsjDebugAdFeatureValue && !csjDebugAdParametersConfigured) {
+    throw GradleException(
+        "enableCsjDebugAdFeature=true 时必须配置有效的 csjDebugAppId 和 csjDebugDetailNativeAdSlotId。"
+    )
+}
+
+/** 开启 release adapter 时拒绝缺失或非法 ID，避免正式包静默隐藏广告。 */
+if (enableCsjReleaseAdFeatureValue && !csjReleaseAdParametersConfigured) {
+    throw GradleException(
+        "enableCsjReleaseAdFeature=true 时必须配置有效的 csjReleaseAppId 和 csjReleaseDetailNativeAdSlotId。"
+    )
+}
+
+/** 穿山甲 adapter 是否为任一构建类型启用；用于 adapter 模块生成一致的 SDK 能力标记。 */
+val csjAdFeatureEnabledValue = enableCsjDebugAdFeatureValue || enableCsjReleaseAdFeatureValue
 
 /** debug/internal 默认使用测试广告位，避免内部验证污染正式收益。 */
 val csjDebugUseTestAdSlotValue = csjBuildBooleanProperty("csjDebugUseTestAdSlot") ?: true
@@ -81,14 +95,8 @@ val csjReleaseUseTestAdSlotValue = csjBuildBooleanProperty("csjReleaseUseTestAdS
 /** 需要匹配的广告隐私政策版本；空值表示当前构建暂不启用版本绑定。 */
 val csjRequiredPrivacyPolicyVersionValue = csjBuildProperty("csjRequiredPrivacyPolicyVersion").orEmpty()
 
-/** 对 adapter 暴露统一的穿山甲参数配置结果，避免官方 SDK 依赖判断口径不一致。 */
-extra["csjAdFeatureConfigured"] = csjAdFeatureConfiguredValue
-
-/** 对宿主暴露 debug/internal 穿山甲参数配置结果，用于 debugImplementation 裁剪依赖。 */
-extra["csjDebugAdFeatureConfigured"] = csjDebugAdFeatureConfiguredValue
-
-/** 对宿主暴露 release 穿山甲参数配置结果，用于 releaseImplementation 裁剪依赖。 */
-extra["csjReleaseAdFeatureConfigured"] = csjReleaseAdFeatureConfiguredValue
+/** 对 adapter 暴露统一的穿山甲启用结果，避免 SDK 能力标记与宿主依赖选择不一致。 */
+extra["csjAdFeatureEnabled"] = csjAdFeatureEnabledValue
 
 /** 对 adapter 暴露 debug/internal 穿山甲 AppId；仅写入调试构建产物的 BuildConfig。 */
 extra["csjDebugAppId"] = csjDebugAppIdValue

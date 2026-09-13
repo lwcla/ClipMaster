@@ -92,8 +92,8 @@
 - 手动验证点：详情页加载态、错误态、正文滚动、点击正文卡片复制、底部复制按钮已移除、右上角删除入口、删除选择弹窗、图片提取和视频提取入口行为正确。
 - 手动验证点：启用 TorrentSearch 时，点击动作后独立 Activity 应带入标题或正文作为候选关键词和 `detail` 来源，不写入剪贴板、历史或发起预热；默认关闭构建不展示该动作。
 - 手动验证点：debug 构建显示调试广告占位，release 默认无真实广告源时不显示广告；同一详情页重组不重复创建请求，切换到另一条剪贴记录后生成新的请求。
-- 手动验证点：在 `local.properties` 或 CI Gradle 属性配置 `csjDebugAppId`/`csjDebugDetailNativeAdSlotId` 或 `csjReleaseAppId`/`csjReleaseDetailNativeAdSlotId` 后，对应 debug/release 构建会携带穿山甲详情页广告模块；debug 包使用项目固定 internal keystore，release 包使用正式 release keystore。隐私未同意或敏感详情不初始化穿山甲，同意后广告异步展示，离开详情页释放，弱网、无网、超时和无填充不占空白。
-- 手动验证点：在 `local.properties` 或 CI Gradle 属性配置 `uniadDebugAppId`/`uniadDebugUnionId`/`uniadDebugDetailNativeAdpid` 或 `uniadReleaseAppId`/`uniadReleaseUnionId`/`uniadReleaseDetailNativeAdpid` 后，对应 debug/release 构建会携带 uni-ad 详情页广告模块；CSJ 与 uni-ad 同一 buildType 同时配置时构建失败。隐私未同意或敏感详情不初始化 uni-ad，同意后广告异步展示，离开详情页释放，弱网、无网、超时和无填充不占空白。
+- 手动验证点：在 `local.properties` 或 CI Gradle 属性准备 `csjDebugAppId`/`csjDebugDetailNativeAdSlotId` 或 `csjReleaseAppId`/`csjReleaseDetailNativeAdSlotId`，并显式开启对应 `enableCsjDebugAdFeature`/`enableCsjReleaseAdFeature` 后，对应 debug/release 构建会携带穿山甲详情页广告模块；debug 包使用项目固定 internal keystore，release 包使用正式 release keystore。隐私未同意或敏感详情不初始化穿山甲，同意后广告异步展示，离开详情页释放，弱网、无网、超时和无填充不占空白。
+- 手动验证点：在 `local.properties` 或 CI Gradle 属性准备 `uniadDebugAppId`/`uniadDebugUnionId`/`uniadDebugDetailNativeAdpid` 或 `uniadReleaseAppId`/`uniadReleaseUnionId`/`uniadReleaseDetailNativeAdpid`，并显式开启对应 `enableUniadDebugAdFeature`/`enableUniadReleaseAdFeature` 后，对应 debug/release 构建会携带 uni-ad 详情页广告模块；CSJ 与 uni-ad 同一 buildType 同时开启时构建失败。隐私未同意或敏感详情不初始化 uni-ad，同意后广告异步展示，离开详情页释放，弱网、无网、超时和无填充不占空白。
 - 手动验证点：来源包名明确的详情页显示屏蔽或取消屏蔽动作，确认后轻提示且页面保留当前记录；未知来源不展示该动作；从我的页修改名单后返回详情页，动作文案刷新。
 
 ## TorrentSearch 接入影响（待实施）
@@ -127,6 +127,7 @@
 
 ## 变更记录
 
+- 2026-09-13：同步详情页真实广告验证入口为“显式 feature 开关 + 对应 buildType 参数完整”；原因是所有可选实现模块已统一由 `gradle.properties`/`-P` 控制，页面运行时行为、隐私与生命周期边界不变。
 - 2026-08-31：清理当前状态、交互、验收和取舍中的 `MagnetFeatureEntry` 现行规则；原因是详情页已只保留 TorrentSearch 候选关键词启动边界，旧契约仅作历史记录。
 - 2026-08-30：同步详情页改接 TorrentSearch 候选关键词启动动作；原因是旧 Academic Torrents 磁力页面及其 route 将被移除。
 - 2026-06-17：详情页新增“屏蔽此应用后续剪贴/取消屏蔽此应用”上下文动作接入说明；原因是用户希望从单条历史记录快速维护来源过滤名单，同时历史记录本身不受影响。

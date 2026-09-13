@@ -12,6 +12,7 @@ plugins {
     id("kotlin-parcelize")
 }
 
+apply(from = rootProject.file("gradle/feature-flags.gradle.kts"))
 apply(from = rootProject.file("gradle/csj-ad-config.gradle.kts"))
 apply(from = rootProject.file("gradle/uniad-ad-config.gradle.kts"))
 
@@ -21,11 +22,14 @@ fun String.asBuildConfigString(): String = "\"${replace("\\", "\\\\").replace("\
 /** 规范化 APK 文件名片段，只保留文件系统安全字符。 */
 fun String.asApkFileNamePart(): String = replace(Regex("[^A-Za-z0-9._-]"), "_")
 
-/** 是否把穿山甲广告 adapter 编译进 debug/internal 包；debug 广告 ID 齐全时默认启用。 */
-val csjDebugAdFeatureConfigured: Boolean = extra["csjDebugAdFeatureConfigured"] as Boolean
+/** 是否把 TorrentSearch 实现模块编译进宿主；由统一 feature flag 配置提供。 */
+val enableMagnetFeature: Boolean = extra["enableMagnetFeature"] as Boolean
 
-/** 是否把穿山甲广告 adapter 编译进 release 包；release 广告 ID 齐全时默认启用。 */
-val csjReleaseAdFeatureConfigured: Boolean = extra["csjReleaseAdFeatureConfigured"] as Boolean
+/** 是否把穿山甲广告 adapter 编译进 debug/internal 包；开启后广告配置脚本保证参数完整。 */
+val enableCsjDebugAdFeature: Boolean = extra["enableCsjDebugAdFeature"] as Boolean
+
+/** 是否把穿山甲广告 adapter 编译进 release 包；开启后广告配置脚本保证参数完整。 */
+val enableCsjReleaseAdFeature: Boolean = extra["enableCsjReleaseAdFeature"] as Boolean
 
 /** debug/internal 构建是否声明使用穿山甲测试广告位；默认 true，避免内部验证污染正式收益。 */
 val csjDebugUseTestAdSlot: Boolean = extra["csjDebugUseTestAdSlot"] as Boolean
@@ -33,11 +37,11 @@ val csjDebugUseTestAdSlot: Boolean = extra["csjDebugUseTestAdSlot"] as Boolean
 /** release 构建是否声明使用穿山甲测试广告位；默认 false，正式包应使用正式广告位。 */
 val csjReleaseUseTestAdSlot: Boolean = extra["csjReleaseUseTestAdSlot"] as Boolean
 
-/** 是否把 uni-ad adapter 编译进 debug/internal 包；debug 三项广告 ID 齐全时默认启用。 */
-val uniadDebugAdFeatureConfigured: Boolean = extra["uniadDebugAdFeatureConfigured"] as Boolean
+/** 是否把 uni-ad adapter 编译进 debug/internal 包；开启后广告配置脚本保证参数和 AAR 完整。 */
+val enableUniadDebugAdFeature: Boolean = extra["enableUniadDebugAdFeature"] as Boolean
 
-/** 是否把 uni-ad adapter 编译进 release 包；release 三项广告 ID 齐全时默认启用。 */
-val uniadReleaseAdFeatureConfigured: Boolean = extra["uniadReleaseAdFeatureConfigured"] as Boolean
+/** 是否把 uni-ad adapter 编译进 release 包；开启后广告配置脚本保证参数和 AAR 完整。 */
+val enableUniadReleaseAdFeature: Boolean = extra["enableUniadReleaseAdFeature"] as Boolean
 
 android {
     namespace = "com.cla.clip.master"
@@ -136,18 +140,18 @@ android {
             isMinifyEnabled = true          // 开启 R8（代码压缩/优化/混淆）
             isShrinkResources = true        // 可选：开启资源压缩（依赖 minify）
             signingConfig = signingConfigs.getByName("release")
-            buildConfigField("boolean", "ADS_CSJ_ENABLED", csjReleaseAdFeatureConfigured.toString())
+            buildConfigField("boolean", "ADS_CSJ_ENABLED", enableCsjReleaseAdFeature.toString())
             buildConfigField("boolean", "ADS_CSJ_USE_TEST_AD_SLOT", csjReleaseUseTestAdSlot.toString())
-            buildConfigField("boolean", "ADS_UNIAD_ENABLED", uniadReleaseAdFeatureConfigured.toString())
+            buildConfigField("boolean", "ADS_UNIAD_ENABLED", enableUniadReleaseAdFeature.toString())
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
 
         debug {
             isMinifyEnabled = false         // 调试包不混淆，方便调试
             signingConfig = signingConfigs.getByName("internalDebug")
-            buildConfigField("boolean", "ADS_CSJ_ENABLED", csjDebugAdFeatureConfigured.toString())
+            buildConfigField("boolean", "ADS_CSJ_ENABLED", enableCsjDebugAdFeature.toString())
             buildConfigField("boolean", "ADS_CSJ_USE_TEST_AD_SLOT", csjDebugUseTestAdSlot.toString())
-            buildConfigField("boolean", "ADS_UNIAD_ENABLED", uniadDebugAdFeatureConfigured.toString())
+            buildConfigField("boolean", "ADS_UNIAD_ENABLED", enableUniadDebugAdFeature.toString())
 //            isShrinkResources = false       // 调试包不压缩资源
         }
     }
@@ -160,10 +164,10 @@ android {
             val normalizedVersionName = versionName.asApkFileNamePart()
             /** 广告包标记；用于区分默认包、CSJ 包和 uni-ad 包，避免发布产物混淆。 */
             val adPackageMarker = when {
-                buildType.name == "debug" && uniadDebugAdFeatureConfigured -> "-uniad"
-                buildType.name == "release" && uniadReleaseAdFeatureConfigured -> "-uniad"
-                buildType.name == "debug" && csjDebugAdFeatureConfigured -> "-csj"
-                buildType.name == "release" && csjReleaseAdFeatureConfigured -> "-csj"
+                buildType.name == "debug" && enableUniadDebugAdFeature -> "-uniad"
+                buildType.name == "release" && enableUniadReleaseAdFeature -> "-uniad"
+                buildType.name == "debug" && enableCsjDebugAdFeature -> "-csj"
+                buildType.name == "release" && enableCsjReleaseAdFeature -> "-csj"
                 else -> ""
             }
             /** 非 release 变体追加后缀，避免多产物同名覆盖。 */
@@ -201,31 +205,28 @@ dependencies {
     implementation(project(":shizuku"))
     debugImplementation(project(":feature:ad-debug"))
 
-    /** 是否按既有 Gradle 属性编译进 TorrentSearch 实现；属性名保持兼容，默认关闭。 */
-    val enableMagnetFeature = providers.gradleProperty("enableMagnetFeature")
-        .map(String::toBoolean)
-        .getOrElse(false)
+    /** 显式开启后才把 TorrentSearch 实现加入宿主，关闭时只保留轻量 API。 */
     if (enableMagnetFeature) {
         implementation(project(":feature:torrent-search"))
     }
 
-    /** 是否按 debug/internal 广告参数编译进穿山甲广告模块；默认关闭，避免无配置 debug 包误带国内广告 SDK。 */
-    if (csjDebugAdFeatureConfigured) {
+    /** 是否按统一的 debug/internal 显式开关编译进穿山甲广告模块。 */
+    if (enableCsjDebugAdFeature) {
         debugImplementation(project(":feature:ad-csj"))
     }
 
-    /** 是否按 release 广告参数编译进穿山甲广告模块；默认关闭，避免海外/默认 release 包误带国内广告 SDK。 */
-    if (csjReleaseAdFeatureConfigured) {
+    /** 是否按统一的 release 显式开关编译进穿山甲广告模块。 */
+    if (enableCsjReleaseAdFeature) {
         releaseImplementation(project(":feature:ad-csj"))
     }
 
-    /** 是否按 debug/internal 广告参数编译进 uni-ad 广告模块；默认关闭，避免无配置 debug 包误带国内广告 SDK。 */
-    if (uniadDebugAdFeatureConfigured) {
+    /** 是否按统一的 debug/internal 显式开关编译进 uni-ad 广告模块。 */
+    if (enableUniadDebugAdFeature) {
         debugImplementation(project(":feature:ad-uniad"))
     }
 
-    /** 是否按 release 广告参数编译进 uni-ad 广告模块；默认关闭，避免海外/默认 release 包误带国内广告 SDK。 */
-    if (uniadReleaseAdFeatureConfigured) {
+    /** 是否按统一的 release 显式开关编译进 uni-ad 广告模块。 */
+    if (enableUniadReleaseAdFeature) {
         releaseImplementation(project(":feature:ad-uniad"))
     }
 
