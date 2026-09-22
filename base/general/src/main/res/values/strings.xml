@@ -478,4 +478,8 @@
     <string name="base_general_backup_kind_unknown">类型：未知</string>
     <string name="base_general_shizuku" translatable="false">shizuku</string>
 
+    <string name="base_general_media_task_pending">等待下载</string>
+    <string name="base_general_media_task_publishing">正在保存</string>
+    <string name="base_general_media_task_source">来源：%1$s</string>
+    <string name="base_general_media_task_format">格式：%1$s</string>
 </resources>

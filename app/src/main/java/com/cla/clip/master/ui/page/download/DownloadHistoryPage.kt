@@ -29,6 +29,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -66,6 +68,8 @@ fun DownloadHistoryPage(
     val snackbarHostState = remember { SnackbarHostState() }
     var pendingDelete by remember { mutableStateOf<DeleteRequestUi?>(null) }
     var previewImageUri by remember { mutableStateOf<String?>(null) }
+    // 从整页观察指针，覆盖标题栏和批量按钮；该临时状态只控制广告布局，不触发业务动作。
+    var adPointerPressed by remember { mutableStateOf(false) }
     /** 宿主下载记录只保留视频和图片；TorrentSearch 的下载历史由其独立 Activity 自行管理。 */
     val historyTabs = listOf(
         DownloadHistoryTabSpec(DownloadHistoryTab.Video, stringResource(R.string.base_general_video)),
@@ -122,6 +126,20 @@ fun DownloadHistoryPage(
     }
 
     Scaffold(
+        modifier = Modifier.pointerInput(Unit) {
+            try {
+                awaitPointerEventScope {
+                    while (true) {
+                        // Initial 阶段先记录按下，不消费事件，所有原按钮及横竖滚动照常处理。
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        adPointerPressed = event.changes.any { it.pressed }
+                    }
+                }
+            } finally {
+                // 页面退出或手势取消必须释放布局保护，避免后台残留按压状态。
+                adPointerPressed = false
+            }
+        },
         topBar = {
             DownloadHistoryTopBar(
                 state = state,
@@ -185,6 +203,10 @@ fun DownloadHistoryPage(
         ) {
             DownloadHistoryPager(
                 tabs = historyTabs,
+                // 预览、删除确认和系统删除执行期间不允许背景广告请求或响应点击。
+                adOverlayBlocked = pendingDelete != null || previewImageUri != null || state.busy,
+                adPointerPressed = adPointerPressed,
+                adPointerPressedNow = { adPointerPressed },
                 pagerState = pagerState,
                 state = state,
                 videoPagingFlow = videoPagingFlow,

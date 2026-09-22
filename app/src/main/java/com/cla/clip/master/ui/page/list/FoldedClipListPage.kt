@@ -31,6 +31,10 @@ import com.cla.clip.master.ui.navigation.SearchRoute
 import com.cla.clip.master.ui.navigation.SearchScope
 import com.cla.clip.master.ui.widget.SecondaryPageScaffold
 import com.cla.clip.master.ui.widget.clip.ClipCardTimeMode
+import com.cla.clip.feature.ad.api.AdPlacement
+import com.cla.clip.master.ad.rememberPageAdSession
+import com.cla.clip.master.ad.adInteractionGuard
+import com.cla.clip.master.ui.widget.clip.ClipListAdConfig
 import com.cla.clip.master.ui.widget.clip.ClipResultList
 
 /**
@@ -53,7 +57,13 @@ fun FoldedClipListPage(
     val listState = rememberLazyListState()
     var deleteClip by remember { mutableStateOf<ClipShowEntity?>(null) }
 
+    // 页面广告身份不依赖内容数量，分页追加和置顶排序保持同一会话。
+    val adSession = rememberPageAdSession("folded-list")
+    // 确认、设置及批量操作覆盖层禁止广告交互并延后布局变化。
+    val adOverlayBlocked = deleteClip != null
+
     SecondaryPageScaffold(
+        modifier = Modifier.adInteractionGuard(adSession),
         title = stringResource(com.cla.clip.base.general.R.string.base_general_folded_clips),
         onBack = onBack,
         actions = {
@@ -71,6 +81,12 @@ fun FoldedClipListPage(
                 .padding(paddingValues)
         ) {
             ClipResultList(
+                adConfig = ClipListAdConfig(
+                    session = adSession,
+                    placement = AdPlacement.FoldedFeedNative,
+                    suppressed = adOverlayBlocked,
+                    layoutBlocked = adOverlayBlocked,
+                ),
                 listState = listState,
                 pagedClips = pagedClips,
                 emptyText = stringResource(com.cla.clip.base.general.R.string.base_general_folded_clip_list_empty),

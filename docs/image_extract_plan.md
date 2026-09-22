@@ -1,4 +1,4 @@
-状态：已完成
+状态：实现中
 
 # 图片提取功能方案
 
@@ -338,3 +338,12 @@
 - 2026-05-18：完成 `DownloadImagesWorker` 职责拆分并通过 `./gradlew :app:compileDebugKotlin` 验证；原因是 Worker 现在只负责批次流程、下载编排、发布和通知，图片请求、格式识别、动画元数据和内容校验已迁移到可预测领域包，保持行为等价并提升后续复用性。
 - 2026-05-18：继续按代码组织规则优化 `DownloadImagesWorker` 相关类，计划抽出 `ImageTempFileDownloader`、`ImageTempDownloadResult`、`DownloadedTempImage`、`ImageMediaStorePublisher` 和 `ImagePublishResult`；原因是 Worker 上一轮仍直接承担单图网络落盘、异常分类和 MediaStore 发布副作用，本次需要让入口类更专注于批次流程编排。
 - 2026-05-18：完成单图临时下载、下载结果、临时图片边界对象、MediaStore 发布和发布结果拆分，并通过 `./gradlew :app:compileDebugKotlin` 验证；原因是现在 Worker 只负责批次读取、并发调度、计数进度、最终状态和通知，网络/格式/校验/发布副作用都已收敛到可预测领域类。
+
+
+## 2026-09-18 AdMob 接入变更（实现中）
+
+提取、下载、结果使用独立单元；共享 MediaAdGrid 在第 4/24/44…张后全宽插入，短首行在已有图后插入。首行与首广告同外壳保证首屏准备，后续严格按内容锚点可见请求。整页工具栏和网格共用交互守卫，广告不参与勾选。
+
+共享广告的隐私、生命周期、资源、布局及低敏日志契约以 [广告主方案](ad_module_plan.md) 为准；本页验证重点为业务交互不回归及广告异步加载时的内容锚点保护。
+
+变更记录：2026-09-19，按实际接入更新页面差异与边界；集成编译/测试结果见主方案。

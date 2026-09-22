@@ -51,6 +51,10 @@ import com.cla.clip.base.general.widget.DeleteActionIcon
 import com.cla.clip.master.ui.widget.SecondaryPageScaffold
 import com.cla.clip.master.ui.widget.SingleChoiceRow
 import com.cla.clip.master.ui.widget.clip.ClipCardTimeMode
+import com.cla.clip.feature.ad.api.AdPlacement
+import com.cla.clip.master.ad.rememberPageAdSession
+import com.cla.clip.master.ad.adInteractionGuard
+import com.cla.clip.master.ui.widget.clip.ClipListAdConfig
 import com.cla.clip.master.ui.widget.clip.ClipResultList
 
 /**
@@ -77,11 +81,17 @@ fun RecycleBinPage(
     var showDeleteSelectedConfirm by remember { mutableStateOf(false) }
     var showSettingSheet by remember { mutableStateOf(false) }
 
+    // 页面广告身份不依赖内容数量，分页追加和置顶排序保持同一会话。
+    val adSession = rememberPageAdSession("recycle-list")
+    // 确认、设置及批量操作覆盖层禁止广告交互并延后布局变化。
+    val adOverlayBlocked = restoreClip != null || showClearConfirm || showDeleteSelectedConfirm || showSettingSheet
+
     BackHandler(enabled = selectionMode) {
         viewModel.clearSelection()
     }
 
     SecondaryPageScaffold(
+        modifier = Modifier.adInteractionGuard(adSession),
         title = if (!selectionMode) {
             stringResource(com.cla.clip.base.general.R.string.base_general_recycle_bin)
         } else {
@@ -126,6 +136,12 @@ fun RecycleBinPage(
                 .padding(paddingValues)
         ) {
             ClipResultList(
+                adConfig = ClipListAdConfig(
+                    session = adSession,
+                    placement = AdPlacement.RecycleFeedNative,
+                    suppressed = adOverlayBlocked || selectionMode,
+                    layoutBlocked = adOverlayBlocked,
+                ),
                 listState = listState,
                 pagedClips = pagedClips,
                 emptyText = stringResource(com.cla.clip.base.general.R.string.base_general_recycle_bin_empty),
@@ -146,6 +162,8 @@ fun RecycleBinPage(
                 onLongClick = viewModel::enterSelection,
                 timeMode = ClipCardTimeMode.DeletedTime,
                 selectedIds = selectedIds,
+                selectionMode = selectionMode,
+                onToggleSelection = viewModel::toggleSelection,
             )
         }
     }

@@ -6,6 +6,12 @@
 <data-extraction-rules xmlns:tools="http://schemas.android.com/tools"
     tools:ignore="ResourceName">
     <cloud-backup>
+        <!-- 仅排除已由 GMA 1.4.0 / UMP 4.0.0 字节码核实的广告专用偏好；不排除应用默认偏好或其他业务文件。 -->
+        <exclude domain="sharedpref" path="__GOOGLE_FUNDING_CHOICE_SDK_INTERNAL__.xml" />
+        <exclude domain="sharedpref" path="GoogleMobileAds.xml" />
+        <exclude domain="sharedpref" path="pcvmspf2.xml" />
+        <exclude domain="sharedpref" path="paid_storage_sp.xml" />
+
         <!-- WebDAV 密码、备份目录授权和备份健康状态属于设备绑定/敏感配置，不应由系统云备份自动恢复。 -->
         <exclude
             domain="file"
@@ -44,6 +50,12 @@
         -->
     </cloud-backup>
     <device-transfer>
+        <!-- 仅排除已由 GMA 1.4.0 / UMP 4.0.0 字节码核实的广告专用偏好；不排除应用默认偏好或其他业务文件。 -->
+        <exclude domain="sharedpref" path="__GOOGLE_FUNDING_CHOICE_SDK_INTERNAL__.xml" />
+        <exclude domain="sharedpref" path="GoogleMobileAds.xml" />
+        <exclude domain="sharedpref" path="pcvmspf2.xml" />
+        <exclude domain="sharedpref" path="paid_storage_sp.xml" />
+
         <!-- Shizuku Provider 图标传输目录只保存临时 PNG，设备迁移后不应恢复。 -->
         <exclude
             domain="file"

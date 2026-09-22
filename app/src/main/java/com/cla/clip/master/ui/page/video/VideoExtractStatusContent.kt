@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -70,8 +72,13 @@ private fun LoadingPreview() {
 internal fun Success(
     videoExtractVm: VideoExtractVm,
     candidate: VideoCandidate,
+    onPermissionPending: (Boolean) -> Unit = {},
 ) {
+    // 权限申请标记仅在当前候选组件存活期间有效，父页面据此暂停广告。
     var pendingCandidate by remember { mutableStateOf<Pair<Long, VideoCandidate>?>(null) }
+
+    SideEffect { onPermissionPending(pendingCandidate != null) }
+    DisposableEffect(Unit) { onDispose { onPermissionPending(false) } }
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -80,6 +87,8 @@ internal fun Success(
         pendingCandidate?.let { pending ->
             key(pending.first) {
                 RequestStoragePermission(
+                    // 拒绝或关闭说明弹窗后结束等待，避免广告抑制标记永久残留。
+                    onFinished = { granted -> if (!granted) pendingCandidate = null },
                     next = {
                         pendingCandidate = null
                         // 权限确认后再创建下载任务，避免 Worker 启动后才发现没有保存权限。

@@ -7,6 +7,12 @@
 -->
 <full-backup-content xmlns:tools="http://schemas.android.com/tools"
     tools:ignore="ResourceName">
+
+        <!-- 仅排除已由 GMA 1.4.0 / UMP 4.0.0 字节码核实的广告专用偏好；不排除应用默认偏好或其他业务文件。 -->
+        <exclude domain="sharedpref" path="__GOOGLE_FUNDING_CHOICE_SDK_INTERNAL__.xml" />
+        <exclude domain="sharedpref" path="GoogleMobileAds.xml" />
+        <exclude domain="sharedpref" path="pcvmspf2.xml" />
+        <exclude domain="sharedpref" path="paid_storage_sp.xml" />
     <!-- WebDAV 密码、备份目录授权和备份健康状态属于设备绑定/敏感配置，不应被系统 Auto Backup 搬到新安装中。 -->
     <exclude
         domain="file"

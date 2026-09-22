@@ -23,6 +23,7 @@ import com.cla.clip.feature.ad.api.AdSessionFailureFuse
 import com.cla.clip.feature.ad.api.AdSourceEntry
 import com.cla.clip.feature.ad.api.AdSourceSelector
 import com.cla.clip.feature.torrent.search.api.TorrentSearchFeatureEntry
+import com.cla.clip.master.ad.AdHostProvider
 import com.cla.clip.master.ad.DetailAdSensitivityPolicy
 import com.cla.clip.master.ui.navigation.AppNavigation
 import com.cla.clip.master.ui.navigation.DetailRoute
@@ -139,6 +140,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
+                        AdHostProvider(adSources, adSourceSelector, adSessionFailureFuse, isAppMainProcess) {
                         AppNavigation(
                             navController = navController,
                             torrentSearchFeatures = torrentSearchFeatures,
@@ -153,6 +155,7 @@ class MainActivity : ComponentActivity() {
                             detailAdSensitivityPolicy = detailAdSensitivityPolicy,
                             onDisableAdSource = adSessionFailureFuse::disableSource,
                         )
+                        }
                     }
                 }
             }

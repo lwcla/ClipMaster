@@ -63,9 +63,14 @@ import com.cla.clip.master.ui.widget.ClipBatchSelectionActionBar
 import com.cla.clip.master.ui.widget.SingleChoiceDialog
 import com.cla.clip.master.ui.widget.SingleChoiceOption
 import com.cla.clip.master.ui.widget.clip.ClipCardTimeMode
+import com.cla.clip.feature.ad.api.AdPlacement
+import com.cla.clip.master.ad.rememberPageAdSession
+import com.cla.clip.master.ad.adInteractionGuard
+import com.cla.clip.master.ui.widget.clip.ClipListAdConfig
 import com.cla.clip.master.ui.widget.clip.ClipResultList
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlin.math.max
 
 /**
@@ -177,6 +182,22 @@ fun SearchPage(
     val clipSelectionMode = isVisibleSearch && selectionMode
     /** 批量操作按钮是否可用；0 选中或执行中都不能触发删除/折叠。 */
     val batchActionsEnabled = clipSelectionMode && selectedCount > 0 && !isBatchActionRunning
+
+    // 搜索身份只在范围、真实关键词或筛选改变时更换；页面模式和分页结果不参与身份。
+    val searchAdKey = remember(visibilityScope, filterState.query, filterState.timeFilter, filterState.sourceAppPackages) {
+        listOf(visibilityScope, filterState.query, filterState.timeFilter, filterState.sourceAppPackages.toSet())
+    }
+    // 任意条件变化立即回到未稳定态；800ms 内继续编辑会取消旧计时，旧会话同时失效。
+    var searchAdSettled by remember(searchAdKey) { mutableStateOf(false) }
+    LaunchedEffect(searchAdKey) {
+        delay(800)
+        searchAdSettled = true
+    }
+    // 只在结果页且条件稳定时请求；该本地业务身份不会传给 SDK 或日志。
+    val adSession = rememberPageAdSession(searchAdKey, enabled = pageMode == SearchPageMode.Result && searchAdSettled)
+    // 所有确认、筛选弹层与批量任务都暂停广告交互及布局变化。
+    val adOverlayBlocked = deleteClip != null || showBatchDeleteDialog || showSourcePicker ||
+        showTimeFilterDialog || showClearHistoryConfirm || isBatchActionRunning
 
     /** 退出多选态并清空选择；返回键、查询条件变化和批量动作完成都复用这个出口。 */
     fun clearSelection() {
@@ -367,6 +388,7 @@ fun SearchPage(
 
     Box(
         modifier = Modifier
+            .adInteractionGuard(adSession)
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .then(
@@ -415,6 +437,13 @@ fun SearchPage(
             val pagedClips = viewModel.pagedClips.collectAsLazyPagingItems()
 
             ClipResultList(
+                adConfig = ClipListAdConfig(
+                    session = adSession,
+                    placement = if (isVisibleSearch) AdPlacement.SearchFeedNative else AdPlacement.FoldedSearchNative,
+                    suppressed = clipSelectionMode || adOverlayBlocked,
+                    requestEnabled = searchAdSettled,
+                    layoutBlocked = adOverlayBlocked || headerSnapJob?.isActive == true,
+                ),
                 listState = resultListState,
                 pagedClips = pagedClips,
                 emptyText = stringResource(scope.emptyTextRes),

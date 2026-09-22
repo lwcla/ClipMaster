@@ -19,6 +19,13 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import com.cla.clip.master.ad.PageAdSlot
+import com.cla.clip.master.ad.rememberPageAdSession
+import com.cla.clip.master.ad.adInteractionGuard
+import com.cla.clip.master.ui.widget.media.MediaSourceSummary
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -50,7 +57,17 @@ fun VideoDownloadPage(
     taskId: Long,
     onBack: () -> Unit
 ) {
+    // 页面状态由既有生命周期感知订阅提供，Worker 不受页面可见性影响。
     val state = downloadVm.downloadState.collectAsStateWithLifecycle().value
+    // 元数据与上面的状态共享 Room 观察，不重复读取任务或下载媒体。
+    val task = downloadVm.taskData.collectAsStateWithLifecycle().value
+    // 下载和合并共享广告位置；成功阶段重新建立独立结果会话。
+    val placement = videoDownloadAdPlacement(state, task != null)
+    // 会话身份不含百分比，因此 Room 高频进度不会重载广告。
+    val adSession = rememberPageAdSession(taskId to placement, enabled = placement != null)
+    // 任务信息、操作和广告在小屏下整体滚动，滚动时不插入新卡片。
+    val contentScroll = rememberScrollState()
+    SideEffect { adSession.canMutateLayout = !contentScroll.isScrollInProgress }
 
     // 拦截系统返回键，保持和标题栏返回一致的导航行为。
     BackHandler {
@@ -63,17 +80,26 @@ fun VideoDownloadPage(
     }
 
     SecondaryPageScaffold(
+        modifier = Modifier.adInteractionGuard(adSession),
         title = stringResource(R.string.base_general_video_download),
         onBack = onBack,
     ) { paddingValues ->
         PageBackground(contentPadding = paddingValues) {
             /** 下载状态主体区域，保持原有状态机，只接入统一二级页背景。 */
-            val contentModifier = Modifier.fillMaxSize()
+            val contentModifier = Modifier.fillMaxSize().verticalScroll(contentScroll)
             Column(
-                verticalArrangement = Arrangement.Center,
+                verticalArrangement = Arrangement.Top,
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = contentModifier
             ) {
+                if (task != null && state !is VideoDownloadState.Failed && state !is VideoDownloadState.Idle) {
+                    MediaSourceSummary(
+                        title = task.fileName,
+                        source = Uri.parse(task.referer ?: task.videoUrl).host,
+                        description = Uri.parse(task.videoUrl).lastPathSegment,
+                        imageUrl = null,
+                    )
+                }
                 when (state) {
                     is VideoDownloadState.Idle -> {
                         Text(
@@ -105,6 +131,10 @@ fun VideoDownloadPage(
                         )
                     }
                 }
+                placement?.let { adPlacement ->
+                    PageAdSlot(adSession, adPlacement, canReveal = !contentScroll.isScrollInProgress)
+                }
+
             }
         }
     }

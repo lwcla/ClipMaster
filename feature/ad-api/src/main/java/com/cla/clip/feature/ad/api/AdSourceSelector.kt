@@ -43,7 +43,8 @@ class AdSourceSelector @Inject constructor() {
             return AdSourceSelection.Hidden(reasonCode = "ads_sensitive_context")
         }
 
-        if (consentState == AdConsentState.Unknown || consentState == AdConsentState.Denied) {
+        if (sources.none { it.privacyController != null } &&
+            (consentState == AdConsentState.Unknown || consentState == AdConsentState.Denied)) {
             return AdSourceSelection.Hidden(reasonCode = "consent_unavailable")
         }
 
@@ -52,6 +53,8 @@ class AdSourceSelector @Inject constructor() {
             .filter { source ->
                 placement in source.supportedPlacements &&
                     source.sourceId !in runtimePolicy.sessionDisabledSourceIds &&
+                    (source.privacyController?.state?.value?.canRequestAds
+                        ?: (consentState != AdConsentState.Unknown && consentState != AdConsentState.Denied)) &&
                     source.isAvailable(consentState, runtimePolicy)
             }
             .sortedWith(compareByDescending<AdSourceEntry> { source -> source.priority }.thenBy { source -> source.sourceId })

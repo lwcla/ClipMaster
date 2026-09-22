@@ -10,16 +10,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -32,7 +28,12 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.cla.clip.feature.ad.api.AdPlacement
+import com.cla.clip.master.ui.widget.media.MediaAdGrid
+import com.cla.clip.master.ad.PageAdSession
+import com.cla.clip.master.ad.rememberPageAdSession
+import com.cla.clip.master.ad.adInteractionGuard
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -712,9 +713,12 @@ fun ImageExtractPage(
         }
     }
 
+    // 页面级会话覆盖标题栏、工具栏和网格，阶段由各广告位身份区分，任务轮次变化才清空历史。
+    val pageAdSession = rememberPageAdSession(pageUrl to imageExtractVm.sessionId)
+
     // TitleBar 内部已经处理状态栏高度；放入 Scaffold.topBar 后，内容区只避让标题栏总高度，避免再叠加一份默认顶部安全区。
     Scaffold(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().adInteractionGuard(pageAdSession),
         topBar = {
             TitleBar(stringResource(R.string.base_general_image_extract_title), onBack)
         }
@@ -789,8 +793,10 @@ fun ImageExtractPage(
 
             ImageExtractContent(
                 state = state,
+                adSession = pageAdSession,
                 viewModel = imageExtractVm,
                 showLongRunningHint = showLongRunningHint,
+                adsBlocked = showRetryConfirm,
                 isStoppingExtract = isStoppingExtract,
                 isSubmittingDownload = isSubmittingDownload,
                 onRetry = {
@@ -887,8 +893,10 @@ fun ImageExtractPage(
 @Composable
 private fun ImageExtractContent(
     state: ImageProbeState,
+    adSession: PageAdSession,
     viewModel: ImageExtractVm,
     showLongRunningHint: Boolean,
+    adsBlocked: Boolean,
     isStoppingExtract: Boolean,
     isSubmittingDownload: Boolean,
     onRetry: () -> Unit,
@@ -907,6 +915,8 @@ private fun ImageExtractContent(
     if (shouldShowLiveSelection) {
         LiveCandidateSelectionContent(
             candidates = viewModel.probingCandidates,
+            adSession = adSession,
+            adsBlocked = adsBlocked,
             viewModel = viewModel,
             isExtracting = state is ImageProbeState.Probing,
             isStoppingExtract = isStoppingExtract,
@@ -923,7 +933,7 @@ private fun ImageExtractContent(
             }
             ImageProbeState.ReadyToDownload -> Unit
             ImageProbeState.Failed -> CenteredStateContent { FailedText(onRetry) }
-            is ImageProbeState.Extracted -> BatchStatusContent(state, viewModel, onRetry, onOpen)
+            is ImageProbeState.Extracted -> BatchStatusContent(state, viewModel, onRetry, onOpen, adSession)
         }
     }
 }
@@ -960,6 +970,8 @@ private fun ProbingLoadingContent(
 @Composable
 private fun LiveCandidateSelectionContent(
     candidates: List<ImageCandidateData>,
+    adSession: PageAdSession,
+    adsBlocked: Boolean,
     viewModel: ImageExtractVm,
     isExtracting: Boolean,
     isStoppingExtract: Boolean,
@@ -968,10 +980,15 @@ private fun LiveCandidateSelectionContent(
     onStopExtract: () -> Unit,
     onConfirmDownload: (Set<String>) -> Unit,
 ) {
+    // 仅为共享图片加载器读取页面 Context，组件退出后不额外持有。
     val context = LocalContext.current
+    // 已选择候选的稳定身份集合，广告不会写入。
     val selectedKeys = remember { mutableStateSetOf<String>() }
+    // 用户主动取消的身份集合，实时追加不会覆盖该选择。
     val unselectedKeys = remember { mutableStateSetOf<String>() }
+    // 临时预览候选仅在当前选择页保留，展示时暂停广告。
     var previewCandidate by remember { mutableStateOf<ImageCandidateData?>(null) }
+    // 复用共享动图加载器，不为广告创建媒体加载任务。
     val imageLoader = rememberAnimatedImageLoader(context)
     // `candidates` 由 ViewModel 的 SnapshotStateList 传入，列表对象本身会复用；用稳定 key 快照触发副作用，
     // 才能在实时追加新图片时立即补上默认选中，而不是等状态分支重建后才一次性全选。
@@ -1011,15 +1028,17 @@ private fun LiveCandidateSelectionContent(
             onConfirmDownload = { onConfirmDownload(selectedKeys.toSet()) }
         )
 
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(IMAGE_CANDIDATE_GRID_COLUMNS),
-            contentPadding = PaddingValues(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            items(items = candidates, key = { viewModel.candidateKey(it) }) { candidate ->
+        MediaAdGrid(
+            items = candidates,
+            itemKey = { viewModel.candidateKey(it) },
+            sessionKey = viewModel.sessionId,
+            placement = AdPlacement.ImageExtractNative,
+            adSession = adSession,
+            blocked = adsBlocked || previewCandidate != null || isSubmittingDownload,
+        ) { candidate ->
+                // 候选身份只关联真实图片，广告条目没有选择键。
                 val key = viewModel.candidateKey(candidate)
+                // 用户选择只取当前候选集合，广告插入不改变数量。
                 val selected = key in selectedKeys
                 LiveCandidateTile(
                     candidate = candidate,
@@ -1041,16 +1060,20 @@ private fun LiveCandidateSelectionContent(
                     },
                     onDecodedSize = { width, height -> viewModel.updateCandidateDecodedSize(key, width, height) }
                 )
-            }
         }
     }
 
+    // 当前预览快照用于安全展开底部弹层。
     val candidate = previewCandidate
     if (candidate != null) {
+        // 预览候选身份仍使用业务键，与广告位置序号无关。
         val candidateKey = viewModel.candidateKey(candidate)
+        // 优先已有元信息缓存，缺失时复用候选尺寸。
         val meta = viewModel.candidatePreviewMetaCache[candidateKey]
             ?: ImagePreviewMeta(width = candidate.width, height = candidate.height)
+        // 预览弹层独立状态，退出时随组合树释放。
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        // 预览/网格选择由真实图片集合决定。
         val selected = candidateKey in selectedKeys
         ModalBottomSheet(
             onDismissRequest = { previewCandidate = null },
@@ -1076,6 +1099,7 @@ private fun LiveCandidateSelectionContent(
         }
     }
 }
+
 
 /**
  * 实时选择页顶部工具栏。
@@ -1192,64 +1216,6 @@ private fun RetryExtractConfirmDialog(
 }
 
 /**
- * 展示图片提取批次的后续状态。
- *
- * 批次仍处于已提取状态时进入图片选择网格；一旦 Worker 开始下载，则根据 Room 中的批次状态展示下载进度、
- * 成功统计、部分成功统计或失败重试入口。
- */
-@Composable
-private fun BatchStatusContent(
-    state: ImageProbeState.Extracted,
-    viewModel: ImageExtractVm,
-    onRetry: () -> Unit,
-    onOpen: (String?) -> Unit,
-) {
-    val batch by viewModel.observeBatch(state.batchId).collectAsState(initial = null)
-    val curBatch = batch
-    if (curBatch == null || curBatch.status == ImageExtractBatchData.STATUS_EXTRACTED) {
-        CenteredStateContent {
-            InlineLoadingState(stringResource(R.string.base_general_preparing_download))
-        }
-        return
-    }
-
-    CenteredStateContent {
-        when (curBatch.status) {
-            ImageExtractBatchData.STATUS_DOWNLOADING -> {
-                InlineLoadingState(
-                    stringResource(
-                        R.string.base_general_image_download_progress,
-                        curBatch.successCount + curBatch.failedCount + curBatch.filteredCount,
-                        curBatch.totalCount
-                    )
-                )
-            }
-
-            ImageExtractBatchData.STATUS_SUCCESS -> {
-                SuccessText(buildImageDownloadResultText(curBatch, includeOpenText = true)) {
-                    onOpen(curBatch.outputDir)
-                }
-            }
-
-            ImageExtractBatchData.STATUS_PARTIAL_SUCCESS -> {
-                SuccessText(buildImageDownloadResultText(curBatch, includeOpenText = true)) {
-                    onOpen(curBatch.outputDir)
-                }
-            }
-
-            ImageExtractBatchData.STATUS_FILTERED -> {
-                // 全部被过滤时没有任何成功保存的图片，不展示“点击打开”，避免把用户带到空目录或默认相册。
-                SuccessText(buildImageDownloadResultText(curBatch, includeOpenText = false))
-            }
-
-            ImageExtractBatchData.STATUS_FAILED -> {
-                FailedText(onRetry, buildImageDownloadResultText(curBatch, includeOpenText = false))
-            }
-        }
-    }
-}
-
-/**
  * 图片下载前的选择界面。
  *
  * 页面会默认选中当前批次全部图片，允许用户在网格或预览弹窗中取消不需要的图片；选择状态只保存在本 Composable
@@ -1262,11 +1228,17 @@ private fun ImageSelectionContent(
     viewModel: ImageExtractVm,
     onConfirmDownload: (Set<Long>) -> Unit,
 ) {
+    // 仅为共享图片加载器读取页面 Context，组件退出后不额外持有。
     val context = LocalContext.current
-    val items by viewModel.observeItems(batchId).collectAsState(initial = emptyList())
+    // 当前批次只在可见生命周期观察，重组不重建数据库 Flow。
+    val items by remember(viewModel, batchId) { viewModel.observeItems(batchId) }.collectAsStateWithLifecycle(initialValue = emptyList())
+    // 已落库图片选择状态按批次保存，不包含广告条目。
     val selectedIds = remember(batchId) { mutableStateSetOf<Long>() }
+    // 只在批次首次出现真实图片时默认全选。
     var initializedSelection by remember(batchId) { mutableStateOf(false) }
+    // 当前预览图片离开页面即清空。
     var previewItem by remember { mutableStateOf<ImageExtractItemData?>(null) }
+    // 复用共享动图加载器，不为广告创建媒体加载任务。
     val imageLoader = rememberAnimatedImageLoader(context)
 
     LaunchedEffect(items) {
@@ -1281,7 +1253,9 @@ private fun ImageSelectionContent(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    // 工具栏和网格共用会话，顶部选择/确认按钮按下时同样禁止广告布局变化。
+    val adSession = rememberPageAdSession(batchId to AdPlacement.ImageExtractNative)
+    Column(modifier = Modifier.fillMaxSize().adInteractionGuard(adSession)) {
         ImageSelectionToolbar(
             selectedCount = selectedIds.size,
             totalCount = items.size,
@@ -1293,14 +1267,15 @@ private fun ImageSelectionContent(
         if (items.isEmpty()) {
             CenteredStateContent { InlineLoadingState(stringResource(R.string.base_general_image_extract_loading)) }
         } else {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(IMAGE_CANDIDATE_GRID_COLUMNS),
-                contentPadding = PaddingValues(12.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                items(items = items, key = { it.id }) { item ->
+            MediaAdGrid(
+                items = items,
+                itemKey = { it.id },
+                sessionKey = batchId,
+                placement = AdPlacement.ImageExtractNative,
+            adSession = adSession,
+                blocked = previewItem != null,
+            ) { item ->
+                    // 数据库图片 id 保持选择身份稳定，广告不参与选择。
                     val selected = item.id in selectedIds
                     ImageCandidateTile(
                         item = item,
@@ -1315,15 +1290,18 @@ private fun ImageSelectionContent(
                         },
                         onDecodedSize = { width, height -> viewModel.updateDecodedSize(item.id, width, height) }
                     )
-                }
             }
         }
     }
 
+    // 当前图片快照避免弹窗状态读写期间空值变化。
     val item = previewItem
     if (item != null) {
+        // 优先已有元信息缓存，缺失时复用候选尺寸。
         val meta = viewModel.previewMetaCache[item.id] ?: ImagePreviewMeta(width = item.width, height = item.height)
+        // 预览弹层独立状态，退出时随组合树释放。
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        // 预览/网格选择由真实图片集合决定。
         val selected = item.id in selectedIds
         ModalBottomSheet(
             onDismissRequest = { previewItem = null },
@@ -1343,6 +1321,7 @@ private fun ImageSelectionContent(
         }
     }
 }
+
 
 /**
  * 图片选择页顶部工具栏。
@@ -1391,7 +1370,7 @@ private fun ImageSelectionToolbar(
  * 按成功、过滤、失败数量拼接批次结果，并可选追加“点击打开”提示；统一使用字符串资源，避免 UI 层硬编码中文。
  */
 @Composable
-private fun buildImageDownloadResultText(batch: ImageExtractBatchData, includeOpenText: Boolean): String {
+internal fun buildImageDownloadResultText(batch: ImageExtractBatchData, includeOpenText: Boolean): String {
     val parts = buildList {
         if (batch.successCount > 0) add(stringResource(R.string.base_general_image_saved_count, batch.successCount))
         if (batch.filteredCount > 0) add(stringResource(R.string.base_general_image_filtered_count, batch.filteredCount))
@@ -1408,7 +1387,7 @@ private fun buildImageDownloadResultText(batch: ImageExtractBatchData, includeOp
  * 用于下载完成、部分完成或过滤完成后的结果展示；只有存在可查看下载内容时才传入 onOpen 让外层打开相册/文件查看入口。
  */
 @Composable
-private fun SuccessText(text: String, onOpen: (() -> Unit)? = null) {
+internal fun SuccessText(text: String, onOpen: (() -> Unit)? = null) {
     InlineSuccessState(text = text, onClick = onOpen)
 }
 
@@ -1418,7 +1397,7 @@ private fun SuccessText(text: String, onOpen: (() -> Unit)? = null) {
  * 默认用于图片提取失败重试，也可传入批量下载失败统计文案；点击后由调用方决定是重新探测还是重新展示当前批次。
  */
 @Composable
-private fun FailedText(onRetry: () -> Unit, text: String = stringResource(R.string.base_general_image_extract_failed_retry)) {
+internal fun FailedText(onRetry: () -> Unit, text: String = stringResource(R.string.base_general_image_extract_failed_retry)) {
     InlineErrorState(text = text, onClick = onRetry)
 }
 

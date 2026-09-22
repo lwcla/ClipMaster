@@ -2,6 +2,7 @@ package com.cla.clip.master.ui.page.backup
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -11,6 +12,12 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import com.cla.clip.feature.ad.api.AdPlacement
+import com.cla.clip.master.ad.PageAdSlot
+import com.cla.clip.master.ad.rememberPageAdSession
+import com.cla.clip.master.ad.adInteractionGuard
+import com.cla.clip.master.ad.rememberTopAdScrollLayoutCoordinator
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -107,8 +114,31 @@ private fun BackupRestoreFlowScaffold(
     torrentSearchFeatures: Set<TorrentSearchFeatureEntry>,
     modifier: Modifier = Modifier,
 ) {
+    // 确认弹窗按流程阶段重置；显示时暂停广告请求和尺寸变化。
     var showExitConfirm by remember(state.logCode) { mutableStateOf(false) }
+    // 媒体关联提醒独立于恢复报告，只用于当前页面的交互抑制。
     var showMediaRunningNotice by remember { mutableStateOf(false) }
+
+    // 同一恢复任务跨预览、执行和结果共用会话，不因阶段变化重复加载。
+    val adTaskKey = when (state) {
+        is BackupRestoreFlowState.Reading -> state.taskId
+        is BackupRestoreFlowState.Preview -> state.taskId
+        is BackupRestoreFlowState.Restoring -> state.taskId
+        is BackupRestoreFlowState.Result -> state.taskId
+        is BackupRestoreFlowState.Error -> state.taskId
+        BackupRestoreFlowState.Hidden -> null
+    }
+    // 顶部广告属于正文滚动范围，工具栏与底部操作均不被广告覆盖。
+    val contentScroll = rememberScrollState()
+    // 读取、纯恢复进度及失败页没有足够内容；预览和实际结果才允许展示。
+    val eligible = state is BackupRestoreFlowState.Preview || state is BackupRestoreFlowState.Result
+    // 弹窗不展示广告；按下由整个 Scaffold 的观察器统一守卫，包括底部恢复按钮。
+    val blocked = showExitConfirm || showMediaRunningNotice
+    // TaskId 仅作为本地 remember 身份，宿主只向 SDK 发送随机 nonce。
+    val adSession = rememberPageAdSession(adTaskKey)
+    SideEffect { adSession.suppressed = blocked || !eligible }
+    // 包含零高情况的头部测量用于消除隐藏、失败和迟到加载引起的正文跳动。
+    val adHeaderModifier = rememberTopAdScrollLayoutCoordinator(adSession, contentScroll, blocked)
 
     /** 处理顶部返回和系统返回；结果态只回备份页，读取/恢复中按原规则二次确认。 */
     fun requestBack() {
@@ -142,7 +172,7 @@ private fun BackupRestoreFlowScaffold(
     }
 
     SecondaryPageScaffold(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize().adInteractionGuard(adSession),
         title = stringResource(R.string.base_general_backup_restore_flow_title),
         onBack = { requestBack() },
         bottomBar = {
@@ -160,16 +190,28 @@ private fun BackupRestoreFlowScaffold(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(contentScroll)
                 .padding(horizontal = 20.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.Top
         ) {
-            BackupRestoreFlowContent(
-                state = state,
-                mediaRelocationEntryState = mediaRelocationEntryState,
-                mediaRelocationSummary = mediaRelocationSummary,
-                torrentSearchFeatures = torrentSearchFeatures,
-            )
+            // 空广告容器保持零高度，不能为无填充或禁用来源保留装饰间距。
+            Box(modifier = adHeaderModifier) {
+                PageAdSlot(
+                    session = adSession,
+                    placement = AdPlacement.BackupRestoreNative,
+                    eligible = eligible,
+                    requestEnabled = eligible && !blocked,
+                    canReveal = contentScroll.value == 0 && !contentScroll.isScrollInProgress && !blocked,
+                )
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                BackupRestoreFlowContent(
+                    state = state,
+                    mediaRelocationEntryState = mediaRelocationEntryState,
+                    mediaRelocationSummary = mediaRelocationSummary,
+                    torrentSearchFeatures = torrentSearchFeatures,
+                )
+            }
         }
     }
 

@@ -14,12 +14,42 @@ enum class AdPlacement(
 ) {
     /** 详情页正文和操作区之间的信息流/原生广告位。 */
     DetailNative("detail_native"),
+    /** 首页列表广告位。 */
+    HomeFeedNative("home_feed_native"),
+    /** 搜索结果列表广告位。 */
+    SearchFeedNative("search_feed_native"),
+    /** 折叠列表广告位。 */
+    FoldedFeedNative("folded_feed_native"),
+    /** 折叠内搜索广告位。 */
+    FoldedSearchNative("folded_search_native"),
+    /** 回收站列表广告位。 */
+    RecycleFeedNative("recycle_feed_native"),
+    /** 视频提取广告位。 */
+    VideoExtractNative("video_extract_native"),
+    /** 视频下载进度广告位。 */
+    VideoDownloadProgressNative("video_download_progress_native"),
+    /** 视频下载结果广告位。 */
+    VideoDownloadResultNative("video_download_result_native"),
+    /** 图片提取广告位。 */
+    ImageExtractNative("image_extract_native"),
+    /** 图片下载进度广告位。 */
+    ImageDownloadProgressNative("image_download_progress_native"),
+    /** 图片下载结果广告位。 */
+    ImageDownloadResultNative("image_download_result_native"),
+    /** 视频历史广告位。 */
+    VideoHistoryNative("video_history_native"),
+    /** 图片历史广告位。 */
+    ImageHistoryNative("image_history_native"),
+    /** 备份总览广告位。 */
+    BackupOverviewNative("backup_overview_native"),
+    /** 备份恢复广告位。 */
+    BackupRestoreNative("backup_restore_native"),
 }
 
 /**
  * 广告同意状态。
  *
- * 调试占位源可使用 `NotRequired`；真实 SDK adapter 必须等待用户明确同意后才允许初始化和请求广告。
+ * 调试占位源可使用 `NotRequired`；国内 SDK 沿用此状态，独立平台由 AdPrivacyController 决定是否可请求。
  */
 enum class AdConsentState {
     /** 当前构建或广告源不需要额外广告同意即可渲染，例如内部调试占位。 */
@@ -28,7 +58,7 @@ enum class AdConsentState {
     /** 用户已经同意广告 SDK 所需的非必要个人信息处理。 */
     Granted,
 
-    /** 用户尚未完成同意选择，真实 SDK adapter 必须保持不可用。 */
+    /** 用户尚未完成旧同意选择，使用该旧协议的 SDK adapter 必须保持不可用。 */
     Unknown,
 
     /** 用户拒绝非必要个人信息处理，广告位应隐藏或降级。 */
@@ -69,6 +99,14 @@ data class AdSlotRequest(
     val isDebugRequest: Boolean,
     /** 当前请求是否因本地敏感上下文保护而必须隐藏，adapter 只能据此降级，不能读取原文。 */
     val isSensitiveContext: Boolean = false,
+    /** 是否允许把已加载素材发布到布局；变化不生成新请求。 */
+    val canReveal: Boolean = true,
+    /** 广告布局尺寸变化前通知宿主保存列表锚点；回调变化不生成新请求。 */
+    val onLayoutWillChange: () -> Unit = {},
+    /** 广告布局尺寸变化提交后通知宿主恢复锚点；回调变化不生成新请求。 */
+    val onLayoutChanged: () -> Unit = {},
+    /** 展示提交前同步读取交互许可，堵住指针事件早于重组的时间差；变化不生成新请求。 */
+    val canRevealNow: () -> Boolean = { canReveal },
 )
 
 /**
@@ -136,6 +174,9 @@ data class AdSlotEvent(
  * 具体广告 SDK adapter 只实现该接口并通过 Hilt multibinding 暴露给宿主，宿主不直接依赖任何 SDK 类型。
  */
 interface AdSourceEntry {
+    /** 独立隐私平台；为空时继续使用旧的国内同意状态。 */
+    val privacyController: AdPrivacyController? get() = null
+
     /** 稳定广告源 ID，必须使用固定字符串，不能依赖枚举名或类名。 */
     val sourceId: String
 

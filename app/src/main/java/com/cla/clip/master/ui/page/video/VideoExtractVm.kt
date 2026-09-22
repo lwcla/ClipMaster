@@ -9,6 +9,10 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cla.clip.base.general.repository.DownloadRepository
+import com.cla.clip.base.general.repository.ClipRepository
+import com.cla.clip.base.general.dao.LinkPreviewData
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
 import com.cla.clip.master.entity.VideoCandidate
@@ -61,6 +65,8 @@ class VideoExtractVm @Inject constructor(
 
     /** WebView 链接预览补全器，用真实页面 DOM 回写列表卡片预览。 */
     private val linkPreviewExtractor: WebViewLinkPreviewExtractor,
+    /** 只读取已有网页预览缓存，提取页不为广告额外请求网络元数据。 */
+    private val clipRepository: ClipRepository,
 ) : ViewModel() {
 
     companion object {
@@ -99,6 +105,11 @@ class VideoExtractVm @Inject constructor(
      */
     suspend fun saveWebViewLinkPreview(webView: WebView, pageUrl: String, fallbackImageUrl: String? = null) {
         linkPreviewExtractor.extractAndSave(webView, pageUrl, fallbackImageUrl)
+    }
+
+    /** 缓存读取随页面生命周期收集启动；无缓存时返回空值，不触发远端补全。 */
+    fun observeCachedPreview(pageUrl: String): Flow<LinkPreviewData?> = flow {
+        emit(clipRepository.loadLinkPreview(pageUrl))
     }
 
     /**

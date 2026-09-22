@@ -28,25 +28,30 @@ import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.toPermissionSetting
 
 
-/** 请求存储权限的组件 */
+/** 请求存储权限；结束回调仅报告本轮授权结果，默认调用方保持既有行为。 */
 @Composable
-fun RequestStoragePermission(next: () -> Unit) {
+fun RequestStoragePermission(
+    onFinished: (Boolean) -> Unit = {},
+    next: () -> Unit,
+) {
     RequestPermission(
         hasPermission = { hasStoragePermission() },
         getPermission = { getStoragePermission() },
         requestTitle = stringResource(R.string.base_general_storage_permission_is_required),
         requestText = stringResource(R.string.base_general_saving_data_to_a_local_folder_requires_storage_permissions),
+        onFinished = onFinished,
         next = next
     )
 }
 
-/** 请求权限 */
+/** 请求权限；保留系统申请与设置返回流程，并在正常结束或拒绝时通知可选调用方。 */
 @Composable
 fun RequestPermission(
     hasPermission: Context.() -> Boolean,
     getPermission: Context.() -> String?,
     requestTitle: String,
     requestText: String,
+    onFinished: (Boolean) -> Unit = {},
     next: () -> Unit
 ) {
     val tag = "权限请求"
@@ -57,6 +62,8 @@ fun RequestPermission(
     var showRationaleDialog by rememberSaveable { mutableStateOf(false) }
     // 这样即使切换主题导致 Activity 重建，这个变量依然会保持为 true，从而阻止 LaunchedEffect 内部逻辑再次运行
     var hasAutoRequested by rememberSaveable { mutableStateOf(false) }
+    // 从系统设置返回仍未授权时通知调用方结束本轮等待，避免页面永久停在权限抑制状态。
+    var awaitingSettingsResult by rememberSaveable { mutableStateOf(false) }
 
     DisposableEffect(owner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -65,6 +72,10 @@ fun RequestPermission(
                 val new = context.hasPermission()
                 logI(tag) { "RequestPermission: ON_RESUME 权限状态 $new" }
                 hasPermission = new
+                if (awaitingSettingsResult) {
+                    awaitingSettingsResult = false
+                    if (!new) onFinished(false)
+                }
             }
         }
 
@@ -73,12 +84,14 @@ fun RequestPermission(
     }
 
     if (hasPermission) {
+        onFinished(true)
         next()
         return
     }
 
     val permission = context.getPermission()
     if (permission.isNullOrBlank()) {
+        onFinished(true)
         next()
         return
     }
@@ -100,6 +113,9 @@ fun RequestPermission(
             if (curTime - requestTime < PermissionUtils.DENIED_FOREVER_TAKE_TIME) {
                 // 被永久拒绝，显示解释弹窗
                 showRationaleDialog = true
+            } else {
+                // 普通拒绝已经结束本轮系统弹窗，调用方可以恢复页面交互与广告资格。
+                onFinished(false)
             }
         }
     )
@@ -118,12 +134,13 @@ fun RequestPermission(
     // 4. 显示解释弹窗 UI
     if (showRationaleDialog) {
         AlertDialog(
-            onDismissRequest = { showRationaleDialog = false },
+            onDismissRequest = { showRationaleDialog = false; onFinished(false) },
             title = { Text(requestTitle) },
             text = { Text(requestText) },
             confirmButton = {
                 TextButton(onClick = {
                     showRationaleDialog = false
+                    awaitingSettingsResult = true
                     context.toPermissionSetting(permission)
                 }) {
                     Text(stringResource(R.string.base_general_to_authorize_again))
@@ -132,6 +149,7 @@ fun RequestPermission(
             dismissButton = {
                 TextButton(onClick = {
                     showRationaleDialog = false
+                    onFinished(false)
                 }) {
                     Text(stringResource(com.cla.clip.base.general.R.string.base_general_cancel))
                 }

@@ -1,6 +1,7 @@
 package com.cla.clip.master.ui.page.video
 
 import android.annotation.SuppressLint
+import android.net.Uri
 import android.webkit.WebView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -14,6 +15,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.cla.clip.master.ad.PageAdSlot
+import com.cla.clip.master.ad.rememberPageAdSession
+import com.cla.clip.master.ad.adInteractionGuard
+import com.cla.clip.master.ui.widget.media.MediaSourceSummary
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -57,6 +66,24 @@ fun VideoExtractPage(
 ) {
     val tag = "视频地址识别"
     val context = LocalContext.current
+
+    // 缓存 Flow 只随网页改变重建，并由可见生命周期控制读取，不发起额外元数据网络请求。
+    val cachedPreviewFlow = remember(videoExtractVm, pageUrl) { videoExtractVm.observeCachedPreview(pageUrl) }
+    // 已有描述或封面才能让进度阶段成为内容页，单独的网页标题不具备广告资格。
+    val cachedPreview by cachedPreviewFlow.collectAsStateWithLifecycle(initialValue = null)
+    // 权限流程在成功组件内执行，通过回调抑制背后页面的广告和布局变化。
+    var permissionPending by remember { mutableStateOf(false) }
+    // 提取中和候选成功共用同一会话，不随进度更新重新请求。
+    val adSession = rememberPageAdSession(pageUrl to videoExtractVm.sessionId)
+    // 小屏及动态字体下允许实际内容滚动，滚动期间不揭示迟到广告。
+    val contentScroll = rememberScrollState()
+    // 广告资格由实际已存在的预览内容或候选决定；错误页始终禁用。
+    val adPlacement = videoExtractAdPlacement(videoExtractVm.probeState,
+        !cachedPreview?.description.isNullOrBlank() || !cachedPreview?.imageUrl.isNullOrBlank())
+    SideEffect {
+        adSession.canMutateLayout = !contentScroll.isScrollInProgress && !permissionPending
+        adSession.suppressed = permissionPending || adPlacement == null
+    }
 
     /**
      * 当前探测用 WebView 引用。
@@ -163,7 +190,8 @@ fun VideoExtractPage(
 //            val hideWebView = videoExtractVm.probeState is ProbeState.HiddenProbing || videoExtractVm.probeState is ProbeState.Idle
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .fillMaxSize()
+                    .adInteractionGuard(adSession)
                     .background(MaterialTheme.colorScheme.background)
                     .clickable(
                         indication = null,
@@ -174,10 +202,20 @@ fun VideoExtractPage(
                 TitleBar(stringResource(R.string.base_general_video_extract), onBack)
 
                 Column(
-                    verticalArrangement = Arrangement.Center,
+                    verticalArrangement = Arrangement.Top,
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(contentScroll)
                 ) {
+                    if (videoExtractVm.probeState !is ProbeState.Failed) {
+                        // 仅展示当前候选和已有缓存，不记录 URL 或 Cookie。
+                        val candidate = (videoExtractVm.probeState as? ProbeState.Success)?.candidate
+                        MediaSourceSummary(
+                            title = candidate?.fileName?.takeIf { it.isNotBlank() } ?: cachedPreview?.title ?: pageName,
+                            source = Uri.parse(candidate?.referer ?: pageUrl).host,
+                            description = cachedPreview?.description?.takeIf { it.isNotBlank() } ?: candidate?.let { Uri.parse(it.url).lastPathSegment },
+                            imageUrl = cachedPreview?.imageUrl,
+                        )
+                    }
                     when (val state = videoExtractVm.probeState) {
                         ProbeState.Idle -> {}
 
@@ -201,9 +239,15 @@ fun VideoExtractPage(
                             Success(
                                 videoExtractVm,
                                 state.candidate,
+                                onPermissionPending = { permissionPending = it },
                             )
                         }
                     }
+                    adPlacement?.let { placement ->
+                        PageAdSlot(adSession, placement, requestEnabled = !permissionPending,
+                            canReveal = !permissionPending && !contentScroll.isScrollInProgress)
+                    }
+
                 }
             }
         }

@@ -2,6 +2,7 @@ package com.cla.clip.master.ui.page.backup
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -14,6 +15,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.focus.onFocusChanged
+import com.cla.clip.master.ad.*
+import com.cla.clip.feature.ad.api.AdPlacement
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.FolderOpen
@@ -75,13 +81,28 @@ fun BackupPage(
     // 待确认的备份创建动作只保留在当前页面生命周期内；持久化的仅是用户是否已经确认风险。
     var pendingDisclosureAction by remember { mutableStateOf<BackupPlaintextDisclosureAction?>(null) }
 
+    // 页面广告只保存随机会话，不接收 WebDAV 或备份条目内容。
+    val adSession = rememberPageAdSession("backup_overview")
+    // 表单编辑及系统选择器状态只留在内存，不写入配置或备份。
+    var editingCredentials by remember { mutableStateOf(false) }
+    var pickerOpen by remember { mutableStateOf(false) }
+    // 独立顶部条目不参与备份记录计数，实际布局仍使用稳定业务 key。
+    val listState = rememberLazyListState()
+    val bodyKeys = listOf<Any>("auto", "local") + normalLocalBackups.map { it.lazyListKey() } +
+        listOf("webdav") + if (normalRemoteBackups.isEmpty()) listOf("remote_empty") else normalRemoteBackups.map { it.lazyListKey() }
+    val adBlocked = editingCredentials || pickerOpen || pendingDisclosureAction != null || state.busyOperation.isModalProgress
+    SideEffect { adSession.suppressed = adBlocked }
+    rememberListAdLayoutCoordinator(adSession, listState, bodyKeys, blocked = adBlocked,
+        lazyItemKeys = listOf("ad_header") + bodyKeys, keepStartAtTop = true)
+
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/zip"),
-        onResult = { uri -> uri?.let { backupVm.exportToUri(it) } }
+        onResult = { uri -> pickerOpen = false; uri?.let { backupVm.exportToUri(it) } }
     )
     val importLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
         onResult = { uri ->
+            pickerOpen = false
             uri?.let {
                 backupVm.requestRestoreFromUri(it)
                 onNavigate(BackupRestoreRoute)
@@ -90,7 +111,7 @@ fun BackupPage(
     )
     val localDirLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree(),
-        onResult = { uri -> uri?.let { backupVm.updateLocalBackupDir(it) } }
+        onResult = { uri -> pickerOpen = false; uri?.let { backupVm.updateLocalBackupDir(it) } }
     )
 
     // 所有会生成未加密备份包的入口统一经过这里，action 表示确认后应继续执行的原始动作。
@@ -100,6 +121,7 @@ fun BackupPage(
         } else {
             when (action) {
                 BackupPlaintextDisclosureAction.ManualLocal -> {
+                    pickerOpen = true
                     exportLauncher.launch(backupVm.suggestedBackupFileName())
                 }
                 BackupPlaintextDisclosureAction.ManualWebDav -> backupVm.uploadWebDavBackup()
@@ -121,18 +143,24 @@ fun BackupPage(
     }
 
     SecondaryPageScaffold(
+        modifier = Modifier.adInteractionGuard(adSession),
         title = androidx.compose.ui.res.stringResource(R.string.base_general_backup_restore),
         onBack = onBack,
         snackbarHostState = snackbarHostState,
     ) { paddingValues ->
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues),
             contentPadding = PaddingValues(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.Top
         ) {
-            item {
+            item(key = "ad_header") {
+                PageAdSlot(session = adSession, placement = AdPlacement.BackupOverviewNative,
+                    eligible = !adBlocked, modifier = Modifier.fillMaxWidth())
+            }
+            item(key = "auto") {
                 AutoBackupSection(
                     state = state,
                     // enabled 表示用户本次希望切换到的自动备份开关状态。
@@ -148,15 +176,15 @@ fun BackupPage(
                 )
             }
 
-            item {
+            item(key = "local") {
                 LocalBackupSection(
                     state = state,
                     isBusy = !pageActionsEnabled,
                     onExport = {
                         requestBackupCreationAction(BackupPlaintextDisclosureAction.ManualLocal)
                     },
-                    onImport = { importLauncher.launch(arrayOf("application/zip", "application/octet-stream")) },
-                    onChooseDir = { localDirLauncher.launch(null) },
+                    onImport = { pickerOpen = true; importLauncher.launch(arrayOf("application/zip", "application/octet-stream")) },
+                    onChooseDir = { pickerOpen = true; localDirLauncher.launch(null) },
                     onRefreshLocal = backupVm::refreshLocalBackups,
                 )
             }
@@ -177,7 +205,7 @@ fun BackupPage(
                 }
             }
 
-            item {
+            item(key = "webdav") {
                 WebDavConfigSection(
                     state = state,
                     onEndpointChange = backupVm::updateEndpoint,
@@ -190,12 +218,13 @@ fun BackupPage(
                         requestBackupCreationAction(BackupPlaintextDisclosureAction.ManualWebDav)
                     },
                     onRefresh = backupVm::refreshRemoteBackups,
-                    actionsEnabled = pageActionsEnabled
+                    actionsEnabled = pageActionsEnabled,
+                    onEditingChanged = { editingCredentials = it },
                 )
             }
 
             if (normalRemoteBackups.isEmpty()) {
-                item {
+                item(key = "remote_empty") {
                     EmptyRemoteBackups()
                 }
             } else {
@@ -230,7 +259,8 @@ fun BackupPage(
                 pendingDisclosureAction = null
                 when (action) {
                     BackupPlaintextDisclosureAction.ManualLocal -> {
-                        exportLauncher.launch(backupVm.suggestedBackupFileName())
+                        pickerOpen = true
+                    exportLauncher.launch(backupVm.suggestedBackupFileName())
                     }
                     BackupPlaintextDisclosureAction.ManualWebDav -> backupVm.uploadWebDavBackup()
                     BackupPlaintextDisclosureAction.EnableAuto -> backupVm.updateAutoBackupEnabled(true)
@@ -447,6 +477,8 @@ private fun LocalBackupSection(
 @Composable
 private fun WebDavConfigSection(
     state: BackupUiState,
+    /** 子树任意凭据字段聚焦时暂停广告，不向广告层传递字段值。 */
+    onEditingChanged: (Boolean) -> Unit,
     onEndpointChange: (String) -> Unit,
     onUsernameChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
@@ -459,7 +491,7 @@ private fun WebDavConfigSection(
 ) {
     ClipMasterCard(
         modifier = Modifier
-            .fillMaxWidth()
+            .onFocusChanged { onEditingChanged(it.hasFocus) }.focusGroup().fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {

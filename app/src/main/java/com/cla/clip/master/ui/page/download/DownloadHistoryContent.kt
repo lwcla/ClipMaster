@@ -8,6 +8,8 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -20,6 +22,11 @@ import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import com.cla.clip.base.general.R
+import com.cla.clip.feature.ad.api.AdPlacement
+import com.cla.clip.master.ad.rememberPageAdSession
+import com.cla.clip.master.ad.rememberListAdLayoutCoordinator
+import com.cla.clip.master.ui.widget.clip.ClipListAdConfig
+import com.cla.clip.master.ui.widget.clip.ListAdContentItem
 import com.cla.clip.master.ui.widget.PagingEmptyContent
 import com.cla.clip.master.ui.widget.PagingErrorContent
 import com.cla.clip.master.ui.widget.PagingLoadingContent
@@ -30,6 +37,14 @@ import kotlinx.coroutines.flow.Flow
 @Composable
 internal fun DownloadHistoryContent(
     tabSpec: DownloadHistoryTabSpec,
+    // 已停稳并且可见的 Tab 才允许广告请求。
+    adsEnabled: Boolean,
+    // 预览和确认覆盖层通过页面向下传递，不进入持久化业务状态。
+    adOverlayBlocked: Boolean,
+    // 根页面按压覆盖标题栏，松手前保留现有广告高度。
+    adPointerPressed: Boolean,
+    /** 同帧 SDK 返回时直接读取根按压事实，不能依赖重组后的布尔快照。 */
+    adPointerPressedNow: () -> Boolean = { adPointerPressed },
     state: DownloadHistoryUiState,
     videoPagingFlow: Flow<PagingData<DownloadHistoryVideoItem>>,
     imagePagingFlow: Flow<PagingData<DownloadHistoryImageBatch>>,
@@ -47,6 +62,10 @@ internal fun DownloadHistoryContent(
             if (state.selectedTab == DownloadHistoryTab.Video) {
                 val pagedVideos = videoPagingFlow.collectAsLazyPagingItems()
                 VideoHistoryList(
+                    adsEnabled = adsEnabled,
+                    adOverlayBlocked = adOverlayBlocked,
+                    adPointerPressed = adPointerPressed,
+                    adPointerPressedNow = adPointerPressedNow,
                     pagedVideos = pagedVideos,
                     listState = videoListState,
                     state = state,
@@ -62,6 +81,10 @@ internal fun DownloadHistoryContent(
             if (state.selectedTab == DownloadHistoryTab.Image) {
                 val pagedImages = imagePagingFlow.collectAsLazyPagingItems()
                 ImageHistoryList(
+                    adsEnabled = adsEnabled,
+                    adOverlayBlocked = adOverlayBlocked,
+                    adPointerPressed = adPointerPressed,
+                    adPointerPressedNow = adPointerPressedNow,
                     pagedImages = pagedImages,
                     listState = imageListState,
                     state = state,
@@ -78,6 +101,14 @@ internal fun DownloadHistoryContent(
 /** 视频历史分页列表；Paging 只组合当前可见页附近的数据，避免一次性读取全部视频首帧。 */
 @Composable
 internal fun VideoHistoryList(
+    // 横向 Pager 的稳定可见状态，不代替页面生命周期。
+    adsEnabled: Boolean,
+    // 删除确认、预览和任务执行期间禁止广告交互。
+    adOverlayBlocked: Boolean,
+    // 根页面按压覆盖标题栏，松手前保留现有广告高度。
+    adPointerPressed: Boolean,
+    /** 同帧 SDK 返回时直接读取根按压事实，不能依赖重组后的布尔快照。 */
+    adPointerPressedNow: () -> Boolean = { adPointerPressed },
     pagedVideos: LazyPagingItems<DownloadHistoryVideoItem>,
     listState: LazyListState,
     state: DownloadHistoryUiState,
@@ -86,6 +117,34 @@ internal fun VideoHistoryList(
     onOpenVideo: (DownloadHistoryVideoItem) -> Unit,
     onRetryVideo: (Long) -> Unit,
 ) {
+    // 每个 Tab 独立会话，图片密度按批次计数而非缩略图张数。
+    val adSession = rememberPageAdSession(AdPlacement.VideoHistoryNative, enabled = adsEnabled)
+    // 页面的覆盖层和多选态共同关闭广告资格，关闭后不更改下载记录数量。
+    val adConfig = ClipListAdConfig(
+        session = adSession,
+        placement = AdPlacement.VideoHistoryNative,
+        suppressed = state.selectionMode || adOverlayBlocked,
+        layoutBlocked = adOverlayBlocked || adPointerPressed,
+    )
+    // 快照只保留每个业务主键的首项，并保存原源索引以保留 Paging 访问提示。
+    val renderEntries = remember(pagedVideos.itemSnapshotList) {
+        pagedVideos.itemSnapshotList.items.withIndex().distinctBy { it.value.id }
+    }
+    // 测量只记录业务卡片，广告尾部不作为首个可见内容参与恢复。
+    val contentHeights = remember { mutableMapOf<Any, Int>() }
+    SideEffect {
+        adSession.suppressed = adConfig.suppressed
+        adSession.pointerPressed = adPointerPressed
+        adSession.pointerPressedNow = adPointerPressedNow
+    }
+    rememberListAdLayoutCoordinator(
+        session = adSession,
+        listState = listState,
+        contentKeys = renderEntries.map { it.value.id },
+        blocked = adOverlayBlocked || adPointerPressed,
+        contentHeights = contentHeights,
+    )
+
     val retryText = stringResource(R.string.base_general_data_load_failed_retry)
     when {
         pagedVideos.loadState.refresh is LoadState.Loading -> PagingLoadingContent()
@@ -114,19 +173,29 @@ internal fun VideoHistoryList(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(
-                    count = pagedVideos.itemCount,
-                    key = pagedVideos.itemKey { it.id }
+                    count = renderEntries.size,
+                    key = { index -> renderEntries[index].value.id }
                 ) { index ->
-                    pagedVideos[index]?.let { item ->
-                        VideoHistoryCard(
-                            item = item,
-                            selected = item.id in state.selectedIds,
-                            selectionMode = state.selectionMode,
-                            onToggleSelected = { onToggleSelected(item.id) },
-                            onEnterSelection = { onEnterSelection(item.id) },
-                            onOpen = { onOpenVideo(item) },
-                            onRetry = { onRetryVideo(item.id) }
-                        )
+                    // 去重列表的呈现索引映射回真实 Paging 索引，追加与预取不受广告影响。
+                    val sourceIndex = pagedVideos.itemSnapshotList.placeholdersBefore + renderEntries[index].index
+                    pagedVideos[sourceIndex]?.let { item ->
+                        ListAdContentItem(
+                            contentKey = item.id,
+                            contentIndex = index,
+                            listState = listState,
+                            adConfig = adConfig,
+                            contentHeights = contentHeights,
+                        ) {
+                            VideoHistoryCard(
+                                item = item,
+                                selected = item.id in state.selectedIds,
+                                selectionMode = state.selectionMode,
+                                onToggleSelected = { onToggleSelected(item.id) },
+                                onEnterSelection = { onEnterSelection(item.id) },
+                                onOpen = { onOpenVideo(item) },
+                                onRetry = { onRetryVideo(item.id) }
+                            )
+                        }
                     }
                 }
                 pagingAppendStateItem(
@@ -142,6 +211,14 @@ internal fun VideoHistoryList(
 /** 图片历史分页列表；每个批次进入当前页附近时才读取自己的图片项和可读缩略图 URI。 */
 @Composable
 internal fun ImageHistoryList(
+    // 横向 Pager 的稳定可见状态，不代替页面生命周期。
+    adsEnabled: Boolean,
+    // 删除确认、预览和任务执行期间禁止广告交互。
+    adOverlayBlocked: Boolean,
+    // 根页面按压覆盖标题栏，松手前保留现有广告高度。
+    adPointerPressed: Boolean,
+    /** 同帧 SDK 返回时直接读取根按压事实，不能依赖重组后的布尔快照。 */
+    adPointerPressedNow: () -> Boolean = { adPointerPressed },
     pagedImages: LazyPagingItems<DownloadHistoryImageBatch>,
     listState: LazyListState,
     state: DownloadHistoryUiState,
@@ -150,6 +227,34 @@ internal fun ImageHistoryList(
     onRetryImage: (Long) -> Unit,
     onPreviewImage: (String) -> Unit,
 ) {
+    // 每个 Tab 独立会话，图片密度按批次计数而非缩略图张数。
+    val adSession = rememberPageAdSession(AdPlacement.ImageHistoryNative, enabled = adsEnabled)
+    // 页面的覆盖层和多选态共同关闭广告资格，关闭后不更改下载记录数量。
+    val adConfig = ClipListAdConfig(
+        session = adSession,
+        placement = AdPlacement.ImageHistoryNative,
+        suppressed = state.selectionMode || adOverlayBlocked,
+        layoutBlocked = adOverlayBlocked || adPointerPressed,
+    )
+    // 快照只保留每个业务主键的首项，并保存原源索引以保留 Paging 访问提示。
+    val renderEntries = remember(pagedImages.itemSnapshotList) {
+        pagedImages.itemSnapshotList.items.withIndex().distinctBy { it.value.id }
+    }
+    // 测量只记录业务卡片，广告尾部不作为首个可见内容参与恢复。
+    val contentHeights = remember { mutableMapOf<Any, Int>() }
+    SideEffect {
+        adSession.suppressed = adConfig.suppressed
+        adSession.pointerPressed = adPointerPressed
+        adSession.pointerPressedNow = adPointerPressedNow
+    }
+    rememberListAdLayoutCoordinator(
+        session = adSession,
+        listState = listState,
+        contentKeys = renderEntries.map { it.value.id },
+        blocked = adOverlayBlocked || adPointerPressed,
+        contentHeights = contentHeights,
+    )
+
     RefreshImageHistoryWhenVisible(pagedImages)
     val retryText = stringResource(R.string.base_general_data_load_failed_retry)
 
@@ -180,19 +285,29 @@ internal fun ImageHistoryList(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(
-                    count = pagedImages.itemCount,
-                    key = pagedImages.itemKey { it.id }
+                    count = renderEntries.size,
+                    key = { index -> renderEntries[index].value.id }
                 ) { index ->
-                    pagedImages[index]?.let { item ->
-                        ImageHistoryCard(
-                            item = item,
-                            selected = item.id in state.selectedIds,
-                            selectionMode = state.selectionMode,
-                            onToggleSelected = { onToggleSelected(item.id) },
-                            onEnterSelection = { onEnterSelection(item.id) },
-                            onRetry = { onRetryImage(item.id) },
-                            onPreviewImage = onPreviewImage
-                        )
+                    // 去重列表的呈现索引映射回真实 Paging 索引，追加与预取不受广告影响。
+                    val sourceIndex = pagedImages.itemSnapshotList.placeholdersBefore + renderEntries[index].index
+                    pagedImages[sourceIndex]?.let { item ->
+                        ListAdContentItem(
+                            contentKey = item.id,
+                            contentIndex = index,
+                            listState = listState,
+                            adConfig = adConfig,
+                            contentHeights = contentHeights,
+                        ) {
+                            ImageHistoryCard(
+                                item = item,
+                                selected = item.id in state.selectedIds,
+                                selectionMode = state.selectionMode,
+                                onToggleSelected = { onToggleSelected(item.id) },
+                                onEnterSelection = { onEnterSelection(item.id) },
+                                onRetry = { onRetryImage(item.id) },
+                                onPreviewImage = onPreviewImage
+                            )
+                        }
                     }
                 }
                 pagingAppendStateItem(

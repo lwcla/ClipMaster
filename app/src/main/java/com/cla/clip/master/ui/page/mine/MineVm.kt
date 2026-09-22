@@ -158,11 +158,18 @@ class MineVm @Inject constructor(
 
     /** 用户手动点击“检查更新”时触发完整检查，并允许展示“已是最新”的正向提示。 */
     fun checkUpdateManually() {
+        // Play 发行只打开商店，不进入外部 APK 检查或下载链路。
+        if (com.cla.clip.master.BuildConfig.IS_PLAY_DISTRIBUTION) {
+            _appUpdateActions.tryEmit(AppUpdateAction.OpenExternalLink("https://play.google.com/store/apps/details?id=${com.cla.clip.master.BuildConfig.APPLICATION_ID}"))
+            return
+        }
         startUpdateCheck(trigger = AppUpdateCheckTrigger.Manual, forceCheck = true)
     }
 
     /** 页面可见后执行轻量自动检查；命中限频时静默返回。 */
     fun checkUpdateAutomaticallyIfNeeded() {
+        // Play 商店负责自动更新，本应用不发起 GitHub/Gitee 请求。
+        if (com.cla.clip.master.BuildConfig.IS_PLAY_DISTRIBUTION) return
         startUpdateCheck(trigger = AppUpdateCheckTrigger.Auto, forceCheck = false)
     }
 

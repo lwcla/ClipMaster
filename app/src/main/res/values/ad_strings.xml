@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="host_ad_privacy_options">广告隐私选项</string>
+    <string name="host_ad_privacy_options_description">查看或修改广告隐私选择</string>
+</resources>

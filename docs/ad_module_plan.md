@@ -2,9 +2,106 @@
 
 # 广告模块化方案
 
+## AdMob / Google Play 扩展（2026-09-18，实现中）
+
+本节是本轮已确认需求的唯一权威说明；下文 CSJ、uni-ad v1 的“仅详情页”限制保留为对应国内 adapter 的历史/现行范围，不限制 AdMob。
+
+### 广告位与展示契约
+
+独立 Play 包使用 GMA Next-Gen 1.4.0，保留国内包现有来源。共 16 个位置：home_feed_native、search_feed_native、detail_native、folded_feed_native、folded_search_native、recycle_feed_native、video_extract_native、video_download_progress_native、video_download_result_native、image_extract_native、image_download_progress_native、image_download_result_native、video_history_native、image_history_native、backup_overview_native、backup_restore_native。
+
+单列真实内容第 1、21、41…条之后插入；四列网格第 4、24、44…张之后插入，不足一行放在已有内容后。所有列表含普通/折叠搜索、下载记录都不设累计广告上限。下载记录图片按外层批次计数。空态、多选管理、纯错误、权限和确认弹层隐藏；图片候选勾选不属于管理多选。广告不进入 DAO、业务数量、选择集合或备份。
+
+视频提取、下载/合并、下载结果三个独立单元；图片提取、下载进度、下载结果三个独立单元。备份主页和恢复流程广告位在标题栏下正文上方，正常滚动，不插入记录列表。恢复媒体重新关联和预览弹层不接入。媒体任务必须展示真实内容，纯进度或纯失败页面不请求。
+
+### 实现与复用
+
+沿用 ad-api、Hilt 多绑定、选择器、会话保险丝、AppSetting 开关、生命周期观察；新增 ad-admob adapter 和按 source 的 UMP 隐私接口。宿主提供独立页面广告会话/布局协调器，广告不持有业务 Repository。SDK 类型不泄漏。统一列表位置规则与锚点算法为纯协作者。
+
+单列列表优先把广告作为稳定业务 Lazy item 外层 Column 的尾槽（广告不在业务卡片手势内部），保留原 Paging 索引与取消置顶行为，广告子树使用独立请求身份。这是渲染实现的取舍，不改变独立广告身份/数量/SDK 生命周期；网格首行与首广告共用全宽 Lazy 外壳，以便首批媒体可用就准备广告，后续广告为独立全宽条目。首条广告在首批真实内容出现且页面可见后准备，其余按锚点可见性请求；只处理已加载快照。
+
+每个页面会话/阶段/位置一次请求；阶段变化释放旧资源并作废迟到回调。4 秒广告请求超时，无填充/失败零占位。每页最多同时持有 3 个广告对象，仅限制驻留内存，不限制继续浏览出现新位置。搜索条件稳定 800ms 后请求；取消查询时释放旧会话，不增加搜索专属数量上限或 30 秒冷却。
+
+### 布局与交互
+
+SDK 成功仅变为待展示。按下、拖动、滚动、惯性、侧滑动画和确认操作期间不改变布局。展示/收起前保存首个可见真实内容 key/offset，之后恢复；锚点被删依次找后继、前驱、起点，原有置顶纠偏优先。SDK 回调不得触发下载/删除/恢复按钮或导航。请求保留同步的 `canRevealNow` 回调，SDK 同帧返回也必须读取实时按压状态，不能只用重组前的布尔快照。撤回同意立即释放，可在按下期间短暂保留无交互等高占位，松手即清除。原生素材和 AdChoices 不裁切，不以过渡动画掩盖布局跳动。
+
+### 构建、隐私和备份
+
+开关 enableAdmobDebugAdFeature、enableAdmobReleaseAdFeature 默认 false，appDistribution 默认 domestic，play 禁止国内 SDK。宿主暴露 IS_PLAY_DISTRIBUTION、ADS_ADMOB_ENABLED。debug 固定 Google 测试 App/Native ID；正式参数为 admobReleaseAppId 与 admobRelease{PlacementName}AdUnitId，16 个正式单元独立且拒绝测试 publisher。Play 更新入口转商店，禁止外部 APK 更新。
+
+UMP 每启动刷新；canRequestAds 是 Google 请求资格依据，不能把国内隐私弹窗、旧缓存、表单关闭等同于授权。入口按 UMP 要求展示；用户改变选择立即释放旧广告。SDK 主进程按需后台初始化且幂等。广告与同意临时状态不进入本地/WebDAV 白名单，不触发 dirty，核对系统备份排除。广告模块不接收用户正文、搜索词、Cookie、WebDAV 凭据、文件名、路径或完整业务模型。
+
+### 日志与诊断计划
+
+INFO/DEBUG：首次请求、加载、展示、释放，字段仅 source/placement/event/reasonCode/durationMs/sdkVersion。WARN：初始化和渲染异常，触发会话保险丝；普通无填充只记录低级别状态。布局推迟仅低频 reasonCode，禁止内容 key、查询、任务实体、设备 ID、响应体和所有凭据；SDK 异常仅映射错误类别，不直接打印 message。使用合成测试数据检查隐私边界。
+
+### 验证与外部发布条件
+
+规则、阶段、释放、布局、缓存先写失败测试再实现；Compose 绑定/原生 View 用编译及真机验收，不对样式堆单测。验证 ad-api/ad-admob/app/base:general 单测、debug 编译、Play bundleRelease/R8、无广告/国内变体、合并 manifest 与依赖树、git diff --check。关注单列 0/1/20/21/40/41、网格 0/1/4/24/44、长列表无上限、按住操作时广告完成、旧阶段迟到回调、备份 dirty 不变。
+
+账号持有人需要完成 Play/AdMob 注册、网站/隐私政策/app-ads.txt、16 单元、Data safety、广告 ID 与目标受众声明及审核。代码测试广告成功不等于已完成后台审核；本轮不自动注册账户、不发布商店、不建设远程后台。
+
+### 实现取舍与开放问题
+
+- 列表重排使某个位置的原内容锚点消失时释放原广告，不在同一会话重试或补位；分页追加保持原身份。页面重新进入或搜索条件改变才创建新会话。
+- 普通恢复执行阶段当前只有进度内容，因此隐藏广告；预检与实际恢复结果可展示同一个恢复广告单元。未为广告更改恢复状态协议或事务。
+- 图片批次复用既有条目观察契约，未为广告增加媒体扫描；缩略图仍按视口读取。超大批次的元数据分页是既有待优化边界。
+- 原生素材尺寸由真实素材测量，加载失败零高度。首屏顶部未滚动时保持顶部，不主动滚动跳过广告；已有正文滚动位置按稳定内容锚点/高度差保护。
+- 系统备份已精确排除经官方 SDK 字节码核实的 `GoogleMobileAds.xml`、`pcvmspf2.xml`、`paid_storage_sp.xml`、`__GOOGLE_FUNDING_CHOICE_SDK_INTERNAL__.xml`，同时覆盖 Auto Backup 与设备迁移。用户于 2026-09-19 确认仅排除上述 Google 专用文件，不排除整类 sharedpref 或默认偏好文件 `com.cla.clip.master_preferences.xml`，以免影响其他设置。默认偏好文件保留既有系统备份行为，其中 IABTCF/IABGPP 同意键可能随系统备份恢复，不承诺其已被隔离；启动仍按既有 UMP 流程更新同意信息并检查 canRequestAds。此项决策已关闭，不再等待授权。自定义备份继续使用原有字段白名单，广告对象与 UMP 状态没有加入备份模型。
+- Play 测试配置 merged manifest 含 AD_ID、READ_BASIC_PHONE_STATE、ACCESS_NETWORK_STATE、WAKE_LOCK；宿主原有 QUERY_ALL_PACKAGES、媒体权限等继续保留。正式发布前需按实际功能核对用途及商店声明，不能把测试编译当作上架验收。
+
+官方依据：[Next-Gen 接入](https://developers.google.com/admob/android/next-gen/quick-start)、[UMP 隐私](https://developers.google.com/admob/android/next-gen/privacy)、[无内容页面政策](https://support.google.com/publisherpolicies/answer/11112688?hl=en)。
+
+### 2026-09-19 本地验证结果
+
+2026-09-19 验证时，实现保存在隔离工作树分支 `codex/admob-integration`，当时未提交、未发布；后续集成进展见下方变更记录。总状态保留“实现中”，直至正式发布验收完成；系统备份排除范围已获用户确认。
+
+| 验证 | 结果 |
+| --- | --- |
+| Play 测试配置 `:app:compileDebugKotlin` | 最终源码通过；GMA Next-Gen 1.4.0 / UMP 4.0.0 |
+| 默认配置 `:app:compileDebugKotlin` | 通过 |
+| `:app:testDebugUnitTest` | 94 项通过 |
+| `:base:general:testDebugUnitTest` | 50 项通过 |
+| `:feature:ad-api:testDebugUnitTest` | 15 项通过 |
+| `:feature:ad-admob:testDebugUnitTest` | 3 项通过 |
+| `:feature:ad-csj:testDebugUnitTest` | 23 项通过 |
+| `:feature:ad-uniad:testDebugUnitTest` | 26 项通过 |
+| `:app:dependencies --configuration debugRuntimeClasspath` | 默认无 GMA/UMP；Play 有 GMA/UMP、无 CSJ/uni-ad 运行时依赖 |
+| merged manifest / 备份 XML | 核对广告 App ID 元数据与权限，XML 可解析 |
+| release 缺失 ID、示例 publisher、Play 混入国内 SDK | 均在配置期按预期失败 |
+| `git diff --check` | 通过，仅现有行尾转换提示 |
+
+运行环境为 Windows PowerShell，`JAVA_HOME` 指向 JDK 17，统一串行 Gradle 避免 Windows jar 锁。常用后缀：`--no-parallel --max-workers=1 --no-daemon '-Pkotlin.compiler.execution.strategy=in-process'`；Play 测试使用 `'-PappDistribution=play' '-PenableAdmobDebugAdFeature=true'`。共 211 项模块单测通过，不把直接 compiler 的重复红绿次数计入总数。
+
+位置/敏感跳过/锚点/缓存淘汰/网格行映射/实时展示门采用回归或测试先行；权限系统回调和原生视图绑定采用编译加待完成的设备验收，没有为 Compose 接线堆造 JVM 样式测试。交叉 review 修复了敏感锚点遗漏、后续位置提前请求、首行广告准备、后台 Tab、全页按压、首图删除定位和同帧展示许可问题。
+
+正式 `:app:bundleRelease` 已验证因缺少真实 App ID 被正确阻断，未生成正式 AAB，也未完成 AdMob release/R8 验证。当前无连接的授权 Android 设备，真机弱网、旋转、TalkBack、SDK 填充及真实手势不能标为已验收。国内模块做了测试/编译兼容回归，未用不存在的真实后台 ID 冒充完整国内广告包验收。
+
+### 实施跟踪
+
+- [x] adapter、配置、UMP、API（API 15 项及 adapter 3 项单测通过，真实 SDK 编译通过）
+- [x] 宿主会话、布局及详情/备份/设置（本地编译与单测通过，真机验收待办）
+- [x] 所有列表和下载记录（交叉审查问题已修复）
+- [x] 媒体内容与独立阶段（编译与规则测试通过）
+- [x] 本地自动验证、交叉 review 与发布清单
+- [x] 系统备份范围确认：仅排除四个 Google 专用文件，默认偏好文件保持现状
+- [ ] 正式 ID、账号审核、Play AAB/R8、真机及小范围发布验收
+
+### 变更记录
+
+- 2026-09-22：按用户要求整理 AdMob 提交并合入 main；广告功能与 Gradle 生成的 JDK 25 运行时配置分别提交，便于独立追踪。清理三个 Kotlin 文件的末尾多余空行，不改变方法、变量或业务行为。默认配置 `testDebugUnitTest :app:compileDebugKotlin` 通过，全仓 XML 报告汇总 924 项、零失败/错误/跳过；Play 测试配置 `:app:compileDebugKotlin :feature:ad-admob:testDebugUnitTest -PappDistribution=play -PenableAdmobDebugAdFeature=true` 通过；三个系统备份入口的 Google 专用排除检查和 `git diff --check` 通过。新增的 `gradle/gradle-daemon-jvm.properties` 要求 JDK 25，首次运行可能下载对应运行时；源码 JVM target 保持既有配置。未新增日志或单测，原因是本次只做已有功能集成与空行清理，原有回归测试随代码提交；生成的 JVM 配置保留 Gradle 原生格式。正式 ID、AdMob release/R8 和真机验收仍为后续待办，总状态保留“实现中”。
+
+
+- 2026-09-19：用户确认仅排除四个 Google 专用偏好文件，关闭默认偏好文件排除的授权待办；记录默认偏好中的同意键仍可能被系统恢复。现有 XML 已符合决定，本次只同步文档，不新增日志、测试或运行时代码。
+
+- 2026-09-19：接入阶段独立广告、全页交互门控、首行预加载、可见锚点加载与恢复顶部区域；补充发布边界和备份审批阻挡，进行集成验证。
+- 2026-09-18：根据确认方案扩展为 16 个 AdMob 位置；统一无限累计列表广告、阶段拆分和顶部备份广告；加入触摸/滚动期间布局保护。状态设为实现中。
+
+
 ## 当前状态
 
-当前仓库没有历史广告实现。本轮新增 `:feature:ad-api` 作为稳定广告抽象，新增 `:feature:ad-debug` 作为调试占位实现，并在详情页接入一个信息流/原生广告位。国内真实广告 adapter 已包含穿山甲 CSJ/Pangle `:feature:ad-csj` 和 uni-ad `:feature:ad-uniad`。所有可选实现模块统一由 `gradle.properties` 中的显式布尔开关控制，`gradle/feature-flags.gradle.kts` 负责读取并向各模块暴露；广告 ID 仍由本机 `local.properties` 或 CI Gradle 属性提供。开启某个广告 buildType 开关后，缺少对应 ID 会在 Gradle 配置期失败。广告 SDK 不在 `Application.onCreate()` 初始化，不向普通用户暴露广告源选择 UI。CSJ 与 uni-ad 同一 buildType 保持互斥，避免同包重复塞入两套真实国内广告 SDK。
+早期基础接入新增 `:feature:ad-api` 作为稳定广告抽象，新增 `:feature:ad-debug` 作为调试占位实现，并在详情页接入一个信息流/原生广告位。国内真实广告 adapter 已包含穿山甲 CSJ/Pangle `:feature:ad-csj` 和 uni-ad `:feature:ad-uniad`。所有可选实现模块统一由 `gradle.properties` 中的显式布尔开关控制，`gradle/feature-flags.gradle.kts` 负责读取并向各模块暴露；广告 ID 仍由本机 `local.properties` 或 CI Gradle 属性提供。开启某个广告 buildType 开关后，缺少对应 ID 会在 Gradle 配置期失败。广告 SDK 不在 `Application.onCreate()` 初始化，不向普通用户暴露广告源选择 UI。CSJ 与 uni-ad 同一 buildType 保持互斥，避免同包重复塞入两套真实国内广告 SDK。
 
 ## 目标
 

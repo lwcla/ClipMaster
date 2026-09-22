@@ -106,6 +106,12 @@ internal fun DownloadHistoryTabs(
 @Composable
 internal fun DownloadHistoryPager(
     tabs: List<DownloadHistoryTabSpec>,
+    // 页面层传入预览和确认覆盖状态，不将广告状态写入下载 ViewModel。
+    adOverlayBlocked: Boolean,
+    // 整页按压只暂停布局，不把按压当作隐藏广告的管理状态。
+    adPointerPressed: Boolean,
+    /** 直接读取根页面的按压状态，防止中间 Pager 将同步许可退化为旧快照。 */
+    adPointerPressedNow: () -> Boolean = { adPointerPressed },
     pagerState: PagerState,
     state: DownloadHistoryUiState,
     videoPagingFlow: Flow<PagingData<DownloadHistoryVideoItem>>,
@@ -124,6 +130,11 @@ internal fun DownloadHistoryPager(
         modifier = Modifier.fillMaxSize()
     ) { page ->
         DownloadHistoryContent(
+            // 只有稳定可见 Tab 可以拥有广告会话，横向拖拽期间不请求相邻页广告。
+            adsEnabled = !pagerState.isScrollInProgress && page == pagerState.settledPage,
+            adOverlayBlocked = adOverlayBlocked || pagerState.isScrollInProgress,
+            adPointerPressed = adPointerPressed,
+            adPointerPressedNow = adPointerPressedNow,
             tabSpec = tabs.getOrElse(page) {
                 DownloadHistoryTabSpec(DownloadHistoryTab.Video, "")
             },

@@ -18,6 +18,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import com.cla.clip.base.general.dao.DownloadTaskData
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.stateIn
@@ -56,13 +59,16 @@ class VideoDownloadVm @Inject constructor(
         onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
 
-    /**
-     * 下载页展示状态。
-     *
-     * 每次收到新的 taskId 都切换到对应任务的数据库观察流；任务缺失时直接转换成失败态，避免页面无限停留在准备中。
-     */
+    /** 当前下载状态对应的轻量任务快照，来自同一观察流，不持有媒体文件或页面 Context。 */
+    private val _taskData = MutableStateFlow<DownloadTaskData?>(null)
+
+    /** 与状态流同时刷新同一数据库快照，避免为媒体信息建立第二个数据库观察。 */
+    val taskData = _taskData.asStateFlow()
+
+    /** 保留原有空任务失败、准备状态及后台下载语义，仅同步记录实际媒体元数据。 */
     val downloadState = _downloadState.transformLatest { taskId ->
         downloadRepository.observeTask(taskId).collectLatest { taskData ->
+            _taskData.value = taskData
             emit(taskData?.toUi() ?: VideoDownloadState.Failed(appContext.getString(R.string.base_general_the_download_task_was_not_found)))
         }
     }.stateIn(

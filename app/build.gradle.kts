@@ -15,6 +15,7 @@ plugins {
 apply(from = rootProject.file("gradle/feature-flags.gradle.kts"))
 apply(from = rootProject.file("gradle/csj-ad-config.gradle.kts"))
 apply(from = rootProject.file("gradle/uniad-ad-config.gradle.kts"))
+apply(from = rootProject.file("gradle/admob-ad-config.gradle.kts"))
 
 /** 把原始字符串转成可安全写入 `buildConfigField` 的 Kotlin 字面量。 */
 fun String.asBuildConfigString(): String = "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
@@ -43,6 +44,12 @@ val enableUniadDebugAdFeature: Boolean = extra["enableUniadDebugAdFeature"] as B
 /** 是否把 uni-ad adapter 编译进 release 包；开启后广告配置脚本保证参数和 AAR 完整。 */
 val enableUniadReleaseAdFeature: Boolean = extra["enableUniadReleaseAdFeature"] as Boolean
 
+/** AdMob debug 显式模块开关。 */
+val enableAdmobDebugAdFeature = extra["enableAdmobDebugAdFeature"] as Boolean
+/** AdMob release 显式模块开关。 */
+val enableAdmobReleaseAdFeature = extra["enableAdmobReleaseAdFeature"] as Boolean
+/** Play 渠道禁止应用内下载安装更新。 */
+val isPlayDistribution = extra["isPlayDistribution"] as Boolean
 android {
     namespace = "com.cla.clip.master"
     resourcePrefix("host_")
@@ -84,6 +91,8 @@ android {
     }
 
     defaultConfig {
+        buildConfigField("boolean", "IS_PLAY_DISTRIBUTION", isPlayDistribution.toString())
+        buildConfigField("String", "ADS_ADMOB_SOURCE_ID", "admob".asBuildConfigString())
         applicationId = "com.cla.clip.master"
         minSdk = 24
         targetSdk = 36
@@ -140,6 +149,7 @@ android {
             isMinifyEnabled = true          // 开启 R8（代码压缩/优化/混淆）
             isShrinkResources = true        // 可选：开启资源压缩（依赖 minify）
             signingConfig = signingConfigs.getByName("release")
+            buildConfigField("boolean", "ADS_ADMOB_ENABLED", enableAdmobReleaseAdFeature.toString())
             buildConfigField("boolean", "ADS_CSJ_ENABLED", enableCsjReleaseAdFeature.toString())
             buildConfigField("boolean", "ADS_CSJ_USE_TEST_AD_SLOT", csjReleaseUseTestAdSlot.toString())
             buildConfigField("boolean", "ADS_UNIAD_ENABLED", enableUniadReleaseAdFeature.toString())
@@ -149,6 +159,7 @@ android {
         debug {
             isMinifyEnabled = false         // 调试包不混淆，方便调试
             signingConfig = signingConfigs.getByName("internalDebug")
+            buildConfigField("boolean", "ADS_ADMOB_ENABLED", enableAdmobDebugAdFeature.toString())
             buildConfigField("boolean", "ADS_CSJ_ENABLED", enableCsjDebugAdFeature.toString())
             buildConfigField("boolean", "ADS_CSJ_USE_TEST_AD_SLOT", csjDebugUseTestAdSlot.toString())
             buildConfigField("boolean", "ADS_UNIAD_ENABLED", enableUniadDebugAdFeature.toString())
@@ -164,6 +175,8 @@ android {
             val normalizedVersionName = versionName.asApkFileNamePart()
             /** 广告包标记；用于区分默认包、CSJ 包和 uni-ad 包，避免发布产物混淆。 */
             val adPackageMarker = when {
+                buildType.name == "debug" && enableAdmobDebugAdFeature -> "-admob"
+                buildType.name == "release" && enableAdmobReleaseAdFeature -> "-admob"
                 buildType.name == "debug" && enableUniadDebugAdFeature -> "-uniad"
                 buildType.name == "release" && enableUniadReleaseAdFeature -> "-uniad"
                 buildType.name == "debug" && enableCsjDebugAdFeature -> "-csj"
@@ -199,6 +212,9 @@ android {
 }
 
 dependencies {
+    // 仅显式开启的 buildType 引入 AdMob，默认包无 SDK 依赖。
+    if (enableAdmobDebugAdFeature) debugImplementation(project(":feature:ad-admob"))
+    if (enableAdmobReleaseAdFeature) releaseImplementation(project(":feature:ad-admob"))
     implementation(project(":base:general"))
     implementation(project(":feature:torrent-search-api"))
     implementation(project(":feature:ad-api"))

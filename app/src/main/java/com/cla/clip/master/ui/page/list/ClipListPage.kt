@@ -44,6 +44,10 @@ import com.cla.clip.master.ui.widget.ClipBatchSelectionActionBar
 import com.cla.clip.master.ui.widget.ShizukuServiceUnavailableTip
 import com.cla.clip.master.ui.widget.TitleBar
 import com.cla.clip.master.ui.widget.TitleBarText
+import com.cla.clip.feature.ad.api.AdPlacement
+import com.cla.clip.master.ad.rememberPageAdSession
+import com.cla.clip.master.ad.adInteractionGuard
+import com.cla.clip.master.ui.widget.clip.ClipListAdConfig
 import com.cla.clip.master.ui.widget.clip.ClipResultList
 
 /**
@@ -60,6 +64,8 @@ import com.cla.clip.master.ui.widget.clip.ClipResultList
 fun ClipListPage(
     viewModel: ClipListModel = hiltViewModel(),
     listState: LazyListState = rememberLazyListState(),
+    // 首页横向 Pager 的稳定可见状态，避免“我的”页后台广告继续请求。
+    visibleToUser: Boolean = true,
     onNavigate: (Route) -> Unit  // 跳转页面
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -106,6 +112,11 @@ fun ClipListPage(
         }
     }
 
+    // 页面广告身份不依赖内容数量，分页追加和置顶排序保持同一会话。
+    val adSession = rememberPageAdSession("home-list", enabled = visibleToUser)
+    // 确认、设置及批量操作覆盖层禁止广告交互并延后布局变化。
+    val adOverlayBlocked = deleteClip != null || showBatchDeleteDialog || isBatchActionRunning
+
     BackHandler(enabled = selectionMode) {
         clearSelection()
     }
@@ -113,6 +124,7 @@ fun ClipListPage(
     logD("MainPage", { "MainPage: pagedClips itemCount = ${pagedClips.itemCount}, loadState = ${pagedClips.loadState}" })
 
     Scaffold(
+        modifier = Modifier.adInteractionGuard(adSession),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             if (selectionMode) {
@@ -178,6 +190,12 @@ fun ClipListPage(
                         .weight(1f)
                 ) {
                     ClipResultList(
+                        adConfig = ClipListAdConfig(
+                            session = adSession,
+                            placement = AdPlacement.HomeFeedNative,
+                            suppressed = adOverlayBlocked || selectionMode,
+                            layoutBlocked = adOverlayBlocked,
+                        ),
                         listState = listState,
                         pagedClips = pagedClips,
                         emptyText = stringResource(com.cla.clip.base.general.R.string.base_general_clip_list_empty),

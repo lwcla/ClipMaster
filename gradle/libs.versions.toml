@@ -1,4 +1,7 @@
 [versions]
+# AdMob Next-Gen 和 UMP 固定版本，避免 SDK 类型渗入宿主。
+admobNextgen = "1.4.0"
+admobUmp = "4.0.0"
 agp = "9.1.0"
 kotlin = "2.2.10"
 refine = "4.4.0"
@@ -47,6 +50,8 @@ mmkv = "2.4.0"
 csjAds = "7.6.1.2"
 
 [libraries]
+admob-nextgen = { group = "com.google.android.libraries.ads.mobile.sdk", name = "ads-mobile-sdk", version.ref = "admobNextgen" }
+admob-ump = { group = "com.google.android.ump", name = "user-messaging-platform", version.ref = "admobUmp" }
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 androidx-recyclerview = { group = "androidx.recyclerview", name = "recyclerview", version.ref = "recyclerview" }
 glide = { group = "com.github.bumptech.glide", name = "glide", version.ref = "glide" }

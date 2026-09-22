@@ -232,6 +232,25 @@ class AdSourceSelectorTest {
         assertHidden(selection, "no_available_source")
     }
 
+    /** UMP 自身允许请求时，不得被国内旧同意状态提前拦截。 */
+    @Test
+    fun sourcePrivacyOverridesLegacyDenied() {
+        /** 模拟 UMP 的可请求状态。 */
+        val controller = object : AdPrivacyController {
+            /** 测试只使用状态，不调用 Android UI。 */
+            override val state = kotlinx.coroutines.flow.MutableStateFlow(AdPrivacyState(canRequestAds = true))
+            /** 测试无需刷新平台。 */
+            override fun refresh(activity: android.app.Activity) = Unit
+            /** 测试无需显示表单。 */
+            override fun showPrivacyOptions(activity: android.app.Activity) = Unit
+        }
+        /** 带独立隐私状态的源。 */
+        val source = FakeAdSource("admob", 100, privacyController = controller)
+        assertSelected(selector.select(setOf(source), AdPlacement.DetailNative, "auto", AdConsentState.Denied, defaultPolicy), source)
+        controller.state.value = AdPrivacyState(canRequestAds = false)
+        assertTrue(selector.select(setOf(source), AdPlacement.DetailNative, "auto", AdConsentState.Granted, defaultPolicy) is AdSourceSelection.Hidden)
+    }
+
     /** 断言选择结果为指定隐藏原因。 */
     private fun assertHidden(selection: AdSourceSelection, expectedReason: String) {
         assertTrue(selection is AdSourceSelection.Hidden)
@@ -259,6 +278,8 @@ private data class FakeAdSource(
     override val supportedPlacements: Set<AdPlacement> = setOf(AdPlacement.DetailNative),
     /** 测试广告源自身可用性。 */
     private val available: Boolean = true,
+    /** 独立隐私平台；空值保持旧同意语义。 */
+    override val privacyController: AdPrivacyController? = null,
 ) : AdSourceEntry {
     /** 返回测试构造时指定的可用性，不额外模拟 SDK 初始化。 */
     override fun isAvailable(consentState: AdConsentState, runtimePolicy: AdRuntimePolicy): Boolean = available

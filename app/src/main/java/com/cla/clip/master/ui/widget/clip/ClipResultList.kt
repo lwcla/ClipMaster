@@ -27,6 +27,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,6 +65,9 @@ import androidx.paging.compose.itemKey
 import com.cla.clip.base.general.R as BaseR
 import com.cla.clip.base.general.config.ClipItemQuickAction
 import com.cla.clip.base.general.entity.ClipShowEntity
+import com.cla.clip.master.ad.DetailAdSensitivityPolicy
+import com.cla.clip.master.ad.ListAdPlacementPolicy
+import com.cla.clip.master.ad.rememberListAdLayoutCoordinator
 import com.cla.clip.master.R
 import com.cla.clip.master.ui.widget.ClipMasterCardDefaults
 import com.cla.clip.master.ui.widget.ClipMasterGestureCard
@@ -111,7 +116,7 @@ enum class ClipCardTimeMode {
  * 这里统一维护单列 item、侧滑操作、复制入口和分页加载状态，避免两个页面在后续迭代中出现体验分叉。
  */
 @Composable
-fun ClipResultList(
+internal fun ClipResultList(
     listState: LazyListState,
     pagedClips: LazyPagingItems<ClipShowEntity>,
     emptyText: String,
@@ -131,11 +136,35 @@ fun ClipResultList(
     onToggleSelection: (ClipShowEntity) -> Unit = {},
     quickAction: ClipItemQuickAction = ClipItemQuickAction.None,
     enableQuickAction: Boolean = false,
+    // 可空配置让 Preview 和未接入页面保持原有纯内容行为。
+    adConfig: ClipListAdConfig? = null,
 ) {
     // 取消置顶的排序变化由数据库/Paging 异步返回，先保存待恢复视口，再在快照确认后执行恢复。
     var pendingPinScrollRestore by remember { mutableStateOf<PendingPinScrollRestore?>(null) }
     // 共享列表只允许一个右滑菜单保持展开；新 item 开始右滑时写入该 id，其他 item 会观察到并自动收回。
     var openedMenuClipId by rememberSaveable { mutableStateOf<Long?>(null) }
+
+    // 复用详情已有敏感规则，仅在本地将锚点正文判定为布尔资格，不记录命中内容。
+    val adSensitivityPolicy = remember { DetailAdSensitivityPolicy() }
+    // 可见卡片的业务内容高度，用于排除仅剩广告尾部可见的内容容器。
+    val contentHeights = remember { mutableMapOf<Any, Int>() }
+    // 侧滑动画独立于菜单展开状态，回收站没有菜单也需要保护离场动画。
+    var interactingClipIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    // 去重后的真实内容顺序同时驱动广告密度和内容锚点，广告不进入业务集合。
+    val renderEntries = remember(pagedClips.itemSnapshotList) {
+        buildUniqueClipPagingRenderEntries(pagedClips.itemSnapshotList)
+    }
+    if (adConfig != null) {
+        SideEffect { adConfig.session.suppressed = adConfig.suppressed || selectionMode }
+        rememberListAdLayoutCoordinator(
+            session = adConfig.session,
+            listState = listState,
+            contentKeys = renderEntries.map { it.clipId },
+            blocked = adConfig.layoutBlocked || openedMenuClipId != null || interactingClipIds.isNotEmpty(),
+            pinRestorePending = pendingPinScrollRestore != null,
+            contentHeights = contentHeights,
+        )
+    }
 
     LaunchedEffect(selectionMode) {
         if (selectionMode) {
@@ -174,12 +203,9 @@ fun ClipResultList(
 
         else -> {
             val retryText = stringResource(com.cla.clip.base.general.R.string.base_general_data_load_failed_retry)
-            // 共享列表只基于当前已加载快照生成唯一渲染索引，避免 Paging 切代重排瞬间把同一 clip.id 交给 LazyColumn 两次。
-            val renderEntries = remember(pagedClips.itemSnapshotList) {
-                buildUniqueClipPagingRenderEntries(pagedClips.itemSnapshotList)
-            }
             LazyColumn(
                 state = listState,
+                // 页面外壳统一观察按压；内层不重复写同一指针状态，避免子项释放提前解除根手势保护。
                 modifier = modifier.fillMaxSize(),
                 contentPadding = contentPadding,
                 verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -193,44 +219,61 @@ fun ClipResultList(
                     ) { index ->
                         /** 当前要渲染的唯一条目；内部保留原 Paging 索引，避免破坏预取和回调定位。 */
                         val renderEntry = renderEntries[index]
-                        /** 使用真实 Paging 索引读取条目；这里用 peek 避免组合阶段因为防御性去重反向触发额外加载。 */
-                        val clip = pagedClips.peek(renderEntry.sourceIndex)
+                        /** 渲染可见唯一条目时访问真实源索引，保留 Paging 追加和预取提示；去重快照本身仍不触发加载。 */
+                        val clip = pagedClips[renderEntry.sourceIndex]
                         if (clip != null) {
-                            ClipCard(
-                                clip = clip,
-                                highlightQuery = highlightQuery,
-                                onPinToggle = onPinToggle,
-                                onDelete = onDelete,
-                                onCopy = onCopy,
-                                onSwipePastAction = onSwipePastAction,
-                                onClick = onClick,
-                                onLongClick = onLongClick,
-                                selected = clip.id in selectedIds,
-                                selectionMode = selectionMode,
-                                onToggleSelection = onToggleSelection,
-                                timeMode = timeMode,
-                                quickAction = quickAction,
-                                enableQuickAction = enableQuickAction,
-                                openedMenuClipId = openedMenuClipId,
-                                onMenuActive = { clipId ->
-                                    if (openedMenuClipId != clipId) {
-                                        openedMenuClipId = clipId
+                            // 敏感锚点跳过且不补位；非广告锚点不重复执行正文识别规则。
+                            val slotEligible = remember(index, clip.content) {
+                                ListAdPlacementPolicy.singleColumnSlotIndex(index) == null ||
+                                    !adSensitivityPolicy.shouldHideAds(clip.content)
+                            }
+                            ListAdContentItem(
+                                contentKey = clip.id,
+                                contentIndex = index,
+                                listState = listState,
+                                adConfig = adConfig,
+                                contentHeights = contentHeights,
+                                slotEligible = slotEligible,
+                            ) {
+                                ClipCard(
+                                    clip = clip,
+                                    onInteractionChanged = { active ->
+                                        interactingClipIds = if (active) interactingClipIds + clip.id else interactingClipIds - clip.id
+                                    },
+                                    highlightQuery = highlightQuery,
+                                    onPinToggle = onPinToggle,
+                                    onDelete = onDelete,
+                                    onCopy = onCopy,
+                                    onSwipePastAction = onSwipePastAction,
+                                    onClick = onClick,
+                                    onLongClick = onLongClick,
+                                    selected = clip.id in selectedIds,
+                                    selectionMode = selectionMode,
+                                    onToggleSelection = onToggleSelection,
+                                    timeMode = timeMode,
+                                    quickAction = quickAction,
+                                    enableQuickAction = enableQuickAction,
+                                    openedMenuClipId = openedMenuClipId,
+                                    onMenuActive = { clipId ->
+                                        if (openedMenuClipId != clipId) {
+                                            openedMenuClipId = clipId
+                                        }
+                                    },
+                                    onMenuInactive = { clipId ->
+                                        if (openedMenuClipId == clipId) {
+                                            openedMenuClipId = null
+                                        }
+                                    },
+                                    swipePastActionText = swipePastActionText,
+                                    onKeepCurrentScrollPosition = {
+                                        pendingPinScrollRestore = PendingPinScrollRestore(
+                                            index = listState.firstVisibleItemIndex,
+                                            offset = listState.firstVisibleItemScrollOffset,
+                                            snapshotSignature = pagedClips.itemSnapshotList.items.map { it.id to it.isPinned }
+                                        )
                                     }
-                                },
-                                onMenuInactive = { clipId ->
-                                    if (openedMenuClipId == clipId) {
-                                        openedMenuClipId = null
-                                    }
-                                },
-                                swipePastActionText = swipePastActionText,
-                                onKeepCurrentScrollPosition = {
-                                    pendingPinScrollRestore = PendingPinScrollRestore(
-                                        index = listState.firstVisibleItemIndex,
-                                        offset = listState.firstVisibleItemScrollOffset,
-                                        snapshotSignature = pagedClips.itemSnapshotList.items.map { it.id to it.isPinned }
-                                    )
-                                }
-                            )
+                                )
+                            }
                         }
                     }
                 }
@@ -282,6 +325,8 @@ fun ClipCard(
     openedMenuClipId: Long? = null,
     onMenuActive: (Long) -> Unit = {},
     onMenuInactive: (Long) -> Unit = {},
+    // 侧滑与离场动画通知列表暂停广告布局变化，不包含业务动作副作用。
+    onInteractionChanged: (Boolean) -> Unit = {},
 ) {
     val appColor = clip.appColor ?: MaterialTheme.colorScheme.outlineVariant
     val borderColor = appColor.copy(alpha = 0.3f)
@@ -436,6 +481,12 @@ fun ClipCard(
             currentOnMenuInactive(clip.id)
         }
     }
+
+    // 最新回调避免 Lazy 复用或父层重组后仍写入旧交互集合。
+    val currentOnInteractionChanged by rememberUpdatedState(onInteractionChanged)
+    // 菜单完全收起且动画停止后才允许广告改高度；离场期间一直保护到 item 退出组合。
+    SideEffect { currentOnInteractionChanged(isSwipeOffsetAnimating || offsetPx != 0f) }
+    DisposableEffect(clip.id) { onDispose { currentOnInteractionChanged(false) } }
 
     val shouldCloseForOtherMenu = showActionMenu &&
         openedMenuClipId != null &&

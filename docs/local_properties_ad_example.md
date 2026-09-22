@@ -67,3 +67,64 @@ csjRequiredPrivacyPolicyVersion=2026-06-csj
 
 - 2026-06-03：新增广告本机配置示例，记录 uni-ad 与 CSJ buildType 专属参数、隐私版本和临时关闭方式；原因是广告模块已改为配置齐全时自动打包，开发者不需要手动传启用开关。
 - 2026-09-13：增加四个显式广告 feature 开关示例，并把临时关闭方式改为关闭开关；原因是可选模块统一由 `gradle.properties`/`-P` 控制，广告密钥只负责参数配置与开启后的完整性校验。
+
+## Google Play / AdMob 配置（2026-09-18）
+
+主设计以 [广告主方案](ad_module_plan.md) 为准。模块开关与发行渠道使用 Gradle 属性；ID 只保存在本机 `local.properties` 或 CI 属性中。不要提交真实 ID。
+
+```properties
+appDistribution=play
+enableAdmobDebugAdFeature=true
+enableAdmobReleaseAdFeature=false
+# 国内广告开关全部关闭；同包混合 SDK 会在配置期失败。
+enableCsjDebugAdFeature=false
+enableCsjReleaseAdFeature=false
+enableUniadDebugAdFeature=false
+enableUniadReleaseAdFeature=false
+```
+
+Debug 自动使用 Google 官方测试 App ID 和原生广告 ID，无需真实账号。Release 必须设置 `enableAdmobReleaseAdFeature=true`，并提供下面全部参数；把占位值替换为后台值，16 个单元必须不同，缺失或示例 ID 会构建失败。
+
+```properties
+admobReleaseAppId=REPLACE_WITH_REAL_APP_ID
+admobReleaseDetailNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+admobReleaseHomeFeedNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+admobReleaseSearchFeedNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+admobReleaseFoldedFeedNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+admobReleaseFoldedSearchNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+admobReleaseRecycleFeedNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+admobReleaseVideoExtractNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+admobReleaseVideoDownloadProgressNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+admobReleaseVideoDownloadResultNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+admobReleaseImageExtractNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+admobReleaseImageDownloadProgressNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+admobReleaseImageDownloadResultNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+admobReleaseVideoHistoryNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+admobReleaseImageHistoryNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+admobReleaseBackupOverviewNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+admobReleaseBackupRestoreNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+```
+
+PowerShell 验证示例（属性参数整体加引号）：
+
+```powershell
+.\gradlew.bat :app:compileDebugKotlin '-PappDistribution=play' '-PenableAdmobDebugAdFeature=true' --no-parallel
+.\gradlew.bat :app:bundleRelease '-PappDistribution=play' '-PenableAdmobReleaseAdFeature=true' --no-parallel
+```
+
+### 后台与上架清单
+
+- 在自己的 Google Play / AdMob 账号完成应用创建、商店关联和审核；为 16 个逻辑位置分别创建原生广告单元。
+- 在开发者网站发布隐私政策与 AdMob 后台提供的 `app-ads.txt`，不要使用其他发布商标识。
+- 在 UMP 后台配置所需隐私消息，测试地区及隐私选项入口；运行时以 `canRequestAds()` 为准。
+- 核对包含广告、目标受众、广告 ID、Data safety、SDK 数据用途和最终 merged manifest；不得仅依据模板填写商店声明。
+- 正式 ID + 签名配置完成后生成 Play AAB，真机覆盖小屏、大字体、TalkBack、旋转、弱网、撤回同意、首屏与长列表。
+- 内部测试后分阶段发布。观察低敏加载/曝光/失败事件、后台填充/收益与崩溃/ANR；首期不引入远程配置服务。
+
+这些账号、真实 ID、后台政策声明和发布动作无法用测试配置代替，需由应用所有者在对应后台完成。
+
+### 日志与诊断
+
+仅记录位置、阶段、原因码、耗时和 SDK 版本；不输出广告单元 ID、原始 SDK 响应、凭据、媒体 URL、备份路径或业务内容 key。
+
+- 2026-09-18：补充 Play/AdMob 开关、16 个独立单元配置、测试命令及后台发布清单；支持本期渠道隔离接入。

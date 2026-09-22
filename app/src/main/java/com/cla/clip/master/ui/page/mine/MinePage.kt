@@ -11,6 +11,9 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PrivacyTip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,6 +36,9 @@ import com.cla.clip.base.general.R
 import com.cla.clip.base.general.utils.toPermissionSetting
 import com.cla.clip.base.general.utils.toast
 import com.cla.clip.feature.torrent.search.api.TorrentSearchFeatureEntry
+import com.cla.clip.master.ad.LocalAdHostEnvironment
+import com.cla.clip.master.ad.adHostActivity
+import com.cla.clip.master.ui.widget.ListEntryCard
 import com.cla.clip.master.entity.SettingSwitchItemUi
 import com.cla.clip.master.ui.navigation.ClipSourceBlockSettingRoute
 import com.cla.clip.master.ui.navigation.Route
@@ -108,6 +114,10 @@ fun MinePage(
         }
     }
 
+    // 只有 UMP 要求隐私选项时显示入口，国内同意逻辑不受影响。
+    val adEnvironment = LocalAdHostEnvironment.current
+    val privacySources = adEnvironment?.sources.orEmpty().filter { adEnvironment?.privacyStates?.get(it.sourceId)?.privacyOptionsRequired == true }
+
     TopLevelPageScaffold(title = stringResource(R.string.base_general_mine)) { paddingValues ->
         /** 我的页分组列表的页面间距，来源于统一主题 token。 */
         val spacing = ClipMasterThemeTokens.tokens.spacing
@@ -144,6 +154,16 @@ fun MinePage(
             }
 
             item { MineSectionHeader(title = stringResource(R.string.base_general_mine_settings_section)) }
+            privacySources.forEach { source ->
+                item(key = "privacy_${source.sourceId}") {
+                    ListEntryCard(
+                        icon = { Icon(Icons.Default.PrivacyTip, contentDescription = null) },
+                        title = stringResource(com.cla.clip.master.R.string.host_ad_privacy_options),
+                        description = stringResource(com.cla.clip.master.R.string.host_ad_privacy_options_description),
+                        onClick = { context.adHostActivity()?.let { source.privacyController?.showPrivacyOptions(it) } },
+                    )
+                }
+            }
             item {
                 ClipItemActionSettingEntry(
                     action = clipItemQuickAction,

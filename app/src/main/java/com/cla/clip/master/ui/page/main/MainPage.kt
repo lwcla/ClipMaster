@@ -160,7 +160,12 @@ fun MainPage(
             /** 当前 Pager 页对应的底部 Tab 配置。 */
             val tab = tabs[index]
             when (tab.page) {
-                TabPage.List -> ClipListPage(listState = listState, onNavigate = onNavigate)
+                TabPage.List -> ClipListPage(
+                    listState = listState,
+                    onNavigate = onNavigate,
+                    // 后台 Pager 页不请求广告，滑动过渡期间也停止展示变化。
+                    visibleToUser = pagerState.settledPage == index && !pagerState.isScrollInProgress,
+                )
                 TabPage.Mine -> MinePage(
                     onNavigate = onNavigate,
                     torrentSearchFeatures = torrentSearchFeatures,
