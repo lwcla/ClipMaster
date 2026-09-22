@@ -90,7 +90,10 @@ INFO/DEBUG：首次请求、加载、展示、释放，字段仅 source/placemen
 
 ### 变更记录
 
-- 2026-09-22：按用户要求整理 AdMob 提交并合入 main；广告功能与 Gradle 生成的 JDK 25 运行时配置分别提交，便于独立追踪。清理三个 Kotlin 文件的末尾多余空行，不改变方法、变量或业务行为。默认配置 `testDebugUnitTest :app:compileDebugKotlin` 通过，全仓 XML 报告汇总 924 项、零失败/错误/跳过；Play 测试配置 `:app:compileDebugKotlin :feature:ad-admob:testDebugUnitTest -PappDistribution=play -PenableAdmobDebugAdFeature=true` 通过；三个系统备份入口的 Google 专用排除检查和 `git diff --check` 通过。新增的 `gradle/gradle-daemon-jvm.properties` 要求 JDK 25，首次运行可能下载对应运行时；源码 JVM target 保持既有配置。未新增日志或单测，原因是本次只做已有功能集成与空行清理，原有回归测试随代码提交；生成的 JVM 配置保留 Gradle 原生格式。正式 ID、AdMob release/R8 和真机验收仍为后续待办，总状态保留“实现中”。
+- 2026-09-22：按用户要求单独撤销构建提交 `b0e0e83`，删除 `gradle/gradle-daemon-jvm.properties`，保留广告功能提交 `5391e0d`。原因是没有已确认需求要求项目统一使用 JDK 25，也没有证据表明 AdMob 接入需要该版本；Gradle 恢复按现有本机/IDE/CI 配置选择运行时。未修改组件、类、方法、变量、源码 JVM target、广告配置、日志或备份契约，无新增注释及单测需求；验证：`.\gradlew.bat --version` 确认守护进程使用本机 Microsoft JDK 17.0.15；`:app:compileDebugKotlin :feature:ad-admob:testDebugUnitTest -PappDistribution=play -PenableAdmobDebugAdFeature=true` 在串行、进程内 Kotlin 编译设置下通过；`git diff --check` 和广告代码零差异检查通过。正式 AdMob Release/R8 与真机验收仍按既有待办跟踪。
+
+
+- 2026-09-22：按用户要求整理 AdMob 提交并合入 main；广告功能与 Gradle 生成的 JDK 25 运行时配置分别提交，便于独立追踪。清理三个 Kotlin 文件的末尾多余空行，不改变方法、变量或业务行为。默认配置 `testDebugUnitTest :app:compileDebugKotlin` 通过，全仓 XML 报告汇总 924 项、零失败/错误/跳过；Play 测试配置 `:app:compileDebugKotlin :feature:ad-admob:testDebugUnitTest -PappDistribution=play -PenableAdmobDebugAdFeature=true` 通过；三个系统备份入口的 Google 专用排除检查和 `git diff --check` 通过。当时新增的 `gradle/gradle-daemon-jvm.properties` 指定 JDK 25；该配置已按同日后续决定单独撤销，源码 JVM target 始终保持既有配置。未新增日志或单测，原因是本次只做已有功能集成与空行清理，原有回归测试随代码提交；生成的 JVM 配置保留 Gradle 原生格式。正式 ID、AdMob release/R8 和真机验收仍为后续待办，总状态保留“实现中”。
 
 
 - 2026-09-19：用户确认仅排除四个 Google 专用偏好文件，关闭默认偏好文件排除的授权待办；记录默认偏好中的同意键仍可能被系统恢复。现有 XML 已符合决定，本次只同步文档，不新增日志、测试或运行时代码。
