@@ -8,7 +8,7 @@
 
 ## 模块开关
 
-项目 `gradle.properties` 默认关闭全部可选实现。需要构建广告包时，把目标开关改为 `true`，或在命令行传同名 `-P` 参数：
+项目 `gradle.properties` 默认开启 AdMob debug 测试模块并使用 Play 渠道，其余可选实现保持关闭。以下为国内广告开关；需要构建国内广告包时，应同时设置 `appDistribution=domestic`、关闭对应 buildType 的 AdMob，再开启目标国内开关，或在命令行传同名 `-P` 参数：
 
 ```properties
 # debug/internal 穿山甲 adapter 开关。
@@ -65,6 +65,7 @@ csjRequiredPrivacyPolicyVersion=2026-06-csj
 
 ## 变更记录
 
+- 2026-09-26：默认开启 AdMob debug 和 Play 渠道，简化测试构建命令；补充国内构建覆盖方式及正式开关保留关闭的原因。复用既有日志与测试，不新增运行时逻辑。
 - 2026-06-03：新增广告本机配置示例，记录 uni-ad 与 CSJ buildType 专属参数、隐私版本和临时关闭方式；原因是广告模块已改为配置齐全时自动打包，开发者不需要手动传启用开关。
 - 2026-09-13：增加四个显式广告 feature 开关示例，并把临时关闭方式改为关闭开关；原因是可选模块统一由 `gradle.properties`/`-P` 控制，广告密钥只负责参数配置与开启后的完整性校验。
 
@@ -83,7 +84,7 @@ enableUniadDebugAdFeature=false
 enableUniadReleaseAdFeature=false
 ```
 
-Debug 自动使用 Google 官方测试 App ID 和原生广告 ID，无需真实账号。Release 必须设置 `enableAdmobReleaseAdFeature=true`，并提供下面全部参数；把占位值替换为后台值，16 个单元必须不同，缺失或示例 ID 会构建失败。
+以上已是仓库默认值，Android Studio 同步后直接运行 debug 即可接入测试模块。Debug 自动使用 Google 官方测试 App ID 和原生广告 ID，无需真实账号；实际展示仍需联网、UMP 请求资格及页面广告位条件满足。Release 目前保留关闭，因为开启后的 ID 校验会在配置期影响所有构建；准备正式广告时必须设置 `enableAdmobReleaseAdFeature=true`，并提供下面全部参数；把占位值替换为后台值，16 个单元必须不同，缺失或示例 ID 会构建失败。
 
 ```properties
 admobReleaseAppId=REPLACE_WITH_REAL_APP_ID
@@ -108,7 +109,7 @@ admobReleaseBackupRestoreNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
 PowerShell 验证示例（属性参数整体加引号）：
 
 ```powershell
-.\gradlew.bat :app:compileDebugKotlin '-PappDistribution=play' '-PenableAdmobDebugAdFeature=true' --no-parallel
+.\gradlew.bat :app:assembleDebug --no-parallel
 .\gradlew.bat :app:bundleRelease '-PappDistribution=play' '-PenableAdmobReleaseAdFeature=true' --no-parallel
 ```
 

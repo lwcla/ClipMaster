@@ -212,7 +212,7 @@ android {
 }
 
 dependencies {
-    // 仅显式开启的 buildType 引入 AdMob，默认包无 SDK 依赖。
+    // 仅开启的 buildType 引入 AdMob；仓库默认开启 debug 测试包，release 仍需单独配置。
     if (enableAdmobDebugAdFeature) debugImplementation(project(":feature:ad-admob"))
     if (enableAdmobReleaseAdFeature) releaseImplementation(project(":feature:ad-admob"))
     implementation(project(":base:general"))

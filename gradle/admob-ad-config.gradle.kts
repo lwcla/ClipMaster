@@ -19,7 +19,7 @@ fun admobBuildProperty(propertyName: String): String? {
     val localPropertyValue = admobLocalBuildProperties.getProperty(propertyName)?.trim()
     return localPropertyValue?.takeIf(String::isNotBlank)
 }
-/** 读取 AdMob 构建开关；默认构建不引入第三方广告 SDK。 */
+/** 读取 AdMob 调试开关；仓库默认在 gradle.properties 开启，未声明属性时仍保守关闭。 */
 val admobDebugEnabled = providers.gradleProperty("enableAdmobDebugAdFeature").map(String::toBoolean).getOrElse(false)
 /** 正式广告开关，必须配齐独立广告位。 */
 val admobReleaseEnabled = providers.gradleProperty("enableAdmobReleaseAdFeature").map(String::toBoolean).getOrElse(false)

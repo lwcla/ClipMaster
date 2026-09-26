@@ -28,7 +28,9 @@ SDK 成功仅变为待展示。按下、拖动、滚动、惯性、侧滑动画�
 
 ### 构建、隐私和备份
 
-开关 enableAdmobDebugAdFeature、enableAdmobReleaseAdFeature 默认 false，appDistribution 默认 domestic，play 禁止国内 SDK。宿主暴露 IS_PLAY_DISTRIBUTION、ADS_ADMOB_ENABLED。debug 固定 Google 测试 App/Native ID；正式参数为 admobReleaseAppId 与 admobRelease{PlacementName}AdUnitId，16 个正式单元独立且拒绝测试 publisher。Play 更新入口转商店，禁止外部 APK 更新。
+仓库 `gradle.properties` 默认设置 enableAdmobDebugAdFeature=true、enableAdmobReleaseAdFeature=false、appDistribution=play，直接运行 debug 即接入 AdMob 测试模块，play 禁止国内 SDK。命令行仍可覆盖开关；配置脚本在属性缺失时保留 false/domestic 的保守兜底。宿主暴露 IS_PLAY_DISTRIBUTION、ADS_ADMOB_ENABLED。debug 固定 Google 测试 App/Native ID；正式参数为 admobReleaseAppId 与 admobRelease{PlacementName}AdUnitId，16 个正式单元独立且拒绝测试 publisher。正式参数齐全后再开启 release，避免配置期校验阻断 debug。Play 更新入口转商店，禁止外部 APK 更新。
+
+2026-09-26 调试默认值调整仅复用既有模块装配、测试 ID、来源选择和 UMP 流程，不绕过隐私资格、敏感内容、页面可见性或交互门控；不新增组件、类、方法、持久化字段及备份契约。未新增单测或采用 TDD，因为仅切换已有构建参数并修正注释，没有新增可独立表达的业务规则；通过默认配置的 APK 构建、宿主与广告模块既有单测，以及生成配置检查验证。日志继续沿用下节既有低敏事件，无需新增日志。正式 release/R8 待真实 ID 配齐后验证，真机广告填充仍需设备验收。
 
 UMP 每启动刷新；canRequestAds 是 Google 请求资格依据，不能把国内隐私弹窗、旧缓存、表单关闭等同于授权。入口按 UMP 要求展示；用户改变选择立即释放旧广告。SDK 主进程按需后台初始化且幂等。广告与同意临时状态不进入本地/WebDAV 白名单，不触发 dirty，核对系统备份排除。广告模块不接收用户正文、搜索词、Cookie、WebDAV 凭据、文件名、路径或完整业务模型。
 
@@ -89,6 +91,8 @@ INFO/DEBUG：首次请求、加载、展示、释放，字段仅 source/placemen
 - [ ] 正式 ID、账号审核、Play AAB/R8、真机及小范围发布验收
 
 ### 变更记录
+
+- 2026-09-26：按用户先测试广告、后发布 Google Play 的安排，默认开启 AdMob debug 并切换 Play 渠道；release 暂不启用，保留正式 ID 完整性校验。同步本机配置示例和构建注释，避免普通调试仍漏装广告模块。默认属性下执行 `.\gradlew.bat :app:assembleDebug :app:testDebugUnitTest :feature:ad-api:testDebugUnitTest :feature:ad-admob:testDebugUnitTest --no-parallel --max-workers=1 --no-daemon '-Pkotlin.compiler.execution.strategy=in-process'` 成功；宿主 94 项、ad-api 15 项、ad-admob 3 项单测共 112 项通过（ad-admob 任务复用有效缓存），零失败、错误和跳过。产物为 `app/build/outputs/apk/debug/ClipMaster-v0.6.0-admob-debug.apk`。生成 BuildConfig 确认 AdMob/Play 开启、CSJ/uni-ad 关闭，模块 BuildConfig 与合并 Manifest 使用官方测试 ID；`git diff --check` 通过。未安装设备或验收广告填充，未运行正式 release/R8，继续按真实 ID 与真机待办跟踪。
 
 - 2026-09-22：按用户要求单独撤销构建提交 `b0e0e83`，删除 `gradle/gradle-daemon-jvm.properties`，保留广告功能提交 `5391e0d`。原因是没有已确认需求要求项目统一使用 JDK 25，也没有证据表明 AdMob 接入需要该版本；Gradle 恢复按现有本机/IDE/CI 配置选择运行时。未修改组件、类、方法、变量、源码 JVM target、广告配置、日志或备份契约，无新增注释及单测需求；验证：`.\gradlew.bat --version` 确认守护进程使用本机 Microsoft JDK 17.0.15；`:app:compileDebugKotlin :feature:ad-admob:testDebugUnitTest -PappDistribution=play -PenableAdmobDebugAdFeature=true` 在串行、进程内 Kotlin 编译设置下通过；`git diff --check` 和广告代码零差异检查通过。正式 AdMob Release/R8 与真机验收仍按既有待办跟踪。
 
