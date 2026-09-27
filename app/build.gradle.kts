@@ -285,6 +285,8 @@ dependencies {
 
     // work
     implementation(libs.androidx.work.runtime.ktx)
+    // 显式提供 ListenableFuture，避免 AdMob 运行时约束把宿主编译依赖替换为空占位包后缺类。
+    implementation(libs.guava)
     implementation(libs.androidx.hilt.work)
     ksp(libs.androidx.hilt.compiler)
 }

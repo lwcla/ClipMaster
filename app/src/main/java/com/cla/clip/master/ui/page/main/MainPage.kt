@@ -27,6 +27,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cla.clip.base.general.R
+import com.cla.clip.master.ad.AdPagerPageState
 import com.cla.clip.feature.torrent.search.api.TorrentSearchFeatureEntry
 import com.cla.clip.master.ui.navigation.MainInitialTab
 import com.cla.clip.master.ui.navigation.Route
@@ -159,12 +160,17 @@ fun MainPage(
         ) { index ->
             /** 当前 Pager 页对应的底部 Tab 配置。 */
             val tab = tabs[index]
+            /** 会话可见性与转场布局门分离，斜滑/回弹保留当前广告。 */
+            val adPageState = AdPagerPageState(index, pagerState.settledPage, pagerState.isScrollInProgress)
             when (tab.page) {
                 TabPage.List -> ClipListPage(
                     listState = listState,
                     onNavigate = onNavigate,
-                    // 后台 Pager 页不请求广告，滑动过渡期间也停止展示变化。
-                    visibleToUser = pagerState.settledPage == index && !pagerState.isScrollInProgress,
+                    // 真正切页才结束访问；拖动只延后新素材展开，不能销毁已显示广告。
+                    visibleToUser = adPageState.visibleToUser,
+                    adLayoutBlocked = adPageState.layoutBlocked,
+                    // 网络回调同帧也读取实时转场状态，避免先于重组插入广告。
+                    adLayoutBlockedNow = { pagerState.isScrollInProgress },
                 )
                 TabPage.Mine -> MinePage(
                     onNavigate = onNavigate,

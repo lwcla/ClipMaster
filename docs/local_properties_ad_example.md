@@ -65,6 +65,8 @@ csjRequiredPrivacyPolicyVersion=2026-06-csj
 
 ## 变更记录
 
+- 2026-09-27：新增媒体关联页独立广告配置 `admobReleaseBackupMediaRelocationNativeAdUnitId`，正式单元总数增至 17；debug 继续自动生成测试 ID。无新敏感日志，配置验证与测试以广告主方案为准。
+
 - 2026-09-26：默认开启 AdMob debug 和 Play 渠道，简化测试构建命令；补充国内构建覆盖方式及正式开关保留关闭的原因。复用既有日志与测试，不新增运行时逻辑。
 - 2026-06-03：新增广告本机配置示例，记录 uni-ad 与 CSJ buildType 专属参数、隐私版本和临时关闭方式；原因是广告模块已改为配置齐全时自动打包，开发者不需要手动传启用开关。
 - 2026-09-13：增加四个显式广告 feature 开关示例，并把临时关闭方式改为关闭开关；原因是可选模块统一由 `gradle.properties`/`-P` 控制，广告密钥只负责参数配置与开启后的完整性校验。
@@ -84,7 +86,7 @@ enableUniadDebugAdFeature=false
 enableUniadReleaseAdFeature=false
 ```
 
-以上已是仓库默认值，Android Studio 同步后直接运行 debug 即可接入测试模块。Debug 自动使用 Google 官方测试 App ID 和原生广告 ID，无需真实账号；实际展示仍需联网、UMP 请求资格及页面广告位条件满足。Release 目前保留关闭，因为开启后的 ID 校验会在配置期影响所有构建；准备正式广告时必须设置 `enableAdmobReleaseAdFeature=true`，并提供下面全部参数；把占位值替换为后台值，16 个单元必须不同，缺失或示例 ID 会构建失败。
+以上已是仓库默认值，Android Studio 同步后直接运行 debug 即可接入测试模块。Debug 自动使用 Google 官方测试 App ID 和原生广告 ID，无需真实账号；实际展示仍需联网、UMP 请求资格及页面广告位条件满足。Release 目前保留关闭，因为开启后的 ID 校验会在配置期影响所有构建；准备正式广告时必须设置 `enableAdmobReleaseAdFeature=true`，并提供下面全部参数；把占位值替换为后台值，17 个单元必须不同，缺失或示例 ID 会构建失败。
 
 ```properties
 admobReleaseAppId=REPLACE_WITH_REAL_APP_ID
@@ -104,6 +106,7 @@ admobReleaseVideoHistoryNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
 admobReleaseImageHistoryNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
 admobReleaseBackupOverviewNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
 admobReleaseBackupRestoreNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+admobReleaseBackupMediaRelocationNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
 ```
 
 PowerShell 验证示例（属性参数整体加引号）：
@@ -115,7 +118,7 @@ PowerShell 验证示例（属性参数整体加引号）：
 
 ### 后台与上架清单
 
-- 在自己的 Google Play / AdMob 账号完成应用创建、商店关联和审核；为 16 个逻辑位置分别创建原生广告单元。
+- 在自己的 Google Play / AdMob 账号完成应用创建、商店关联和审核；为 17 个逻辑位置分别创建原生广告单元。
 - 在开发者网站发布隐私政策与 AdMob 后台提供的 `app-ads.txt`，不要使用其他发布商标识。
 - 在 UMP 后台配置所需隐私消息，测试地区及隐私选项入口；运行时以 `canRequestAds()` 为准。
 - 核对包含广告、目标受众、广告 ID、Data safety、SDK 数据用途和最终 merged manifest；不得仅依据模板填写商店声明。

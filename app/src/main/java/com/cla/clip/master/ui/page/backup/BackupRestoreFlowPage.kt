@@ -2,9 +2,9 @@ package com.cla.clip.master.ui.page.backup
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -21,10 +21,12 @@ import com.cla.clip.master.ad.rememberTopAdScrollLayoutCoordinator
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -35,6 +37,7 @@ import com.cla.clip.feature.torrent.search.api.TorrentSearchFeatureEntry
 import com.cla.clip.master.ui.navigation.BackupMediaRelocationRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.widget.SecondaryPageScaffold
+import com.cla.clip.master.ui.widget.ad.AdHeaderLayout
 
 private const val MEDIA_RELOCATION_NAV_DEBOUNCE_MS = 600L
 private const val TAG = "BackupRestoreFlowPage"
@@ -128,8 +131,10 @@ private fun BackupRestoreFlowScaffold(
         is BackupRestoreFlowState.Error -> state.taskId
         BackupRestoreFlowState.Hidden -> null
     }
-    // 顶部广告属于正文滚动范围，工具栏与底部操作均不被广告覆盖。
+    // 摘要、广告和详情共同滚动，工具栏与底部操作均不被广告覆盖。
     val contentScroll = rememberScrollState()
+    // 广告前的状态摘要及间距实测高度，用于保护尚在阅读摘要的滚动位置。
+    var contentBeforeAdHeight by remember(contentScroll) { mutableIntStateOf(0) }
     // 读取、纯恢复进度及失败页没有足够内容；预览和实际结果才允许展示。
     val eligible = state is BackupRestoreFlowState.Preview || state is BackupRestoreFlowState.Result
     // 弹窗不展示广告；按下由整个 Scaffold 的观察器统一守卫，包括底部恢复按钮。
@@ -137,8 +142,8 @@ private fun BackupRestoreFlowScaffold(
     // TaskId 仅作为本地 remember 身份，宿主只向 SDK 发送随机 nonce。
     val adSession = rememberPageAdSession(adTaskKey)
     SideEffect { adSession.suppressed = blocked || !eligible }
-    // 包含零高情况的头部测量用于消除隐藏、失败和迟到加载引起的正文跳动。
-    val adHeaderModifier = rememberTopAdScrollLayoutCoordinator(adSession, contentScroll, blocked)
+    // 广告尺寸变化只补偿其下方正文，固定的状态摘要不跟着广告收起而移动。
+    val adHeaderModifier = rememberTopAdScrollLayoutCoordinator(adSession, contentScroll, blocked, contentBeforeAdHeight)
 
     /** 处理顶部返回和系统返回；结果态只回备份页，读取/恢复中按原规则二次确认。 */
     fun requestBack() {
@@ -194,14 +199,23 @@ private fun BackupRestoreFlowScaffold(
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.Top
         ) {
-            // 空广告容器保持零高度，不能为无填充或禁用来源保留装饰间距。
-            Box(modifier = adHeaderModifier) {
+            // 先展示状态和来源摘要；下方 16dp 是业务区块间距，空广告时仍保留这一处间隔。
+            BackupRestoreFlowHeader(
+                state = state,
+                modifier = Modifier
+                    .onSizeChanged { size -> contentBeforeAdHeight = size.height }
+                    .padding(bottom = 16.dp),
+            )
+            // 头部测量包括实际广告和 16dp 正文分隔；无填充或禁用来源仍保持零高。
+            AdHeaderLayout(modifier = adHeaderModifier) {
                 PageAdSlot(
                     session = adSession,
                     placement = AdPlacement.BackupRestoreNative,
                     eligible = eligible,
                     requestEnabled = eligible && !blocked,
                     canReveal = contentScroll.value == 0 && !contentScroll.isScrollInProgress && !blocked,
+                    // 填满已有左右 20dp 留白的正文容器，与恢复摘要/分隔线共用边界。
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {

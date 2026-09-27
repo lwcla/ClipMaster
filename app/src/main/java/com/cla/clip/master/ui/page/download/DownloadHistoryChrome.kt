@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.paging.PagingData
 import com.cla.clip.base.general.R
+import com.cla.clip.master.ad.AdPagerPageState
 import com.cla.clip.master.ui.widget.TitleBar
 import com.cla.clip.master.ui.widget.TitleBarText
 import kotlinx.coroutines.flow.Flow
@@ -129,12 +130,16 @@ internal fun DownloadHistoryPager(
         state = pagerState,
         modifier = Modifier.fillMaxSize()
     ) { page ->
+        /** 与首页共用稳定页访问规则，避免后续误将 Pager 滚动当成页面离开。 */
+        val adPageState = AdPagerPageState(page, pagerState.settledPage, pagerState.isScrollInProgress)
         DownloadHistoryContent(
-            // 只有稳定可见 Tab 可以拥有广告会话，横向拖拽期间不请求相邻页广告。
-            adsEnabled = !pagerState.isScrollInProgress && page == pagerState.settledPage,
-            adOverlayBlocked = adOverlayBlocked || pagerState.isScrollInProgress,
-            adPointerPressed = adPointerPressed,
-            adPointerPressedNow = adPointerPressedNow,
+            // 以稳定选中页界定访问，拖动后回到原页不能清空请求账本。
+            adsEnabled = adPageState.visibleToUser,
+            adOverlayBlocked = adOverlayBlocked,
+            // 横向拖动/惯性只阻止揭示，不冒充弹窗去销毁现有广告。
+            adPointerPressed = adPointerPressed || adPageState.layoutBlocked,
+            // SDK 同帧返回也必须读取实时滚动事实，避免拖动中插入广告。
+            adPointerPressedNow = { adPointerPressedNow() || pagerState.isScrollInProgress },
             tabSpec = tabs.getOrElse(page) {
                 DownloadHistoryTabSpec(DownloadHistoryTab.Video, "")
             },

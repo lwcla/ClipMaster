@@ -44,6 +44,8 @@ enum class AdPlacement(
     BackupOverviewNative("backup_overview_native"),
     /** 备份恢复广告位。 */
     BackupRestoreNative("backup_restore_native"),
+    /** 恢复本地媒体关联页的确认说明与结果广告位；稳定 code 不包含任务标识。 */
+    BackupMediaRelocationNative("backup_media_relocation_native"),
 }
 
 /**
@@ -107,6 +109,12 @@ data class AdSlotRequest(
     val onLayoutChanged: () -> Unit = {},
     /** 展示提交前同步读取交互许可，堵住指针事件早于重组的时间差；变化不生成新请求。 */
     val canRevealNow: () -> Boolean = { canReveal },
+    /** 页面持有的有限缓存槽；为空时 adapter 沿用组合自身管理资源。 */
+    val resourceOwner: AdSlotResourceOwner? = null,
+    /** 暂停或临时遮挡时禁止点击，已展示布局与素材保持不变。 */
+    val interactionEnabled: Boolean = true,
+    /** 仅控制尚未启动的网络请求；缓存回绑可以继续展示原有素材。 */
+    val canRequest: Boolean = true,
 )
 
 /**

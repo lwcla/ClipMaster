@@ -1,9 +1,14 @@
 package com.cla.clip.feature.ad.admob
 
 import androidx.compose.runtime.*
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.cla.clip.feature.ad.api.*
 import dagger.Binds
 import dagger.Module
@@ -25,7 +30,7 @@ internal class AdmobAdSourceEntry @Inject constructor(
     override val sourceId = "admob"
     /** 显式启用真实源时优先于调试占位。 */
     override val priority = 200
-    /** 16 个位置都只提供原生广告，不引入激励或插屏格式。 */
+    /** 所有已注册位置都只提供原生广告，不引入激励或插屏格式。 */
     override val supportedPlacements = AdPlacement.entries.toSet()
 
     /** 平台独立隐私语义与运行时安全边界都必须满足。 */
@@ -34,29 +39,86 @@ internal class AdmobAdSourceEntry @Inject constructor(
             !runtimePolicy.isSensitiveContext && !runtimePolicy.remoteKillSwitchEnabled &&
             sourceId !in runtimePolicy.sessionDisabledSourceIds && privacyController.state.value.canRequestAds
 
-    /** 只以 nonce 创建请求；布局门控和回调通过更新方法同步。 */
+    /** 页面拥有资源，组合只绑定 View；暂停和普通重组不创建新请求。 */
     @Composable
     override fun NativeAdSlot(request: AdSlotRequest, onEvent: (AdSlotEvent) -> Unit, modifier: Modifier) {
-        /** 当前 Activity 的 themed Context，只在请求生命周期内保留。 */
+        // themed Context 仅在页面资源存活期间保留。
         val context = LocalContext.current
-        /** 素材归当前 nonce 所有，滚动门控变化不能创建新请求。 */
-        val session = remember(request.requestNonce) {
-            AdmobSlotSession(context, request, initializer, privacyController, unitId(request.placement), onEvent)
+        // 主题同步不影响请求及缓存身份。
+        val colors = MaterialTheme.colorScheme
+        // 宿主生命周期也保护没有页面缓存所有者的兼容调用方。
+        val lifecycle = LocalLifecycleOwner.current.lifecycle
+        // 事件和触摸读取最新许可，避免普通弹窗关闭后仍捕获旧门控。
+        val latestRequest by rememberUpdatedState(request)
+        // 每个资源所有者只创建一次 SDK 会话，Lazy 回滚从页面缓存取得原会话。
+        val session = remember(request.requestNonce, request.resourceOwner) {
+            // 工厂留在 adapter 内，宿主无法访问 NativeAd 和 Activity 引用。
+            val create = { AdmobSlotSession(context, request, initializer, privacyController, unitId(request.placement), onEvent) }
+            // 跨模块属性先读取快照，避免依赖不可用的 Kotlin smart cast。
+            val resourceOwner = request.resourceOwner
+            if (resourceOwner == null) create()
+            else resourceOwner.getOrCreate(create) as? AdmobSlotSession
+        } ?: return
+        // 每次组合绑定拥有独立身份，旧 onDispose 不能解绑后来的挂载。
+        val binding = remember(session) { Any() }
+        // 仅前台且未遮挡才启动新工作；更新已加载素材不会重新请求。
+        SideEffect {
+            session.update(binding, request, onEvent)
+            if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) && request.canRequest) session.start()
         }
-        // 更新布局回调和展示许可不影响 SDK 请求身份。
-        SideEffect { session.update(request, onEvent) }
-        // 页面离开组合立即取消请求并释放素材；根页面控制可见生命周期。
-        DisposableEffect(session) {
-            session.start()
-            onDispose { session.close() }
+        // PAUSE 不释放；STOP/DESTROY 即便没有后续组合帧也同步清理。
+        DisposableEffect(session, lifecycle) {
+            // 重复恢复由 session 的一次启动保护过滤，停止原因进入低敏日志。
+            val observer = LifecycleEventObserver { _, event ->
+                when (event) {
+                    Lifecycle.Event.ON_STOP -> session.close(AdReleaseReason.LifecycleStop)
+                    Lifecycle.Event.ON_DESTROY -> session.close(AdReleaseReason.Destroyed)
+                    Lifecycle.Event.ON_RESUME -> if (latestRequest.canRequest) session.start()
+                    else -> Unit
+                }
+            }
+            lifecycle.addObserver(observer)
+            // 缓存调用方离屏只解绑；兼容调用方仍由组合负责销毁。
+            onDispose {
+                lifecycle.removeObserver(observer)
+                session.detach(binding)
+                if (request.resourceOwner == null) session.close(AdReleaseReason.PageLeft)
+            }
         }
-        /** View 仅在真实素材绑定成功且允许展示之后非空。 */
+        // 首次素材只在安全布局时揭示，已有 View 可跨离屏绑定保留。
         val nativeView = session.view
         if (nativeView != null) {
-            AndroidView(factory = { nativeView }, modifier = modifier)
+            AndroidView(
+                // 每次挂载独享外壳；搬移 SDK View 前移除旧父节点，避免双重挂载。
+                factory = { viewContext ->
+                    AdmobNativeContainer(viewContext).apply {
+                        session.bindView(binding, this)
+                    }
+                },
+                modifier = modifier,
+                // 外壳销毁只解除子 View 关系，素材销毁始终属于页面资源所有者。
+                onRelease = { container ->
+                    container.removeAllViews()
+                    container.canInteract = { false }
+                    container.updateInteraction(false)
+                },
+                // 暂停/弹窗不改广告外观，仅拦住触摸；SDK 原有点击注册保持完整。
+                update = { container ->
+                    // 绑定登记和 View 搬移统一处理，也能修复应用阶段中新旧外壳交接。
+                    session.bindView(binding, container)
+                    container.canInteract = {
+                        latestRequest.interactionEnabled && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+                    }
+                    container.updateInteraction(container.canInteract())
+                    AdmobNativeAssets.applyColors(
+                        nativeView, colors.surface.toArgb(), colors.onSurface.toArgb(),
+                        colors.onSurfaceVariant.toArgb(), colors.primary.toArgb(), colors.onPrimary.toArgb(),
+                        outline = colors.outlineVariant.toArgb(),
+                    )
+                },
+            )
         }
     }
-
     /** 构建配置按位置固定映射，禁止把页面正文或 URL 传给 SDK。 */
     private fun unitId(placement: AdPlacement): String = when (placement) {
         AdPlacement.DetailNative -> BuildConfig.DetailNative
@@ -75,6 +137,7 @@ internal class AdmobAdSourceEntry @Inject constructor(
         AdPlacement.ImageHistoryNative -> BuildConfig.ImageHistoryNative
         AdPlacement.BackupOverviewNative -> BuildConfig.BackupOverviewNative
         AdPlacement.BackupRestoreNative -> BuildConfig.BackupRestoreNative
+        AdPlacement.BackupMediaRelocationNative -> BuildConfig.BackupMediaRelocationNative
     }
 }
 

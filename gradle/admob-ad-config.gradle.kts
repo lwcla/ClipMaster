@@ -45,6 +45,7 @@ val admobPlacementNames = listOf(
     "VideoDownloadProgressNative", "VideoDownloadResultNative", "ImageExtractNative",
     "ImageDownloadProgressNative", "ImageDownloadResultNative", "VideoHistoryNative",
     "ImageHistoryNative", "BackupOverviewNative", "BackupRestoreNative",
+    "BackupMediaRelocationNative",
 )
 /** 官方测试发布者，正式包必须拒绝其全部样例 ID。 */
 val samplePublisher = "ca-app-pub-3940256099942544"
@@ -59,9 +60,9 @@ if (admobReleaseEnabled) {
         "AdMob release 必须设置真实 admobReleaseAppId"
     }
     require(releaseUnits.values.all { Regex("ca-app-pub-[0-9]{16}/[0-9]{10}").matches(it) && !it.startsWith(samplePublisher) }) {
-        "AdMob release 必须配置全部 16 个真实 admobRelease<Placement>AdUnitId"
+        "AdMob release 必须配置全部 ${admobPlacementNames.size} 个真实 admobRelease<Placement>AdUnitId"
     }
-    require(releaseUnits.values.toSet().size == admobPlacementNames.size) { "AdMob release 的 16 个原生广告位必须互不相同" }
+    require(releaseUnits.values.toSet().size == admobPlacementNames.size) { "AdMob release 的 ${admobPlacementNames.size} 个原生广告位必须互不相同" }
 }
 extra["enableAdmobDebugAdFeature"] = admobDebugEnabled
 extra["enableAdmobReleaseAdFeature"] = admobReleaseEnabled

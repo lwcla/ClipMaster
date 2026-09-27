@@ -348,7 +348,8 @@ private fun DetailActionSections(
         PageAdSlot(
             session = adSession,
             placement = AdPlacement.DetailNative,
-            eligible = !isSensitiveAdContext && !adOverlayVisible,
+            // 敏感内容撤销资源资格；普通弹窗通过 suppressed 保留原素材。
+            eligible = !isSensitiveAdContext,
             modifier = Modifier.fillMaxWidth(),
         )
 

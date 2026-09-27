@@ -59,7 +59,7 @@ internal fun rememberListAdLayoutCoordinator(
     )
 }
 
-/** 网格广告是独立全宽条目；恢复时通过完整 Lazy key 顺序映射业务锚点。 */
+/** 网格视口因广告尺寸变化时保护图片锚点；固定底部广告不占 Lazy 索引，默认直接使用图片 key 顺序。 */
 @Composable
 internal fun rememberGridAdLayoutCoordinator(
     session: PageAdSession,
@@ -81,7 +81,7 @@ internal fun rememberGridAdLayoutCoordinator(
         scrollingNow = { gridState.isScrollInProgress },
         pinRestorePending = false,
         visibleContent = {
-            // 第一行可能带广告尾槽，只有图片行自身仍可见才允许作为业务锚点。
+            // 只选择视口中仍有实际图片高度的条目，避免边缘已离屏项成为恢复锚点。
             gridState.layoutInfo.visibleItemsInfo.filter { item ->
                 item.key in contentKeys &&
                     item.offset.y + (contentHeights[item.key] ?: item.size.height) > gridState.layoutInfo.viewportStartOffset

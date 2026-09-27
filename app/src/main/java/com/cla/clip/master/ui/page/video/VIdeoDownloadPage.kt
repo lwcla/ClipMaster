@@ -132,7 +132,9 @@ fun VideoDownloadPage(
                     }
                 }
                 placement?.let { adPlacement ->
-                    PageAdSlot(adSession, adPlacement, canReveal = !contentScroll.isScrollInProgress)
+                    PageAdSlot(adSession, adPlacement, canReveal = !contentScroll.isScrollInProgress,
+                        // 与媒体摘要的 16dp 留白对齐，二者共同继承 PageBackground 的外层边距。
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
                 }
 
             }

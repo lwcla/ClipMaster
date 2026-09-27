@@ -24,12 +24,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -37,15 +40,21 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.utils.logD
+import com.cla.clip.feature.ad.api.AdPlacement
+import com.cla.clip.master.ad.PageAdSlot
+import com.cla.clip.master.ad.adInteractionGuard
+import com.cla.clip.master.ad.rememberPageAdSession
+import com.cla.clip.master.ad.rememberTopAdScrollLayoutCoordinator
 import com.cla.clip.master.media.MediaRelocationPreparation
 import com.cla.clip.master.ui.widget.TitleBar
+import com.cla.clip.master.ui.widget.ad.AdHeaderLayout
 
 private const val TAG = "BackupMediaRelocationPage"
 
 /**
  * 恢复本地媒体关联独立页。
  *
- * 页面只承载当前媒体关联任务的交互和展示；扫描副作用由 `BackupMediaRelocationVm` 编排。
+ * 页面按标题说明、广告、关联详情编排当前任务；扫描副作用由 `BackupMediaRelocationVm` 编排。
  *
  * @param onCloseRestoreFlow 正向终态点击“完成”时关闭备份页、恢复页和媒体关联页，保留用户进入备份前的导航位置。
  */
@@ -57,11 +66,33 @@ internal fun BackupMediaRelocationPage(
     modifier: Modifier = Modifier,
     relocationVm: BackupMediaRelocationVm = hiltViewModel(),
 ) {
+    // 业务状态沿用生命周期感知订阅，广告仅接收由状态派生的资格布尔值。
     val state by relocationVm.uiState.collectAsStateWithLifecycle()
+    // 运行中返回提示只阻止广告交互，不改变媒体关联任务。
     var showRunningNotice by remember { mutableStateOf(false) }
+    // 系统权限选择器期间保留已加载素材，但禁止新请求、展开和点击。
+    var permissionRequestPending by remember(restoreTaskId) { mutableStateOf(false) }
+    // TaskId 只隔离页面内存会话，不进入广告请求或广告日志。
+    val adSession = rememberPageAdSession(restoreTaskId)
+    // 广告与正文一起滚动，共用锚点补偿和按压保护。
+    val contentScroll = rememberScrollState()
+    // 标题说明及其底部间距位于广告之前，实测后交给锚点协调器保护。
+    var contentBeforeAdHeight by remember(contentScroll) { mutableIntStateOf(0) }
+    // 确认与结果阶段展示真实内容，纯扫描/等待阶段不承载广告。
+    val adEligible = state.isAdEligible
+    // 普通遮挡和业务资格分开：遮挡结束可以继续使用有效的原素材。
+    val adBlocked = showRunningNotice || permissionRequestPending
+    // 同步最新许可，SDK 回调不能趁弹窗或业务阶段变化插入广告。
+    SideEffect { adSession.suppressed = adBlocked || !adEligible }
+    // 广告总高度包含条件间隔，补偿仅作用于其下方的关联详情。
+    val adHeaderModifier = rememberTopAdScrollLayoutCoordinator(adSession, contentScroll, adBlocked, contentBeforeAdHeight)
+    // 权限返回先解除临时门控，资格再由 ViewModel 的复查状态控制。
     val mediaPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
-        onResult = relocationVm::onPermissionResult
+        onResult = { permissions ->
+            permissionRequestPending = false
+            relocationVm.onPermissionResult(permissions)
+        }
     )
 
     LaunchedEffect(restoreTaskId) {
@@ -108,7 +139,7 @@ internal fun BackupMediaRelocationPage(
     }
 
     Scaffold(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize().adInteractionGuard(adSession),
         topBar = {
             TitleBar(
                 title = stringResource(R.string.base_general_backup_media_relocation_title),
@@ -122,6 +153,8 @@ internal fun BackupMediaRelocationPage(
                 onDone = { requestDone() },
                 onRestart = relocationVm::restart,
                 onRequestMediaPermission = { preparation ->
+                    // 系统界面弹出前同步关闭广告交互，避免等待生命周期事件的窗口。
+                    permissionRequestPending = true
                     mediaPermissionLauncher.launch(preparation.requiredPermissions.toTypedArray())
                 },
                 onStartScan = relocationVm::startScan
@@ -132,11 +165,43 @@ internal fun BackupMediaRelocationPage(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(contentScroll)
                 .padding(horizontal = 20.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.Top
         ) {
-            BackupMediaRelocationBody(state)
+            // 标题和用途说明在广告之前；前置间隔属于原有正文结构，空广告时不会重复留白。
+            Column(
+                modifier = Modifier
+                    .onSizeChanged { size -> contentBeforeAdHeight = size.height }
+                    .padding(bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.base_general_backup_media_relocation_title),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = stringResource(R.string.base_general_backup_media_relocation_intro),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            // 与正文共用左右 20dp 边界，空槽零高，已展示广告下方留 16dp。
+            AdHeaderLayout(modifier = adHeaderModifier) {
+                PageAdSlot(
+                    session = adSession,
+                    placement = AdPlacement.BackupMediaRelocationNative,
+                    eligible = adEligible,
+                    requestEnabled = adEligible && !adBlocked,
+                    canReveal = contentScroll.value == 0 && !contentScroll.isScrollInProgress && !adBlocked,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            // 正文原有段落间隔保持独立，不能让外层间距为空广告制造占位。
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                BackupMediaRelocationBody(state)
+            }
         }
     }
 
@@ -154,20 +219,9 @@ internal fun BackupMediaRelocationPage(
     }
 }
 
+/** 渲染广告之后的关联详情；标题说明由页面先行展示，所有业务分支保持原样。 */
 @Composable
 private fun BackupMediaRelocationBody(state: MediaRelocationUiState) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(
-            text = stringResource(R.string.base_general_backup_media_relocation_title),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold
-        )
-        Text(
-            text = stringResource(R.string.base_general_backup_media_relocation_intro),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
     when (state) {

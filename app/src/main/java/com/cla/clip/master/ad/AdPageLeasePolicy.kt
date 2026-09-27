@@ -13,7 +13,7 @@ internal class AdPageLeasePolicy(
         val offscreenSequence: Long,
     )
 
-    /** 本会话已经真正取得请求资格的位置，释放后仍保留以阻止重试。 */
+    /** 已取得请求资格的位置；失败记录保留，容量淘汰则允许下次绑定重试。 */
     private val attempted = mutableSetOf<String>()
     /** 驻留记录只保存低敏位置身份，不保存广告对象或用户内容。 */
     private val resident = linkedMapOf<String, ResidentLease>()
@@ -37,6 +37,8 @@ internal class AdPageLeasePolicy(
                 .minByOrNull { it.value.offscreenSequence }
                 ?.key ?: return false
             resident.remove(evicted)
+            // 容量淘汰不是加载失败，未来重新绑定该位置可再次请求。
+            attempted.remove(evicted)
         }
         // 只有真正获得容量后才记录尝试，延后请求不会消耗一次性机会。
         attempted.add(key)
@@ -57,8 +59,11 @@ internal class AdPageLeasePolicy(
         return true
     }
 
-    /** 移除驻留位置，保留请求历史；迟到可见回调将被忽略。 */
-    fun release(key: String) { resident.remove(key) }
+    /** 移除驻留位置；默认保留失败历史，非失败清理可允许下次绑定重新申请。 */
+    fun release(key: String, retryOnNextBinding: Boolean = false) {
+        resident.remove(key)
+        if (retryOnNextBinding) attempted.remove(key)
+    }
 
     /** 页面关闭只释放持有对象，保留当前会话的请求历史。 */
     fun clear() { resident.clear() }

@@ -117,8 +117,8 @@ internal fun VideoHistoryList(
     onOpenVideo: (DownloadHistoryVideoItem) -> Unit,
     onRetryVideo: (Long) -> Unit,
 ) {
-    // 每个 Tab 独立会话，图片密度按批次计数而非缩略图张数。
-    val adSession = rememberPageAdSession(AdPlacement.VideoHistoryNative, enabled = adsEnabled)
+    // 稳定选中 Tab 界定一次可见访问，返回时新建会话；滚动和分页不重建。
+    val adSession = rememberPageAdSession(AdPlacement.VideoHistoryNative, visibleToUser = adsEnabled)
     // 页面的覆盖层和多选态共同关闭广告资格，关闭后不更改下载记录数量。
     val adConfig = ClipListAdConfig(
         session = adSession,
@@ -227,8 +227,8 @@ internal fun ImageHistoryList(
     onRetryImage: (Long) -> Unit,
     onPreviewImage: (String) -> Unit,
 ) {
-    // 每个 Tab 独立会话，图片密度按批次计数而非缩略图张数。
-    val adSession = rememberPageAdSession(AdPlacement.ImageHistoryNative, enabled = adsEnabled)
+    // 稳定选中 Tab 界定一次可见访问，返回时新建会话；图片密度仍按批次计数。
+    val adSession = rememberPageAdSession(AdPlacement.ImageHistoryNative, visibleToUser = adsEnabled)
     // 页面的覆盖层和多选态共同关闭广告资格，关闭后不更改下载记录数量。
     val adConfig = ClipListAdConfig(
         session = adSession,

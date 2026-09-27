@@ -14,7 +14,7 @@ class AdPageLeasePolicyTest {
         assertTrue(policy.acquire("c"))
         assertTrue(policy.acquire("d"))
         assertEquals(setOf("b", "c", "d"), policy.residentKeys)
-        assertFalse(policy.acquire("a"))
+        assertTrue(policy.acquire("a"))
         assertTrue(policy.acquire("e"))
     }
 
@@ -44,7 +44,7 @@ class AdPageLeasePolicyTest {
         assertTrue(policy.updateVisibility("a", false))
         assertTrue(policy.acquire("b"))
         assertEquals(setOf("b"), policy.residentKeys)
-        assertFalse(policy.acquire("a"))
+        assertTrue(policy.acquire("a"))
     }
 
     /** 重复上报离屏不能刷新年龄，未知 key 不应创建驻留状态。 */

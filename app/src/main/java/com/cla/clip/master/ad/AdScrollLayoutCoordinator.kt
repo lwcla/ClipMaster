@@ -15,12 +15,14 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
 
-/** 连续滚动页顶部广告的布局协调器；返回的测量 Modifier 应挂在始终存在的零间距广告容器上。 */
+/** 连续滚动页单广告的布局协调器；测量 Modifier 挂在广告容器上，前置说明高度由页面另行测量。 */
 @Composable
 internal fun rememberTopAdScrollLayoutCoordinator(
     session: PageAdSession,
     scrollState: ScrollState,
     blocked: Boolean,
+    // 广告之前的标题/说明及间距高度；顶部广告默认零，不改变既有调用方。
+    contentBeforeAdHeight: Int = 0,
 ): Modifier {
     // 实测广告高度包含实际容器，加载失败时保持零高，不凭估算预留空间。
     var headerHeight by remember(scrollState) { mutableIntStateOf(0) }
@@ -42,7 +44,7 @@ internal fun rememberTopAdScrollLayoutCoordinator(
             session.onLayoutChanged = null
         }
     }
-    LaunchedEffect(session, revision, headerHeight, blocked, scrollState.isScrollInProgress, session.pointerPressed) {
+    LaunchedEffect(session, revision, headerHeight, contentBeforeAdHeight, blocked, scrollState.isScrollInProgress, session.pointerPressed) {
         if (!canMutate) return@LaunchedEffect
         // 等待 AndroidView 和滚动范围完成测量；若用户开始新交互则延期补偿。
         withFrameNanos { }
@@ -50,7 +52,7 @@ internal fun rememberTopAdScrollLayoutCoordinator(
         // 只有实际高度变化才补偿，避免 SDK 的无尺寸状态回调移动页面。
         val anchor = pendingAnchor ?: return@LaunchedEffect
         if (anchor.second != headerHeight) {
-            scrollState.scrollTo(AdScrollAnchorPolicy.restoreOffset(anchor.first, anchor.second, headerHeight))
+            scrollState.scrollTo(AdScrollAnchorPolicy.restoreOffset(anchor.first, anchor.second, headerHeight, contentBeforeAdHeight))
             pendingAnchor = null
         }
     }

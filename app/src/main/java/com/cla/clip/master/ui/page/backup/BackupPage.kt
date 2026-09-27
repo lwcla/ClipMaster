@@ -38,9 +38,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -86,14 +88,17 @@ fun BackupPage(
     // 表单编辑及系统选择器状态只留在内存，不写入配置或备份。
     var editingCredentials by remember { mutableStateOf(false) }
     var pickerOpen by remember { mutableStateOf(false) }
-    // 独立顶部条目不参与备份记录计数，实际布局仍使用稳定业务 key。
+    // 广告与首张正文卡共享稳定条目，避免零高广告被 LazyColumn 跳过；不参与备份记录计数。
     val listState = rememberLazyListState()
+    // 只测量首卡正文，广告尾部可见时由下一张真实正文卡承接阅读锚点。
+    var autoContentHeight by remember { mutableIntStateOf(0) }
     val bodyKeys = listOf<Any>("auto", "local") + normalLocalBackups.map { it.lazyListKey() } +
         listOf("webdav") + if (normalRemoteBackups.isEmpty()) listOf("remote_empty") else normalRemoteBackups.map { it.lazyListKey() }
     val adBlocked = editingCredentials || pickerOpen || pendingDisclosureAction != null || state.busyOperation.isModalProgress
     SideEffect { adSession.suppressed = adBlocked }
     rememberListAdLayoutCoordinator(adSession, listState, bodyKeys, blocked = adBlocked,
-        lazyItemKeys = listOf("ad_header") + bodyKeys, keepStartAtTop = true)
+        contentHeights = if (autoContentHeight > 0) mapOf("auto" to autoContentHeight) else emptyMap(),
+        keepStartAtTop = true)
 
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/zip"),
@@ -156,24 +161,31 @@ fun BackupPage(
             contentPadding = PaddingValues(bottom = 24.dp),
             verticalArrangement = Arrangement.Top
         ) {
-            item(key = "ad_header") {
-                PageAdSlot(session = adSession, placement = AdPlacement.BackupOverviewNative,
-                    eligible = !adBlocked, modifier = Modifier.fillMaxWidth())
-            }
             item(key = "auto") {
-                AutoBackupSection(
-                    state = state,
-                    // enabled 表示用户本次希望切换到的自动备份开关状态。
-                    onEnabledChange = { enabled ->
-                        if (enabled) {
-                            requestBackupCreationAction(BackupPlaintextDisclosureAction.EnableAuto)
-                        } else {
-                            backupVm.updateAutoBackupEnabled(false)
-                        }
-                    },
-                    onRetentionChange = backupVm::updateRetentionCount,
-                    onOnlyWifiChange = backupVm::updateOnlyWifi,
-                )
+                // 广告放在正文尾部并共享稳定容器，加载前后既保留组合身份，也不移动首卡正文锚点。
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // 此测量容器不含广告；高度仅用于本页内存锚点，不参与请求和日志。
+                    Column(modifier = Modifier.onSizeChanged { autoContentHeight = it.height }) {
+                        AutoBackupSection(
+                            state = state,
+                            // enabled 表示用户本次希望切换到的自动备份开关状态。
+                            onEnabledChange = { enabled ->
+                                if (enabled) {
+                                    requestBackupCreationAction(BackupPlaintextDisclosureAction.EnableAuto)
+                                } else {
+                                    backupVm.updateAutoBackupEnabled(false)
+                                }
+                            },
+                            onRetentionChange = backupVm::updateRetentionCount,
+                            onOnlyWifiChange = backupVm::updateOnlyWifi,
+                        )
+                    }
+                    PageAdSlot(session = adSession, placement = AdPlacement.BackupOverviewNative,
+                        // 表单与弹窗仅阻止新增请求及交互，不销毁已有素材。
+                        requestEnabled = !adBlocked,
+                        // 与本页普通卡片共用左右 16dp 外边距，素材内边距由广告布局管理。
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
+                }
             }
 
             item(key = "local") {

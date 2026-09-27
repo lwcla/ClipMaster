@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -33,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.utils.logD
@@ -245,7 +247,9 @@ fun VideoExtractPage(
                     }
                     adPlacement?.let { placement ->
                         PageAdSlot(adSession, placement, requestEnabled = !permissionPending,
-                            canReveal = !permissionPending && !contentScroll.isScrollInProgress)
+                            canReveal = !permissionPending && !contentScroll.isScrollInProgress,
+                            // 与同页媒体摘要的内容边界对齐，不把素材内边距当成页面外边距。
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
                     }
 
                 }

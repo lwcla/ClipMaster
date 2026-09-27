@@ -18,6 +18,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -66,6 +67,10 @@ fun ClipListPage(
     listState: LazyListState = rememberLazyListState(),
     // 首页横向 Pager 的稳定可见状态，避免“我的”页后台广告继续请求。
     visibleToUser: Boolean = true,
+    // 外层 Pager 转场仅冻结新广告布局，不撤销当前访问或已显示素材。
+    adLayoutBlocked: Boolean = false,
+    // SDK 回调同帧读取实时转场，默认非 Pager 入口沿用布尔快照。
+    adLayoutBlockedNow: () -> Boolean = { adLayoutBlocked },
     onNavigate: (Route) -> Unit  // 跳转页面
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -112,8 +117,12 @@ fun ClipListPage(
         }
     }
 
-    // 页面广告身份不依赖内容数量，分页追加和置顶排序保持同一会话。
-    val adSession = rememberPageAdSession("home-list", enabled = visibleToUser)
+    // Tab 返回开启新广告访问，分页追加和置顶排序仍保持同一会话。
+    val adSession = rememberPageAdSession("home-list", visibleToUser = visibleToUser)
+    // 根按压和外层转场共同阻止展开；不覆盖内层列表协调器的滚动/侧滑门控。
+    SideEffect {
+        adSession.pointerPressedNow = { adSession.pointerPressed || adLayoutBlockedNow() }
+    }
     // 确认、设置及批量操作覆盖层禁止广告交互并延后布局变化。
     val adOverlayBlocked = deleteClip != null || showBatchDeleteDialog || isBatchActionRunning
 
@@ -194,7 +203,7 @@ fun ClipListPage(
                             session = adSession,
                             placement = AdPlacement.HomeFeedNative,
                             suppressed = adOverlayBlocked || selectionMode,
-                            layoutBlocked = adOverlayBlocked,
+                            layoutBlocked = adOverlayBlocked || adLayoutBlocked,
                         ),
                         listState = listState,
                         pagedClips = pagedClips,

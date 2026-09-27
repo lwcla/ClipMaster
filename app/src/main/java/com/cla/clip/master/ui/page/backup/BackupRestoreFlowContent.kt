@@ -45,7 +45,8 @@ import com.cla.clip.feature.torrent.search.api.TorrentSearchFeatureEntry
 /**
  * 备份恢复流程页内容区。
  *
- * 只负责把恢复流程状态和媒体关联回显渲染为摘要、进度和报告，不启动文件、网络或数据库副作用。
+ * 只负责把恢复流程状态和媒体关联回显渲染为详情、进度和报告，不启动文件、网络或数据库副作用。
+ * 状态标题与摘要由页面先行渲染，允许在摘要和详情之间放入独立广告槽。
  *
  * @param torrentSearchFeatures 可选功能的计数与分类文案映射；为空时仅渲染宿主内建分类。
  */
@@ -56,7 +57,6 @@ internal fun BackupRestoreFlowContent(
     mediaRelocationSummary: MediaRelocationSummary?,
     torrentSearchFeatures: Set<TorrentSearchFeatureEntry> = emptySet(),
 ) {
-    FlowHeader(state = state)
     when (state) {
         is BackupRestoreFlowState.Reading -> ReadingContent(state)
         is BackupRestoreFlowState.Preview -> PreviewContent(state, torrentSearchFeatures)
@@ -135,10 +135,12 @@ internal fun BackupRestoreFlowActions(
     }
 }
 
+/** 恢复流程专属的标题与状态摘要；与详情分开供页面编排，不依赖广告或页面会话。 */
 @Composable
-private fun FlowHeader(state: BackupRestoreFlowState) {
+internal fun BackupRestoreFlowHeader(state: BackupRestoreFlowState, modifier: Modifier = Modifier) {
+    // 状态图标与色彩沿用既有映射，拆出头部只调整顺序，不改变状态语义。
     val visual = state.statusVisual()
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             text = state.statusText(),
             style = MaterialTheme.typography.titleLarge,

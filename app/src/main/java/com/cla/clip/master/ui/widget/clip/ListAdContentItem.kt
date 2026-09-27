@@ -70,8 +70,8 @@ internal fun ListAdContentItem(
                     session = adConfig.session,
                     placement = adConfig.placement,
                     slotIndex = slotIndex,
-                    eligible = !adConfig.suppressed &&
-                        ListAdPlacementPolicy.singleColumnSlotIndex(contentIndex, slotEligible) != null,
+                    // 临时遮挡通过 suppressed 阻塞工作，不撤销资源资格。
+                    eligible = ListAdPlacementPolicy.singleColumnSlotIndex(contentIndex, slotEligible) != null,
                     requestEnabled = adConfig.requestEnabled && requestVisible,
                     canReveal = !adConfig.layoutBlocked,
                     modifier = Modifier.layout { measurable, constraints ->

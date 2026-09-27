@@ -8,35 +8,217 @@
 
 ### 广告位与展示契约
 
-独立 Play 包使用 GMA Next-Gen 1.4.0，保留国内包现有来源。共 16 个位置：home_feed_native、search_feed_native、detail_native、folded_feed_native、folded_search_native、recycle_feed_native、video_extract_native、video_download_progress_native、video_download_result_native、image_extract_native、image_download_progress_native、image_download_result_native、video_history_native、image_history_native、backup_overview_native、backup_restore_native。
+独立 Play 包使用 GMA Next-Gen 1.4.0，保留国内包现有来源。共 17 个位置：home_feed_native、search_feed_native、detail_native、folded_feed_native、folded_search_native、recycle_feed_native、video_extract_native、video_download_progress_native、video_download_result_native、image_extract_native、image_download_progress_native、image_download_result_native、video_history_native、image_history_native、backup_overview_native、backup_restore_native、backup_media_relocation_native。
 
-单列真实内容第 1、21、41…条之后插入；四列网格第 4、24、44…张之后插入，不足一行放在已有内容后。所有列表含普通/折叠搜索、下载记录都不设累计广告上限。下载记录图片按外层批次计数。空态、多选管理、纯错误、权限和确认弹层隐藏；图片候选勾选不属于管理多选。广告不进入 DAO、业务数量、选择集合或备份。
+单列真实内容第 1、21、41…条之后插入；图片提取、下载进度和结果页的四列网格只展示图片，广告放在网格外下方的独立固定容器中，每个阶段只有一个槽位，只有图片区域滚动。普通/折叠搜索、下载记录等单列信息流仍不设累计广告上限，下载记录图片按外层批次计数。空态和纯错误不申请广告；多选管理、临时权限界面及确认弹层阻止新增请求/揭示/点击，保留已显示素材；图片候选勾选不属于管理多选。广告不进入 DAO、业务数量、选择集合或备份。
 
-视频提取、下载/合并、下载结果三个独立单元；图片提取、下载进度、下载结果三个独立单元。备份主页和恢复流程广告位在标题栏下正文上方，正常滚动，不插入记录列表。恢复媒体重新关联和预览弹层不接入。媒体任务必须展示真实内容，纯进度或纯失败页面不请求。
+视频提取、下载/合并、下载结果三个独立单元；图片提取、下载进度、下载结果三个独立单元。备份主页沿用自动备份卡片下方的正文广告槽；恢复流程广告位位于状态标题和摘要之后、备份信息之前，正常滚动，不插入记录列表。恢复本地媒体关联页的独立广告位在标题和用途说明之后、关联详情之前，预览弹层不接入。媒体任务必须展示真实内容，纯进度或纯失败页面不请求。
 
 ### 实现与复用
 
 沿用 ad-api、Hilt 多绑定、选择器、会话保险丝、AppSetting 开关、生命周期观察；新增 ad-admob adapter 和按 source 的 UMP 隐私接口。宿主提供独立页面广告会话/布局协调器，广告不持有业务 Repository。SDK 类型不泄漏。统一列表位置规则与锚点算法为纯协作者。
 
-单列列表优先把广告作为稳定业务 Lazy item 外层 Column 的尾槽（广告不在业务卡片手势内部），保留原 Paging 索引与取消置顶行为，广告子树使用独立请求身份。这是渲染实现的取舍，不改变独立广告身份/数量/SDK 生命周期；网格首行与首广告共用全宽 Lazy 外壳，以便首批媒体可用就准备广告，后续广告为独立全宽条目。首条广告在首批真实内容出现且页面可见后准备，其余按锚点可见性请求；只处理已加载快照。
+单列列表优先把广告作为稳定业务 Lazy item 外层 Column 的尾槽（广告不在业务卡片手势内部），保留原 Paging 索引与取消置顶行为，广告子树使用独立请求身份。图片网格使用外层 Column 分配空间：网格占剩余高度，下方广告按实际素材高度独立测量；不再合并首行或向网格插入广告条目。首批真实图片出现且页面可见后准备唯一广告，图片追加、删除和滚动不改变请求身份；只处理已加载快照。
 
-每个页面会话/阶段/位置一次请求；阶段变化释放旧资源并作废迟到回调。4 秒广告请求超时，无填充/失败零占位。每页最多同时持有 3 个广告对象，仅限制驻留内存，不限制继续浏览出现新位置。搜索条件稳定 800ms 后请求；取消查询时释放旧会话，不增加搜索专属数量上限或 30 秒冷却。
+#### 图片网格与固定底部广告（2026-09-27，已完成）
+
+用户确认广告固定在整个图片列表下方，只有图片区域滚动，替代原第 4/24/44…张后混排的设计。`MediaAdGrid` 负责网格与广告的布局编排，继续复用 `PageAdSlot`、页面会话和网格锚点协调器。广告加载成功后占用底部高度，失败或无填充零占位；预览、确认和手指按压期间延续现有抑制及延迟尺寸变化约束。空图片不请求广告。三个图片阶段都通过共享组件接入，下载记录的批次列表不受影响。
+
+小屏保护：固定广告必须给图片区域保留至少 96dp（包含网格上下留白及可触摸内容）的可操作高度。独立 `MediaAdFooter` 先测量广告的完整自然高度，空间不足时不放置广告，并在下一次组合释放其请求；不裁切广告素材、不把整页改成滚动，也不让广告把网格挤成零高度。页面自身不足 96dp 时优先把全部空间交给图片且不请求广告。因素材过高退出的广告在本次会话的当前广告位内不重试；业务阶段的其他广告位及返回页面的新会话按最新空间重新评估，避免反复加载、展示和收起。
+
+崩溃原因：旧网格先生成 `contentKeys`，Lazy 内容回调随后遍历持续变化的候选列表，追加到第 15 张时可能读取只有 14 项的旧 key 列表。新增媒体快照 mapper 在组合阶段一次性绑定每张图片与稳定 key，网格数量、key、内容及滚动锚点均使用该快照；Lazy 回调不再读取原可变列表。保持四列和独立图片身份，移除仅服务首行合并的映射及对应旧测试。快照仅为当前 UI 的浅拷贝，业务实体仍由上层以不可变值替换；不引入持久化、备份字段、反射或序列化契约，无需 keep/R8 规则。
+
+测试门禁：先补媒体快照的追加（14→15）、清空/替换、重排身份及空集合回归，再接入布局；小屏空间保护另先补恰好放下、超限、视口过短及大素材的规则测试。运行 `:app:testDebugUnitTest`、`:app:compileDebugKotlin` 和 `git diff --check`。纯 Compose 测量与滚动接线不另造 JVM 样式测试，设备验收检查长列表滚动时广告固定、广告显示/收起的锚点、短列表、空态、预览、旋转和阶段切换；release/R8 未涉及稳定协议，不在本次验证范围。
+
+日志与诊断计划：复用现有广告首次请求、加载、曝光、失败和释放事件及其低敏字段；此次只改变宿主布局与内存快照，不新增逐帧、逐图片日志，禁止输出图片 URL、业务 key 或候选内容。
+
+验证结果：先写 4 项快照和 3 项底部空间规则测试，两轮首次运行均因对应入口尚未实现而在测试编译阶段失败，此时尚未复现设备上的 Compose 崩溃。最终执行 `.\gradlew.bat -g C:\Users\18883\.jdks\ms-17.0.15 :app:testDebugUnitTest :app:compileDebugKotlin '-Dorg.gradle.java.home=D:\Android Studio\jbr' --offline --console=plain --no-parallel --max-workers=1 --no-daemon '-Pkotlin.compiler.execution.strategy=in-process'` 成功，app 共 104 项单测、零失败/错误/跳过，新增 7 项全部通过；`git diff --check` 通过。独立复核发现的小屏零高网格风险已通过完整测高和图片空间优先规则修复，最终复核无剩余可操作问题。构建只有既有弃用/静态判断警告。本轮尚未安装或验收真机布局，固定位置、AndroidView 实际测高、广告显隐时锚点、小屏/大字体、旋转与真实 SDK 素材展示仍需设备验收；不将 JVM 快照测试等同于已复现并验证原崩溃。
+
+每次实际页面访问/阶段/位置首次请求；缓存命中复用原素材，容量淘汰或过期后仅下一次绑定可新建请求，无填充/加载失败同访问不循环。阶段变化或真正离开页面释放旧资源并作废迟到回调。AdMob 初始化与加载共享 15 秒超时，无填充/失败零占位。每页最多同时持有 3 个广告对象，仅限制驻留内存，不限制继续浏览出现新位置。搜索条件稳定 800ms 后请求；取消查询时释放旧会话，不增加搜索专属数量上限或 30 秒冷却。
 
 ### 布局与交互
 
+#### 全部广告位信息流样式候选（2026-09-27，历史比较）
+
+最新决定：用户已确认视频用 A1、非视频用 A2，媒体信息缺失时保守使用 A1；代码已完成并安装测试包，验收结果见下方。下面原始 A/B/C 和 A3 仅保留作比较记录，不再作为实施候选。
+
+用户希望 App 内所有广告采用与内容列表协调的信息流样式，以下记录最初候选，最终实施以下方 A1 / A2 小节为准。当前 Google/Play 包的 16 个位置已使用 Native 广告并共用 `AdmobNativeViewFactory`，统一素材排版与主题表现；“信息流”指呈现方式，不保证广告素材变成新闻或资讯内容。国内 CSJ/uni-ad 保留独立 adapter，其 SDK 模板可定制范围需在该渠道实际纳入实施时核对，修改 AdMob 工厂不覆盖国内来源。
+
+候选 A：全部位置统一紧凑图文卡。媒体在左、标题和正文在右，底部广告主与 CTA；普通字体参考高度约 160–200dp，视频媒体至少保留 120×120dp，小屏/大字体允许改纵排并增高。优点是连续阅读干扰较小、全局一致，代价是文字宽度较少、媒体视觉较弱。
+
+候选 B：全部位置统一标准大图卡。图标/广告主/广告标记在顶部，标题与正文紧凑排列，下面为按素材比例适配的媒体和底部 CTA；参考高度约 280–360dp，实际随素材和字体变化。优点是素材清晰、接近常见资讯流，代价是首页、搜索和工具页面占用更大空间。
+
+候选 C（建议）：统一设计语言，按页面使用 A/B 两种排版。首页、普通/折叠搜索、折叠列表、回收站、视频/图片下载记录以及备份总览/恢复使用紧凑卡；详情、图片/视频提取及有真实内容的下载进度/结果使用标准大图卡。两种排版共用颜色、圆角、排版层级、广告标记及 CTA 风格；空间不足/动态字体回退必须由具名配置或纯布局策略表达并测试，不以多个 Boolean 堆叠。代价是需要验收两种布局和页面映射。
+
+统一边界：广告标记与 AdChoices 清晰可见、CTA 仍由 SDK 管理，保留 NativeAdView/MediaView 素材注册和生命周期；样式不会决定素材行业或填充结果。参考复用 `ClipMasterCard`/主题 token 的视觉约定，不直接使用 `ListEntryCard` 的宿主整卡点击行为，也不使 feature 反向依赖 app。维持现有插入位置、数量、隐私、敏感内容及交互门控；本轮不把视觉改造扩成广告密度调整。尺寸为设计参考，不将文字/素材裁切成固定高度。
+
+日志与诊断计划：候选阶段没有运行时变化，不新增日志；实施时复用现有加载/曝光/释放及失败分类，必要时只追加稳定布局类型，不记录素材或业务内容。测试验证：选定后按 unit-test gate 判断新增布局决策/页面映射是否需测试先行；样式与 SDK 素材绑定用模块编译、既有单测及设备验收覆盖，重点检查深浅色、小屏、大字体、长标题、缺失可选字段、横竖图/视频、AdChoices、滚动锚点和点击边界。当前仅执行文档 diff 检查。
+
+#### A 方案进一步紧凑化（2026-09-27，候选比较记录）
+
+目标：合并原版独立的标记行和按钮底栏，以结构调整降低高度，不靠缩小字体或隐藏必需素材压缩。高度均为普通字体、常见手机宽度下的目标区间，不是固定裁切值；长标题、较长 CTA、小屏、大字体允许增高。示意素材不代表真实广告内容或已完成的设备验收。
+
+- A1 媒体横排卡：约 136–152dp。左侧保留 120×120dp MediaView，右侧组合提供时必显的图标、标题、广告标记、AdChoices 与 CTA，省略可选正文，不另设通栏顶部和底部。保留视频展示能力，适合希望继续接收图文/视频而压缩外围留白的情况；宽度不足时内容自适应增高。
+- A2 小图标摘要卡（建议）：非视频素材约 100–120dp。左侧 56–64dp 的图标，右侧标题和可选短正文，下行合并广告标记、广告主与 CTA；不展示可选主图。标题空间优先，正文选择完整展示或省略，不为一行效果任意截断素材。信息与高度较均衡。
+- A3 单行紧凑条：非视频素材约 80–96dp。左侧约 40dp 图标、中间标题及广告标记、右侧 CTA，AdChoices 独立预留角落空间；省略可选主图与正文。占位最小，但正文解释与素材展示更少，长标题/CTA 更容易触发增高。
+
+视频边界：Google 原生指南允许不展示非视频主图，图标在提供时仍必须显示；视频素材必须呈现，MediaView 至少 120×120dp，不能收到视频后仅隐藏媒体来维持超低高度。A2/A3 默认设计为非视频紧凑、视频回退 A1；如果用户要求所有广告都保持约 100dp 以下，需要另确认仅非视频投放及实际 SDK/广告单元配置能力，不能承诺无代价缩小所有素材。素材类型自适应属于同一全局样式策略，不恢复上一轮 C 的按页面分配。未提供可选图标时让文字区自然扩展，不伪造广告主图标。[Google 原生展示要求](https://support.google.com/admob/answer/6329638?hl=zh-Hans)。
+
+复用、日志及验证：延续主文档现有 adapter、SDK 点击/曝光绑定与主题 token，生产组件/方法未变更；本轮仅文档和交互示意，未新增日志、持久化字段或 JVM 单测。选定后若新增媒体类型、字段可见性、布局回退等纯规则，先补合成 fixture 回归测试，再实现并执行模块编译及设备验收，重点覆盖视频回退、必需图标/CTA/AdChoices 和长文本。当前执行 `git diff --check`，不以原型代替 Android 或 release/R8 验证。
+
+显示前识别核实（2026-09-27）：用户要求若不能在显示前区分视频/非视频，则统一使用 A1。已核对项目实际缓存的 GMA Next-Gen 1.4.0 API 与官方文档，`NativeAd.mediaContent?.hasVideoContent` 可在加载成功取得广告对象后、创建/挂载 NativeAdView 前读取。现有 `AdmobSlotSession` 已按加载成功→保存广告对象→`revealIfAllowed()` 的顺序执行，因此可以先决定版式再一次性显示，无需先展示后切换；发出请求前则无法预知本次返回的具体素材类型。若媒体信息缺失，建议保守使用 A1，不把未知当成非视频。当前只完成能力核实，未修改渲染代码。[MediaContent API](https://developers.google.com/admob/android/next-gen/reference/com/google/android/libraries/ads/mobile/sdk/nativead/MediaContent)。
+
+#### A1 / A2 最终实施（2026-09-27，已完成）
+
+用户确认全部 16 个 AdMob 广告位共用按素材类型选择的紧凑布局；不修改国内 SDK 模板。`AdmobNativeLayoutPolicy` 在创建 View 前读取视频标志：true/null 使用 A1，只有明确 false 使用 A2。请求身份、展示门控、列表锚点和释放仍复用 `AdmobSlotSession`，不因换主题或重组重新请求广告。
+
+`AdmobNativeViewFactory` 仅编排两种布局和 SDK 注册；`AdmobNativeAssets` 复用两种布局的素材控件创建及主题着色。A1 左侧 120×120dp MediaView 使用 FIT_CENTER，右侧广告标记、提供时必显的 32dp 图标、完整标题和 CTA；省略正文。A2 上行为 56dp 图标和完整标题/可选短正文，下行为广告标记、广告主和 CTA，主媒体不创建，注册时传入 SDK 支持的可空 MediaView。短正文仅完整展示至多 40 个 Unicode 码点且无换行的非空内容，其余省略，禁止任意截断。两种卡片采用左、右、上 14dp、下 5dp 内边距、主题颜色、10dp 圆角和 1dp 描边，CTA 至少 40dp 高；A1 最小媒体及边距合计 139dp，A2 按实际素材测量，长标题、CTA、大字体允许自然增高，不固定整卡高度。右上角给 AdChoices 预留横向空间，不裁切 SDK 浮层或添加整卡点击。
+
+测试与取舍：布局选择和短正文规则先补失败测试，再实现；原生 View 样式通过编译和设备验收，不新增仅镜像尺寸常量的 JVM 测试。SDK 测试广告不保证每次返回视频，未取得的视频/长素材需明确标记待验收。没有新增存储、备份数据、反射模型或外部协议，本次不增加 keep；正式 ID/R8 仍属发布前验收。
+
+日志与诊断计划：保留现有加载、曝光、失败、释放事件；新增 debug `AdmobLayout` 的布局选择日志，仅记录 `A1/A2` 和可空视频布尔值，不打印标题、正文、广告主、广告 ID 或响应。通过日志关联展示成功和截图检查，release 不输出该日志。
+
+开放问题：布局选择已确定；小屏、大字体、长 CTA、缺失图标和不同视频比例仍需设备样本验收。共享能力完整设计归本主文档，页面接入边界未变，无需逐页重复修改文档。
+
+本轮验证：先添加布局策略测试，首次运行因策略尚未实现而编译失败；实现后 `:feature:ad-admob:testDebugUnitTest` 的新增 4 项与既有 3 项全部通过。`:app:assembleDebug`（包含广告模块及宿主编译）和 `git diff --check` 通过，独立只读审查未发现阻塞问题。保留数据安装至 Samsung SM-G9730 / Android 12；详情页非视频测试素材记录 `layout=A2 hasVideo=false`，加载 1088ms、曝光 1319ms，SDK 验证器提示 `No implementation issues found`，截图确认大图和长正文已省略、图标/标题/广告标记/CTA 正常。初次冷启动请求曾超过现有 4 秒限制而零占位，本次未扩大超时或重试范围。当前未取得视频样本，A1 真机播放、大字体/长 CTA、浅色和全部页面逐项验收仍待补充；正式 release/R8 未运行。无备份字段变化，不需修改备份逻辑。
+
 SDK 成功仅变为待展示。按下、拖动、滚动、惯性、侧滑动画和确认操作期间不改变布局。展示/收起前保存首个可见真实内容 key/offset，之后恢复；锚点被删依次找后继、前驱、起点，原有置顶纠偏优先。SDK 回调不得触发下载/删除/恢复按钮或导航。请求保留同步的 `canRevealNow` 回调，SDK 同帧返回也必须读取实时按压状态，不能只用重组前的布尔快照。撤回同意立即释放，可在按下期间短暂保留无交互等高占位，松手即清除。原生素材和 AdChoices 不裁切，不以过渡动画掩盖布局跳动。
+
+#### 广告卡片边距对齐（2026-09-27，已完成）
+
+原因：广告外侧已继承列表或页面的水平边距，但原 NativeAdView 内部仅 8dp 留白且没有描边，深色模式下与页面背景混在一起，和现有内容卡片不一致。全部 16 个 AdMob 位置共用调整后的原生外壳：首次改为四周 14dp 后，用户反馈垂直留白偏大，先改为左右 14dp、上下 5dp，最新确认顶部恢复为 14dp、底部保持 5dp；沿用 10dp 圆角，增加 1dp 的 MaterialTheme outlineVariant 描边，背景仍使用 surface；广告标记、CTA 与 AdChoices 保持完整，视频 MediaView 仍为 120×120dp。A1/A2 的素材选择与生命周期契约保持原样，外边距继续由各页面维护，避免重复缩进。
+
+复用与边界：继续扩展 AdmobNativeAssets 的主题着色和 AdmobNativeViewFactory 的现有内容容器，水平留白、圆角和描边对齐 [共享卡片方案](shared_card_component_plan.md) 的 ClipMasterCardDefaults，顶部留白为 14dp、底部按用户要求紧凑到 5dp。SDK 模块不能反向依赖 app 中的 ClipMasterCard，而且完整公共卡片会裁剪子树，因此不直接包裹它；本次复用 MaterialTheme 色板，不新建通用卡片体系或修改共享卡片默认值。
+
+日志与诊断计划：纯 UI 留白和描边调整，无新副作用，不新增日志；继续用现有布局、加载及曝光日志配合截图验收。单元测试门禁判定：不新增测试、不走 TDD，避免仅镜像尺寸常量的 JVM 测试；运行 debug 编译/构建、git diff --check，并在可用设备检查卡片对齐与 SDK 验证器。无数据、备份或反射协议变化，不需要新增 keep；本轮不运行 release/R8。小屏、大字体和未取得的视频样本仍需按既有发布待办验收。
+
+验证结果：`:app:assembleDebug`（含广告模块与宿主 Kotlin 编译）通过，耗时 2m58s；`git diff --check` 通过。保留数据安装到 Samsung SM-G9730 / Android 12，首页 A2 在 4035ms 加载、4325ms 曝光，详情页在 1028ms 加载、1179ms 曝光；返回首页再次加载和曝光成功。截图确认广告左右边界与相邻卡片对齐，图标、完整标题、短正文、广告标记和 CTA 均在新增留白内显示；首页和详情页 SDK 验证器均为 `No implementation issues found`。当前取得两种非视频素材，视频、小屏、大字体、浅色与其他页面逐项视觉验收仍待补充。
+
+上下 5dp 后续验证：`:app:assembleDebug` 通过（2m17s），`git diff --check` 通过；已保留数据更新手机安装包。首页浅色主题 A2 加载 5777ms、曝光 6173ms，截图确认上下留白收紧，左右仍与相邻卡片对齐，图标、标题、广告标记和 CTA 完整显示。本轮未新增/运行 JVM 单测，未取得视频样本，未运行 release/R8；原因与边界沿用上方纯样式验证策略。
+
+#### 上侧留白与各页面左右边框对齐（2026-09-27，已完成）
+
+用户确认广告素材内边距为左、右、上 14dp，下 5dp。复查全部 16 个广告位的页面外边界：广告的内边距只控制素材留白，广告外边距必须跟随所在页面的内容卡片或内容区域，不能在共享 PageAdSlot 中固定添加一套横向 padding。
+
+| 页面/广告位 | 同页对齐边界与实施 |
+| --- | --- |
+| 首页、搜索、折叠列表、折叠搜索、回收站（5 个） | 已共同继承 ClipResultList 左右 10dp contentPadding；保持，无额外缩进 |
+| 详情（1 个） | 已共同继承页面 Column 左右 12dp；保持 |
+| 视频/图片下载历史（2 个） | 已共同继承列表左右 12dp contentPadding；保持 |
+| 图片提取、下载进度、下载结果（3 个） | 已由网格 contentPadding 与 MediaAdFooter 各取同一 12dp 边界，广告横跨整组图片；保持 |
+| 视频提取、下载进度、下载结果（3 个） | 给广告补上与 MediaSourceSummary 相同的 16dp 横向留白；下载页还共同继承 PageBackground 默认 8dp，合计距页面边缘 24dp |
+| 备份总览（1 个） | 已复现广告贴屏边、普通卡片左右各 16dp；广告补同样的 16dp 外边距，不修改普通卡片或备份表单 |
+| 恢复流程（1 个） | 已共同继承正文 Column 左右 20dp；显式让广告填满该可用宽度，避免内容宽度影响边界 |
+
+实现复用现有 AdmobNativeViewFactory 的两种内容容器、PageAdSlot 的 modifier 接线与各页面父布局；不增加全局广告外边距、不新建组件、不改变零高失败占位、生命周期、请求或备份行为。备份与视频页面文档只补接入摘要，完整布局契约以本文为准。
+
+日志与诊断计划：纯布局参数修正，沿用现有加载、曝光和布局日志，不新增逐帧测量或内容日志。测试门禁判定不新增 JVM 单测、不走 TDD：没有新增派生规则或状态机，尺寸和对齐通过 debug 编译、真机截图、必要时只读取边界矩形验证，不写镜像常量的测试。执行 `:app:assembleDebug`、`git diff --check`；真机重点检查备份总览和已有可用广告页面。恢复预览/视频任务无可用样本时记录待验收，不创建或执行真实恢复/下载任务来验证外观。无数据协议或反射依赖变更，不调整备份/keep，release/R8 沿用发布前待办。
+
+验证结果：`:app:assembleDebug` 通过（2m38s），`git diff --check` 通过；已保留数据安装到 Samsung SM-G9730 / Android 12。真机复现备份总览原广告贴屏边后，更新包中广告与上下自动备份/本地备份卡片左右边框对齐；A2 加载 1147ms、曝光 1349ms，SDK 验证器显示 `No implementation issues found`。首页 A2 亦确认顶部留白恢复、左右边界仍与内容卡片一致。全部 16 个位置已做代码边界审计；本轮未进入真实恢复预览或视频任务，相关页面、视频广告素材、小屏/大字体与 release/R8 仍待视觉/发布验收，未新增或运行 JVM 单测。
+
+#### 恢复页正文间隔与媒体关联广告（2026-09-27，已完成）
+
+用户首次截图确认恢复预览/结果页的广告紧贴正文，已通过共享 `AdHeaderLayout` 补充条件分隔；后续截图进一步明确位置：恢复页按“状态标题与摘要 → 广告 → 备份信息/报告”排列，媒体关联页按“标题与用途说明 → 广告 → 关联详情”排列。广告前后各留 16dp；前侧沿用正文区块间距，容器仅当真实广告高度大于零时在下方附加 16dp。不加载、无填充、失败或不符合资格时广告容器零高，前后业务区块只保留原有的一处 16dp 间隔。两页左右边界均继承正文 20dp；素材内边距仍为左/右/上 14dp、下 5dp。
+
+新增第 17 个独立原生广告位 `BackupMediaRelocationNative` / `backup_media_relocation_native`，放在“恢复本地媒体关联”标题与用途说明下方，和正文一起滚动，不覆盖底部开始、取消或完成操作。`MediaRelocationUiState.isAdEligible` 只允许 ReadyToConfirm、PermissionRequired、NoWork、Result；Idle、Estimating、PermissionChecking、Running、Error 不请求/展示。页面会话按本地 restoreTaskId 隔离，任务标识不传给 SDK；恢复广告隐私、15 秒预算、ON_PAUSE 保留、STOP/DESTROY/真正离开释放、返回按需重载沿用共享宿主。权限选择器和运行提示弹窗通过 suppressed 阻止新增请求、布局展开和点击，不把普通遮挡当作资格撤销。纯扫描阶段按业务资格释放，回到结果阶段再按需请求。
+
+位置调整复用既有内容渲染与广告容器：恢复状态头部从内容函数中独立为 `BackupRestoreFlowHeader`，页面编排头部、广告和详情；媒体关联标题说明移到广告前。滚动协调器额外接收广告之前的实测内容高度，只在滚动越过此前缀时补偿广告高度变化，收起广告最多回到前缀末端，不移动仍在阅读的标题说明；默认前缀为零，其他页面保持原规则。先补前缀阅读不动、边界和下方正文补偿的失败测试，再实现规则。纯布局顺序通过 debug 构建与真机预览截图验证，不为文案或尺寸常量添加镜像单测；沿用现有日志，不新增逐帧测量日志，数据/备份/反射契约和 release/R8 边界保持。
+
+位置调整验证：新增 2 项滚动锚点测试，首次因前缀高度参数尚未实现而在测试编译阶段失败；实现后执行 `:app:testDebugUnitTest --tests 'com.cla.clip.master.ad.*' --tests 'com.cla.clip.master.ui.page.backup.BackupRestoreStateTest' :app:assembleDebug` 成功（2m15s），45 项单测零失败/错误，`git diff --check` 通过。已保留数据安装到 Samsung SM-G9730 / Android 12：既有备份预览中，加载前状态摘要与备份信息之间只有原有区块间距；A2 加载 1214ms、曝光 1419ms，加载后顺序为状态摘要、广告、备份信息，前后间隔和左右边界正确，SDK 验证器无实现问题。截图留存于 `build/ad-inline-position-preview-final.png`。未执行实际恢复或媒体扫描，恢复结果及媒体关联页面的新位置仍待完整真机验收；本轮不新增 UI 常量单测，不运行 release/R8，无持久化或备份逻辑变化。
+
+构建配置继续自动为 debug 生成官方测试广告 ID；release 新增必填 `admobReleaseBackupMediaRelocationNativeAdUnitId`，与其他 16 个单元保持独立。位置名称表、API 枚举和 SDK 映射同步更新，错误提示从表长度生成。未改恢复、媒体扫描/写回、备份协议、Room、dirty 或用户设置；广告状态不新增持久化，显式 placementId 仍是日志稳定 code，无新增反射模型或 keep 需求。
+
+日志与诊断计划：复用 DEBUG 级 request_started/loaded/impression/released、原因码和耗时，新增位置仅以封闭 placementId 区分；失败沿用 SDK 现有诊断，不打印 taskId、备份文件、媒体 URL、权限列表、广告单元 ID 或用户内容。不新增间距或滚动逐帧日志。单元测试门禁：先补媒体关联全部状态的资格测试并确认失败，再实现；运行备份状态、广告宿主、ad-api、ad-admob 单测及 debug 构建，间距用截图验收，不新增只镜像 16dp 常量的单测。验证正常展示、零高空槽、页面离开返回和权限/弹窗暂停；不为外观验收实际执行恢复或媒体扫描。正式新增单元与 release/R8 在发布配置齐备后验收。
+
+验证结果：新增 2 项资格测试覆盖全部 9 种业务状态，首次因资格入口尚未实现而在测试编译阶段失败；实现后执行 `:app:testDebugUnitTest --tests 'com.cla.clip.master.ui.page.backup.BackupRestoreStateTest' --tests 'com.cla.clip.master.ad.*' :feature:ad-api:testDebugUnitTest :feature:ad-admob:testDebugUnitTest :app:assembleDebug` 成功（4m12s），共 66 项单测、零失败/错误，`git diff --check` 通过。保留数据安装至 Samsung SM-G9730 / Android 12，使用既有本地备份只打开预览：广告未加载时无额外空白，A2 加载 1215ms、曝光 1522ms，广告下方与正文间隔及左右对齐正常，SDK 验证器为 `No implementation issues found`。恢复结果和媒体关联页需经过实际恢复才能从当前界面进入，本轮未执行恢复或媒体扫描，新增页面的真实 SDK 展示、权限返回、结果阶段及小屏/大字体仍待设备验收；不将共享布局真机验证和资格单测等同于全流程验证。新增正式单元尚待配置，release/R8 未运行；无备份数据契约变化，无需修改备份覆盖。
+
+### 暂停保留与真实离开释放（2026-09-27，已完成）
+
+用户提出 ON_PAUSE 不处理广告资源，仅真正离开页面、切换 Tab、ON_STOP、ON_DESTROY、撤回隐私许可时释放，再择机加载。用户已确认实施；本节取代下方历史章节的 RESUMED 离开即释放及 ON_PAUSE 关闭规则。
+
+确定采用：ON_PAUSE 不主动销毁、清空驻留账本或创建新请求身份；短暂暂停后 ON_RESUME 复用仍有效的原素材。已经开始的请求可完成并暂存，但新增请求及新素材展开仍需页面实际可用、无阻塞、满足隐私资格；真正离开/停止后取消等待、销毁资源，迟到结果只销毁。ON_STOP 和 ON_DESTROY 可连续到达，释放必须幂等。撤回隐私后必须重新取得许可才能请求，不能仅因恢复 RESUMED 就加载。
+
+普通确认弹窗、菜单、预览遮挡只控制布局与交互，不作为隐私资格撤销处理；关闭后恢复原广告。真实导航切页、稳定选中 Tab 改变才结束访问，短斜滑、回弹及导航转场的中间 STARTED 状态不能冒充离开。页面拥有广告资源，Lazy item 退出组合仅表示视图解绑，不等于页面离开；本次覆盖离屏回滚，配套每页有限素材缓存，沿用最多 3 个对象的预算及最久离屏淘汰，不能为长列表无限持有 Activity/View。容量淘汰、加载失败、渲染失败及素材失效仍需安全清理。
+
+重新加载时机：真实释放后再次进入可见且可交互页面，业务数据与广告资格满足、广告槽需要展示时按需加载；普通暂停恢复不创建新 nonce、不重复请求。15 秒预算和同次访问不循环重试的限制保持，取消/过期后的重新请求身份需要在实施时与有限缓存一并定义，避免因重组自动重试。
+
+实施边界：必须同时调整 PageAdSessionOwner 的访问边界、宿主的资源存活/请求/展示许可、AdMob adapter 释放监听和弹窗 suppressed 接线，不能只删除 ON_PAUSE 的 close，也不能把所有 RESUMED 判断机械替换成 STARTED。复用现有会话、隐私控制器、租约预算和布局协调器；SDK 素材缓存留在 adapter 边界，业务层不持有 SDK 类型。无持久化或备份协议变化。
+
+日志与诊断计划：实施时为释放追加 DEBUG 级封闭原因（page_left、tab_changed、lifecycle_stop、destroyed、privacy_revoked、evicted 等），关联低敏请求序号，复用加载/曝光日志；不记录业务 key、nonce、素材或剪贴正文。重复释放不重复记账，不输出逐帧/逐滚动日志。释放日志随本轮实现落地，使用封闭原因码。
+
+测试计划：实施前补失败回归保护 PAUSE→RESUME 同一素材、STOP→RESUME 新访问、普通弹窗开关不重载、真实换页释放、隐私撤回禁止恢复、STOP/DESTROY 幂等、离屏解绑/回滚复用与容量上限、迟到回调隔离；之后跑受影响模块单测和 debug 编译，真机检查弹窗、系统界面、导航/Tab、后台及列表回滚。视频素材在临时遮挡时的播放行为需按实际 SDK 能力验收，不将资源保留等同于保证媒体播放状态。本轮先跑失败回归，再执行受影响模块单测、debug 构建和可用设备验证。
+
+实现拆分：ad-api 增加无 SDK 类型的单槽资源所有者和封闭释放原因；PageAdSession 持有最多三个所有者，PageAdSlot 独立负责绑定与布局。AdMob 会话保留素材/View，离屏只解绑，真正释放才销毁。STARTED 控制保留，RESUMED 控制新增请求和揭示。容量淘汰或一小时过期后下一次挂载可用新身份请求；失败/无填充仍记入本次访问历史，禁止循环重试。小屏主动隐藏属于业务不适用，仍释放资源。
+
+执行顺序：资源/生命周期回归 → API 与会话所有权 → SDK 解绑/再绑定 → 弹窗与列表接线 → 单测、debug 构建及真机验证。新类型为纯内存编译期契约，无新增反射或序列化，无持久化/备份变更。Release/R8 按既有正式发布门禁执行。
+验收结果（2026-09-27）：广告宿主 38 项、ad-api 16 项、ad-admob 7 项共 61 项单测通过，`:app:assembleDebug` 成功（2 分 34 秒），`git diff --check` 通过。回归先复现容量淘汰后不可重试（2 项失败）以及暂停时仍能创建资源（1 项失败），修复后通过；新增所有者、生命周期及绑定身份测试覆盖关闭重入、缓存复用、旧解绑/坐标回报隔离。原有租约测试的“淘汰永久禁止重试”预期调整为下一次绑定可申请；失败记录仍保持禁止循环。
+
+真机已安装新版：冷启动请求 1 加载约 4.1 秒并曝光；管理多选开关、通知面板开关和离屏回滚继续使用请求 1，无 Released 或新请求。稳定切 Tab 后释放（组合先退出时 reason=page_left），返回请求 2 加载/曝光成功。Activity 事件日志显示 18:50:47.830 PAUSE 未释放，18:50:48.408 在 STOP 边界释放（lifecycle_stop），恢复后请求 3 曝光。详情请求 4 已曝光，打开/取消删除确认弹窗保持该请求，真正返回首页后释放并产生请求 5。未点击广告或执行删除；未发现本进程 AndroidRuntime 致命异常。
+
+审查收敛：新旧 Lazy 组合及 SDK 外壳均按绑定身份隔离；SDK 视图搬移同时登记新身份，避免旧 onDispose 拆掉新父节点。请求许可独立传到 SDK.start，缓存回绑不绕过视口/前台门禁。临时阻塞同时限制触摸、键盘焦点和无障碍子树。释放日志只有封闭原因，不打印业务内容。SDK View 接线依赖 Android，采用编译、代码审查与真机验证，不用模拟 JVM View 测试替代。
+
+未验收边界：正式 release/R8、全部 16 个位置逐页人工验收、完整 TalkBack/外接键盘操作、真实 UMP 撤销及一小时实时间隔尚未执行；隐私/过期清理已接入，但这些平台场景保留发布前验证。UIAutomator 在正常/阻塞状态均未暴露 SDK 资产节点，不能据此宣称无障碍恢复已经验收。未更改反射/序列化协议与备份数据，因此没有新增 keep 或备份迁移；视频播放位置是否保留仍由 SDK 行为决定。
+### 首页滚动广告会话修复（2026-09-27，已完成）
+
+真机在同一首页进行短斜滑、未切到其他 Tab 时复现已曝光广告 `released` 后立即出现新请求（requestId=3→4）。根因是 MainPage 仍以 `settledPage == index && !isScrollInProgress` 判断页面可见，滚动被误报为离开/返回，触发 PageAdSessionOwner 重建访问。普通纯竖滑不一定触发，因此需覆盖轻微横向分量、拖动回弹和程序切 Tab。
+
+复用下载历史页已有约定：稳定选中页决定会话可见性；Pager 拖动及惯性仅阻止新素材展开，不销毁当前广告。抽出 app/ad 内部 `AdPagerPageState` 表达这两个独立状态，首页与下载历史 Pager 共用规则；首页列表通过布局门控接入现有 ClipListAdConfig。真实 Tab 切换、导航与后台仍沿用原释放/返回重载逻辑，不改 SDK、15 秒预算及 A1/A2。
+
+测试先保护“拖动不结束访问、回弹不换 nonce、真正换 Tab 后新建会话”，用旧判定确认失败后修复；运行 app 广告单测及 debug 构建，真机对照相同短斜滑前后的请求/释放序列。日志复用现有 request_started/loaded/impression/released 与请求序号，不记录剪贴内容和业务 key、不新增高频滚动日志。列表按第 1/21/41 条内容插入，以及 Lazy 离屏退出组合即释放、同一访问不重新请求已释放位置的原策略保持；离屏回滚恢复广告需要另行设计页面级有限缓存，不在本次手势误判修复中引入。无持久化、备份协议或反射/keep 变化；SDK 未修改，release/R8 待发布统一验证。
+
+验收结果：旧判定下 3 项新增回归测试有 2 项预期断言失败；修复后 `:app:testDebugUnitTest --tests com.cla.clip.master.ad.* :app:assembleDebug` 成功，32 项广告单测零失败，debug 编译/打包及 `git diff --check` 通过。SM-G9730 Android 12 保留数据安装后，首页 requestId=1 加载并曝光；连续两次相同短斜滑/回弹及一次轻微竖滑均没有 released 或新请求，截图确认原广告仍在。随后真正切到“我的”出现释放，返回首页 requestId=2 在 1441ms 加载、1736ms 曝光。只读代码审查无阻断问题。未修改 SDK、持久化和混淆协议；未跑 release/R8，其他设备及更大列表离屏回滚行为仍按上面的原策略边界。
+
+### 页面返回重新加载（2026-09-27，已完成）
+
+原因：真机首页在 4 秒时超时释放，约 6 秒才收到成功回调；已显示的广告在切后台时释放，原会话的 `acquired/attempted` 却继续阻止恢复。用户确认 AdMob 总请求预算改为 15 秒，并要求所有页面返回后重新加载。
+
+历史实现（已由本轮暂停保留方案替代）：共享 `rememberPageAdSession` 使用独立 `PageAdSessionOwner` 管理每次可见访问，直接监听导航 Lifecycle 的 RESUMED 边界及页面明确传入的 `visibleToUser`，避免后台帧暂停时状态流合并掉离开/返回边界。离开时立即停用并清空旧会话驻留，返回时创建独立 `PageAdSession`（新 nonce、新请求账本）；旧槽的释放或迟到回调只能操作旧对象，不影响新请求。AdMob adapter 同步监听 ON_PAUSE/ON_DESTROY 关闭 SDK 会话，不依赖后台组合帧来取消加载和销毁素材。业务 `enabled`、敏感内容、隐私、弹窗和多选仍是资格限制，不能单靠资格恢复刷新会话。普通重组、分页追加或同页失败不自动循环请求。
+
+首页 Tab 可见性与下载记录稳定选中页通过 `visibleToUser` 接入；下载记录横向拖动只阻止布局揭示，不冒充页面离开，也不销毁现有广告。其他 16 个广告位置继续使用同一个共享入口，覆盖详情、搜索、折叠、回收站、提取、下载阶段及备份流程。现有安全开关、敏感内容规则及保险丝仍优先，返回不绕过这些限制。所有后台请求仍随离开立即取消，不等待 15 秒结束。15 秒调整仅针对当前 AdMob adapter，国内来源保留各自请求超时。
+
+测试验证：先用旧行为的 owner 骨架复现“返回仍使用旧请求账本”，再实现可见访问切换；测试返回可重试、同页不可重试、资格恢复不重置、旧回调隔离、隐藏与销毁不产生请求。执行 app 广告单测、ad-admob 单测及 debug 构建，真机核对首页冷启动、切后台返回和详情返回的请求/曝光。布局和 SDK 网络回调依赖设备，不用只检查 15000 常量的单测替代实际加载验证。
+
+备份零高槽补充：真机确认 LazyColumn 会跳过独立零高 `ad_header`；临时请求回到顶部虽然启动了加载，广告展开后仍因正文 key 保持而退出组合。最终复用首页“广告位于正文尾部并共用稳定容器”的结构，将广告放在自动备份卡之后，与首卡放入同一个 `auto` 条目的 Column；无广告时由正文提供真实高度，不添加占位、不主动滚动、不改变正文卡片顺序。广告放在首卡之后也使原正文顶部偏移不受广告展开/收起影响。删除临时滚动恢复规则及对应测试，既有锚点协调器保持不变。此项属于 Android Lazy 布局集成修复，采用真机失败复现→修复→请求及曝光验证，未新增模拟 Compose 实现的 JVM 测试。日志继续复用请求及曝光事件。
+
+首卡正文单独测量高度并传入现有 `contentHeights`，广告尾部独自可见时使用下一张真实正文卡作锚点，避免页面返回或资格撤回收起广告时跳动；测量仅驻留 UI 内存。
+
+验收结果（2026-09-27）：运行 `:app:testDebugUnitTest --tests com.cla.clip.master.ad.* :feature:ad-admob:testDebugUnitTest :app:assembleDebug` 成功，app 广告相关 29 项及 ad-admob 7 项，共 36 项零失败；`git diff --check` 通过。回归测试先复现旧 owner 的 3 项失败，再验证修复。最终包保留数据安装至 SM-G9730（Android 12）：首页冷启动 6414ms 加载、6842ms 曝光，已超过旧 4 秒预算仍成功；备份页无需滚动，requestId=2 在 973ms 加载、1150ms 曝光，后台→HOT 返回后 requestId=3 在 1091ms 加载、1294ms 曝光，SDK 原生验证器无实现问题。前一轮同一生命周期实现已验证首页后台返回、详情后台返回以及详情返回首页均生成新请求并曝光。只读审查已处理首卡正文与广告尾部的锚点边界；未逐一真机验收全部 16 个位置，release/R8、其他设备和网络失败场景留待发布验收。测试包仍使用官方测试广告。
+
+日志与诊断计划：复用 DEBUG 级 `request_started/loaded/impression/released`、`AdmobLoader` 请求序号及 `admob_timeout`，通过离开释放、返回新请求序号确认生命周期；不新增高频可见性日志，不输出 nonce、业务 key、剪贴内容、URL 或广告单元。无持久化、备份或反射协议变化，不新增 keep；release/R8 仍待发布验收。
 
 ### 构建、隐私和备份
 
-仓库 `gradle.properties` 默认设置 enableAdmobDebugAdFeature=true、enableAdmobReleaseAdFeature=false、appDistribution=play，直接运行 debug 即接入 AdMob 测试模块，play 禁止国内 SDK。命令行仍可覆盖开关；配置脚本在属性缺失时保留 false/domestic 的保守兜底。宿主暴露 IS_PLAY_DISTRIBUTION、ADS_ADMOB_ENABLED。debug 固定 Google 测试 App/Native ID；正式参数为 admobReleaseAppId 与 admobRelease{PlacementName}AdUnitId，16 个正式单元独立且拒绝测试 publisher。正式参数齐全后再开启 release，避免配置期校验阻断 debug。Play 更新入口转商店，禁止外部 APK 更新。
+仓库 `gradle.properties` 默认设置 enableAdmobDebugAdFeature=true、enableAdmobReleaseAdFeature=false、appDistribution=play，直接运行 debug 即接入 AdMob 测试模块，play 禁止国内 SDK。命令行仍可覆盖开关；配置脚本在属性缺失时保留 false/domestic 的保守兜底。宿主暴露 IS_PLAY_DISTRIBUTION、ADS_ADMOB_ENABLED。debug 固定 Google 测试 App/Native ID；正式参数为 admobReleaseAppId 与 admobRelease{PlacementName}AdUnitId，17 个正式单元独立且拒绝测试 publisher。正式参数齐全后再开启 release，避免配置期校验阻断 debug。Play 更新入口转商店，禁止外部 APK 更新。
 
 2026-09-26 调试默认值调整仅复用既有模块装配、测试 ID、来源选择和 UMP 流程，不绕过隐私资格、敏感内容、页面可见性或交互门控；不新增组件、类、方法、持久化字段及备份契约。未新增单测或采用 TDD，因为仅切换已有构建参数并修正注释，没有新增可独立表达的业务规则；通过默认配置的 APK 构建、宿主与广告模块既有单测，以及生成配置检查验证。日志继续沿用下节既有低敏事件，无需新增日志。正式 release/R8 待真实 ID 配齐后验证，真机广告填充仍需设备验收。
 
 UMP 每启动刷新；canRequestAds 是 Google 请求资格依据，不能把国内隐私弹窗、旧缓存、表单关闭等同于授权。入口按 UMP 要求展示；用户改变选择立即释放旧广告。SDK 主进程按需后台初始化且幂等。广告与同意临时状态不进入本地/WebDAV 白名单，不触发 dirty，核对系统备份排除。广告模块不接收用户正文、搜索词、Cookie、WebDAV 凭据、文件名、路径或完整业务模型。
 
+### WorkManager 编译依赖修复（2026-09-27，已完成）
+
+默认 AdMob 配置通过 adapter 的 `implementation` 间接给宿主运行时引入 `guava:32.0.0-android`，并将 `listenablefuture` 解析为空占位版本 `9999.0-empty-to-avoid-conflict-with-guava`。编译/运行时一致性约束把空包版本同步到宿主编译类路径，但 Guava 本体未暴露到该类路径，导致 WorkManager 的 `ListenableWorker.startWork()` 返回类型缺失。相同源码、缓存下，JDK 17 的 Java/Hilt 编译通过，Android Studio JBR 25.0.3 的 `:app:compileDebugJavaWithJavac` 已复现缺少 `ListenableFuture` 的原始错误；缓存目录名不代表实际编译 JDK。
+
+修复复用 `gradle/libs.versions.toml` 统一声明 Guava 版本和别名，在 `app/build.gradle.kts` 的 WorkManager 依赖旁显式加入 `implementation(libs.guava)`，使用已解析的 `32.0.0-android`，本次不升级 SDK 或其他库。宿主编译及运行时都获得真正包含接口的 Guava；不强制 `listenablefuture:1.0`，不导出广告 SDK，不改 IDE/JDK 设置或全局解析规则。所有宿主变体均声明 Guava，因此无广告变体也会新增该运行时依赖，包体影响在发布验证时评估。
+
+测试门禁：仅调整依赖声明，不新增业务规则、组件、类、方法或 JVM 单测；JVM 单测无法替代实际 JDK/Gradle 编译类路径验证。采用修复前失败的真实编译任务作为回归基线，修复后使用 JBR 25 验证 `:app:assembleDebug`、`:app:testDebugUnitTest`、编译/运行时 `dependencyInsight` 和 `git diff --check`。本次不改变序列化、反射、keep 或备份契约，不新增运行时日志；构建诊断依靠 Gradle 的任务名、JDK 版本、依赖坐标、选择原因及编译错误，不输出业务内容或凭据。正式 release/R8、无广告变体包体与真机广告验收仍为后续边界。
+
 ### 日志与诊断计划
 
 INFO/DEBUG：首次请求、加载、展示、释放，字段仅 source/placement/event/reasonCode/durationMs/sdkVersion。WARN：初始化和渲染异常，触发会话保险丝；普通无填充只记录低级别状态。布局推迟仅低频 reasonCode，禁止内容 key、查询、任务实体、设备 ID、响应体和所有凭据；SDK 异常仅映射错误类别，不直接打印 message。使用合成测试数据检查隐私边界。
+
+#### 2026-09-27 真机加载诊断（已完成）
+
+两次冷启动均出现 `home_feed_native` 请求后约 649ms 返回 `admob_load_failed`，同进程出现 Chromium SSL `net_error -100`，但旧日志丢弃 SDK 错误码，尚不能据此断定网络是广告失败的直接原因。
+
+在 `AdmobSdkLoader` 既有回调中增加仅 debug 的 `AdmobLoader` DEBUG 日志：SDK 加载开始、成功和失败均带进程内自增 `requestId` 与 `AdPlacement.placementId`，失败额外记录 SDK 错误枚举、数值、`hasResponseInfo` 和广告源响应数量。每次回调只输出一条，不轮询、不重试；初始化完成后才进入加载，沿用宿主已有开始/释放日志。禁止打印 `LoadAdError.message/toString()`、ResponseInfo 原文、responseId、广告单元 ID、URL、设备标识或素材。这里只读 SDK 字段，不将第三方枚举名作为持久化或跨模块协议。
+
+复用模块已有 Android Log 调用方式及 ad-api 的低敏广告位枚举；模块未依赖 base:general，不为日志增加业务基础模块依赖。只调整 loader 和 session 接线，不新增类或共享协议，不改变 UMP、请求资格、超时、无填充分类及零占位行为。无持久化数据、备份或 keep 规则变化。
+
+测试门禁：本次是 Android SDK 回调的薄诊断接线，没有新增纯逻辑规则，因此不新增 JVM 单测、不采用 TDD；运行既有 `:feature:ad-admob:testDebugUnitTest`、`:app:assembleDebug`（包含 Kotlin 编译）及 `git diff --check`，安装保留应用数据的 debug 包后冷启动读取实际回调验证字段与诊断结果。release/R8 不在本次验证范围：诊断被 `BuildConfig.DEBUG` 隔离，正式 ID 尚未配齐，正式发布前仍需验证混淆产物。
+
+验证结果：Windows PowerShell 下执行 `.\gradlew.bat -g C:\Users\18883\.jdks\ms-17.0.15 :feature:ad-admob:testDebugUnitTest :app:assembleDebug '-Dorg.gradle.java.home=D:\Android Studio\jbr' --offline --console=plain --no-parallel --max-workers=1 --no-daemon '-Pkotlin.compiler.execution.strategy=in-process'` 成功；模块 3 项单测零失败、错误和跳过，广告模块及宿主 Kotlin 编译通过。通过 `adb install -r` 安装 debug 包后，两次冷启动均捕获 `sdkErrorCode=NETWORK_ERROR sdkErrorValue=2 hasResponseInfo=false adSourceResponseCount=0`，宿主分别在 1259ms、643ms 结束失败请求，同期存在 SSL `net_error -100`，没有加载成功或曝光事件。新增日志未包含 SDK 错误原文、广告单元 ID 或用户数据。
+
+直接失败原因已收敛为 SDK 网络加载错误，不是已加载素材的 UI 隐藏问题。设备存在 Wi-Fi 和 FlClash VPN，VPN 声明的 UID 范围包含应用；系统网络显示已验证不能证明 Google 广告端点可达，也不能证明 VPN 的分流规则已代理该请求。后续应对照检查代理分流/广告拦截规则或换网络复验；本次未改变设备网络配置，现有证据不足以确定具体失败域名、拦截节点或归因到某条规则。[SDK 官方错误码说明](https://developers.google.com/admob/android/next-gen/reference/com/google/android/libraries/ads/mobile/sdk/common/LoadAdError.ErrorCode#NETWORK_ERROR)将该类别定义为网络连接导致请求失败。
 
 ### 验证与外部发布条件
 
@@ -91,6 +273,38 @@ INFO/DEBUG：首次请求、加载、展示、释放，字段仅 source/placemen
 - [ ] 正式 ID、账号审核、Play AAB/R8、真机及小范围发布验收
 
 ### 变更记录
+
+- 2026-09-27：按用户截图将恢复页广告移到状态摘要与备份信息之间，媒体关联页移到标题说明与详情之间；保持左右对齐和条件间距，并让滚动补偿识别广告之前的内容，避免广告收起带动顶部说明。
+
+- 2026-09-27：按截图修复恢复页广告与正文之间缺少分隔，并新增媒体关联独立广告位；采用有广告才出现的 16dp 底部间隔，延续两页共同的 20dp 左右边界和既有生命周期/隐私规则，纯扫描阶段不展示。
+
+- 2026-09-27：按用户反馈将 A1/A2 顶部内边距恢复为 14dp，左右 14dp、底部 5dp 保持；审计全部 16 个广告位的左右边界，修复备份总览和视频页面漏加横向留白，恢复页显式填满正文宽度，避免把素材内边距误当成卡片外边距。
+
+- 2026-09-27：用户确认左右 14dp 留白合适，将 A1/A2 上下内边距收紧为 5dp，使同素材卡片高度减少 18dp；沿用纯样式验证策略，不新增仅镜像尺寸常量的单测，不新增日志或修改数据/备份协议。
+
+- 2026-09-27：按用户反馈对齐广告与现有卡片：A1/A2 内边距从 8dp 调整为 14dp，原生根容器补充主题 1dp 描边，沿用 10dp 圆角及页面外边距；原因是原广告内容留白不足、深色下缺少卡片边界。debug 构建与差异检查通过，真机首页/详情页 A2 加载曝光、外观对齐及 SDK 验证器检查通过。
+
+- 2026-09-27：完成用户确认的暂停保留方案：页面持有最多 3 个广告资源，离屏回绑复用，PAUSE 保留，真实离开/STOP/DESTROY/隐私撤销释放。补充绑定身份、请求门控和封闭释放原因；61 项单测、debug 构建、差异检查通过，真机确认多选/弹窗/回滚保留，以及 Tab、后台和详情返回重载。
+
+- 2026-09-27：根据用户关于 ON_PAUSE 释放过频的讨论，新增“暂停保留与真实离开释放”草案，明确普通弹窗不应销毁素材、返回只在必要时加载，以及宿主/SDK/列表资源所有权须同步调整；本轮仅评估和记录，尚未实施。
+
+- 2026-09-27：修复首页滚动/回弹误触发页面广告会话重建，抽出首页与下载历史共用的 Pager 状态映射，复用既有布局门控和实时按压读取；新增 3 项回归测试，32 项广告测试及 debug 构建通过，真机短斜滑保留原广告、真实切 Tab 返回重新曝光均通过。
+
+- 2026-09-27：按用户确认将图片网格广告改为列表外下方固定单槽，取消网格广告混排和首行合并；统一图片/key 快照并移除首行映射，小屏保留图片操作区域且释放放不下的广告。新增 7 项回归，app 104 项单测及 Kotlin 编译通过，真机布局待验收。
+
+- 2026-09-27：按用户确认把 AdMob 总请求预算放宽到 15 秒，并修复所有共享广告页面返回后无法重载的问题；区分可见访问与业务资格，旧会话退出后新建请求账本，保持同页去重及隐私边界。
+
+- 2026-09-27：按用户确认完成视频 A1 / 非视频 A2，未知素材回退 A1；统一 16 个 AdMob 广告位，增加纯布局规则测试及低敏布局诊断，复用现有会话和主题，原因是原生广告纵排占位过大。7 项单测及 debug 构建通过，真机 A2 曝光与 SDK 验证器通过；视频样本及 release/R8 待验收。
+
+- 2026-09-27：补充显示前素材识别核实及用户条件偏好；GMA 1.4.0 的 `mediaContent.hasVideoContent` 可在加载成功、创建视图前读取，当前会话调用顺序支持先选布局后显示，未知媒体建议回退 A1。原因是用户担心只能展示后识别导致布局变化；未修改 App 代码，具体非视频样式仍待选择。
+
+- 2026-09-27：用户选择 A 方向并要求进一步缩小占位，新增 A1 媒体横排、A2 小图标摘要、A3 单行紧凑条三种草案，明确目标高度、非视频主图可选与视频最小尺寸/回退约束；原因是原版独立顶部及底栏仍占较多空间。本轮仅更新设计和示意，未改 App 代码。
+
+- 2026-09-27：按用户“所有广告改为信息流样式、先提供多种方案”的需求，记录统一紧凑卡、统一大图卡和按页面适配三种草案，明确 Google/Play 16 个位置的范围、复用边界、素材/主题与测试验收要求；尚未选择方案，未修改生产代码。
+
+- 2026-09-27：补充 AdMob debug SDK 加载诊断，保留低敏错误枚举/数值及响应存在性，原因是通用 `admob_load_failed` 无法区分网络、请求、响应或 SDK 内部错误。模块 3 项单测、debug 构建、`git diff --check` 通过；保留数据安装后两次冷启动均确认 `NETWORK_ERROR(2)` 且无响应信息，具体代理分流/网络节点仍需网络对照实验，未更改网络配置。日志接线未新增纯规则或单测，正式 release/R8 仍待发布前验证。
+
+- 2026-09-27：修复 AdMob 开启时 WorkManager 的 `ListenableFuture` 在宿主编译类路径缺失的问题；版本目录新增 Guava 别名，宿主显式依赖与现有 AdMob 相同的 Guava 版本。修复前 JBR 25.0.3 的 `:app:compileDebugJavaWithJavac` 已复现原始错误；修复后执行 `.\gradlew.bat -g C:\Users\18883\.jdks\ms-17.0.15 :app:assembleDebug :app:testDebugUnitTest '-Dorg.gradle.java.home=D:\Android Studio\jbr' --offline --console=plain --no-parallel --max-workers=1 --no-daemon '-Pkotlin.compiler.execution.strategy=in-process'` 成功，原失败任务、Hilt 编译及重复类检查通过，宿主 94 项单测零失败、错误和跳过，生成 `app/build/outputs/apk/debug/ClipMaster-v0.6.0-admob-debug.apk`。首次验证遇到 `base:general` 的 `classes.jar` 被占用，确认相关 Gradle 守护进程均空闲后使用 `--stop` 释放并重跑成功。对 `debugCompileClasspath` 和 `debugRuntimeClasspath` 执行 `:app:dependencyInsight --dependency com.google.guava --single-path`（分别指定 `--configuration`，运行时查询收窄到 `com.google.guava:guava`），均确认 Guava 为 `32.0.0-android`；空占位包仍存在，但接口由完整 Guava 提供。只读审查无阻断问题，`git diff --check` 通过。仅调整构建依赖并补齐中文注释，无新增业务代码、单测、日志或备份字段；正式 release/R8、无广告变体包体及真机验收未运行，仍按既有发布边界跟踪。
 
 - 2026-09-26：按用户先测试广告、后发布 Google Play 的安排，默认开启 AdMob debug 并切换 Play 渠道；release 暂不启用，保留正式 ID 完整性校验。同步本机配置示例和构建注释，避免普通调试仍漏装广告模块。默认属性下执行 `.\gradlew.bat :app:assembleDebug :app:testDebugUnitTest :feature:ad-api:testDebugUnitTest :feature:ad-admob:testDebugUnitTest --no-parallel --max-workers=1 --no-daemon '-Pkotlin.compiler.execution.strategy=in-process'` 成功；宿主 94 项、ad-api 15 项、ad-admob 3 项单测共 112 项通过（ad-admob 任务复用有效缓存），零失败、错误和跳过。产物为 `app/build/outputs/apk/debug/ClipMaster-v0.6.0-admob-debug.apk`。生成 BuildConfig 确认 AdMob/Play 开启、CSJ/uni-ad 关闭，模块 BuildConfig 与合并 Manifest 使用官方测试 ID；`git diff --check` 通过。未安装设备或验收广告填充，未运行正式 release/R8，继续按真实 ID 与真机待办跟踪。
 
@@ -180,7 +394,7 @@ INFO/DEBUG：首次请求、加载、展示、释放，字段仅 source/placemen
 ## 详情页广告控制
 
 - 详情页不做用户可感知频控：每次用户主动进入详情页时允许展示一个原生广告位。
-- 同一个 `clipId` 在一次详情页生命周期内最多创建一次 `requestNonce`；Compose 重组、前后台切换或同页状态刷新不重复创建请求。
+- 当前共享宿主中，同一个 `clipId` 在每次详情页可见访问内最多创建一次 `requestNonce`；Compose 重组或同页状态刷新不重复创建请求，前后台切换后返回创建新访问，详见上方页面返回重新加载约定。
 - `NoFill`、`LoadFailed`、广告源不可用或隐私未同意时不在当前详情页内重试。
 - 详情页离开可见状态时，adapter 必须释放广告 View、loader、监听器和 SDK 回调；返回详情页可重新请求。
 - 用户撤回广告隐私同意或关闭广告能力后，当前广告 View 和 loader 立即释放；已初始化 SDK 若无法反初始化，v1 只承诺停止新请求并释放当前资源。
@@ -221,7 +435,7 @@ INFO/DEBUG：首次请求、加载、展示、释放，字段仅 source/placemen
 ## 测试验证
 
 - `AdSourceSelectorTest` 覆盖空集合隐藏、`off` 隐藏、全局关闭隐藏、隐私拒绝隐藏、保险丝跳过、`auto` 优先级、显式 source 命中、显式 source 缺失回退和广告位不支持过滤。
-- 详情页人工验证：无广告源不改变布局；debug 源显示在正文和操作区之间；同一 `clipId` 生命周期内只创建一次请求；切换剪贴记录生成新请求；长正文、多链接和底部弹层不重叠。
+- 详情页人工验证：无广告源不改变布局；debug 源显示在正文和操作区之间；同一 `clipId` 的每次可见访问内只创建一次请求；切换剪贴记录或离开返回生成新请求；长正文、多链接和底部弹层不重叠。
 - 生命周期验证：进入详情页请求，离开详情页释放；返回详情页可重新请求；无填充/失败不在当前详情页内重试。
 - 日志检查：广告事件不得出现剪贴正文、完整 URL、query、SDK 响应体、广告素材内容或设备标识。
 - 穿山甲单元测试覆盖 `CsjAdConfig`、`CsjAdAvailabilityPolicy`、`CsjAdInitializer`、`CsjAdEventDeduplicator`、`CsjAdReleaseGuard` 和详情页敏感内容保护。

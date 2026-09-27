@@ -28,7 +28,7 @@ internal class AdmobSlotSession(
     private val unitId: String,
     /** 低敏事件交给宿主统一诊断。 */
     onEvent: (AdSlotEvent) -> Unit,
-) {
+) : AdSlotResource {
     /** 页面释放后清空 Context 引用，迟到 SDK 回调不再持有 Activity。 */
     private var uiContext: Context? = context
     /** 当前回调和展示门控，可更新但不参与请求身份。 */
@@ -41,44 +41,59 @@ internal class AdmobSlotSession(
     private val main = Handler(Looper.getMainLooper())
     /** 去重、终态与幂等释放的纯规则。 */
     private val guard = AdmobRequestGuard()
+    /** 缓存反复绑定只启动一次网络请求。 */
+    private var started = false
+    /** 当前组合的身份；旧组合迟到解绑不能撤掉新组合的 View。 */
+    private var binding: Any? = null
+    /** 素材取得时间使用单调时钟，设备改时间不会延长一小时有效期。 */
+    private var loadedAt: Long? = null
     /** 加载完成但尚未允许展示的素材仍由当前请求持有。 */
     private var ad: NativeAd? = null
     /** 当前公开给 Compose 的 View；空值占用零尺寸。 */
     var view: NativeAdView? by mutableStateOf(null)
         private set
-    /** 初始化与加载共享四秒总预算。 */
+    /** 初始化与加载共享十五秒总预算的起点，用于低敏阶段耗时。 */
     private val startedAt = SystemClock.elapsedRealtime()
 
-    /** 只由 DisposableEffect 对本 nonce 调用一次，不因重组重复加载。 */
+    /** 仅前台绑定启动；重复恢复或回滚绑定不再次请求。 */
     fun start() {
+        if (started || !guard.canAcceptAd || !request.canRequest) return
+        started = true
         emit(AdSlotEventType.RequestStarted)
         scope.launch {
             privacy.state.collect { state ->
-                if (!state.canRequestAds) close()
+                if (!state.canRequestAds) close(AdReleaseReason.PrivacyRevoked)
             }
         }
         scope.launch {
             /** 阶段标记用于区分初始化异常和加载异常。 */
             var initializing = true
             try {
-                withTimeout(4_000L) {
+                // 容纳实际冷启动及代理延迟；离开页面仍立即取消，不等待预算耗尽。
+                withTimeout(15_000L) {
                     if (!privacy.state.value.canRequestAds || request.isSensitiveContext) {
-                        close()
+                        close(AdReleaseReason.PrivacyRevoked)
                         return@withTimeout
                     }
                     initializer.awaitReady()
                     initializing = false
                     if (!privacy.state.value.canRequestAds) {
-                        close()
+                        close(AdReleaseReason.PrivacyRevoked)
                         return@withTimeout
                     }
                     /** 加载返回后请求拥有该素材，直到释放或渲染失败。 */
-                    val loaded = AdmobSdkLoader.load(unitId)
+                    val loaded = AdmobSdkLoader.load(unitId, request.placement)
                     if (!guard.finishLoading() || !privacy.state.value.canRequestAds) {
                         loaded.destroy()
                         return@withTimeout
                     }
                     ad = loaded
+                    loadedAt = SystemClock.elapsedRealtime()
+                    // 缓存离屏时也要过期；协程随页面真正离开或隐私撤销一并取消。
+                    scope.launch {
+                        delay(60 * 60 * 1000L)
+                        close(AdReleaseReason.Expired)
+                    }
                     loaded.adEventCallback = object : NativeAdEventCallback {
                         /** SDK 曝光事件不能替代“素材加载完成”。 */
                         override fun onAdImpression() {
@@ -110,16 +125,45 @@ internal class AdmobSlotSession(
     }
 
     /** 更新门控不产生请求；一旦展示，滚动开始不再反复移除广告。 */
-    fun update(request: AdSlotRequest, onEvent: (AdSlotEvent) -> Unit) {
+    fun update(binding: Any, request: AdSlotRequest, onEvent: (AdSlotEvent) -> Unit) {
+        // 关闭后不重新捕获页面回调，防止迟到 SideEffect 延长 Activity 引用。
+        if (uiContext == null) return
+        this.binding = binding
         this.request = request
         this.onEvent = onEvent
-        if (request.isSensitiveContext || !privacy.state.value.canRequestAds) close() else revealIfAllowed()
+        if (request.isSensitiveContext || !privacy.state.value.canRequestAds) {
+            close(AdReleaseReason.PrivacyRevoked)
+        } else if (loadedAt?.let { SystemClock.elapsedRealtime() - it >= 60 * 60 * 1000L } == true) {
+            close(AdReleaseReason.Expired)
+        } else {
+            revealIfAllowed()
+        }
+    }
+
+    /** 登记新绑定与搬移 View 在同一主线程调用内完成，旧 onDispose 不能拆掉新外壳。 */
+    fun bindView(binding: Any, container: ViewGroup) {
+        // 素材已销毁或尚未揭示时没有可搬移的 View。
+        val nativeView = view ?: return
+        this.binding = binding
+        if (nativeView.parent !== container) {
+            (nativeView.parent as? ViewGroup)?.removeView(nativeView)
+            container.addView(nativeView)
+        }
+    }
+
+    /** Lazy 离屏仅解绑；保留素材、View 和隐私监听，清除旧布局回调。 */
+    fun detach(binding: Any) {
+        if (this.binding !== binding) return
+        this.binding = null
+        (view?.parent as? ViewGroup)?.removeView(view)
+        request = request.copy(canReveal = false, canRevealNow = { false },
+            onLayoutWillChange = {}, onLayoutChanged = {}, interactionEnabled = false)
     }
 
     /** 允许展示时才创建原生 View；渲染异常触发独立保险丝事件。 */
     private fun revealIfAllowed() {
         // 布尔快照尚未随重组更新时，实时门仍能同步阻止交互中的布局变化。
-        if (!request.canReveal || !request.canRevealNow() || view != null || !privacy.state.value.canRequestAds) return
+        if (binding == null || !request.canReveal || !request.canRevealNow() || view != null || !privacy.state.value.canRequestAds) return
         /** 当前素材和 Activity 上下文都必须仍然存在。 */
         val currentAd = ad ?: return
         /** 页面关闭后没有合法 UI 宿主。 */
@@ -132,7 +176,7 @@ internal class AdmobSlotSession(
             request.onLayoutChanged()
         } catch (failure: Exception) {
             emit(AdSlotEventType.RenderFailed, "admob_render_failed")
-            close()
+            close(AdReleaseReason.RenderFailed)
         }
     }
 
@@ -150,9 +194,8 @@ internal class AdmobSlotSession(
         ))
     }
 
-    /** 页面离开或 UMP 暂停时立即释放；关闭后的迟到回调只能销毁素材。 */
-    fun close() {
-        emit(AdSlotEventType.Released)
+    /** 真正离开/过期/撤销才销毁；先关闭状态再回报，防止宿主释放回调重入。 */
+    override fun close(reason: AdReleaseReason) {
         if (!guard.close()) return
         scope.cancel()
         /** 当前 View 先撤出布局，锚点回调必须先于尺寸变化。 */
@@ -167,5 +210,12 @@ internal class AdmobSlotSession(
         ad?.destroy()
         ad = null
         uiContext = null
+        binding = null
+        onEvent(AdSlotEvent("admob", request.placement.placementId, AdSlotEventType.Released,
+            reason.code, SystemClock.elapsedRealtime() - startedAt, BuildConfig.DEBUG, "1.4.0"))
+        // 释放后清除捕获的页面环境及回调，SDK 的迟到结果只能走 guard 拒绝分支。
+        onEvent = {}
+        request = request.copy(canReveal = false, canRevealNow = { false },
+            onLayoutWillChange = {}, onLayoutChanged = {})
     }
 }
