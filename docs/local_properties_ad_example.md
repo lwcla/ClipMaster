@@ -8,7 +8,7 @@
 
 ## 模块开关
 
-项目 `gradle.properties` 默认开启 AdMob debug 测试模块并使用 Play 渠道，其余可选实现保持关闭。以下为国内广告开关；需要构建国内广告包时，应同时设置 `appDistribution=domestic`、关闭对应 buildType 的 AdMob，再开启目标国内开关，或在命令行传同名 `-P` 参数：
+项目 `gradle.properties` 默认开启 AdMob debug/release 模块并使用 Play 渠道，其余可选实现保持关闭。以下为国内广告开关；需要构建国内广告包时，应同时设置 `appDistribution=domestic`、关闭对应 buildType 的 AdMob，再开启目标国内开关，或在命令行传同名 `-P` 参数：
 
 ```properties
 # debug/internal 穿山甲 adapter 开关。
@@ -65,6 +65,8 @@ csjRequiredPrivacyPolicyVersion=2026-06-csj
 
 ## 变更记录
 
+- 2026-09-27：用户已提供完整真实 ID 并登记测试设备，debug/release 改为共用本机真实配置，release 默认开启；同步配置说明和测试设备边界。真实值不写入本示例，构建与设备验证结果统一记录于广告主方案。
+
 - 2026-09-27：新增媒体关联页独立广告配置 `admobReleaseBackupMediaRelocationNativeAdUnitId`，正式单元总数增至 17；debug 继续自动生成测试 ID。无新敏感日志，配置验证与测试以广告主方案为准。
 
 - 2026-09-26：默认开启 AdMob debug 和 Play 渠道，简化测试构建命令；补充国内构建覆盖方式及正式开关保留关闭的原因。复用既有日志与测试，不新增运行时逻辑。
@@ -78,7 +80,7 @@ csjRequiredPrivacyPolicyVersion=2026-06-csj
 ```properties
 appDistribution=play
 enableAdmobDebugAdFeature=true
-enableAdmobReleaseAdFeature=false
+enableAdmobReleaseAdFeature=true
 # 国内广告开关全部关闭；同包混合 SDK 会在配置期失败。
 enableCsjDebugAdFeature=false
 enableCsjReleaseAdFeature=false
@@ -86,26 +88,46 @@ enableUniadDebugAdFeature=false
 enableUniadReleaseAdFeature=false
 ```
 
-以上已是仓库默认值，Android Studio 同步后直接运行 debug 即可接入测试模块。Debug 自动使用 Google 官方测试 App ID 和原生广告 ID，无需真实账号；实际展示仍需联网、UMP 请求资格及页面广告位条件满足。Release 目前保留关闭，因为开启后的 ID 校验会在配置期影响所有构建；准备正式广告时必须设置 `enableAdmobReleaseAdFeature=true`，并提供下面全部参数；把占位值替换为后台值，17 个单元必须不同，缺失或示例 ID 会构建失败。
+以上是当前默认值。debug 和 release 共用下面这套真实 App ID 与广告单元，沿用 admobRelease 参数名以避免两份配置漂移；不再自动回退 Google 官方示例 ID。任一 AdMob 开关开启时，必须提供下面全部参数；17 个单元必须不同，缺失、格式错误或示例 ID 会在配置期失败，并影响 Android Studio 同步及其他任务。新电脑/CI 需先补齐本机或 Gradle 参数；要构建无广告包，可同时关闭两个 AdMob 开关。
+
+开发测试使用自己的真实广告单元，并在 AdMob「设置 → 测试设备」登记手机；用户已完成本机登记。测试模式由后台设备配置生效情况决定，debug 标记本身不等于测试设备。确认 Google 原生素材带 Test Ad 标记后再做交互测试；设备登记可能需要时间生效。应用审核未完成可以先做测试接入验证，但不代表已获得正式投放资格。实际请求仍需网络、UMP canRequestAds 和页面资格均满足。[官方测试说明](https://developers.google.com/admob/android/next-gen/test-ads)。
 
 ```properties
+# 同一正式 App ID 供 debug/release 初始化和 Manifest 元数据使用。
 admobReleaseAppId=REPLACE_WITH_REAL_APP_ID
+# 详情页原生单元。
 admobReleaseDetailNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+# 首页列表原生单元；使用最新后台创建并确认的值。
 admobReleaseHomeFeedNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+# 普通搜索结果原生单元。
 admobReleaseSearchFeedNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+# 折叠列表原生单元。
 admobReleaseFoldedFeedNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+# 折叠内搜索原生单元。
 admobReleaseFoldedSearchNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+# 回收站列表原生单元。
 admobReleaseRecycleFeedNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+# 视频提取阶段原生单元。
 admobReleaseVideoExtractNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+# 视频下载进度阶段原生单元。
 admobReleaseVideoDownloadProgressNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+# 视频下载结果阶段原生单元。
 admobReleaseVideoDownloadResultNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+# 图片提取阶段原生单元。
 admobReleaseImageExtractNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+# 图片下载进度阶段原生单元。
 admobReleaseImageDownloadProgressNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+# 图片下载结果阶段原生单元。
 admobReleaseImageDownloadResultNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+# 视频下载历史原生单元。
 admobReleaseVideoHistoryNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+# 图片下载历史原生单元。
 admobReleaseImageHistoryNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+# 备份总览原生单元。
 admobReleaseBackupOverviewNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+# 恢复预检和结果原生单元。
 admobReleaseBackupRestoreNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
+# 恢复后媒体关联原生单元。
 admobReleaseBackupMediaRelocationNativeAdUnitId=REPLACE_WITH_DISTINCT_NATIVE_UNIT_ID
 ```
 
@@ -113,6 +135,7 @@ PowerShell 验证示例（属性参数整体加引号）：
 
 ```powershell
 .\gradlew.bat :app:assembleDebug --no-parallel
+.\gradlew.bat :app:assembleRelease --no-parallel
 .\gradlew.bat :app:bundleRelease '-PappDistribution=play' '-PenableAdmobReleaseAdFeature=true' --no-parallel
 ```
 

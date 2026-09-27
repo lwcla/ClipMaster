@@ -6,6 +6,28 @@
 
 本节是本轮已确认需求的唯一权威说明；下文 CSJ、uni-ad v1 的“仅详情页”限制保留为对应国内 adapter 的历史/现行范围，不限制 AdMob。
 
+### 真实广告 ID 接入与测试设备（2026-09-27，接入已完成，投放待验收）
+
+用户已提供同一 AdMob 应用的 App ID 和 17 个互不相同的原生广告单元 ID，并要求后续使用自己的广告 ID 测试；手机已在 AdMob 后台登记为测试设备，应用审核尚未完成。debug 与 release 共用这组真实配置；首页以本轮最新提供的 HomeFeedNative 为准，不使用之前截图中的旧单元。真实值仅保存到 Git 已忽略的 local.properties，公开文档保留占位符。继续沿用 admobReleaseAppId / admobRelease<Placement>AdUnitId 参数名，避免复制第二套配置后映射漂移。
+
+构建继续复用 gradle/admob-ad-config.gradle.kts 的属性读取、广告位表、格式检查、官方示例 ID 拒绝和唯一性检查；任一 AdMob 变体启用时都检查完整真实配置。feature/ad-admob/build.gradle.kts 将相同的 App ID 写入两个变体的 BuildConfig 和 Manifest，并按既有位置表生成单元字段。gradle.properties 默认启用 debug 和 release 的 AdMob；Play 渠道及国内 SDK 互斥规则保持不变。没有真实配置的新电脑或 CI 必须先配置同名属性，也可显式关闭两个 AdMob 开关以构建无广告包。
+
+测试模式由 AdMob 后台登记的设备决定，不因 debug 构建自动获得，也不因真实 ID 自动取消；本次不在源码内写死设备标识。安装验证时确认 Google 原生广告带 Test Ad 标记，不点击未经确认的真实广告。应用审核、账号资格、UMP 消息与 canRequestAds、网络和填充仍由对应流程决定；测试成功不代表正式投放获批。正式 release 用真实签名和 R8 构建验证，不能覆盖安装到签名不同的 debug 包而清除用户数据。
+
+测试与实施步骤：先写入本机真实 ID，再用旧 debug 生成配置确认仍使用官方示例 ID；随后更新两个 Gradle 脚本及开关，检查 debug/release 生成的 App ID、17 个单元与本机输入逐一一致、两份 Manifest 一致，并验证缺失、示例和重复 ID 的配置期拒绝。运行 app、ad-api、ad-admob 现有单测、assembleDebug 和 assembleRelease/R8。测试门禁判断不新增 JVM 单测：此次仅修改 Gradle 参数接线和复用既有构建校验，没有新增 Android 纯逻辑或状态规则，以真实 Gradle 配置检查和产物核对保护边界。
+
+日志与诊断计划：复用现有初始化、加载、曝光、失败、释放事件，不增加运行时日志。验证只输出匹配数量、布尔结果和失败类别，禁止打印真实 App ID、广告单元 ID、设备广告标识、签名密码或 SDK 响应原文。无 Room、用户设置或备份协议变化；local.properties 为构建输入，不属于用户备份。没有新增反射或序列化模型，沿用 SDK consumer rules 并通过实际 R8 构建验证。
+
+验证进展：修改前执行 `:feature:ad-admob:generateDebugBuildConfig` 后，真实 App ID 匹配断言按预期失败；修改后 debug/release 各自 18 项生成字段、宿主 AdMob/Play 开关和两份合并 Manifest 均与本机输入一致，跟踪文件扫描未发现真实发布商标识。独立临时 Gradle 项目应用实际配置脚本，使用合成 ID 验证 debug 单独启用时缺少 App ID、缺少单元、示例 App ID、示例单元、重复单元均被拦截，两个开关关闭且无 ID 时通过，共 6/6 项通过。app 117 项、ad-api 16 项、ad-admob 7 项既有单测共 140 项通过，无失败、错误或跳过；debug APK 已生成并保留数据安装到 SM-G9730 / Android 12。
+
+真机结果：22:33 首页使用真实单元发出请求，约 1.5 秒后 SDK 返回 `NO_FILL`，`hasResponseInfo=true`、广告源响应数量为 0，尚未加载或曝光素材。同时 UMP 返回错误码 3，SDK 诊断明确指出当前 App ID 未配置隐私消息表单（文档仅记录分类，不保存含 App ID 的 SDK 原文）。因此本次不能声称真实单元展示或测试设备模式已验收；需在 AdMob「隐私权和消息」为本应用配置并发布适用消息、确认测试设备已生效后再验证。不能仅凭 NO_FILL 归因于应用审核或网络，也不绕过 canRequestAds。后台审核、app-ads.txt 和全部页面真实投放继续按发布清单处理。
+
+构建环境记录：首次全量验证在 `:app:bundleDebugClassesToCompileJar` 遇到 Windows JAR 占用；确认 IDE 构建守护进程空闲后停止相关编译/Gradle 守护进程，复核独占读取成功，再执行原命令。未删除缓存、清理应用数据或修改 IDE/JDK 项目设置。配置负例的中文输出曾受 JDK 17 本地代码页影响，临时验收脚本使用已安装 JBR 的 UTF-8 输出后正确识别所有失败原因。
+
+最终构建结果：执行 `:app:testDebugUnitTest :feature:ad-api:testDebugUnitTest :feature:ad-admob:testDebugUnitTest :app:assembleDebug :app:assembleRelease` 时，单测、debug 和 release/R8 已完成，但离线模式在 `:shizuku:extractReleaseAnnotations` 因缺少 Lint 工具依赖停下；随后允许从既有 Google/Maven 仓库下载缺失依赖，重跑 `:app:assembleRelease` 成功（4m54s），包含发布 Lint、资源压缩和签名打包，没有跳过检查。输出 `app/build/outputs/apk/release/ClipMaster-v0.6.0-admob.apk`，`apksigner verify --verbose` 通过（v2、1 个签名者）；R8 mapping 保留在 `app/build/outputs/mapping/release/mapping.txt`。R8 报告既有 Shizuku ClipboardListener / OnOpNotedListener 类型警告，本轮未修改该模块，不把构建通过等同于该平台能力的真机验证。release 与手机上 debug 签名不同，本次未卸载或覆盖为 release；release 设备验收仍待独立测试环境。最终 `git diff --check` 通过，代码只读审查发现的两处旧配置说明已修正。
+
+后续待办：AdMob/Play 审核、app-ads.txt、正式 UMP 配置、测试设备模式确认和全部页面真实投放验收继续由既有发布清单跟踪。
+
 ### 广告位与展示契约
 
 独立 Play 包使用 GMA Next-Gen 1.4.0，保留国内包现有来源。共 17 个位置：home_feed_native、search_feed_native、detail_native、folded_feed_native、folded_search_native、recycle_feed_native、video_extract_native、video_download_progress_native、video_download_result_native、image_extract_native、image_download_progress_native、image_download_result_native、video_history_native、image_history_native、backup_overview_native、backup_restore_native、backup_media_relocation_native。
@@ -126,7 +148,7 @@ SDK 成功仅变为待展示。按下、拖动、滚动、惯性、侧滑动画�
 
 位置调整验证：新增 2 项滚动锚点测试，首次因前缀高度参数尚未实现而在测试编译阶段失败；实现后执行 `:app:testDebugUnitTest --tests 'com.cla.clip.master.ad.*' --tests 'com.cla.clip.master.ui.page.backup.BackupRestoreStateTest' :app:assembleDebug` 成功（2m15s），45 项单测零失败/错误，`git diff --check` 通过。已保留数据安装到 Samsung SM-G9730 / Android 12：既有备份预览中，加载前状态摘要与备份信息之间只有原有区块间距；A2 加载 1214ms、曝光 1419ms，加载后顺序为状态摘要、广告、备份信息，前后间隔和左右边界正确，SDK 验证器无实现问题。截图留存于 `build/ad-inline-position-preview-final.png`。未执行实际恢复或媒体扫描，恢复结果及媒体关联页面的新位置仍待完整真机验收；本轮不新增 UI 常量单测，不运行 release/R8，无持久化或备份逻辑变化。
 
-构建配置继续自动为 debug 生成官方测试广告 ID；release 新增必填 `admobReleaseBackupMediaRelocationNativeAdUnitId`，与其他 16 个单元保持独立。位置名称表、API 枚举和 SDK 映射同步更新，错误提示从表长度生成。未改恢复、媒体扫描/写回、备份协议、Room、dirty 或用户设置；广告状态不新增持久化，显式 placementId 仍是日志稳定 code，无新增反射模型或 keep 需求。
+媒体关联位置使用独立的 `admobReleaseBackupMediaRelocationNativeAdUnitId`，与其他 16 个单元保持独立；debug/release 当前均读取真实 ID，测试方式以上方“真实广告 ID 接入与测试设备”小节为准。位置名称表、API 枚举和 SDK 映射同步更新，错误提示从表长度生成。未改恢复、媒体扫描/写回、备份协议、Room、dirty 或用户设置；广告状态不新增持久化，显式 placementId 仍是日志稳定 code，无新增反射模型或 keep 需求。
 
 日志与诊断计划：复用 DEBUG 级 request_started/loaded/impression/released、原因码和耗时，新增位置仅以封闭 placementId 区分；失败沿用 SDK 现有诊断，不打印 taskId、备份文件、媒体 URL、权限列表、广告单元 ID 或用户内容。不新增间距或滚动逐帧日志。单元测试门禁：先补媒体关联全部状态的资格测试并确认失败，再实现；运行备份状态、广告宿主、ad-api、ad-admob 单测及 debug 构建，间距用截图验收，不新增只镜像 16dp 常量的单测。验证正常展示、零高空槽、页面离开返回和权限/弹窗暂停；不为外观验收实际执行恢复或媒体扫描。正式新增单元与 release/R8 在发布配置齐备后验收。
 
@@ -188,9 +210,9 @@ SDK 成功仅变为待展示。按下、拖动、滚动、惯性、侧滑动画�
 
 ### 构建、隐私和备份
 
-仓库 `gradle.properties` 默认设置 enableAdmobDebugAdFeature=true、enableAdmobReleaseAdFeature=false、appDistribution=play，直接运行 debug 即接入 AdMob 测试模块，play 禁止国内 SDK。命令行仍可覆盖开关；配置脚本在属性缺失时保留 false/domestic 的保守兜底。宿主暴露 IS_PLAY_DISTRIBUTION、ADS_ADMOB_ENABLED。debug 固定 Google 测试 App/Native ID；正式参数为 admobReleaseAppId 与 admobRelease{PlacementName}AdUnitId，17 个正式单元独立且拒绝测试 publisher。正式参数齐全后再开启 release，避免配置期校验阻断 debug。Play 更新入口转商店，禁止外部 APK 更新。
+仓库 `gradle.properties` 默认设置 enableAdmobDebugAdFeature=true、enableAdmobReleaseAdFeature=true、appDistribution=play，两个变体共用本机真实 ID，play 禁止国内 SDK。命令行仍可覆盖开关；配置脚本在属性缺失时保留 false/domestic 的保守兜底。宿主暴露 IS_PLAY_DISTRIBUTION、ADS_ADMOB_ENABLED。参数沿用 admobReleaseAppId 与 admobRelease{PlacementName}AdUnitId，任一变体开启都要求 17 个单元独立且拒绝官方示例 publisher；缺少本机配置时构建失败。开发测试通过后台登记测试设备接收测试广告，具体接入与验证见上方“真实广告 ID 接入与测试设备”小节。Play 更新入口转商店，禁止外部 APK 更新。
 
-2026-09-26 调试默认值调整仅复用既有模块装配、测试 ID、来源选择和 UMP 流程，不绕过隐私资格、敏感内容、页面可见性或交互门控；不新增组件、类、方法、持久化字段及备份契约。未新增单测或采用 TDD，因为仅切换已有构建参数并修正注释，没有新增可独立表达的业务规则；通过默认配置的 APK 构建、宿主与广告模块既有单测，以及生成配置检查验证。日志继续沿用下节既有低敏事件，无需新增日志。正式 release/R8 待真实 ID 配齐后验证，真机广告填充仍需设备验收。
+2026-09-26 调试默认值调整是历史验证记录：当时复用既有模块装配、官方测试 ID、来源选择和 UMP 流程，通过默认 APK 构建、宿主与广告模块既有单测及生成配置检查验证；未新增独立业务规则、持久化字段或备份契约，因此未新增单测。2026-09-27 真实 ID 接入覆盖旧默认值，最新构建和设备结果以上方接入小节为准。隐私资格、敏感内容、页面可见性、交互门控和下节既有低敏日志保持不变。
 
 UMP 每启动刷新；canRequestAds 是 Google 请求资格依据，不能把国内隐私弹窗、旧缓存、表单关闭等同于授权。入口按 UMP 要求展示；用户改变选择立即释放旧广告。SDK 主进程按需后台初始化且幂等。广告与同意临时状态不进入本地/WebDAV 白名单，不触发 dirty，核对系统备份排除。广告模块不接收用户正文、搜索词、Cookie、WebDAV 凭据、文件名、路径或完整业务模型。
 
@@ -224,7 +246,7 @@ INFO/DEBUG：首次请求、加载、展示、释放，字段仅 source/placemen
 
 规则、阶段、释放、布局、缓存先写失败测试再实现；Compose 绑定/原生 View 用编译及真机验收，不对样式堆单测。验证 ad-api/ad-admob/app/base:general 单测、debug 编译、Play bundleRelease/R8、无广告/国内变体、合并 manifest 与依赖树、git diff --check。关注单列 0/1/20/21/40/41、网格 0/1/4/24/44、长列表无上限、按住操作时广告完成、旧阶段迟到回调、备份 dirty 不变。
 
-账号持有人需要完成 Play/AdMob 注册、网站/隐私政策/app-ads.txt、16 单元、Data safety、广告 ID 与目标受众声明及审核。代码测试广告成功不等于已完成后台审核；本轮不自动注册账户、不发布商店、不建设远程后台。
+账号持有人需要完成 Play/AdMob 注册、网站/隐私政策/app-ads.txt、17 单元、Data safety、广告 ID 与目标受众声明及审核。17 个真实单元已在 2026-09-27 提供并接入本机配置；代码测试广告成功不等于已完成后台审核。本轮不自动注册账户、不发布商店、不建设远程后台。
 
 ### 实现取舍与开放问题
 
@@ -273,6 +295,8 @@ INFO/DEBUG：首次请求、加载、展示、释放，字段仅 source/placemen
 - [ ] 正式 ID、账号审核、Play AAB/R8、真机及小范围发布验收
 
 ### 变更记录
+
+- 2026-09-27：按用户提供的完整 17 个单元接入真实 AdMob ID，debug/release 共用本机配置并默认启用 release；用户已登记测试设备，后续通过真实单元的测试设备模式验证。正式值不进入版本库，构建校验同时覆盖两种变体；结果记录在上方接入小节。
 
 - 2026-09-27：按用户截图将恢复页广告移到状态摘要与备份信息之间，媒体关联页移到标题说明与详情之间；保持左右对齐和条件间距，并让滚动补偿识别广告之前的内容，避免广告收起带动顶部说明。
 
@@ -407,7 +431,7 @@ INFO/DEBUG：首次请求、加载、展示、释放，字段仅 source/placemen
 - 真实 SDK adapter 必须等待隐私同意完成后再懒初始化；用户不同意非必要个人信息处理时，核心功能仍可用，广告隐藏或降级。
 - 广告 SDK 不得放在 `Application.onCreate()` 初始化；只在“隐私同意完成 + 广告总开关开启 + 首个广告位需要展示”时启动，并限制初始化耗时。
 - 每接一个真实广告 SDK，必须补齐 adapter 验收清单：SDK 名称/版本、广告平台、收集信息、权限、是否读取广告 ID、初始化时机、隐私政策链接、SDK 清单条目、测试广告位 ID、正式广告位 ID、R8/consumer rules、崩溃回退策略和 release 验证命令。
-- 广告单元 ID 按环境隔离：debug/internal 永远使用测试广告位 ID；release 才允许正式广告位 ID。
+- 国内广告单元 ID 继续按 debug/release 环境隔离；AdMob 按 2026-09-27 用户确认使用同一套真实 ID，开发验证通过后台测试设备模式接收测试广告，具体配置以上方真实 ID 接入小节为准。
 - Google/海外 adapter 必须检查 merged manifest 是否引入 `com.google.android.gms.permission.AD_ID`，并同步 Play Data safety、广告 ID 声明和测试广告位配置。
 - AdMob adapter 必须单独标注 EEA、UK、瑞士场景的 EU consent policy、UMP/CMP/TCF 要求；不能把普通隐私弹窗当作 AdMob 合规完成条件。
 - 国内广告 adapter 必须补齐隐私政策、SDK 清单、权限说明、个人信息处理目的、初始化前同意策略和不同意后的降级行为。

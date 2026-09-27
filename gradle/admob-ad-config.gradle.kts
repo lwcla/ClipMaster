@@ -21,7 +21,7 @@ fun admobBuildProperty(propertyName: String): String? {
 }
 /** 读取 AdMob 调试开关；仓库默认在 gradle.properties 开启，未声明属性时仍保守关闭。 */
 val admobDebugEnabled = providers.gradleProperty("enableAdmobDebugAdFeature").map(String::toBoolean).getOrElse(false)
-/** 正式广告开关，必须配齐独立广告位。 */
+/** release 广告模块开关；与 debug 共用真实 ID，开关不代表后台审核通过。 */
 val admobReleaseEnabled = providers.gradleProperty("enableAdmobReleaseAdFeature").map(String::toBoolean).getOrElse(false)
 /** 发布渠道只控制行为，不根据语言、时区或设备推测。 */
 val distribution = providers.gradleProperty("appDistribution").getOrElse("domestic")
@@ -47,22 +47,23 @@ val admobPlacementNames = listOf(
     "ImageHistoryNative", "BackupOverviewNative", "BackupRestoreNative",
     "BackupMediaRelocationNative",
 )
-/** 官方测试发布者，正式包必须拒绝其全部样例 ID。 */
+/** 官方测试发布者；两个变体都使用用户自己的单元，拒绝回退到任何官方样例 ID。 */
 val samplePublisher = "ca-app-pub-3940256099942544"
-/** 正式 App ID 不提供样例兜底。 */
+/** debug/release 共用的真实 App ID；保留既有参数名且不提供样例兜底。 */
 val releaseAppId = admobBuildProperty("admobReleaseAppId").orEmpty()
-/** 正式广告单元优先使用 Gradle 参数，本机文件兜底；不记录到构建日志。 */
+/** 两个变体共用的真实广告单元，Gradle 参数优先、本机文件兜底；不输出到日志。 */
 val releaseUnits = admobPlacementNames.associateWith {
     admobBuildProperty("admobRelease${it}AdUnitId").orEmpty()
 }
-if (admobReleaseEnabled) {
+// 任一 AdMob 变体开启都必须配齐真实 ID；即使只启用 debug，也不能跳过输入校验。
+if (admobDebugEnabled || admobReleaseEnabled) {
     require(Regex("ca-app-pub-[0-9]{16}~[0-9]{10}").matches(releaseAppId) && !releaseAppId.startsWith(samplePublisher)) {
-        "AdMob release 必须设置真实 admobReleaseAppId"
+        "AdMob debug/release 必须设置真实 admobReleaseAppId"
     }
     require(releaseUnits.values.all { Regex("ca-app-pub-[0-9]{16}/[0-9]{10}").matches(it) && !it.startsWith(samplePublisher) }) {
-        "AdMob release 必须配置全部 ${admobPlacementNames.size} 个真实 admobRelease<Placement>AdUnitId"
+        "AdMob debug/release 必须配置全部 ${admobPlacementNames.size} 个真实 admobRelease<Placement>AdUnitId"
     }
-    require(releaseUnits.values.toSet().size == admobPlacementNames.size) { "AdMob release 的 ${admobPlacementNames.size} 个原生广告位必须互不相同" }
+    require(releaseUnits.values.toSet().size == admobPlacementNames.size) { "AdMob debug/release 的 ${admobPlacementNames.size} 个原生广告位必须互不相同" }
 }
 extra["enableAdmobDebugAdFeature"] = admobDebugEnabled
 extra["enableAdmobReleaseAdFeature"] = admobReleaseEnabled

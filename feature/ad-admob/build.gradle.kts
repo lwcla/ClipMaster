@@ -15,9 +15,9 @@ val includeSdk = extra["enableAdmobDebugAdFeature"] as Boolean ||
     gradle.startParameter.taskNames.any { it.startsWith(":feature:ad-admob:") || it.startsWith("feature:ad-admob:") }
 /** 广告位名称沿用统一构建校验表。 */
 val placementNames = extra["admobPlacementNames"] as List<String>
-/** 正式配置由统一校验脚本读取。 */
+/** debug/release 共用的真实单元由统一脚本校验；测试设备在 AdMob 后台登记。 */
 val releaseUnits = extra["admobReleaseUnits"] as Map<String, String>
-/** 正式 App ID 在 Project 作用域读取，避免构建类型 extra 遮蔽。 */
+/** 两个变体共用的真实 App ID，在 Project 作用域读取以避免构建类型 extra 遮蔽。 */
 val releaseAppId = extra["admobReleaseAppId"] as String
 android {
     namespace = "com.cla.clip.feature.ad.admob"
@@ -35,10 +35,12 @@ android {
     }
     buildTypes {
         debug {
-            buildConfigField("String", "ADMOB_APP_ID", "ca-app-pub-3940256099942544~3347511713".asConfigLiteral())
-            manifestPlaceholders["admobAppId"] = "ca-app-pub-3940256099942544~3347511713"
+            // 调试包也使用自己的 App ID，确保 SDK 初始化与 UMP/Manifest 指向同一后台应用。
+            buildConfigField("String", "ADMOB_APP_ID", releaseAppId.asConfigLiteral())
+            manifestPlaceholders["admobAppId"] = releaseAppId
+            // placement 是既有稳定位置名称；逐项映射真实 ID，不以一个示例单元覆盖所有位置。
             placementNames.forEach { placement ->
-                buildConfigField("String", placement, "ca-app-pub-3940256099942544/2247696110".asConfigLiteral())
+                buildConfigField("String", placement, releaseUnits.getValue(placement).asConfigLiteral())
             }
         }
         release {
