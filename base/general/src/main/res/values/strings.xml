@@ -233,10 +233,9 @@
     <string name="base_general_clip_source_block_setting">剪贴保存过滤</string>
     <string name="base_general_clip_source_block_setting_empty_desc">未设置，所有可识别来源 App 的新剪贴都会保存</string>
     <string name="base_general_clip_source_block_setting_enabled_desc">已过滤 %1$d 个 App</string>
-    <string name="base_general_clip_source_block_setting_notice">只影响以后保存，不删除、不隐藏当前或历史剪贴记录。当前按包名过滤，同包名在主空间与工作空间会一起命中。</string>
     <string name="base_general_clip_source_block_search_hint">搜索 App 名或包名</string>
     <string name="base_general_clip_source_block_show_system_apps">显示系统应用</string>
-    <string name="base_general_clip_source_block_local_read_failed">未读取到应用，可继续管理已保存包名，或手动添加包名后重试。</string>
+    <string name="base_general_clip_source_block_local_read_failed">本次未能读取应用列表，已保存规则仍保留。可重新读取或手动添加包名。</string>
     <string name="base_general_clip_source_block_loading_local_apps" tools:ignore="TypographyEllipsis">正在读取本机应用...</string>
     <string name="base_general_clip_source_block_never_loaded">已选 %1$d 个，进入页面后读取本机应用</string>
     <string name="base_general_clip_source_block_local_load_summary">已选 %1$d 个，已读取 %2$d 个 App</string>
@@ -244,7 +243,7 @@
     <string name="base_general_clip_source_block_empty_candidates">没有找到可显示的 App</string>
     <string name="base_general_clip_source_block_clear_all">清空名单</string>
     <string name="base_general_clip_source_block_clear_title">清空过滤名单</string>
-    <string name="base_general_clip_source_block_clear_message">清空后，这些 App 之后复制的新剪贴会重新允许保存。历史记录不会被删除。</string>
+    <string name="base_general_clip_source_block_clear_message">将清空全部过滤规则，包括未安装应用的规则。页面确认保存后，这些 App 的新剪贴会重新允许保存，历史记录不会被删除。</string>
     <string name="base_general_clip_source_block_manual_add">手动添加包名</string>
     <string name="base_general_clip_source_block_manual_add_hint">例如 com.example.app</string>
     <string name="base_general_clip_source_block_manual_error_blank">请输入包名</string>

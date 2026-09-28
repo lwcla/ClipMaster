@@ -43,19 +43,17 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.ImageLoader
 import coil3.compose.AsyncImage
 import com.cla.clip.base.general.R
-import com.cla.clip.base.general.config.ClipSourceBlockRules
 import com.cla.clip.base.general.config.ManualPackageValidationResult
 import com.cla.clip.master.installedapps.InstalledAppIconRequest
 import com.cla.clip.master.installedapps.rememberInstalledAppIconImageLoader
 import com.cla.clip.master.ui.theme.ClipMasterThemeTokens
 import com.cla.clip.master.ui.widget.SecondaryPageScaffold
 import com.cla.clip.master.ui.widget.clip.rememberSourceAppIconModel
-import java.util.Locale
 
 /**
  * 剪贴来源过滤设置页。
  *
- * 页面使用本地草稿集合，用户确认后一次性替换 AppSetting；当前安装应用只在页面可见时本地读取，不进入设置或备份。
+ * 页面保留完整草稿，只显示安装列表能识别的候选；确认时保存隐藏规则，安装列表不进入设置或备份。
  */
 @Composable
 fun ClipSourceBlockSettingPage(
@@ -70,13 +68,13 @@ fun ClipSourceBlockSettingPage(
     val installedState by viewModel.installedAppListState.collectAsStateWithLifecycle()
     /** 当前安装应用图标专用 ImageLoader；可见行按包名从 PackageManager 懒加载图标。 */
     val installedAppIconImageLoader = rememberInstalledAppIconImageLoader()
-    /** 页面编辑草稿；确认前不写入 AppSetting。 */
+    /** 完整编辑草稿包含未安装应用的隐藏规则；显隐、搜索和刷新不得裁剪它，确认前不写设置。 */
     var draftPackages by remember(blockedPackages) { mutableStateOf(blockedPackages) }
     /** 是否显示清空二次确认弹窗。 */
     var showClearConfirm by rememberSaveable { mutableStateOf(false) }
     /** 是否显示手动添加包名弹窗。 */
     var showManualAddDialog by rememberSaveable { mutableStateOf(false) }
-    /** 过滤后的候选项；默认隐藏系统应用，搜索时允许命中系统应用。 */
+    /** 最终可见候选只包含已安装应用；搜索和系统开关不能放行未安装的已保存规则。 */
     val visibleCandidates = remember(candidates, draftPackages, installedState.searchQuery, installedState.showSystemApps) {
         filterClipSourceBlockCandidates(
             candidates = candidates,
@@ -110,6 +108,7 @@ fun ClipSourceBlockSettingPage(
                 draftCount = draftPackages.size,
                 onClear = { showClearConfirm = true },
                 onConfirm = {
+                    // 保存完整草稿，不能从可见行重建名单，否则会误删隐藏规则。
                     viewModel.replaceBlockedSourcePackages(draftPackages)
                     onBack()
                 }
@@ -125,12 +124,6 @@ fun ClipSourceBlockSettingPage(
             ClipSourceBlockSettingHeader(
                 selectedCount = draftPackages.size,
                 state = installedState,
-            )
-            Text(
-                text = stringResource(R.string.base_general_clip_source_block_setting_notice),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 20.dp)
             )
             OutlinedTextField(
                 value = installedState.searchQuery,
@@ -184,15 +177,8 @@ fun ClipSourceBlockSettingPage(
                         selected = candidate.packageName in draftPackages,
                         installedAppIconImageLoader = installedAppIconImageLoader,
                         onToggle = {
-                            /** 当前行包名；作为草稿集合唯一身份。 */
-                            val packageName = candidate.packageName
-                            draftPackages = if (packageName in draftPackages) {
-                                draftPackages - packageName
-                            } else if (draftPackages.size < ClipSourceBlockRules.MAX_PACKAGE_COUNT) {
-                                draftPackages + packageName
-                            } else {
-                                draftPackages
-                            }
+                            // 只切换当前可见包名，完整草稿中的隐藏规则继续保留。
+                            draftPackages = toggleBlockedSourcePackage(draftPackages, candidate.packageName)
                         }
                     )
                 }
@@ -214,6 +200,7 @@ fun ClipSourceBlockSettingPage(
         ClipSourceBlockClearConfirmDialog(
             onDismiss = { showClearConfirm = false },
             onConfirm = {
+                // 用户已确认清空全部规则，隐藏包名一并从草稿移除；页面确认保存后才落盘。
                 draftPackages = emptySet()
                 showClearConfirm = false
             }
@@ -232,7 +219,7 @@ fun ClipSourceBlockSettingPage(
                 } else {
                     draftPackages.size
                 }
-                /** 手动添加校验结果；成功后同步草稿并关闭弹窗。 */
+                /** 手动添加校验结果；成功后加入完整草稿，未安装包名仍不生成可见行。 */
                 val result = viewModel.addManualBlockedPackage(packageName, currentPackageCount)
                 if (result is ManualPackageValidationResult.Valid) {
                     draftPackages = draftPackages + result.packageName
@@ -244,7 +231,7 @@ fun ClipSourceBlockSettingPage(
     }
 }
 
-/** 页面头部摘要，展示当前草稿选择数量。 */
+/** 页面头部摘要统计完整草稿，包括暂不显示的未安装包名。 */
 @Composable
 private fun ClipSourceBlockSettingHeader(
     selectedCount: Int,
@@ -416,7 +403,7 @@ private fun ClipSourceBlockSettingBottomBar(
     }
 }
 
-/** 清空来源过滤名单二次确认。 */
+/** 清空完整过滤名单的二次确认；文案明确包含未安装应用的隐藏规则。 */
 @Composable
 private fun ClipSourceBlockClearConfirmDialog(
     onDismiss: () -> Unit,
@@ -501,28 +488,5 @@ private fun ManualPackageValidationResult.toManualAddErrorTextRes(): Int? {
         ManualPackageValidationResult.TooLong -> R.string.base_general_clip_source_block_manual_error_too_long
         ManualPackageValidationResult.UnsafeCharacters -> R.string.base_general_clip_source_block_manual_error_unsafe
         ManualPackageValidationResult.TooManyPackages -> R.string.base_general_clip_source_block_manual_error_too_many
-    }
-}
-
-/** 过滤设置页候选项。 */
-private fun filterClipSourceBlockCandidates(
-    candidates: List<BlockedSourceAppCandidate>,
-    draftPackages: Set<String>,
-    searchQuery: String,
-    showSystemApps: Boolean,
-): List<BlockedSourceAppCandidate> {
-    /** 标准化后的搜索关键词；只用于 UI 匹配，不影响保存规则。 */
-    val normalizedQuery = searchQuery.trim().lowercase(Locale.ROOT)
-    return candidates.filter { candidate ->
-        /** 搜索模式下系统应用也可命中；默认模式下按开关隐藏未选中的系统应用。 */
-        val visibleByDefault = candidate.packageName in draftPackages ||
-            showSystemApps ||
-            candidate.defaultVisible ||
-            normalizedQuery.isNotEmpty()
-        /** 搜索命中 App 名或包名。 */
-        val matchesQuery = normalizedQuery.isEmpty() ||
-            candidate.displayName.lowercase(Locale.ROOT).contains(normalizedQuery) ||
-            candidate.packageName.lowercase(Locale.ROOT).contains(normalizedQuery)
-        visibleByDefault && matchesQuery
     }
 }

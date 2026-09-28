@@ -51,9 +51,9 @@ class ClipSourceBlockSettingStateTest {
     }
 
     @Test
-    /** 当前安装应用缺失时，应回退到历史来源可读图标文件模型。 */
+    /** 未安装应用的历史图标保留在内部候选中，但不能让它进入最终可见列表。 */
     fun buildCandidatesFallsBackToHistoryFileIconWhenNotInstalled() {
-        /** 可读历史图标文件；安装列表没有当前包名时用于兜底展示。 */
+        /** 可读历史图标文件；证明有历史图标也不能让未安装应用重新出现。 */
         val historyIcon = temporaryFolder.newFile("history-icon.png").apply { writeText("history-icon") }
         /** 历史来源缓存；名称和图标都来自 source_apps。 */
         val historySourceApp = sourceApp(
@@ -63,7 +63,7 @@ class ClipSourceBlockSettingStateTest {
             iconHash = "history-hash",
         )
 
-        /** 合并后的候选列表；历史来源是唯一可读展示信息。 */
+        /** 内部候选的名称和图标来自历史来源，但仍未获得本机安装标记。 */
         val candidates = buildBlockedSourceAppCandidates(
             blockedPackages = emptySet(),
             installedApps = emptyList(),
@@ -78,6 +78,7 @@ class ClipSourceBlockSettingStateTest {
             candidate.icon,
         )
         assertTrue(candidate.historySource)
+        assertTrue(filterClipSourceBlockCandidates(candidates, emptySet(), "", true).isEmpty())
     }
 
     @Test
@@ -107,7 +108,7 @@ class ClipSourceBlockSettingStateTest {
     }
 
     @Test
-    /** 未安装但已保存的包名仍应展示，且没有图标时保持可移除状态。 */
+    /** 未安装但已保存的包名仍保留为内部候选，展示筛选不应删除完整名单。 */
     fun buildCandidatesKeepsBlockedUnrecognizedPackageWithoutIcon() {
         /** 合并后的候选列表；只有已保存包名，没有历史来源和安装列表。 */
         val candidates = buildBlockedSourceAppCandidates(
@@ -116,7 +117,7 @@ class ClipSourceBlockSettingStateTest {
             historySourceApps = emptyList(),
         )
 
-        /** 目标候选项；标题由 UI 回退包名，图标保持为空。 */
+        /** 内部候选仍保留包名和屏蔽状态；最终是否可见由独立筛选规则决定。 */
         val candidate = candidates.single()
         assertEquals("com.missing.app", candidate.displayName)
         assertEquals(BlockedSourceAppIcon.None, candidate.icon)

@@ -254,7 +254,7 @@ class ClipSourceBlockSettingVm @Inject constructor(
 /**
  * 构建来源过滤设置页候选列表。
  *
- * @param blockedPackages 已保存的过滤包名集合，只用于勾选状态和置顶排序。
+ * @param blockedPackages 完整已保存名单，用于内部候选、勾选和排序；未安装候选由页面最终筛选隐藏。
  * @param installedApps 主进程当前直读的安装应用列表，名称和安装图标模型优先用于展示。
  * @param historySourceApps 数据库中历史来源 App 缓存，图标路径必须真实存在才可展示。
  */
@@ -416,11 +416,11 @@ data class BlockedSourceAppCandidate(
     /** 是否曾作为剪贴来源被记录过。 */
     val historySource: Boolean,
 ) {
-    /** UI 展示标题；名称未知时回退包名，保证已保存但卸载的包名仍可管理。 */
+    /** 内部候选名称，未知时回退包名；未安装候选即使有名称，也由最终展示筛选隐藏。 */
     val displayName: String
         get() = appName?.takeIf { name -> name.isNotBlank() } ?: packageName
 
-    /** 默认列表是否应该展示；系统应用默认隐藏，但已过滤、历史来源和搜索仍可展示。 */
+    /** 默认分类可见性；最终列表还必须满足安装条件，已过滤和历史来源不能绕过它。 */
     val defaultVisible: Boolean
         get() = savedBlocked || historySource || (launchableApp && !systemApp)
 }
