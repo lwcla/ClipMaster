@@ -44,7 +44,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -59,6 +58,7 @@ import com.cla.clip.base.general.backup.RemoteBackupFile
 import com.cla.clip.master.ui.navigation.BackupRestoreRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.widget.ClipMasterCard
+import com.cla.clip.master.ui.widget.OutlinedPasswordTextField
 import com.cla.clip.master.ui.widget.SecondaryPageScaffold
 
 /**
@@ -485,7 +485,7 @@ private fun LocalBackupSection(
     }
 }
 
-/** WebDAV 配置和手动操作区。 */
+/** WebDAV 配置和手动操作区；密码显隐委托给通用输入组件，凭据修改仍由调用方处理。 */
 @Composable
 private fun WebDavConfigSection(
     state: BackupUiState,
@@ -525,12 +525,10 @@ private fun WebDavConfigSection(
                 singleLine = true,
                 label = { Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_webdav_username)) }
             )
-            OutlinedTextField(
+            OutlinedPasswordTextField(
                 value = state.webDavPassword,
                 onValueChange = onPasswordChange,
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
                 label = { Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_webdav_password)) }
             )
             OutlinedTextField(

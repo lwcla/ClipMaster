@@ -7,4 +7,6 @@
     <string name="host_notification_permission_denied_tip">通知权限已关闭，剪贴仍会保存，但剪贴保存、下载进度和 Shizuku 状态提醒不会显示。</string>
     <string name="host_notification_system_disabled_tip">系统通知已关闭，剪贴仍会保存，但相关提醒不会显示。可进入系统通知设置重新开启。</string>
     <string name="host_notification_permission_tip_dialog">通知权限用于展示剪贴保存、下载进度和 Shizuku 状态提醒；关闭后剪贴仍会保存。\n请在下一步授权中点击“允许”。</string>
+    <string name="host_show_password">查看密码</string>
+    <string name="host_hide_password">隐藏密码</string>
 </resources>
