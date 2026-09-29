@@ -6,6 +6,8 @@ import androidx.work.WorkManager
 import com.cla.clip.base.general.BaseApplication
 import com.cla.clip.base.general.backup.BackupTempFileStore
 import com.cla.clip.base.general.utils.logI
+import com.cla.clip.base.general.utils.logE
+import com.cla.clip.base.general.utils.ApplicationScope
 import com.cla.clip.master.utils.ShizukuConnector
 import com.cla.clip.master.work.BackupAutoScheduler
 import com.cla.clip.master.work.DownloadVideoWorker
@@ -13,6 +15,9 @@ import com.cla.clip.master.work.RecycleBinCleanupScheduler
 import com.cla.clip.master.work.ShizukuWorkScheduler
 import dagger.Lazy
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltAndroidApp
@@ -42,6 +47,11 @@ class App : BaseApplication(), Configuration.Provider {
     @Inject
     lateinit var backupTempFileStore: BackupTempFileStore
 
+    /** 应用级协程作用域；后台调度独立于启动回调和页面生命周期。 */
+    @Inject
+    @ApplicationScope
+    lateinit var applicationScope: CoroutineScope
+
     /** WorkManager 配置入口，返回带 HiltWorkerFactory 的配置，供手动初始化和系统读取使用。 */
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
@@ -67,7 +77,15 @@ class App : BaseApplication(), Configuration.Provider {
             RecycleBinCleanupScheduler.schedulePeriodic(this)
             RecycleBinCleanupScheduler.cleanupNow(this)
             backupTempFileStore.cleanupExpired()
-            BackupAutoScheduler.reschedule(this)
+            applicationScope.launch {
+                try {
+                    BackupAutoScheduler.reschedule(this@App)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    logE(TAG, error) { "启动时恢复备份调度失败 reasonCode=settings_io_failed" }
+                }
+            }
 
             shizukuConnector.connect()
         }

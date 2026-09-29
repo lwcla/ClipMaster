@@ -1,7 +1,7 @@
 package com.cla.clip.base.general.repository
 
 import androidx.paging.PagingSource
-import com.cla.clip.base.general.config.AppSetting
+import com.cla.clip.base.general.backup.settings.BackupRuntimeRepository
 import com.cla.clip.base.general.dao.ImageExtractBatchData
 import com.cla.clip.base.general.dao.ImageExtractDao
 import com.cla.clip.base.general.dao.ImageHistoryFileRef
@@ -47,7 +47,9 @@ data class ImageCandidateData(
  * 负责把页面提取到的图片候选写入批次/图片项表，并为 UI 和 Worker 提供观察、读取和状态回写能力。
  */
 class ImageExtractRepository @Inject constructor(
-    private val imageExtractDao: ImageExtractDao
+    private val imageExtractDao: ImageExtractDao,
+    /** 图片提取数据提交后的可等待备份变更标记。 */
+    private val backupRuntimeRepository: BackupRuntimeRepository,
 ) {
 
     /** 保存本次网页提取结果，先落库再交给 Worker 下载，避免页面退出后候选丢失。 */
@@ -70,7 +72,7 @@ class ImageExtractRepository @Inject constructor(
             )
         }
         val batchId = imageExtractDao.replaceBatchItems(batch, items)
-        AppSetting.markBackupDirty()
+        backupRuntimeRepository.markChanged()
         return batchId
     }
 
@@ -166,7 +168,7 @@ class ImageExtractRepository @Inject constructor(
     suspend fun updateImageMediaReferencesForRelocation(updates: List<ImageMediaReferenceUpdate>) {
         if (updates.isEmpty()) return
         imageExtractDao.updateMediaReferencesForRelocation(updates)
-        AppSetting.markBackupDirty()
+        backupRuntimeRepository.markChanged()
     }
 
     /** 读取图片下载历史页校验本地文件所需的轻量图片引用，避免列表分页映射完整加载每张图片实体。 */
@@ -196,7 +198,7 @@ class ImageExtractRepository @Inject constructor(
     ) {
         imageExtractDao.updateBatchStatus(batchId, status, successCount, failedCount, filteredCount, outputDir, errorMsg)
         if (status != ImageExtractBatchData.STATUS_DOWNLOADING) {
-            AppSetting.markBackupDirty()
+            backupRuntimeRepository.markChanged()
         }
     }
 
@@ -220,13 +222,13 @@ class ImageExtractRepository @Inject constructor(
      */
     suspend fun keepSelectedItems(batchId: Long, selectedItemIds: Set<Long>) {
         imageExtractDao.keepSelectedItems(batchId, selectedItemIds)
-        AppSetting.markBackupDirty()
+        backupRuntimeRepository.markChanged()
     }
 
     /** 精确删除选中图片批次；图片项只通过外键级联删除这些批次下的数据。 */
     suspend fun deleteBatches(batchIds: Set<Long>) {
         if (batchIds.isEmpty()) return
         imageExtractDao.deleteBatches(batchIds)
-        AppSetting.markBackupDirty()
+        backupRuntimeRepository.markChanged()
     }
 }

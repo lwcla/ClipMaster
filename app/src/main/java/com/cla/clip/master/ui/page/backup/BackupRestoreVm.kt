@@ -6,6 +6,7 @@ import android.provider.OpenableColumns
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cla.clip.base.general.R
+import com.cla.clip.master.R as HostR
 import com.cla.clip.base.general.backup.BackupFailure
 import com.cla.clip.base.general.backup.BackupPackageRef
 import com.cla.clip.base.general.backup.BackupProgress
@@ -21,7 +22,8 @@ import com.cla.clip.base.general.backup.logCode
 import com.cla.clip.base.general.backup.newBackupTaskId
 import com.cla.clip.base.general.backup.normalizeWebDavRemoteDir
 import com.cla.clip.base.general.backup.toLogFields
-import com.cla.clip.base.general.config.AppSetting
+import com.cla.clip.base.general.backup.settings.BackupSettingsRepository
+import com.cla.clip.base.general.backup.settings.WebDavCredentialUnavailable
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
 import com.cla.clip.base.general.utils.logI
@@ -62,6 +64,8 @@ class BackupRestoreVm @Inject constructor(
     private val restoreRequests: BackupRestoreRequests,
     /** 媒体关联独立页事件流；恢复页只接收入口状态和结构化终态摘要。 */
     private val mediaRelocationEvents: BackupMediaRelocationEvents,
+    /** 恢复远端文件时读取已提交的设备绑定 WebDAV 配置与密码。 */
+    private val backupSettings: BackupSettingsRepository,
 ) : ViewModel() {
     companion object {
         /** 日志标签，只记录任务状态和 reasonCode，不输出用户内容或路径。 */
@@ -109,10 +113,13 @@ class BackupRestoreVm @Inject constructor(
 
     /** 恢复当前预检过的备份。 */
     fun restoreSelectedBackup() {
+        /** 预检阶段确认过的本地临时包引用，重试时复用同一份输入。 */
         val packageRef = uiState.value.selectedBackupRef ?: return
+        /** 当前入口类型只用于流程展示和低敏日志。 */
         val sourceType = uiState.value.restoreFlow.sourceTypeOrUnknown()
         restoreFlowJob?.cancel()
         restoreFlowJob = viewModelScope.launch {
+            /** 本次恢复尝试的任务标识，不携带备份内容或路径。 */
             val taskId = newBackupTaskId("restore")
             transitionRestoreFlow(
                 nextState = BackupRestoreFlowState.Restoring(
@@ -130,20 +137,42 @@ class BackupRestoreVm @Inject constructor(
                 failureStage = BackupRestoreFailureStage.Restoring
             ) {
                 BackupTaskGate.runExclusive {
+                    /** 本次恢复耗时统计起点。 */
                     val startedAt = System.currentTimeMillis()
+                    /** 用户在进入结果页前看到的已校验清单摘要。 */
                     val preview = uiState.value.selectedPreview
+                    /** 提交前确保临时包仍可读取，避免已清理引用误入恢复器。 */
                     val readable = packageRef.requireReadable()
                     logI(TAG) {
                         "开始恢复备份 taskId=$taskId backupKind=${preview?.backupKind?.logCode()} " +
                             "fileSize=${readable.length()} ${preview?.summary?.toLogFields().orEmpty()}"
                     }
-                    val report = backupRepository.restoreSnapshot(packageRef)
-                    AppSetting.markBackupDirty()
-                    BackupAutoScheduler.markDirtyAndSchedule(appContext)
+                    /** 宿主、功能库和设置阶段分开提交；部分失败要保留已确认的报告。 */
+                    var partialRestoreStage: BackupPartialRestoreStage? = null
+                    /** 未知异常仍由完整失败流程处理，不能凭猜测报告部分成功。 */
+                    val report = try {
+                        backupRepository.restoreSnapshot(packageRef)
+                    } catch (failure: Throwable) {
+                        if (failure is CancellationException) throw failure
+                        /** 只有明确携带已提交报告的阶段异常可进入结果页。 */
+                        val partial = failure.toPartialRestoreOutcomeOrNull() ?: throw failure
+                        partialRestoreStage = partial.stage
+                        partial.report
+                    }
+                    /** Room 已提交后，即使同步标记失败也必须保留真实恢复报告。 */
+                    val backupSyncFailed = try {
+                        BackupAutoScheduler.markDirtyAndSchedule(appContext)
+                        false
+                    } catch (failure: Throwable) {
+                        if (failure is CancellationException) throw failure
+                        logE(TAG) { "恢复后备份标记失败 taskId=$taskId reasonCode=${failure.backupReasonCode()}" }
+                        true
+                    }
                     if (currentRestoreFlowTaskId() != taskId) {
                         logW(TAG) { "备份恢复结果已忽略 taskId=$taskId reasonCode=flow_closed" }
                         return@runExclusive
                     }
+                    /** 已提交阶段最终结束时间，用于结果页展示。 */
                     val completedAt = System.currentTimeMillis()
                     transitionRestoreFlow(
                         nextState = BackupRestoreFlowState.Result(
@@ -152,13 +181,21 @@ class BackupRestoreVm @Inject constructor(
                             fileName = packageRef.fileName,
                             preview = preview,
                             report = report,
-                            completedAt = completedAt
+                            completedAt = completedAt,
+                            settingsRestoreFailed = partialRestoreStage == BackupPartialRestoreStage.Settings,
+                            featureRestoreFailed = partialRestoreStage == BackupPartialRestoreStage.Feature,
+                            backupSyncFailed = backupSyncFailed,
                         ),
                         taskId = taskId,
-                        reasonCode = "restore_success"
+                        reasonCode = when (partialRestoreStage) {
+                            BackupPartialRestoreStage.Feature -> "restore_partial_feature_failed"
+                            BackupPartialRestoreStage.Settings -> "restore_partial_settings_failed"
+                            null -> if (backupSyncFailed) "restore_partial_backup_sync_failed" else "restore_success"
+                        }
                     )
                     logI(TAG) {
-                        "备份恢复成功 taskId=$taskId inserted=${report.insertedCount} updated=${report.updatedCount} " +
+                        "备份恢复结束 taskId=$taskId partialStage=$partialRestoreStage backupSyncFailed=$backupSyncFailed " +
+                            "inserted=${report.insertedCount} updated=${report.updatedCount} " +
                             "skipped=${report.skippedCount} durationMs=${System.currentTimeMillis() - startedAt}"
                     }
                 }
@@ -433,6 +470,7 @@ class BackupRestoreVm @Inject constructor(
             BackupBusyOperation.TestingWebDav,
             BackupBusyOperation.RefreshingWebDav,
             BackupBusyOperation.RefreshingLocal,
+            BackupBusyOperation.SavingSettings,
             BackupBusyOperation.None -> BackupProgressPhase.Preparing
         }
         return BackupProgress(taskId = id, phase = phase, category = BackupProgressCategory.Overall)
@@ -529,13 +567,15 @@ class BackupRestoreVm @Inject constructor(
     }
 
     /** 当前 WebDAV 配置快照；只读取本机配置，不输出 endpoint、账号或密码。 */
-    private fun currentWebDavConfig(): WebDavConfig {
+    private suspend fun currentWebDavConfig(): WebDavConfig {
+        /** 同一次 DataStore 读取同时提供连接字段和对应密文的解密结果。 */
+        val connection = backupSettings.loadWebDavConnection()
         return WebDavConfig(
-            endpoint = AppSetting.webDavEndpoint,
-            username = AppSetting.webDavUsername,
-            password = AppSetting.webDavPassword,
-            remoteDir = normalizeWebDavRemoteDir(AppSetting.webDavRemoteDir),
-            allowInsecureHttp = AppSetting.webDavAllowInsecureHttp
+            endpoint = connection.settings.webDavEndpoint,
+            username = connection.settings.webDavUsername,
+            password = connection.password.orEmpty(),
+            remoteDir = normalizeWebDavRemoteDir(connection.settings.webDavRemoteDir),
+            allowInsecureHttp = connection.settings.webDavAllowInsecureHttp
         )
     }
 
@@ -546,6 +586,7 @@ class BackupRestoreVm @Inject constructor(
             is BackupFailure.AppMismatch -> R.string.base_general_backup_error_app_mismatch
             is BackupFailure.UnsupportedSchema -> R.string.base_general_backup_error_schema
             is BackupFailure.ChecksumMismatch -> R.string.base_general_backup_error_checksum
+            is WebDavCredentialUnavailable -> HostR.string.host_webdav_password_unavailable
             is BackupFailure.AuthenticationFailed -> R.string.base_general_backup_error_auth
             is BackupFailure.StorageNotWritable -> R.string.base_general_backup_error_storage
             is BackupFailure.RemoteFailed -> R.string.base_general_backup_error_remote

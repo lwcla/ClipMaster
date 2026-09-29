@@ -84,7 +84,7 @@ class DefaultClipboardDataProcessor @Inject constructor(
     override fun copyToClipboard(clip: ClipShowEntity) {
         scope.launch(Dispatchers.IO) {
             clipRepository.get().updateTimestamp(clip.id)
-            BackupAutoScheduler.markDirtyAndSchedule(appContext)
+            BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
         }
 
         copyToClipboard(clip.content)
@@ -109,7 +109,7 @@ class DefaultClipboardDataProcessor @Inject constructor(
         scope.launch(Dispatchers.IO) {
             val success = clipRepository.get().deleteClip(clip)
             if (success) {
-                BackupAutoScheduler.markDirtyAndSchedule(appContext)
+                BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
                 if (sendEvent) {
                     _deleteSuccessFlow.emit(clip.id)
                 }
@@ -122,7 +122,7 @@ class DefaultClipboardDataProcessor @Inject constructor(
         scope.launch(Dispatchers.IO) {
             val success = clipRepository.get().deleteClipPermanently(clip)
             if (success) {
-                BackupAutoScheduler.markDirtyAndSchedule(appContext)
+                BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
                 if (sendEvent) {
                     _deleteSuccessFlow.emit(clip.id)
                 }
@@ -136,7 +136,7 @@ class DefaultClipboardDataProcessor @Inject constructor(
             /** 实际移入回收站数量；Repository 会过滤无效、重复和已删除 id。 */
             val count = clipRepository.get().moveClipsToRecycleBin(ids)
             if (count > 0) {
-                BackupAutoScheduler.markDirtyAndSchedule(appContext)
+                BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
                 appContext.toast(appContext.getString(R.string.base_general_moved_count_to_recycle_bin, count))
             } else {
                 appContext.toast(R.string.base_general_no_processable_clips)
@@ -152,7 +152,7 @@ class DefaultClipboardDataProcessor @Inject constructor(
             /** 实际彻底删除数量；Repository 会过滤无效、重复和不存在的 id。 */
             val count = clipRepository.get().deleteClipsPermanently(ids)
             if (count > 0) {
-                BackupAutoScheduler.markDirtyAndSchedule(appContext)
+                BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
                 appContext.toast(appContext.getString(R.string.base_general_deleted_count_permanently, count))
             } else {
                 appContext.toast(R.string.base_general_no_processable_clips)
@@ -166,14 +166,14 @@ class DefaultClipboardDataProcessor @Inject constructor(
     override fun updatePinStatus(clip: ClipShowEntity, isPinned: Boolean) {
         scope.launch(Dispatchers.IO) {
             clipRepository.get().updatePinStatus(clip.id, isPinned)
-            BackupAutoScheduler.markDirtyAndSchedule(appContext)
+            BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
         }
     }
 
     override fun updateFoldStatus(clip: ClipShowEntity, isFolded: Boolean) {
         scope.launch(Dispatchers.IO) {
             clipRepository.get().updateFoldStatus(clip.id, isFolded)
-            BackupAutoScheduler.markDirtyAndSchedule(appContext)
+            BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
         }
     }
 
@@ -182,7 +182,7 @@ class DefaultClipboardDataProcessor @Inject constructor(
             /** 实际折叠数量；Repository/DAO 会跳过已删除、已折叠和不存在的记录。 */
             val count = clipRepository.get().foldVisibleClips(ids)
             if (count > 0) {
-                BackupAutoScheduler.markDirtyAndSchedule(appContext)
+                BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
                 appContext.toast(appContext.getString(R.string.base_general_folded_clip_count, count))
             } else {
                 appContext.toast(R.string.base_general_no_processable_clips)

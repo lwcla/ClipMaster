@@ -7,6 +7,9 @@ import androidx.paging.PagingConfig
 import androidx.paging.cachedIn
 import androidx.paging.map
 import com.cla.clip.base.general.entity.ClipVisibilityScope
+import com.cla.clip.base.general.config.clip.ClipSettingsRepository
+import com.cla.clip.base.general.config.ClipItemQuickAction
+import com.cla.clip.base.general.utils.logE
 import com.cla.clip.base.general.entity.toUi
 import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.master.utils.ShizukuConnector
@@ -15,8 +18,10 @@ import com.cla.clip.master.processor.DefaultClipboardDataProcessor
 import dagger.Lazy
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.catch
 import javax.inject.Inject
 
 /**
@@ -35,7 +40,19 @@ class ClipListModel @Inject constructor(
 
     /** 剪贴数据仓库使用 Lazy，避免 ViewModel 初始化时立刻触发数据库依赖创建。 */
     private val clipRepository: Lazy<ClipRepository>,
+
+    /** 列表可见时提供已提交快捷动作，首次读取前关闭快捷动作区。 */
+    private val clipSettingsRepository: ClipSettingsRepository,
 ) : ViewModel() , ClipboardDataProcessor by clipboardDataProcessor {
+
+    /** 快捷动作领域流由页面生命周期控制收集，空初值只由页面用于暂时关闭快捷操作。 */
+    val quickAction = clipSettingsRepository.data.map { settings -> settings.quickAction }
+        .catch { error ->
+            if (error is CancellationException) throw error
+            // 读取失败后撤销旧快捷动作，整卡点击仍可进入详情。
+            logE("ClipListModel", error) { "读取快捷动作设置失败 reasonCode=settings_read_failed" }
+            emit(ClipItemQuickAction.None)
+        }
 
     /**
      * 首页剪贴记录分页数据。

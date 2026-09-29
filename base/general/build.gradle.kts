@@ -117,8 +117,9 @@ dependencies {
     // json
     api(libs.kotlinx.serialization.json)
 
-    // mmkv
-    implementation(libs.mmkv)
+    // 宿主唯一设置文件使用仓库已锁定的 Preferences DataStore 版本。
+    implementation(libs.androidx.datastore.preferences)
+
 }
 
 val org.gradle.api.Project.androidApp: com.android.build.gradle.AppExtension

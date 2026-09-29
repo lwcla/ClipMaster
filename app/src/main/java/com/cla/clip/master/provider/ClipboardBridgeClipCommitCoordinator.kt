@@ -7,11 +7,13 @@ import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.logW
 import com.cla.clip.master.utils.ClipHelper
 import com.cla.clip.master.utils.ClipProcessResult
+import com.cla.clip.master.utils.ClipSettingsReadFailure
 import com.cla.clip.shizuku.ClipboardBridgeClipPayload
 import com.cla.clip.shizuku.ClipboardBridgeContract
 import dagger.Lazy
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withTimeout
 import org.jsoup.Jsoup
 import java.io.File
@@ -56,7 +58,15 @@ class ClipboardBridgeClipCommitCoordinator @Inject constructor(
                 resultCode = ClipboardBridgeContract.CODE_TIMEOUT,
                 clipStatus = ClipboardBridgeContract.CLIP_STATUS_COMMIT_FAILED
             )
+        } catch (failure: ClipSettingsReadFailure) {
+            logE(TAG) { "Provider 剪贴设置读取失败 eventId=${request.eventId} reasonCode=settings_store_failed" }
+            ClipboardBridgeResult.of(
+                resultCode = ClipboardBridgeContract.CODE_COMMIT_FAILED,
+                clipStatus = ClipboardBridgeContract.CLIP_STATUS_COMMIT_FAILED,
+                reasonCode = "settings_store_failed",
+            )
         } catch (throwable: Throwable) {
+            if (throwable is CancellationException) throw throwable
             logE(TAG, throwable) { "Provider 剪贴 payload 提交失败 eventId=${request.eventId} packageName=${request.packageName}" }
             ClipboardBridgeResult.of(
                 resultCode = ClipboardBridgeContract.CODE_COMMIT_FAILED,

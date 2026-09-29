@@ -32,7 +32,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.flowWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
-import com.cla.clip.base.general.config.AppSetting
 import com.cla.clip.base.general.config.ClipItemQuickAction
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.utils.logD
@@ -77,8 +76,8 @@ fun ClipListPage(
     val pagedClips = remember(viewModel.pagedClips, lifecycle) {
         viewModel.pagedClips.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
     }.collectAsLazyPagingItems()
-    // 普通列表实时读取“我的”页配置；选择“无”时完全关闭快捷动作区和三角底色。
-    val quickAction by AppSetting.clipItemQuickActionFlow.collectAsStateWithLifecycle()
+    /** 页面可见时读取已提交快捷动作；首次加载或读取失败暂时关闭快捷操作。 */
+    val quickAction by viewModel.quickAction.collectAsStateWithLifecycle(initialValue = ClipItemQuickAction.None)
 
     var deleteClip by remember { mutableStateOf<ClipShowEntity?>(null) }
     /** 当前多选态选中的剪贴 id；只存 id，分页刷新时不会因为对象实例变化丢失选择。 */

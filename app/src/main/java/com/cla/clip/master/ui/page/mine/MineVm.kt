@@ -6,13 +6,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.cla.clip.base.general.config.AppSetting
 import com.cla.clip.base.general.config.ClipItemQuickAction
+import com.cla.clip.base.general.config.clip.ClipSettingsRepository
+import com.cla.clip.base.general.config.clip.ClipSettingsSnapshot
+import com.cla.clip.base.general.config.update.AppUpdateCheckStore
 import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.base.general.utils.hasNotificationPermission
 import com.cla.clip.base.general.utils.hasNotificationRuntimePermission
 import com.cla.clip.base.general.utils.logD
+import com.cla.clip.base.general.utils.logE
 import com.cla.clip.base.general.utils.logI
+import com.cla.clip.base.general.utils.toast
 import com.cla.clip.master.entity.SettingSwitchItemUi
 import com.cla.clip.master.update.AppUpdateCheckResult
 import com.cla.clip.master.update.AppUpdateCheckTrigger
@@ -26,10 +30,15 @@ import dagger.Lazy
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -45,6 +54,7 @@ import javax.inject.Inject
  * 实际系统弹窗或设置页跳转由 UI 层执行，避免 ViewModel 持有 Activity 结果 API。
  */
 @HiltViewModel
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class MineVm @Inject constructor(
     /** 应用级 Context，仅用于读取系统权限状态，不持有页面实例。 */
     @param:ApplicationContext private val appContext: Context,
@@ -57,6 +67,12 @@ class MineVm @Inject constructor(
 
     /** 更新配置工厂；按当前构建生成数据源、渠道和发布页配置。 */
     private val appUpdateConfigFactory: AppUpdateConfigFactory,
+
+    /** 普通剪贴设置的唯一持久化入口；UI 只消费提交后的值。 */
+    private val clipSettingsRepository: ClipSettingsRepository,
+
+    /** 自升级限频时间的持久化入口；读取失败时不进行自动联网。 */
+    private val appUpdateCheckStore: AppUpdateCheckStore,
 ) : ViewModel() {
 
     companion object {
@@ -131,15 +147,43 @@ class MineVm @Inject constructor(
             0
         )
 
+    /** 设置加载重试序号；变化时重新订阅 DataStore，而不修改持久化内容。 */
+    private val settingsReload = MutableStateFlow(0L)
+
+    /** 设置读取失败标记；页面据此显示重试入口并暂停编辑。 */
+    private val _settingsLoadFailed = MutableStateFlow(false)
+
+    /** 页面只读的设置读取失败状态。 */
+    val settingsLoadFailed = _settingsLoadFailed.asStateFlow()
+
+    /** 两个设置入口共用的一份已提交快照；失败需要显式重试。 */
+    private val clipSettings = settingsReload.flatMapLatest {
+        clipSettingsRepository.data
+            .onEach { _settingsLoadFailed.value = false }
+            .catch { error ->
+                if (error is CancellationException) throw error
+                logE(TAG, error) { "读取剪贴设置失败 reasonCode=settings_read_failed" }
+                _settingsLoadFailed.value = true
+            }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null as ClipSettingsSnapshot?)
+
     /**
      * 普通剪贴 item 快捷动作设置。
      *
-     * 直接暴露 AppSetting 的 StateFlow，让“我的”页修改后普通列表和普通搜索能立即跟随刷新。
+     * 仅在页面订阅时读取已提交设置；null 表示尚未加载或读取失败，页面需禁用编辑。
      */
-    val clipItemQuickAction = AppSetting.clipItemQuickActionFlow
+    val clipItemQuickAction = clipSettings.map { settings -> settings?.quickAction }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null as ClipItemQuickAction?)
 
-    /** 剪贴来源 App 过滤名单；详情页和保存链路也读取同一份 AppSetting 状态。 */
-    val blockedClipSourcePackages = AppSetting.blockedClipSourcePackagesFlow
+    /** 已提交来源过滤名单；null 防止首次读取前将真实名单误呈现为空。 */
+    val blockedClipSourcePackages = clipSettings.map { settings -> settings?.blockedPackages }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null as Set<String>?)
+
+    /** 用户点击错误入口后重新读取设置，成功时解除编辑禁用。 */
+    fun retrySettingsLoad() {
+        // 重试期间继续保持错误门禁；只有新快照真正读取成功后才重新允许编辑。
+        settingsReload.update { sequence -> sequence + 1L }
+    }
 
     init {
         // 初始化时读取一次系统权限状态，确保页面首次展示的开关状态准确。
@@ -152,8 +196,24 @@ class MineVm @Inject constructor(
      * 这里不做页面范围判断；普通列表/普通搜索负责消费，折叠列表和回收站固定忽略该设置。
      */
     fun updateClipItemQuickAction(action: ClipItemQuickAction) {
-        AppSetting.clipItemQuickAction = action
-        BackupAutoScheduler.markDirtyAndSchedule(appContext)
+        viewModelScope.launch {
+            try {
+                clipSettingsRepository.setQuickAction(action)
+                try {
+                    BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    // 设置已经提交且备份版本已标记；调度失败不能伪装成设置保存失败。
+                    logE(TAG, error) { "剪贴快捷动作已保存但备份调度失败 reasonCode=backup_schedule_failed" }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                logE(TAG, error) { "保存剪贴快捷动作失败 reasonCode=settings_write_failed" }
+                appContext.toast(com.cla.clip.master.R.string.host_settings_save_failed_retry)
+            }
+        }
     }
 
     /** 用户手动点击“检查更新”时触发完整检查，并允许展示“已是最新”的正向提示。 */
@@ -195,36 +255,45 @@ class MineVm @Inject constructor(
             return
         }
 
-        /** 本次检查开始时间；只用于自动检查限频判断。 */
-        val now = System.currentTimeMillis()
-        /** 自动检查是否命中 24 小时限频；手动检查永远绕过。 */
-        val throttleHit = !forceCheck && now - AppSetting.appUpdateLastCheckAt < AppSetting.APP_UPDATE_AUTO_CHECK_INTERVAL_MILLIS
-        if (throttleHit) {
-            logD(TAG) {
-                /** 距离下一次允许自动检查还剩的分钟数，日志中只用于排障。 */
-                val nextCheckAfterMinutes = TimeUnit.MILLISECONDS.toMinutes(
-                    AppSetting.APP_UPDATE_AUTO_CHECK_INTERVAL_MILLIS - (now - AppSetting.appUpdateLastCheckAt)
-                ).coerceAtLeast(0L)
-                "自动检查更新命中限频 trigger=${trigger.code} nextCheckAfterMinutes=$nextCheckAfterMinutes"
-            }
-            return
-        }
-
+        _appUpdateUiState.update { it.copy(checking = true) }
         viewModelScope.launch {
-            _appUpdateUiState.update { it.copy(checking = true) }
-            /** 本次更新检查结果；成功、已最新和失败都会统一映射成对话框状态。 */
-            val result = appUpdateChecker.check(
-                config = appUpdateConfig,
-                trigger = trigger,
-                forceCheck = forceCheck,
-                throttleHit = false,
-            )
-            AppSetting.appUpdateLastCheckAt = System.currentTimeMillis()
-            _appUpdateUiState.update { state ->
-                state.copy(
-                    checking = false,
-                    dialog = result.toDialogState(showPositiveResult = forceCheck),
+            try {
+                /** 本次检查开始时间；仅用于自动检查限频，不替代已提交时间。 */
+                val now = System.currentTimeMillis()
+                /** 自动检查上次时间；手动检查无需读取，存储失败不能被当作零。 */
+                val lastCheckAt = if (forceCheck) 0L else appUpdateCheckStore.snapshot().lastCheckAt
+                /** 自动检查是否命中滚动 24 小时窗口；手动检查始终绕过。 */
+                val throttleHit = !forceCheck && now - lastCheckAt < AppUpdateCheckStore.AUTO_CHECK_INTERVAL_MILLIS
+                if (throttleHit) {
+                    /** 下一次允许自动检查的分钟数，只用于低敏诊断。 */
+                    val nextCheckAfterMinutes = TimeUnit.MILLISECONDS.toMinutes(
+                        AppUpdateCheckStore.AUTO_CHECK_INTERVAL_MILLIS - (now - lastCheckAt)
+                    ).coerceAtLeast(0L)
+                    logD(TAG) { "自动检查更新命中限频 trigger=${trigger.code} nextCheckAfterMinutes=$nextCheckAfterMinutes" }
+                    return@launch
+                }
+                /** 本次更新检查结果；成功、已最新和失败映射为对话框状态。 */
+                val result = appUpdateChecker.check(
+                    config = appUpdateConfig,
+                    trigger = trigger,
+                    forceCheck = forceCheck,
+                    throttleHit = false,
                 )
+                try {
+                    appUpdateCheckStore.setLastCheckAt(System.currentTimeMillis())
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    // 检查结果已经产生；限频时间保存失败不能吞掉手动检查的结果弹窗。
+                    logE(TAG, error) { "保存更新检查时间失败 reasonCode=update_check_time_write_failed" }
+                }
+                _appUpdateUiState.update { state -> state.copy(dialog = result.toDialogState(showPositiveResult = forceCheck)) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                logE(TAG, error) { "读取或保存更新检查时间失败 reasonCode=settings_io_failed" }
+            } finally {
+                _appUpdateUiState.update { state -> state.copy(checking = false) }
             }
         }
     }

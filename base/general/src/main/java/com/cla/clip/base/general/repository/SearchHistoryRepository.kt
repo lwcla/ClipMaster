@@ -1,7 +1,7 @@
 package com.cla.clip.base.general.repository
 
 import androidx.room.withTransaction
-import com.cla.clip.base.general.config.AppSetting
+import com.cla.clip.base.general.backup.settings.BackupRuntimeRepository
 import com.cla.clip.base.general.dao.AppDatabase
 import com.cla.clip.base.general.dao.SearchHistoryDao
 import com.cla.clip.base.general.dao.SearchHistoryData
@@ -50,6 +50,8 @@ interface SearchHistoryRepository {
 class SearchHistoryRepositoryImpl @Inject constructor(
     private val appDatabase: AppDatabase,
     private val searchHistoryDao: SearchHistoryDao,
+    /** 历史成功写入后等待备份变更标记，禁止异步丢失。 */
+    private val backupRuntimeRepository: BackupRuntimeRepository,
 ) : SearchHistoryRepository {
 
     companion object {
@@ -97,20 +99,20 @@ class SearchHistoryRepositoryImpl @Inject constructor(
             )
             searchHistoryDao.trimScopeToLimit(isFolded, HISTORY_LIMIT)
         }
-        AppSetting.markBackupDirty()
+        backupRuntimeRepository.markChanged()
         Unit
     }
 
     override suspend fun deleteHistory(id: Long): Int = withContext(Dispatchers.IO) {
         if (id <= 0L) return@withContext 0
         val deleted = searchHistoryDao.deleteById(id)
-        if (deleted > 0) AppSetting.markBackupDirty()
+        if (deleted > 0) backupRuntimeRepository.markChanged()
         deleted
     }
 
     override suspend fun clearHistories(scope: ClipVisibilityScope): Int = withContext(Dispatchers.IO) {
         val deleted = searchHistoryDao.clearByScope(scope.toFoldState())
-        if (deleted > 0) AppSetting.markBackupDirty()
+        if (deleted > 0) backupRuntimeRepository.markChanged()
         deleted
     }
 

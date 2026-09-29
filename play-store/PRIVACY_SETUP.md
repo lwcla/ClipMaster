@@ -38,9 +38,9 @@
 | 网页状态与下载 | `app/src/main/java/com/cla/clip/master/ui/page/video/VideoProbeWebViewLayer.kt`；`entity/VideoCandidate.kt` | JavaScript、DOM storage、第一方/第三方 Cookie 已开启；媒体下载可携带所需 Cookie 等请求信息 |
 | 广告 | `feature/ad-admob/src/sdk/java/com/cla/clip/feature/ad/admob/AdmobSdkLoader.kt`；`AdmobPrivacyController.kt`；`app/.../ad/AdHostEnvironment.kt` | GMA Next-Gen 1.4.0、UMP 4.0.0；隐私信息刷新与广告请求分开；广告请求构造没有传入剪贴正文或应用清单 |
 | 广告隐私入口 | `app/src/main/java/com/cla/clip/master/ui/page/mine/MinePage.kt` | 只有 UMP 要求提供隐私选项时才显示入口；没有承诺所有地区均显示同一表单 |
-| 本地与 WebDAV 备份 | `base/general/src/main/java/com/cla/clip/base/general/backup/BackupSnapshotExporter.kt`；`BackupEntityMappers.kt`；`WebDavClient.kt`；`config/AppSetting.kt` | 记录及允许的设置可导出；自定义备份排除 WebDAV 凭据及媒体请求 Cookie；备份包未加密，自动备份默认关闭，WebDAV 默认 HTTPS，可显式允许 HTTP |
-| 系统备份 | `app/src/main/AndroidManifest.xml`；`res/xml/backup_rules.xml`；`res/xml/data_extraction_rules.xml` | `allowBackup=true`；主剪贴数据库未整体排除，不能宣称不会被系统备份。MMKV 在云备份中排除，但 Android 12+ device-transfer 段没有同等 MMKV 排除，不宣称所有凭据状态在所有迁移路径都被排除 |
-| 删除与保留 | `base/general/.../config/AppSetting.kt`；`app/.../work/RecycleBinCleanupWorker.kt` | 回收站默认 30 天；后台清理受调度影响；备份和共享媒体的删除是独立操作 |
+| 本地与 WebDAV 备份 | `base/general/src/main/java/com/cla/clip/base/general/backup/BackupSnapshotExporter.kt`；`BackupEntityMappers.kt`；`WebDavClient.kt`；`backup/settings/BackupSettingsRepository.kt` | 记录及允许的设置可导出；自定义备份排除 WebDAV 凭据及媒体请求 Cookie；备份包未加密，自动备份默认关闭，WebDAV 默认 HTTPS，可显式允许 HTTP |
+| 系统备份 | `app/src/main/AndroidManifest.xml`；`res/xml/backup_rules.xml`；`res/xml/data_extraction_rules.xml` | `allowBackup=true`；主剪贴数据库未整体排除，不能宣称不会被系统备份。宿主 DataStore 在 Auto Backup、Android 12+ 云备份与设备迁移规则中均被排除，设备绑定凭据和授权不随该文件迁移 |
+| 删除与保留 | `base/general/.../config/clip/ClipSettingsRepository.kt`；`app/.../work/RecycleBinCleanupWorker.kt` | 回收站默认 30 天；后台清理受调度影响；备份和共享媒体的删除是独立操作 |
 | 设备日志 | `base/general/src/main/java/com/cla/clip/base/general/utils/Logcat.kt` | 使用 Android 日志；没有据此虚构独立云端崩溃上报服务 |
 | OCR | `app/build.gradle.kts`；`ClipHelper.kt` | `implementation(libs.mlkit.ocr)` 被注释；图像剪贴/OCR 为未启用预留方法，未把版本目录中的 ML Kit 定义当成已上线功能 |
 
@@ -101,5 +101,6 @@
 
 ## 变更记录
 
+- 2026-09-29：随宿主设置介质替换，将源码依据及系统备份排除说明更新为 DataStore 的实际文件和规则；政策正文未因这次介质替换改变数据用途。
 - 2026-09-29：首次创建中英双语政策 HTML 与维护发布说明；根据当前 Play 配置和实际数据流披露自动链接联网、来源应用、后台剪贴、未加密备份、系统备份和 AdMob，避免套用不符合项目事实的通用模板。
 - 2026-09-29：按用户要求，将隐私政策和本说明从 docs 迁至项目根目录的 play-store/，集中存放 Google Play 上架准备材料；更新政策路径，避免与内部方案文档混放。该调整仅移动文件和更新路径，不改政策正文及 App 行为。

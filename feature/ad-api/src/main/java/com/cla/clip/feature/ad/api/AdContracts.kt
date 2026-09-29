@@ -70,7 +70,7 @@ enum class AdConsentState {
 /**
  * 广告运行时策略。
  *
- * 宿主通过该对象把全局开关、会话保险丝和调试状态传给选择器及广告源，避免 adapter 直接读取 AppSetting。
+ * 宿主通过该对象把已提交的全局开关、会话保险丝和调试状态传给选择器及广告源，避免 adapter 直接读取存储层。
  */
 data class AdRuntimePolicy(
     /** 广告总开关；关闭时所有广告位直接隐藏，不允许 adapter 自行绕过。 */

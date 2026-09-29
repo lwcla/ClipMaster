@@ -9,10 +9,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
-import com.cla.clip.base.general.config.AppSetting
+import com.cla.clip.base.general.config.ad.AdSettingsRepository
+import com.cla.clip.base.general.config.ad.AdSettingsSnapshot
 import com.cla.clip.feature.ad.api.*
 import com.cla.clip.master.BuildConfig
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.StateFlow
 
 /** 页面只读取低敏广告运行环境，不持有 SDK 或业务数据源。 */
 internal data class AdHostEnvironment(
@@ -42,14 +44,17 @@ internal fun AdHostProvider(
     selector: AdSourceSelector,
     fuse: AdSessionFailureFuse,
     isMainProcess: Boolean,
+    adSettings: StateFlow<AdSettingsSnapshot?>,
     content: @Composable () -> Unit,
 ) {
-    // 本机设置只在宿主收集，SDK 模块不读取页面或备份数据。
-    val enabled by AppSetting.adsGlobalEnabledFlow.collectAsStateWithLifecycle()
-    // 当前本机来源选择，auto/off 语义由既有选择器处理。
-    val sourceId by AppSetting.activeAdSourceIdFlow.collectAsStateWithLifecycle()
-    // 国内来源历史同意状态，不能代替 UMP 判断。
-    val consentCode by AppSetting.adConsentStateFlow.collectAsStateWithLifecycle()
+    /** 仅收集当前页面已提交的本机配置；读取前和失败后保持安全默认。 */
+    val settings by adSettings.collectAsStateWithLifecycle()
+    /** 广告总开关在配置未就绪时必须为 false，阻止来源初始化。 */
+    val enabled = settings?.adsGlobalEnabled ?: false
+    /** 当前来源选择；未就绪时仅显示自动标识，不赋予广告资格。 */
+    val sourceId = settings?.activeSourceId ?: AdSettingsRepository.DEFAULT_ACTIVE_SOURCE_ID
+    /** 国内来源历史同意状态；未就绪时必须按 unknown 处理。 */
+    val consentCode = settings?.consentState ?: AdSettingsRepository.DEFAULT_CONSENT_STATE
     // 本进程中初始化或渲染失败的来源名单。
     val disabledSources by fuse.disabledSourceIdsFlow.collectAsStateWithLifecycle()
     // Activity 仅在生命周期协程内传给隐私表单，不持久保存。

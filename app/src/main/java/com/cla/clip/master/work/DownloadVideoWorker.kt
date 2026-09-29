@@ -13,7 +13,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.cla.clip.base.general.R
-import com.cla.clip.base.general.config.AppSetting
+import com.cla.clip.base.general.config.download.VideoDownloadRuntimeStore
 import com.cla.clip.base.general.dao.DownloadTaskData
 import com.cla.clip.base.general.di.M3u8Client
 import com.cla.clip.base.general.repository.DownloadRepository
@@ -34,6 +34,7 @@ import dagger.assisted.AssistedInject
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import kotlinx.coroutines.CancellationException
 import java.io.File
 
 @HiltWorker
@@ -50,6 +51,8 @@ class DownloadVideoWorker @AssistedInject constructor(
     @param:M3u8Client private val m3u8Client: Lazy<OkHttpClient>,
     private val downloadRepo: DownloadRepository,
     private val notificationHelper: NotificationHelper,
+    /** 跨 Worker 记录最近任务，用于清理异常中断遗留的输出文件。 */
+    private val videoDownloadRuntimeStore: VideoDownloadRuntimeStore,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -120,7 +123,15 @@ class DownloadVideoWorker @AssistedInject constructor(
         // 首帧前台通知，避免后台限制
         setForeground(buildForegroundInfo(applicationContext.getString(R.string.base_general_initialize_download), fileName.showName, 0))
 
-        val lastTask = AppSetting.videoDownloadTaskId
+        /** 已持久化的上一任务 ID；读取失败时暂停下载，避免遗漏遗留输出清理。 */
+        val lastTask = try {
+            videoDownloadRuntimeStore.snapshot().taskId
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            logE(TAG, error) { "读取上一下载任务失败 reasonCode=download_settings_read_failed" }
+            return Result.retry()
+        }
         downloadRepo.getTask(lastTask)?.let { task ->
             if (task.status != DownloadTaskData.STATUS_SUCCESS) {
                 // 上次的任务还未成功，说明可能是异常中断了，需要清除上次未完成的 pending 输出，避免这个遗留文件一直占用空间（尤其是m3u8的临时文件可能非常大）
@@ -142,7 +153,14 @@ class DownloadVideoWorker @AssistedInject constructor(
             }
         }
 
-        AppSetting.videoDownloadTaskId = taskId
+        try {
+            videoDownloadRuntimeStore.setTaskId(taskId)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            logE(TAG, error) { "保存当前下载任务失败 reasonCode=download_settings_write_failed" }
+            return Result.retry()
+        }
         val saveVideo = SaveToFile.Video(fileName)
         val mediaTarget = saveVideo.createPath(applicationContext)
         downloadRepo.markPath(taskId, mediaTarget.uri?.toString(), mediaTarget.path)
@@ -154,7 +172,7 @@ class DownloadVideoWorker @AssistedInject constructor(
             logE(TAG, tr) { "doWork: 下载失败" }
             val errorMsg = tr.message ?: applicationContext.getString(R.string.base_general_download_failed)
             downloadRepo.markFailed(applicationContext, taskId, errorMsg)
-            BackupAutoScheduler.markDirtyAndSchedule(applicationContext)
+            BackupAutoScheduler.scheduleAfterCommittedChange(applicationContext)
             saveVideo.failure(applicationContext, mediaTarget)
             notificationHelper.notifyDownloadResult(
                 taskId,
@@ -231,7 +249,7 @@ class DownloadVideoWorker @AssistedInject constructor(
             start(response)
         }
         downloadRepo.markSuccess(taskId)
-        BackupAutoScheduler.markDirtyAndSchedule(applicationContext)
+        BackupAutoScheduler.scheduleAfterCommittedChange(applicationContext)
         saveVideo.success(applicationContext, mediaTarget)
         val savePath = mediaTarget.path
         logI(TAG) { "下载完成 taskId=$taskId path=${savePath}" }

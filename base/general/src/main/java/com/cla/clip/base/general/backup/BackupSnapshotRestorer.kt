@@ -1,9 +1,9 @@
 package com.cla.clip.base.general.backup
 
 import androidx.room.withTransaction
-import com.cla.clip.base.general.config.AppSetting
 import com.cla.clip.base.general.config.ClipItemQuickAction
 import com.cla.clip.base.general.config.ClipSourceBlockRules
+import com.cla.clip.base.general.config.clip.ClipSettingsRepository
 import com.cla.clip.base.general.dao.AppDatabase
 import com.cla.clip.base.general.dao.ClipData
 import com.cla.clip.base.general.dao.DownloadTaskData
@@ -13,8 +13,25 @@ import com.cla.clip.base.general.dao.LinkPreviewData
 import com.cla.clip.base.general.dao.SearchHistoryData
 import com.cla.clip.base.general.dao.SourceAppData
 import com.cla.clip.base.general.utils.logD
+import com.cla.clip.base.general.utils.logI
+import com.cla.clip.base.general.utils.logW
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
+
+/** Room 已恢复但 DataStore 设置提交失败；报告保留数据库阶段的真实结果。 */
+class BackupSettingsRestoreFailure(
+    /** 已完成的 Room 分类报告，调用方可据此显示部分成功。 */
+    val roomReport: BackupRestoreReport,
+    cause: Throwable,
+) : Exception("backup_settings_restore_failed", cause)
+
+/** 宿主 Room 已提交而可选功能库恢复失败；保留已完成阶段报告供页面重试。 */
+class BackupFeatureRestoreFailure(
+    /** 已提交到宿主 Room 的分类报告。 */
+    val roomReport: BackupRestoreReport,
+    cause: Throwable,
+) : Exception("backup_feature_restore_failed", cause)
 
 /**
  * 备份快照恢复器。
@@ -28,6 +45,8 @@ class BackupSnapshotRestorer @Inject constructor(
     private val appDatabase: AppDatabase,
     /** 文件型备份包读取器，负责 JSONL entry 读取。 */
     private val packageReader: BackupPackageReader,
+    /** 备份设置白名单在 Room 事务完成后单次提交到 DataStore。 */
+    private val clipSettingsRepository: ClipSettingsRepository,
     /** 可选功能恢复参与者；未编译对应模块时集合为空。 */
     private val featureContributors: Set<@JvmSuppressWildcards BackupFeatureContributor>,
 ) {
@@ -39,25 +58,56 @@ class BackupSnapshotRestorer @Inject constructor(
         private const val WRITE_CHUNK_SIZE = 300
     }
 
-    /** 在 Room transaction 内恢复旧 v1 内存快照。 */
+    /** 先提交 Room，再提交独立设置存储；设置失败向上报告供用户重试。 */
     internal suspend fun restoreSnapshot(
         snapshot: BackupSnapshot,
         timeNormalizer: BackupRestoreTimeNormalizer,
     ): BackupRestoreReport {
-        return appDatabase.withTransaction {
+        /** 完整 Room 恢复报告；事务成功后才允许写设置。 */
+        val report = appDatabase.withTransaction {
             restoreSnapshotInTransaction(snapshot, timeNormalizer)
         }
+        try {
+            restoreSettings(snapshot.data.settings)
+        } catch (failure: Throwable) {
+            if (failure is CancellationException) throw failure
+            logW(TAG) { "备份设置阶段失败 reasonCode=settings_restore_failed type=${failure::class.simpleName} roomInserted=${report.insertedCount}" }
+            throw BackupSettingsRestoreFailure(report, failure)
+        }
+        return report
     }
 
-    /** 在 Room transaction 内恢复 v2 JSONL 文件型备份。 */
+    /** 读取设置白名单，再依次提交 Room 与 DataStore；两种存储不宣称原子恢复。 */
     internal suspend fun restorePackage(
         ref: BackupPackageRef,
         manifest: BackupManifest,
         timeNormalizer: BackupRestoreTimeNormalizer,
     ): BackupRestoreReport {
-        return appDatabase.withTransaction {
+        /** 已校验备份包中的设置白名单；先解析，避免 Room 完成后才发现格式损坏。 */
+        val settings = BackupJson.decodeSettings(packageReader.readText(ref, SETTINGS_PATH))
+        /** 仅包含宿主 Room 表的事务恢复结果。 */
+        val roomReport = appDatabase.withTransaction {
             restorePackageInTransaction(ref, manifest, timeNormalizer)
         }
+        /** 功能模块可能使用独立数据库，不能嵌在宿主 Room 事务中制造虚假原子性。 */
+        val featureReports = try {
+            featureContributors.sortedBy { it.contributorId }.flatMap { contributor -> contributor.restoreJsonl(ref, manifest) }
+        } catch (failure: Throwable) {
+            if (failure is CancellationException) throw failure
+            logW(TAG) { "备份可选功能阶段失败 reasonCode=feature_restore_failed type=${failure::class.simpleName} roomInserted=${roomReport.insertedCount}" }
+            throw BackupFeatureRestoreFailure(roomReport, failure)
+        }
+        /** 合并已完成的宿主和功能分类计数，再进入设置提交阶段。 */
+        val report = roomReport.withFeatureReports(featureReports)
+        try {
+            restoreSettings(settings)
+        } catch (failure: Throwable) {
+            if (failure is CancellationException) throw failure
+            logW(TAG) { "备份设置阶段失败 reasonCode=settings_restore_failed type=${failure::class.simpleName} completedInserted=${report.insertedCount}" }
+            throw BackupSettingsRestoreFailure(report, failure)
+        }
+        logI(TAG) { "备份分阶段恢复完成 inserted=${report.insertedCount} updated=${report.updatedCount} skipped=${report.skippedCount}" }
+        return report
     }
 
     /** 在事务内执行实际恢复，调用方必须已经持有 Room transaction。 */
@@ -88,8 +138,6 @@ class BackupSnapshotRestorer @Inject constructor(
         inserted += historyRestore.inserted
         updated += historyRestore.updated
         skipped += historyRestore.skipped
-
-        restoreSettings(snapshot.data.settings)
 
         val videoRestore = restoreVideoDownloads(snapshot)
         inserted += videoRestore.inserted
@@ -144,13 +192,9 @@ class BackupSnapshotRestorer @Inject constructor(
         val linkPreviewsByLink = linkPreviews.associateBy { it.link }
         val clipRestore = restoreJsonlClips(ref, manifest, sourceAppsByPackage, linkPreviewsByLink, timeNormalizer)
         val historyRestore = restoreJsonlSearchHistories(ref)
-        restoreSettings(BackupJson.decodeSettings(packageReader.readText(ref, SETTINGS_PATH)))
         val videoRestore = restoreJsonlVideoDownloads(ref, manifest)
         val imageBatchRestore = restoreJsonlImageBatches(ref, manifest)
         val imageItemRestore = restoreJsonlImageItems(ref)
-        val featureReports = featureContributors
-            .sortedBy { it.contributorId }
-            .flatMap { contributor -> contributor.restoreJsonl(ref, manifest) }
         val reports = listOf(
             BackupRestoreCategoryReport(BackupProgressCategory.SourceApps, sourceAppRestore.inserted, sourceAppRestore.updated, sourceAppRestore.skipped),
             BackupRestoreCategoryReport(BackupProgressCategory.LinkPreviews, linkPreviewRestore.inserted, linkPreviewRestore.updated, linkPreviewRestore.skipped),
@@ -159,12 +203,12 @@ class BackupSnapshotRestorer @Inject constructor(
             BackupRestoreCategoryReport(BackupProgressCategory.VideoDownloads, videoRestore.inserted, videoRestore.updated, videoRestore.skipped),
             BackupRestoreCategoryReport(BackupProgressCategory.ImageBatches, imageBatchRestore.inserted, imageBatchRestore.updated, imageBatchRestore.skipped),
             BackupRestoreCategoryReport(BackupProgressCategory.ImageItems, imageItemRestore.inserted, imageItemRestore.updated, imageItemRestore.skipped)
-        ) + featureReports
+        )
         val inserted = reports.sumOf { it.insertedCount }
         val updated = reports.sumOf { it.updatedCount }
         val skipped = reports.sumOf { it.skippedCount }
         logD(TAG) {
-            "备份恢复写库完成 inserted=$inserted updated=$updated skipped=$skipped schema=${manifest.schemaVersion} " +
+            "备份宿主 Room 阶段完成 inserted=$inserted updated=$updated skipped=$skipped schema=${manifest.schemaVersion} " +
                 "futureTimeNormalized=${timeNormalizer.normalizedFieldCount} clockSkewMs=${timeNormalizer.clockSkewMillis}"
         }
         return BackupRestoreReport(
@@ -613,29 +657,24 @@ class BackupSnapshotRestorer @Inject constructor(
         return RestoreCounter(inserted, updated, skipped)
     }
 
-    /** 恢复跨安装有意义的设置白名单。 */
-    private fun restoreSettings(settings: BackupSettings) {
-        settings.clipItemQuickAction?.let { value ->
-            AppSetting.clipItemQuickAction = ClipItemQuickAction.fromStorageValue(value)
-        }
-        settings.recycleBinRetentionDays?.let { days ->
-            AppSetting.recycleBinRetentionDays = days
-        }
-        if (settings.blockedClipSourcePackages.isNotEmpty()) {
-            /** 恢复前本机已经保存的来源过滤名单；恢复只能并集，不能覆盖本机新增规则。 */
-            val localBlockedPackages = AppSetting.blockedClipSourcePackages
-            /** 备份中规范化后的来源过滤名单；异常、空白和超长包名会被过滤。 */
-            val backupBlockedPackages = ClipSourceBlockRules.normalizePackageSet(settings.blockedClipSourcePackages)
-            /** 本机与备份取并集后的最终名单；超量时按同一规则排序裁剪到上限。 */
-            val mergedBlockedPackages = ClipSourceBlockRules.normalizePackageSet(localBlockedPackages + backupBlockedPackages)
-            if (mergedBlockedPackages.size < localBlockedPackages.size + backupBlockedPackages.minus(localBlockedPackages).size) {
-                logD(TAG) {
-                    "恢复来源过滤名单发生裁剪 reasonCode=backup_blocked_packages_trimmed " +
-                        "localCount=${localBlockedPackages.size} backupCount=${backupBlockedPackages.size} mergedCount=${mergedBlockedPackages.size}"
-                }
-            }
-            AppSetting.replaceBlockedPackages(mergedBlockedPackages)
-        }
+    /** 恢复跨安装设置白名单，并保留本机新增的来源过滤规则。 */
+    private suspend fun restoreSettings(settings: BackupSettings) {
+        /** 备份中的规范化来源名单；无效项由共享规则过滤。 */
+        val backupBlockedPackages = ClipSourceBlockRules.normalizePackageSet(settings.blockedClipSourcePackages)
+        /** 一次事务提交全部可备份设置，并在实际变化时原子递增版本。 */
+        clipSettingsRepository.restoreFromBackup(
+            quickAction = settings.clipItemQuickAction?.let(ClipItemQuickAction::fromStorageValue),
+            recycleBinRetentionDays = settings.recycleBinRetentionDays,
+            blockedPackages = backupBlockedPackages.toList(),
+        )
     }
+
+    /** 合并分阶段恢复计数，不改变各数据库已经提交的真实边界。 */
+    private fun BackupRestoreReport.withFeatureReports(featureReports: List<BackupRestoreCategoryReport>): BackupRestoreReport = copy(
+        insertedCount = insertedCount + featureReports.sumOf { it.insertedCount },
+        updatedCount = updatedCount + featureReports.sumOf { it.updatedCount },
+        skippedCount = skippedCount + featureReports.sumOf { it.skippedCount },
+        categoryReports = categoryReports + featureReports,
+    )
 
 }

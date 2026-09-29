@@ -7,7 +7,8 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.room.Room
-import com.cla.clip.feature.torrent.search.backup.AppSettingTorrentSearchBackupDirtyMarker
+import com.cla.clip.base.general.backup.settings.BackupRuntimeRepository
+import com.cla.clip.feature.torrent.search.backup.BackupRuntimeTorrentSearchBackupDirtyMarker
 import com.cla.clip.feature.torrent.search.backup.TorrentSearchBackupDirtyMarker
 import com.cla.clip.feature.torrent.search.data.local.BookmarkedTorrentDao
 import com.cla.clip.feature.torrent.search.data.document.AndroidBookmarkDocumentGateway
@@ -124,7 +125,10 @@ internal object TorrentSearchDataModule {
 
     /** 提供宿主统一备份 dirty 标记适配器，不在 feature 内调度 Worker。 */
     @Provides
-    fun provideBackupDirtyMarker(): TorrentSearchBackupDirtyMarker = AppSettingTorrentSearchBackupDirtyMarker
+    fun provideBackupDirtyMarker(
+        /** 宿主版本仓库，只有白名单真实写入后才推进。 */
+        backupRuntimeRepository: BackupRuntimeRepository,
+    ): TorrentSearchBackupDirtyMarker = BackupRuntimeTorrentSearchBackupDirtyMarker(backupRuntimeRepository)
 
     /** 提供只访问应用私有 databases/cache 固定目标的旧磁力清理器。 */
     @Provides

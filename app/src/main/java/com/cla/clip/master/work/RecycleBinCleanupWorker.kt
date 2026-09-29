@@ -9,13 +9,14 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.cla.clip.base.general.config.AppSetting
+import com.cla.clip.base.general.config.clip.ClipSettingsRepository
 import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
 import dagger.Lazy
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.CancellationException
 import java.util.concurrent.TimeUnit
 
 /**
@@ -29,6 +30,8 @@ class RecycleBinCleanupWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     /** 剪贴仓库使用 Lazy，避免 Worker 创建时立即触发数据库依赖，实际执行时再读取。 */
     private val clipRepository: Lazy<ClipRepository>,
+    /** 执行清理前读取真实保留天数；读取错误会重试，不能用默认值误删。 */
+    private val clipSettingsRepository: ClipSettingsRepository,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -38,16 +41,19 @@ class RecycleBinCleanupWorker @AssistedInject constructor(
 
     /** 按当前设置执行一次过期清理；失败时交给 WorkManager 按策略重试。 */
     override suspend fun doWork(): Result {
-        return runCatching {
-            val days = AppSetting.recycleBinRetentionDays
+        return try {
+            /** 本轮已提交的保留天数，整次清理使用同一快照。 */
+            val days = clipSettingsRepository.snapshot().recycleBinRetentionDays
             val count = clipRepository.get().cleanupExpiredRecycleBinClips(days)
             if (count > 0) {
-                BackupAutoScheduler.markDirtyAndSchedule(applicationContext)
+                BackupAutoScheduler.scheduleAfterCommittedChange(applicationContext)
             }
             logD(TAG) { "doWork: 清理过期回收站数据 days=$days count=$count" }
             Result.success()
-        }.getOrElse { throwable ->
-            logE(TAG, throwable) { "doWork: 清理过期回收站数据失败" }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            logE(TAG, error) { "doWork: 清理过期回收站数据失败" }
             Result.retry()
         }
     }

@@ -98,7 +98,7 @@ public 仓库 README 作为人可读发布页维护，至少包含最新版版�
 - 已新增 `AppUpdateChecker`、`AppUpdateManifestFetcher`、`OkHttpAppUpdateManifestFetcher`、`AppUpdateLogger` 和 `AppUpdateConfigFactory`，通过现有短超时 `@LinkPreviewClient` OkHttp 拉取 manifest，读取 `BuildConfig.VERSION_CODE` / `BuildConfig.VERSION_NAME` 并返回 sealed result。`AppUpdateChecker` 按配置源顺序尝试，默认 Gitee 优先、GitHub 兜底。
 - `MineVm` 只负责触发检查、持有 UI state、处理限频和分发打开外部链接事件；网络请求、解析和版本判断不得堆入 `MineVm`。
 - 已新增 `AppUpdateEntry`、`AppUpdateDialog` 和 `AppUpdateUiState`，入口复用我的页 `ListEntryCard` 风格，复杂展示状态使用具名 UI state。
-- 本地设置只保存设备态：上次检查时间 `AppSetting.appUpdateLastCheckAt`。该状态不进入 Room，不纳入 WebDAV 备份恢复，也不触发 backup dirty。
+- 本地设置只保存设备态：上次检查时间由 `AppUpdateCheckStore` 挂起读写。读取失败不当作首次检查；该状态不进入 Room，不纳入 WebDAV 备份恢复，也不触发 backup dirty。
 
 ## 发布流程
 
@@ -162,6 +162,8 @@ public 仓库 README 作为人可读发布页维护，至少包含最新版版�
 - 是否需要把发布页入口放到关于页或错误弹窗外的常驻位置，方便两个自动源都不可达时用户主动查看。
 
 ## 变更记录
+
+- 2026-09-29：自升级上次检查时间改由独立 `AppUpdateCheckStore` 挂起读写，读取失败不当作首次检查；原因是宿主设置改为 DataStore。
 
 - 2026-05-24：新增 App 自更新检查方案草案；原因是内测分发需要在 GitHub private 源码仓库之外建立可公开访问的版本检查和下载路径。
 - 2026-05-24：补充 GitHub manifest 国内兜底、历史备用下载路径、`channel` 字段、强制更新非阻断策略、固定发布流程和低焦虑失败文案；原因是需要提高中国境内网络环境下的可达性和维护稳定性。

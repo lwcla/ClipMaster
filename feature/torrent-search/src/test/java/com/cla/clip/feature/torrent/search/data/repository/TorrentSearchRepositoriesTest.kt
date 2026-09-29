@@ -9,10 +9,13 @@ import com.cla.clip.feature.torrent.search.data.local.ViewedTorrentDao
 import com.cla.clip.feature.torrent.search.data.local.ViewedTorrentEntity
 import com.cla.clip.feature.torrent.search.data.model.BookmarkedTorrent
 import com.cla.clip.feature.torrent.search.provider.ProviderId
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -44,6 +47,23 @@ class TorrentSearchRepositoriesTest {
         assertEquals(3, marker.count)
     }
 
+    /** Repository 返回成功前必须等待跨存储备份标记提交。 */
+    @Test
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun bookmarkSaveWaitsForBackupMarker() = runTest {
+        /** 人为暂停的标记提交，用于证明保存结果不会先行返回。 */
+        val markerCommit = CompletableDeferred<Unit>()
+        /** 可挂起标记器代表宿主 DataStore 的持久化边界。 */
+        val marker = TorrentSearchBackupDirtyMarker { markerCommit.await() }
+        /** 已使用内存 DAO 的真实 Repository。 */
+        val repository = BookmarkRepositoryImpl(FakeBookmarkedTorrentDao(), nowMillis = { 1L }, backupDirtyMarker = marker)
+        /** 与标记提交并行的保存任务。 */
+        val saving = async { repository.save(bookmark(HASH_A, "valid")) }
+        runCurrent()
+        assertFalse(saving.isCompleted)
+        markerCommit.complete(Unit)
+        assertTrue(saving.await())
+    }
     /** 书签必须按规范化 infoHash 替换，同名但不同 hash 仍允许共存。 */
     @Test
     fun bookmarkRepositoryUsesCanonicalInfoHashAsStableIdentity() = runTest {
@@ -189,13 +209,13 @@ class TorrentSearchRepositoriesTest {
     }
 }
 
-/** 测试用 dirty 标记器，只记录调用次数且不接触 MMKV。 */
+/** 测试用 dirty 标记器，只记录调用次数且不接触实际持久化。 */
 private class RecordingBackupDirtyMarker : TorrentSearchBackupDirtyMarker {
     /** count 是已成功写入跨安装数据的次数。 */
     var count: Int = 0
 
     /** 每次标记只增加确定性计数。 */
-    override fun markDirty() {
+    override suspend fun markDirty() {
         count += 1
     }
 }

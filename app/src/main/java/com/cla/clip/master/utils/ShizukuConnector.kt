@@ -5,7 +5,7 @@ import android.content.Context
 import android.content.ServiceConnection
 import android.os.IBinder
 import com.cla.clip.base.general.R
-import com.cla.clip.base.general.config.AppSetting
+import com.cla.clip.base.general.config.installation.InstallationIdentityRepository
 import com.cla.clip.base.general.utils.ApplicationScope
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
@@ -23,6 +23,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -45,6 +46,8 @@ class ShizukuConnector @Inject constructor(
     @param:ApplicationContext private val appContext: Context,
     /** Shizuku 状态通知协作者；懒加载避免连接器初始化时过早创建通知依赖。 */
     private val notificationHelper: Lazy<NotificationHelper>,
+    /** 宿主安装身份仓库；应用协程先等 ID 和期望进程名持久化，再执行绑定。 */
+    private val identityRepository: InstallationIdentityRepository,
 ) {
 
     companion object {
@@ -104,6 +107,14 @@ class ShizukuConnector @Inject constructor(
     /** 当前正在等待 onServiceConnected 的 bind 信号；只承接连接器内部主动 bind 的一次结果。 */
     private var pendingUserServiceBind: CompletableDeferred<IClipboardShizukuService?>? = null
 
+    /** 同一次连接使用的已提交身份和进程名，防止构造 SDK 参数时重复读取或生成身份。 */
+    private data class PreparedProcess(
+        /** DataStore 已提交的安装 ID，仅用于 SDK tag，不进入日志。 */
+        val installId: String,
+        /** 与安装 ID 对应、已经提交的 Shizuku 进程名集合。 */
+        val names: ShizukuProcessNames,
+    )
+
     /** Shizuku UserService 连接回调；负责启动监听并注册无业务副作用 ping callback。 */
     private val userServiceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -113,7 +124,7 @@ class ShizukuConnector @Inject constructor(
                 /** 新回调拿到的 AIDL 代理；版本通过 UserService tag 和 process suffix 隔离。 */
                 val service = IClipboardShizukuService.Stub.asInterface(binder)
                 /** 本次绑定预期进程名；SDK 回调不携带远端真实进程名，只能使用本次请求上下文记录。 */
-                val connectedProcessName = bindingProcessName ?: refreshExpectedShizukuProcessName().fullName
+                val connectedProcessName = bindingProcessName ?: cachedUserServiceProcessName
                 shizukuService = service
                 boundProcessName = connectedProcessName
                 bindingProcessName = null
@@ -176,35 +187,33 @@ class ShizukuConnector @Inject constructor(
     }
 
     /**
-     * 刷新当前期望的 Shizuku 进程名。
+     * 在应用协程中准备当前期望的 Shizuku 进程名。
      *
-     * 该方法必须早于任何连接 early return 调用，确保旧 Shizuku 进程通过 Provider 查询时总能拿到最新期望值。
+     * 该方法必须早于延迟和任何连接 early return 调用；Provider 查询独立等待同一仓库提交。
      */
-    fun refreshExpectedShizukuProcessName(): ShizukuProcessNames {
-        /** 当前安装级 ID；开发阶段无效旧值会由 AppSetting 直接重建为纯数字。 */
-        val installId = AppSetting.pid
+    private suspend fun prepareExpectedShizukuProcess(): PreparedProcess {
+        /** DataStore 事务完成后的安装级 ID；缺失时仓库原子生成且并发只保留一份。 */
+        val installId = identityRepository.getOrCreateInstallId()
         /** 同源构造出的 Shizuku 进程名集合。 */
         val names = ShizukuProcessName.buildNames(
             applicationId = BuildConfig.APPLICATION_ID,
             version = VERSION,
             installId = installId
         )
-        AppSetting.shizukuSuffix = names.fullName
-        return names
+        identityRepository.setExpectedProcessName(names.fullName)
+        return PreparedProcess(installId = installId, names = names)
     }
 
     /**
      * 请求连接最新 Shizuku 服务。
      *
-     * Provider 身份查询会调用该方法触发异步修复；返回值只表示是否已提交连接请求，不等待真实 bind 完成。
+     * Provider 身份查询会调用该方法触发异步修复；返回值只表示是否已排队，不等待身份读取或真实 bind 完成。
      */
     fun requestConnect(reasonCode: String): ShizukuConnectRequestResult {
-        /** 最新期望进程名；必须在任何 early return 之前刷新。 */
-        val expectedNames = refreshExpectedShizukuProcessName()
-        connect(expectedNames = expectedNames, reasonCode = reasonCode)
+        connect(reasonCode = reasonCode)
         return ShizukuConnectRequestResult(
             requested = true,
-            expectedProcessName = expectedNames.fullName,
+            expectedProcessName = "",
             reasonCode = reasonCode
         )
     }
@@ -212,32 +221,38 @@ class ShizukuConnector @Inject constructor(
     /**
      * 连接当前期望的 Shizuku 服务。
      *
-     * @param delayTime 延迟连接时间；即使延迟执行，也必须在入口同步刷新完整进程名。
+     * @param delayTime 延迟连接时间；应用协程会先完成身份提交，再执行延迟和绑定。
      */
     fun connect(delayTime: Long = 0) {
-        /** 最新期望进程名；必须在 delay、状态判断和 early return 前刷新。 */
-        val expectedNames = refreshExpectedShizukuProcessName()
-        connect(expectedNames = expectedNames, delayTime = delayTime, reasonCode = "manual_connect")
+        connect(delayTime = delayTime, reasonCode = "manual_connect")
     }
 
     /**
-     * 按指定期望进程名异步连接 Shizuku 服务。
+     * 在应用协程中先提交身份，再按期望进程名连接 Shizuku 服务。
      *
-     * @param expectedNames 当前期望的 Shizuku 进程名集合。
      * @param delayTime 延迟连接时间，用于页面恢复等场景的轻量防抖。
      * @param reasonCode 触发连接的原因，用于诊断是否由 Provider 身份查询频繁触发。
      */
     private fun connect(
-        expectedNames: ShizukuProcessNames,
         delayTime: Long = 0,
         reasonCode: String,
     ) {
         scope.launch {
             connectMutex.withLock {
+                /** 已提交的安装身份和进程名；存储错误不得按默认身份继续绑定。 */
+                val preparedProcess = try {
+                    prepareExpectedShizukuProcess()
+                } catch (exception: CancellationException) {
+                    throw exception
+                } catch (exception: Exception) {
+                    logE(TAG) { "连接前准备安装身份失败 reasonCode=$reasonCode exceptionType=${exception::class.java.simpleName}" }
+                    return@withLock
+                }
                 if (delayTime > 0) {
                     delay(delayTime)
                 }
-                bindUserServiceLocked(expectedNames = expectedNames, reasonCode = reasonCode)
+                bindUserServiceLocked(preparedProcess = preparedProcess, reasonCode = reasonCode)
+                Unit
             }
         }
     }
@@ -245,17 +260,18 @@ class ShizukuConnector @Inject constructor(
     /**
      * 在持有连接锁时绑定最新 Shizuku UserService。
      *
-     * @param expectedNames 当前期望进程名集合。
+     * @param preparedProcess 已提交的安装身份与当前期望进程名。
      * @param reasonCode 触发绑定的低敏原因码。
      */
     private suspend fun bindUserServiceLocked(
-        expectedNames: ShizukuProcessNames,
+        preparedProcess: PreparedProcess,
         reasonCode: String,
     ): IClipboardShizukuService? {
+        /** 本次已提交的完整进程名；所有早退和 SDK 参数都使用同一份身份。 */
+        val expectedNames = preparedProcess.names
         if (!ShizukuUtils.isConnected(appContext)) {
             logW(TAG) {
-                "connect: shizuku未连接，不需要在这里就绑定shizuku服务 reasonCode=$reasonCode " +
-                    "processName=${expectedNames.fullName}"
+                "connect: shizuku未连接，不需要在这里就绑定shizuku服务 reasonCode=$reasonCode"
             }
             return null
         }
@@ -267,8 +283,8 @@ class ShizukuConnector @Inject constructor(
         }
 
         logI(TAG) {
-            "connect: isAlive=$isAlive reasonCode=$reasonCode boundProcessName=$boundProcessName " +
-                "bindingProcessName=$bindingProcessName expectedProcessName=${expectedNames.fullName}"
+            "connect: isAlive=$isAlive reasonCode=$reasonCode boundSame=${boundProcessName == expectedNames.fullName} " +
+                "bindingSame=${bindingProcessName == expectedNames.fullName}"
         }
         if (shouldSkipBind(isAlive = isAlive, boundProcessName = boundProcessName, expectedProcessName = expectedNames.fullName)) {
             logD(TAG) { "connect: shizuku服务连接中，不需要重复绑定 reasonCode=alive_same_process" }
@@ -280,17 +296,18 @@ class ShizukuConnector @Inject constructor(
         pendingUserServiceBind = bindSignal
         return runCatching {
             bindingProcessName = expectedNames.fullName
-            logI(TAG) { "connect: 去绑定shizuku进程 reasonCode=$reasonCode processName=${expectedNames.fullName}" }
-            Shizuku.bindUserService(userServiceArgs(expectedNames), userServiceConnection)
+            logI(TAG) { "connect: 去绑定shizuku进程 reasonCode=$reasonCode" }
+            Shizuku.bindUserService(userServiceArgs(preparedProcess), userServiceConnection)
             /** 等待主线程 ServiceConnection 回调；超时后返回 null，下一次连接入口可继续重试。 */
             val connectedService = withTimeoutOrNull(USER_SERVICE_BIND_TIMEOUT_MS) {
                 bindSignal.await()
             }
             if (connectedService == null) {
-                logW(TAG) { "connect: bind 等待超时 reasonCode=$reasonCode processName=${expectedNames.fullName}" }
+                logW(TAG) { "connect: bind 等待超时 reasonCode=$reasonCode" }
             }
             connectedService
         }.getOrElse { error ->
+            if (error is CancellationException) throw error
             bindingProcessName = null
             logE(TAG, error) { "connect: shizuku远程服务连接失败" }
             null
@@ -304,9 +321,11 @@ class ShizukuConnector @Inject constructor(
     /**
      * 获取当前或新建 UserService 参数。
      *
-     * @param expectedNames 当前期望进程名集合；参数缓存必须和它完全一致。
+     * @param preparedProcess 已提交身份和期望进程名；参数缓存必须和它完全一致。
      */
-    private fun userServiceArgs(expectedNames: ShizukuProcessNames): Shizuku.UserServiceArgs {
+    private fun userServiceArgs(preparedProcess: PreparedProcess): Shizuku.UserServiceArgs {
+        /** 本次期望进程名；只使用应用协程已提交的身份快照。 */
+        val expectedNames = preparedProcess.names
         /** 已缓存且仍匹配当前进程名的参数，可直接复用避免重复构造。 */
         val cachedArgs = cachedUserServiceArgs
         if (cachedArgs != null && cachedUserServiceProcessName == expectedNames.fullName) {
@@ -314,12 +333,11 @@ class ShizukuConnector @Inject constructor(
         }
 
         logD(TAG) {
-            "args init: debug=${BuildConfig.DEBUG} version_code=$VERSION pid=${AppSetting.pid} " +
-                "processName=${expectedNames.fullName}"
+            "args init: debug=${BuildConfig.DEBUG} version_code=$VERSION"
         }
         /** 当前 UserService tag；带协议版本，避免 Shizuku SDK 按旧安装级 tag 复用旧 connection。 */
-        val serviceTag = buildUserServiceTag(installId = AppSetting.pid, version = VERSION)
-        /** 最新 UserService 参数；processNameSuffix 使用后缀，tag 保持安装级 pid。 */
+        val serviceTag = buildUserServiceTag(installId = preparedProcess.installId, version = VERSION)
+        /** 最新 UserService 参数；processNameSuffix 使用后缀，tag 保持安装级身份。 */
         val newArgs = Shizuku.UserServiceArgs(ComponentName(BuildConfig.APPLICATION_ID, ClipboardShizukuService::class.java.name))
             .daemon(true)
             .processNameSuffix(expectedNames.suffix)
@@ -350,7 +368,7 @@ class ShizukuConnector @Inject constructor(
  * Shizuku 连接请求结果。
  *
  * @property requested 是否已向应用协程提交连接请求。
- * @property expectedProcessName 本次请求对应的完整 Shizuku 进程名。
+ * @property expectedProcessName 已准备好的完整进程名；请求刚排队时为空，Provider 自身从已提交查询结果返回进程名。
  * @property reasonCode 请求原因，用于 Provider 身份查询日志。
  */
 data class ShizukuConnectRequestResult(

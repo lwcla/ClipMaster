@@ -2,7 +2,8 @@ package com.cla.clip.base.general.backup
 
 import androidx.room.withTransaction
 import com.cla.clip.base.general.BuildConfig
-import com.cla.clip.base.general.config.AppSetting
+import com.cla.clip.base.general.config.clip.ClipSettingsRepository
+import com.cla.clip.base.general.config.installation.InstallationIdentityRepository
 import com.cla.clip.base.general.dao.AppDatabase
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logW
@@ -12,7 +13,7 @@ import javax.inject.Singleton
 /**
  * 备份快照导出器。
  *
- * Exporter 只负责从 Room/MMKV 读取可备份白名单字段、分页写入 JSONL、生成 manifest 和临时 zip；不处理恢复合并、
+ * Exporter 从 Room 和已提交的 DataStore 快照读取可备份白名单字段，分页写入 JSONL、生成 manifest 和临时 zip；不处理恢复合并、
  * 本地 SAF 发布或 WebDAV 上传，避免 `BackupRepository` 同时承担导出、恢复和外部 IO 细节。
  */
 @Singleton
@@ -23,6 +24,10 @@ class BackupSnapshotExporter @Inject constructor(
     private val packageWriter: BackupPackageWriter,
     /** 备份临时文件目录管理器。 */
     private val tempFileStore: BackupTempFileStore,
+    /** 只读取剪贴设置域的可备份白名单。 */
+    private val clipSettingsRepository: ClipSettingsRepository,
+    /** 本机安装身份只用于生成设备标签，不进入设置备份。 */
+    private val installationIdentityRepository: InstallationIdentityRepository,
     /** 可选功能备份参与者；未编译对应模块时集合为空。 */
     private val featureContributors: Set<@JvmSuppressWildcards BackupFeatureContributor>,
 ) {
@@ -45,9 +50,14 @@ class BackupSnapshotExporter @Inject constructor(
         now: Long,
         taskId: String,
     ): BackupExportResult {
+        /** 本次快照的独立临时目录；后续任何准备或导出失败都须清理。 */
         val taskDir = tempFileStore.createExportDir(taskId)
+        return try {
         tempFileStore.ensureAvailableSpace(BackupPackageWriter.MAX_BACKUP_PACKAGE_BYTES)
-        val deviceLabel = buildBackupDeviceLabel(AppSetting.pid)
+        /** 快照名称使用本机安装 ID，不写入备份设置白名单。 */
+        val deviceLabel = buildBackupDeviceLabel(installationIdentityRepository.getOrCreateInstallId())
+        /** 导出开始时读取一次已提交设置，避免 ZIP 内字段跨不同写入时刻。 */
+        val backupSettings = clipSettingsRepository.snapshot().toBackupSettings()
         val fileName = buildBackupFileName(deviceLabel, now, backupKind)
         val session = packageWriter.begin(taskDir, taskId, fileName)
         val highWater = readHighWaterMarks()
@@ -59,12 +69,12 @@ class BackupSnapshotExporter @Inject constructor(
         }
         val entryFiles = mutableListOf<BackupPackageFile>()
         val summaryBuilder = BackupSummaryBuilder()
-        return runCatching {
+        run {
             entryFiles += exportClipLines(session, highWater.clipMaxId, summaryBuilder)
             entryFiles += exportSourceAppLines(session, summaryBuilder)
             entryFiles += exportLinkPreviewLines(session, summaryBuilder)
             entryFiles += exportSearchHistoryLines(session, highWater.searchHistoryMaxId, summaryBuilder)
-            entryFiles += session.writeJsonObject(SETTINGS_PATH, BackupJson.encodeSettings(AppSetting.toBackupSettings()))
+            entryFiles += session.writeJsonObject(SETTINGS_PATH, BackupJson.encodeSettings(backupSettings))
             entryFiles += exportVideoDownloadLines(session, highWater.videoDownloadMaxId, summaryBuilder)
             entryFiles += exportImageBatchLines(session, highWater.imageBatchMaxId, summaryBuilder)
             entryFiles += exportImageItemLines(session, highWater.imageItemMaxId, summaryBuilder)
@@ -104,9 +114,13 @@ class BackupSnapshotExporter @Inject constructor(
                 manifestFileName = packageResult.manifestFileName,
                 taskDir = packageResult.taskDir
             )
-        }.getOrElse { throwable ->
-            tempFileStore.cleanupTaskDir(taskDir, taskId)
-            throw throwable
+        }
+        } catch (failure: Throwable) {
+            runCatching { tempFileStore.cleanupTaskDir(taskDir, taskId) }
+                .onFailure { cleanupFailure ->
+                    logW(TAG) { "备份导出失败后的临时目录清理未完成 taskId=$taskId reasonCode=temp_cleanup_failed type=${cleanupFailure::class.simpleName}" }
+                }
+            throw failure
         }
     }
 
@@ -116,13 +130,16 @@ class BackupSnapshotExporter @Inject constructor(
         backupKind: BackupKind,
         now: Long,
     ): BackupSnapshot {
+        /** DataStore 不参与 Room 事务，先捕获独立的设置快照。 */
+        val backupSettings = clipSettingsRepository.snapshot().toBackupSettings()
+        /** 旧内存备份路径仍只将 Room 查询组成一次事务。 */
         val data = appDatabase.withTransaction {
             BackupData(
                 clips = appDatabase.clipDao().loadAllClipsForBackup().map { it.toBackupClip() },
                 sourceApps = appDatabase.sourceAppDao().loadAllForBackup().map { it.toBackupSourceApp() },
                 linkPreviews = appDatabase.linkPreviewDao().loadAllForBackup().map { it.toBackupLinkPreview() },
                 searchHistories = appDatabase.searchHistoryDao().loadAllForBackup().map { it.toBackupSearchHistory() },
-                settings = AppSetting.toBackupSettings(),
+                settings = backupSettings,
                 videoDownloads = appDatabase.downloadDao().loadAllTasksForBackup().map { it.toBackupVideoDownload() },
                 imageBatches = appDatabase.imageExtractDao().loadAllBatchesForBackup().map { it.toBackupImageBatch() },
                 imageItems = appDatabase.imageExtractDao().loadAllItemsForBackup().map { it.toBackupImageItem() }
@@ -134,7 +151,7 @@ class BackupSnapshotExporter @Inject constructor(
             createdAt = now,
             appVersionCode = BuildConfig.VERSION_CODE,
             appVersionName = BuildConfig.VERSION_NAME,
-            deviceLabel = buildBackupDeviceLabel(AppSetting.pid),
+            deviceLabel = buildBackupDeviceLabel(installationIdentityRepository.getOrCreateInstallId()),
             source = source,
             backupKind = backupKind,
             checksum = data.calculateChecksum(),

@@ -6,8 +6,8 @@ import android.content.Context
 import android.net.Uri
 import androidx.core.content.FileProvider
 import com.cla.clip.base.general.R
-import com.cla.clip.base.general.config.AppSetting
 import com.cla.clip.base.general.config.ClipSourceBlockRules
+import com.cla.clip.base.general.config.clip.ClipSettingsRepository
 import com.cla.clip.base.general.entity.ClipCaptureEntity
 import com.cla.clip.base.general.entity.LiveEvent
 import com.cla.clip.base.general.repository.ClipRepository
@@ -20,6 +20,7 @@ import com.cla.clip.base.general.utils.logI
 import com.cla.clip.master.work.BackupAutoScheduler
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -55,6 +56,9 @@ class ClipHelper @Inject constructor(
 
     /** 应用级协程作用域，保证后台剪贴处理不依赖单个 Activity 生命周期。 */
     @param:ApplicationScope private val scope: CoroutineScope,
+
+    /** 保存前读取已提交的来源过滤名单；读取失败必须阻止本次入库。 */
+    private val clipSettingsRepository: ClipSettingsRepository,
 ) {
 
     companion object {
@@ -176,14 +180,20 @@ class ClipHelper @Inject constructor(
         /** 原始文本去掉首尾空白后的可保存内容；为空时不制造数据库记录。 */
         val clipContent = contentText?.trim()
 
-        lastClipContent.set(clipContent)
-
         if (clipContent.isNullOrBlank()) {
             return@withContext ClipProcessResult.DuplicateOrEmpty
         }
 
         /** 本次处理开始时的来源过滤名单快照；后续用户修改名单不会回溯影响已经开始的保存流程。 */
-        val blockedSourcePackages = AppSetting.blockedClipSourcePackages
+        val blockedSourcePackages = try {
+            clipSettingsRepository.snapshot().blockedPackages
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            throw ClipSettingsReadFailure(error)
+        }
+        // 只有设置读取成功后才记录本次文本；否则重试路径不能把未入库内容误判为重复。
+        lastClipContent.set(clipContent)
         if (ClipSourceBlockRules.isSourceBlocked(packageName, blockedSourcePackages)) {
             logI(TAG) {
                 "processClipText: 来源 App 命中过滤名单，跳过保存 reasonCode=source_app_blocked " +
@@ -243,7 +253,7 @@ class ClipHelper @Inject constructor(
             val saveResult = clipRepository.get().addNewClip(captureEntity)
             return when (saveResult) {
                 is ClipSaveResult.Saved -> {
-                    BackupAutoScheduler.markDirtyAndSchedule(appContext)
+                    BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
                     logD(TAG) { "processClip: 保存到数据库 clipId=${saveResult.clipId}" }
                     notificationHelper.get().notifyClipUpdate(
                         title = "$appName ${appContext.getString(R.string.base_general_it_was_written_into_the_clipboard)}",
@@ -365,3 +375,6 @@ enum class ClipProcessResult {
     /** 本次剪贴内容为空或命中连续重复规则，没有新增记录。 */
     DuplicateOrEmpty,
 }
+
+/** 剪贴来源设置读取失败；调用方必须拒绝入库并允许用户或系统稍后重试。 */
+internal class ClipSettingsReadFailure(cause: Throwable) : Exception(cause)

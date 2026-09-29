@@ -49,7 +49,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
-import com.cla.clip.base.general.config.AppSetting
 import com.cla.clip.base.general.config.ClipItemQuickAction
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.entity.ClipVisibilityScope
@@ -125,7 +124,7 @@ fun SearchPage(
     /** 协程作用域用于执行搜索头短吸附动画，不把动画状态放进 ViewModel。 */
     val coroutineScope = rememberCoroutineScope()
     /** 只有普通搜索范围响应快捷动作设置；折叠搜索保留整卡点击，避免和“取消折叠”管理语义混在一起。 */
-    val quickAction by AppSetting.clipItemQuickActionFlow.collectAsStateWithLifecycle()
+    val quickAction by viewModel.quickAction.collectAsStateWithLifecycle(initialValue = ClipItemQuickAction.None)
     /** 结果列表滚动状态需要跨亮暗色切换保存，并按搜索范围隔离。 */
     val resultListState = rememberSaveable(saveableScopeKey, saver = LazyListState.Saver) { LazyListState() }
     /** 历史列表滚动状态独立保存，避免 Result/History 模式互相重置位置。 */

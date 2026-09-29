@@ -8,7 +8,6 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import androidx.core.net.toUri
-import com.cla.clip.base.general.config.AppSetting
 import com.cla.clip.base.general.dao.DownloadTaskData
 import com.cla.clip.base.general.dao.ImageExtractBatchData
 import com.cla.clip.base.general.dao.ImageExtractItemData
@@ -261,9 +260,7 @@ class DownloadedMediaRelocator @Inject constructor(
         progress.relocatedCount += flushImageUpdates(imageUpdates, report)
 
         val finalReport = report.toReport()
-        if (finalReport.totalRelocated > 0) {
-            AppSetting.markBackupDirty()
-        }
+        // 媒体引用仓库已在每批数据库提交后记录备份变更，避免此处重复标记且保证失败可观察。
         logI(TAG) {
             "媒体重新定位完成 relocated=${finalReport.totalRelocated} existing=${finalReport.totalExistingReadable} " +
                 "videoWriteFailed=${finalReport.video.writeFailed} imageWriteFailed=${finalReport.image.writeFailed} " +

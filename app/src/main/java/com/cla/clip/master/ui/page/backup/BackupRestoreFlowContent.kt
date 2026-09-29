@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.cla.clip.base.general.R
+import com.cla.clip.master.R as HostR
 import com.cla.clip.base.general.backup.BackupKind
 import com.cla.clip.base.general.backup.BackupPreview
 import com.cla.clip.base.general.backup.BackupProgress
@@ -105,11 +106,21 @@ internal fun BackupRestoreFlowActions(
                 }
             }
             is BackupRestoreFlowState.Result -> {
-                MediaRelocationAction(
-                    state = mediaRelocationEntryState,
-                    onOpenMediaRelocation = onOpenMediaRelocation
-                )
-                Spacer(modifier = Modifier.size(8.dp))
+                if (state.settingsRestoreFailed || state.featureRestoreFailed || state.backupSyncFailed) {
+                    // 媒体关联写库期间禁止再次恢复同一备份，避免两个流程交错写入。
+                    TextButton(onClick = onRestore, enabled = !mediaRelocationEntryState.isRunning) {
+                        Text(stringResource(HostR.string.host_backup_restore_retry_partial))
+                    }
+                    Spacer(modifier = Modifier.size(8.dp))
+                }
+                // 恢复链路有未完成阶段时先收敛备份数据，再开放依赖恢复结果的媒体关联。
+                if (!state.settingsRestoreFailed && !state.featureRestoreFailed && !state.backupSyncFailed) {
+                    MediaRelocationAction(
+                        state = mediaRelocationEntryState,
+                        onOpenMediaRelocation = onOpenMediaRelocation
+                    )
+                    Spacer(modifier = Modifier.size(8.dp))
+                }
                 Button(
                     onClick = onDone,
                     enabled = !mediaRelocationEntryState.isRunning
@@ -247,7 +258,35 @@ private fun ResultContent(
     mediaRelocationSummary: MediaRelocationSummary?,
     torrentSearchFeatures: Set<TorrentSearchFeatureEntry>,
 ) {
+    /** Room 阶段已提交的分类统计，设置或调度告警不应覆盖真实数量。 */
     val report = state.report
+    if (state.settingsRestoreFailed) {
+        FlowSection(title = stringResource(HostR.string.host_backup_restore_partial_title)) {
+            Text(
+                text = stringResource(HostR.string.host_backup_restore_partial_message),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+    }
+    if (state.featureRestoreFailed) {
+        FlowSection(title = stringResource(HostR.string.host_backup_restore_partial_title)) {
+            Text(
+                text = stringResource(HostR.string.host_backup_restore_feature_partial_message),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+    }
+    if (state.backupSyncFailed) {
+        FlowSection(title = stringResource(HostR.string.host_backup_sync_failed_title)) {
+            Text(
+                text = stringResource(HostR.string.host_backup_sync_failed_message),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+    }
     FlowSection(title = stringResource(R.string.base_general_backup_section_info)) {
         state.preview?.let { preview ->
             InfoRow(stringResource(R.string.base_general_backup_info_file_name), state.fileName, keepEnd = true)
@@ -281,10 +320,12 @@ private fun ResultContent(
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
-    MediaRelocationEntryContent(
-        entryState = mediaRelocationEntryState,
-        summary = mediaRelocationSummary
-    )
+    if (!state.settingsRestoreFailed && !state.featureRestoreFailed && !state.backupSyncFailed) {
+        MediaRelocationEntryContent(
+            entryState = mediaRelocationEntryState,
+            summary = mediaRelocationSummary
+        )
+    }
 }
 
 @Composable

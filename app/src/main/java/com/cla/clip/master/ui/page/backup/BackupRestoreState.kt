@@ -81,7 +81,7 @@ sealed class BackupRestoreFlowState {
         val progress: BackupProgress?,
     ) : BackupRestoreFlowState()
 
-    /** 恢复完成，展示真实写库结果。 */
+    /** 全部或部分恢复完成，始终只展示已确认提交阶段的真实写库结果。 */
     data class Result(
         val taskId: String,
         val sourceType: BackupRestoreOpenSource,
@@ -89,6 +89,12 @@ sealed class BackupRestoreFlowState {
         val preview: BackupPreview?,
         val report: BackupRestoreReport,
         val completedAt: Long,
+        /** Room 已成功但独立设置介质提交失败，仍应展示真实报告并提示重试。 */
+        val settingsRestoreFailed: Boolean = false,
+        /** 宿主 Room 已提交但可选功能库恢复失败，报告只包含已确认的宿主数据。 */
+        val featureRestoreFailed: Boolean = false,
+        /** 恢复后自动备份变更标记失败；数据库结果仍然真实，用户可重试。 */
+        val backupSyncFailed: Boolean = false,
     ) : BackupRestoreFlowState()
 
     /** 读取或恢复失败，展示统一 reasonCode 映射后的可行动提示。 */
@@ -223,7 +229,14 @@ sealed class MediaRelocationUiState {
     data class Running(val progress: MediaRelocationProgress) : MediaRelocationUiState()
 
     /** 扫描完成，展示当前页内结果。 */
-    data class Result(val estimate: MediaRelocationEstimate, val report: MediaRelocationReport) : MediaRelocationUiState()
+    data class Result(
+        /** 已扫描的媒体规模，用于复查结果展示。 */
+        val estimate: MediaRelocationEstimate,
+        /** 数据库已提交的实际关联数量与未解决数量。 */
+        val report: MediaRelocationReport,
+        /** 关联和变更版本已提交，但自动备份任务调度失败，需要用户重试。 */
+        val backupScheduleFailed: Boolean = false,
+    ) : MediaRelocationUiState()
 
     /** 扫描或预估失败。 */
     data class Error(val message: String) : MediaRelocationUiState()

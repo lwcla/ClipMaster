@@ -6,8 +6,8 @@ import android.database.Cursor
 import android.net.Uri
 import android.os.Binder
 import android.os.Bundle
+import android.os.Looper
 import android.os.ParcelFileDescriptor
-import com.cla.clip.base.general.config.MmkvInitializer
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
 import com.cla.clip.base.general.utils.logW
@@ -60,12 +60,9 @@ class ClipboardBridgeProvider : ContentProvider() {
     /**
      * Provider 创建入口。
      *
-     * ContentProvider 冷启动早于 Application.onCreate()，这里先确认 MMKV 初始化，真实业务依赖仍在首次调用时懒加载。
+     * ContentProvider 冷启动早于 Application.onCreate()；此处只完成轻量创建，身份与存储延迟到 Binder 查询。
      */
     override fun onCreate(): Boolean {
-        /** Provider 所在的应用 Context；用于在 Application.onCreate() 之前准备 MMKV 默认实例。 */
-        val appContext = requireNotNull(context).applicationContext
-        MmkvInitializer.ensureInitialized(appContext, "clipboard_bridge_provider")
         return true
     }
 
@@ -92,6 +89,14 @@ class ClipboardBridgeProvider : ContentProvider() {
         if (!methodSupported) {
             logW(TAG) { "Provider 不支持 method=$method callingUid=$callingUid" }
             return ClipboardBridgeResult.of(ClipboardBridgeContract.CODE_INVALID_ARGS).toBundle()
+        }
+
+        // 所有受支持的同步入口都可能触发存储或文件 IO；主线程误调用立即失败，避免阻塞 UI。
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            return ClipboardBridgeResult.of(
+                resultCode = ClipboardBridgeContract.CODE_TIMEOUT,
+                reasonCode = "main_thread_call_rejected"
+            ).toBundle()
         }
 
         return when (method) {
@@ -148,7 +153,14 @@ class ClipboardBridgeProvider : ContentProvider() {
                 val request = ClipboardBridgeRequest.fromExtras(extras)
                     ?: return ClipboardBridgeResult.of(ClipboardBridgeContract.CODE_INVALID_ARGS).toBundle()
                 logD(TAG) { "Provider 收到 query_shizuku_process eventId=${request.eventId}" }
-                shizukuProcessCoordinator.query(request).toBundle()
+                /** 非主线程 Binder 限时查询结果；进程名只有完成持久化后才会进入成功响应。 */
+                val result = ClipboardBridgeShizukuIdentityQueryBridge.query(isMainThread = false) {
+                    shizukuProcessCoordinator.query(request)
+                }
+                if (result.resultCode != ClipboardBridgeContract.CODE_OK) {
+                    logW(TAG) { "Provider 身份查询未完成 eventId=${request.eventId} reasonCode=${result.reasonCode}" }
+                }
+                result.toBundle()
             }
             else -> {
                 /** 理论不可达分支；保留是为了防止未来新增 method 时忘记补齐处理分支。 */

@@ -578,7 +578,7 @@ Cloudflare 挑战只允许从标记 `isCloudflareProtected` 的已知 Provider �
 
 导出与恢复边界：三张 Room 表新增固定 high-water mark 和 `(timestamp, stableKey)` keyset 分页 DAO，每页最多 300 条，避免全量加载；恢复逐页校验协议、折叠同页重复稳定键、批量查询本地状态并在 Room 事务内只插入缺失项或更新严格更新的备份项，本地相同/更新、非法和重复行均计入 skipped。设置恢复复用现有设置仓库；真实新增/更新后标记统一 backup dirty，重复恢复不会产生额外写入或 dirty。manifest 和恢复 UI 只使用四类稳定 count/report code；旧磁力 entry 只根据固定路径和脱敏计数生成“不兼容并跳过”报告，不读取正文、不迁移、不计成功。
 
-dirty 与首次披露：书签、历史、已查看 Repository 仅在成功且实际发生变化的保存、删除、清空或导入写入后标记 dirty；设置仓库仅默认排序变化触发 dirty，本机联网、安全和隐私设置不触发。首次手动本地导出、手动 WebDAV 上传或开启自动备份前，备份页统一展示“本地 ZIP 与 WebDAV 备份不会加密”的确认；确认状态只保存在本机 MMKV，不进入备份包，确认后继续原动作且以后不重复打断。
+dirty 与首次披露：书签、历史、已查看 Repository 仅在成功且实际发生变化的保存、删除、清空或导入写入后标记 dirty；设置仓库仅默认排序变化触发 dirty，本机联网、安全和隐私设置不触发。首次手动本地导出、手动 WebDAV 上传或开启自动备份前，备份页统一展示“本地 ZIP 与 WebDAV 备份不会加密”的确认；确认状态只保存在宿主 Preferences DataStore，不进入备份包，确认后继续原动作且以后不重复打断。
 
 旧数据与系统备份：功能入口先由 `LegacyMagnetCleanupViewModel` 检测固定旧库 `magnet_feature_database.db` 及 `-wal/-shm/-journal` sidecar、固定 `cache/magnet_source_cache/magnet_source_cache.db` 及 sidecar。存在时必须由用户确认后重新 canonicalize 并逐项核对白名单再删除；伪造路径、未知文件和非空缓存目录均保留，取消则不进入新功能。`backup_rules.xml` 与 `data_extraction_rules.xml` 精确排除新数据库及 sidecar、TorrentSearch DataStore、Torznab 密文和 `app_webview/`；普通 cache 本身不属于 Android Auto Backup 域。
 
@@ -589,6 +589,8 @@ dirty 与首次披露：书签、历史、已查看 Repository 仅在成功且�
 变更记录：2026-09-12，启动任务 7 并完成主要实现；原因是 TorrentSearch 的三类用户数据已经会持续写入，发布前必须用 schema v4 字段白名单替代系统整库备份，同时给旧磁力安装留下明确、可确认且只命中固定路径的清理出口。
 
 变更记录：2026-09-12，完成任务 7；模块全量单测、宿主全量单测、Kotlin/AndroidTest 编译、发布静态扫描与两条 Release/R8 均覆盖了 contributor、分页、幂等报告、dirty、首次未加密备份披露、旧数据精确清理和 Auto Backup 排除。备份与恢复流程 Mermaid 节点未改变，因此只执行 HTML 漂移检查，不重新生成图。
+
+变更记录：2026-09-29，TorrentSearch 的备份 dirty 标记器改为等待宿主 DataStore 版本提交，首次未加密披露确认改存宿主设置文件；原因是移除同步设置介质并避免未提交标记就返回成功。
 
 ### 任务 08：发布门禁与真实联网验证（2026-09-12）
 

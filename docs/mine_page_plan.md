@@ -43,11 +43,11 @@
 
 ## 数据和接口
 
-- 快捷动作保存到 `AppSetting.clipItemQuickAction`，默认值为复制。
+- 快捷动作经 `ClipSettingsRepository` 写入宿主 DataStore，默认值为复制；首次加载或读取失败前禁用设置编辑，失败可重试。
 - 我的页 ViewModel 只负责读取和写入设置，不直接操作剪贴列表数据。
 - 普通列表页和普通搜索页观察同一设置状态并传给 `ClipResultList`；折叠列表、折叠搜索和回收站忽略该设置。
 - 后续新增剪贴 item 快捷动作时，需要同步扩展设置枚举、字符串资源、单选弹窗选项、共享 item 动作映射和本文档。
-- 来源过滤名单读取 `AppSetting.blockedClipSourcePackagesFlow`，候选合并当前 `PackageManager` 直读安装应用、`source_apps` 历史来源和已过滤包名；安装应用读取结果、读取状态和当前安装图标不持久化、不进入 WebDAV/本地备份，搜索页来源筛选仍只读取 `source_apps`。
+- 来源过滤名单读取 `ClipSettingsRepository.data`，候选合并当前 `PackageManager` 直读安装应用、`source_apps` 历史来源和已过滤包名；读取失败时提供重试且不允许以空名单覆盖已保存规则。安装应用读取结果、读取状态和当前安装图标不持久化、不进入 WebDAV/本地备份，搜索页来源筛选仍只读取 `source_apps`。
 - 来源过滤名单保存后标记 backup dirty 并调度自动备份；具体备份字段和恢复并集策略见 `docs/clip_source_app_filter_plan.md` 与 `docs/webdav_backup_plan.md`。
 - 检查更新使用 app 模块内的自更新协作者；我的页只持有入口 UI state、触发检查和分发外部链接打开事件，不承载 manifest 解析、版本比较或下载源排序逻辑。
 - Shizuku 和通知权限项只使用页面内瞬时状态，不保存“权限说明是否展开”的 MMKV 偏好；历史 `permission_expanded` key 已废弃且不进入备份恢复协议。
@@ -59,7 +59,7 @@
 - `app/src/main/java/com/cla/clip/master/ui/page/mine/MineSettingComponents.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/mine/MineVm.kt`
 - `feature/torrent-search-api/src/main/**/TorrentSearchFeatureEntry.kt`
-- `base/general/src/main/java/com/cla/clip/base/general/config/AppSetting.kt`
+- `base/general/src/main/java/com/cla/clip/base/general/config/clip/ClipSettingsRepository.kt`
 - `base/general/src/main/res/values/strings.xml`
 - `docs/mine_page_plan.md`
 - `docs/app_update_plan.md`
@@ -110,6 +110,8 @@
 - 来源过滤设置新增低敏日志：手动添加草稿、拒绝当前 App、本地安装应用读取失败、列表为空和当前安装图标加载失败只记录 reasonCode、数量和耗时摘要，不记录完整 App 列表、图标内容或剪贴正文；完整日志计划见 `docs/clip_source_app_filter_plan.md`。
 
 ## 变更记录
+
+- 2026-09-29：快捷动作和来源过滤接入剪贴设置仓库，首次加载失败提供重试且禁止危险编辑；原因是设置改为挂起提交。
 
 - 2026-08-31：TorrentSearch 我的页入口改由功能 API 提供内容、宿主 `MineEntries.kt` 渲染 slot 复用 `ListEntryCard`；原因是实现模块不能反向依赖 app 私有组件，宿主薄适配可同时保持模块边界和页面视觉一致。
 - 2026-08-31：移除当前状态、交互、文件清单、验收和组件同步中的 `MagnetFeatureEntry` / Academic Torrents 现行表述；原因是旧磁力契约已废弃，仅保留历史变更记录。

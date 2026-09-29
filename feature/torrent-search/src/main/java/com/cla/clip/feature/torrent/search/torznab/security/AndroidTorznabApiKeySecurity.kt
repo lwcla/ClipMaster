@@ -2,90 +2,34 @@ package com.cla.clip.feature.torrent.search.torznab.security
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
 import android.util.Base64
+import com.cla.clip.base.general.security.AndroidKeystoreSecretCipher
+import com.cla.clip.base.general.security.KeystoreEncryptedSecret
 import com.cla.clip.feature.torrent.search.torznab.TorznabConfigId
-import java.security.KeyStore
-import javax.crypto.Cipher
-import javax.crypto.KeyGenerator
-import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
 
-/** Android Keystore AES-GCM 实现；主密钥不可导出且只在当前应用安装内可用。 */
+/** 保留 Torznab 密文契约和既有 alias，仅将设备密码学操作交给共享原语。 */
 internal class AndroidKeystoreTorznabApiKeyCipher : TorznabApiKeyCipher {
-    /** keyCreationLock 避免首次并发保存为同一 alias 重复生成密钥。 */
-    private val keyCreationLock = Any()
+    /** cipher 只使用 Torznab 既有 alias，与未来 WebDAV 凭据密钥隔离。 */
+    private val cipher = AndroidKeystoreSecretCipher(KEY_ALIAS)
 
-    /** 使用 Keystore 随机 IV 和配置 AAD 加密，不允许调用方提供 IV。 */
+    /** 继续由上层传入配置 ID 的 AAD，并映射为既有 Torznab 密文结构。 */
     override fun encrypt(plaintext: ByteArray, associatedData: ByteArray): EncryptedTorznabSecret {
-        /** cipher 是当前调用独占的 AES-GCM 实例。 */
-        val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
-        cipher.updateAAD(associatedData)
-        /** ciphertext 包含 GCM 认证标签。 */
-        val ciphertext = cipher.doFinal(plaintext)
-        /** iv 由 Android 密码学实现随机生成。 */
-        val iv = cipher.iv ?: throw IllegalStateException()
-        return EncryptedTorznabSecret(iv = iv, ciphertext = ciphertext)
+        /** secret 的 IV 与密文字节完全保留共享原语输出，兼容已有介质。 */
+        val secret = cipher.encrypt(plaintext, associatedData)
+        return EncryptedTorznabSecret(iv = secret.iv, ciphertext = secret.ciphertext)
     }
 
-    /** 使用保存的 IV 与同一配置 AAD 解密，认证失败由上层统一清理密文。 */
-    override fun decrypt(secret: EncryptedTorznabSecret, associatedData: ByteArray): ByteArray {
-        /** keyStore 只读取现有设备绑定密钥；缺失表示系统恢复或 Key 已失效。 */
-        val keyStore = loadKeyStore()
-        /** key 必须是当前 alias 的 SecretKey。 */
-        val key = keyStore.getKey(KEY_ALIAS, null) as? SecretKey ?: throw IllegalStateException()
-        /** cipher 是当前调用独占的 AES-GCM 实例。 */
-        val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_BITS, secret.iv))
-        cipher.updateAAD(associatedData)
-        return cipher.doFinal(secret.ciphertext)
-    }
-
-    /** 读取或原子创建 AES-256 GCM 主密钥。 */
-    private fun getOrCreateKey(): SecretKey = synchronized(keyCreationLock) {
-        /** keyStore 每次加载当前 AndroidKeyStore 状态，避免缓存失效引用。 */
-        val keyStore = loadKeyStore()
-        /** existingKey 是安装内此前生成的不可导出密钥。 */
-        val existingKey = keyStore.getKey(KEY_ALIAS, null) as? SecretKey
-        if (existingKey != null) return@synchronized existingKey
-        /** keyGenerator 直接把新密钥写入 AndroidKeyStore。 */
-        val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEY_STORE)
-        /** keySpec 只授权 AES-GCM 加解密，不要求用户认证以支持后台 Torznab 请求。 */
-        val keySpec = KeyGenParameterSpec.Builder(
-            KEY_ALIAS,
-            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+    /** 使用原 IV、密文及配置 AAD 解密，失败仍由 Torznab 仓库处理。 */
+    override fun decrypt(secret: EncryptedTorznabSecret, associatedData: ByteArray): ByteArray =
+        cipher.decrypt(
+            KeystoreEncryptedSecret(iv = secret.iv, ciphertext = secret.ciphertext),
+            associatedData,
         )
-            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-            .setKeySize(KEY_SIZE_BITS)
-            .setRandomizedEncryptionRequired(true)
-            .build()
-        keyGenerator.init(keySpec)
-        keyGenerator.generateKey()
-    }
 
-    /** 加载 AndroidKeyStore；失败由安全仓库映射为低敏失败。 */
-    private fun loadKeyStore(): KeyStore {
-        /** keyStore 不使用密码文件，load 参数固定为 null。 */
-        val keyStore = KeyStore.getInstance(ANDROID_KEY_STORE)
-        keyStore.load(null)
-        return keyStore
-    }
-
-    /** Android Keystore 密码学常量。 */
-    companion object {
-        /** 系统 KeyStore provider 名称。 */
-        private const val ANDROID_KEY_STORE = "AndroidKeyStore"
-        /** feature 级共享主密钥 alias，不包含用户或配置数据。 */
-        private const val KEY_ALIAS = "clipmaster_torrent_search_torznab_api_key_v1"
-        /** 认证加密转换。 */
-        private const val TRANSFORMATION = "AES/GCM/NoPadding"
-        /** AES 主密钥长度。 */
-        private const val KEY_SIZE_BITS = 256
-        /** GCM 认证标签长度。 */
-        private const val GCM_TAG_BITS = 128
+    /** Torznab 设备密钥身份保持稳定，不能随文件迁移改变。 */
+    private companion object {
+        /** 既有 Torznab alias，所有已保存的 API Key 依赖该值。 */
+        const val KEY_ALIAS = "clipmaster_torrent_search_torznab_api_key_v1"
     }
 }
 

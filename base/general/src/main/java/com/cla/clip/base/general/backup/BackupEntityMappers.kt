@@ -1,7 +1,7 @@
 package com.cla.clip.base.general.backup
 
-import com.cla.clip.base.general.config.AppSetting
 import com.cla.clip.base.general.config.ClipSourceBlockRules
+import com.cla.clip.base.general.config.clip.ClipSettingsSnapshot
 import com.cla.clip.base.general.dao.ClipData
 import com.cla.clip.base.general.dao.DownloadTaskData
 import com.cla.clip.base.general.dao.ImageExtractBatchData
@@ -167,12 +167,12 @@ internal fun SearchHistoryData.sameBackupContent(other: SearchHistoryData): Bool
         updatedAt == other.updatedAt
 }
 
-/** AppSetting 转备份设置白名单。 */
-internal fun AppSetting.toBackupSettings(): BackupSettings {
+/** 已提交的剪贴设置快照转备份白名单，不包含本机安装态或密码。 */
+internal fun ClipSettingsSnapshot.toBackupSettings(): BackupSettings {
     return BackupSettings(
-        clipItemQuickAction = clipItemQuickAction.storageValue,
+        clipItemQuickAction = quickAction.storageValue,
         recycleBinRetentionDays = recycleBinRetentionDays,
-        blockedClipSourcePackages = ClipSourceBlockRules.normalizePackageSet(blockedClipSourcePackages).toList()
+        blockedClipSourcePackages = ClipSourceBlockRules.normalizePackageSet(blockedPackages).toList()
     )
 }
 

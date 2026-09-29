@@ -363,9 +363,9 @@ data class BackupSearchHistory(
 @Keep
 @Serializable
 data class BackupSettings(
-    /** 普通剪贴 item 快捷动作稳定值；未知值恢复时由 AppSetting 回退默认值。 */
+    /** 普通剪贴 item 快捷动作稳定值；未知值恢复时由剪贴设置仓库回退默认值。 */
     @SerialName("clip_item_quick_action") val clipItemQuickAction: String? = null,
-    /** 回收站保留天数；恢复时由 AppSetting 继续裁剪到安全范围。 */
+    /** 回收站保留天数；恢复时由剪贴设置仓库继续裁剪到安全范围。 */
     @SerialName("recycle_bin_retention_days") val recycleBinRetentionDays: Int? = null,
     /** 剪贴来源 App 过滤包名名单；只保存包名，不保存 App 名称、图标或安装列表。 */
     @SerialName("blocked_clip_source_packages") val blockedClipSourcePackages: List<String> = emptyList(),
@@ -483,9 +483,8 @@ data class BackupRestoreCategoryReport(
  * 备份长任务状态。
  *
  * 页面、Worker 和最近状态持久化都使用同一组状态，避免 UI 通过字符串拼接推断运行结果。
- * 最近状态通过 `AppSetting` 使用枚举名保存到 MMKV，必须保留 release R8 混淆后的枚举名称契约。
+ * 最近状态由备份运行仓库映射为稳定 code 保存，不依赖枚举名称的混淆结果。
  */
-@Keep
 enum class BackupTaskStatus {
     /** 没有任务或尚未产生结果。 */
     Idle,
@@ -630,8 +629,7 @@ data class BackupProgress(
     val messageRes: Int? = null,
 )
 
-/** WebDAV 目标最近一次健康检查状态，仅缓存脱敏状态，不保存密码或完整 URL；枚举名会写入 MMKV，需要保留 R8 名称契约。 */
-@Keep
+/** WebDAV 目标最近一次健康检查状态，仅缓存脱敏状态，不保存密码或完整 URL；持久化使用稳定 code。 */
 enum class BackupTargetHealth {
     /** 尚未检查或用户清空了配置。 */
     Unknown,

@@ -38,7 +38,7 @@
 
 ### 实现与复用
 
-沿用 ad-api、Hilt 多绑定、选择器、会话保险丝、AppSetting 开关、生命周期观察；新增 ad-admob adapter 和按 source 的 UMP 隐私接口。宿主提供独立页面广告会话/布局协调器，广告不持有业务 Repository。SDK 类型不泄漏。统一列表位置规则与锚点算法为纯协作者。
+沿用 ad-api、Hilt 多绑定、选择器、会话保险丝、`AdSettingsRepository` 设置流和生命周期观察；新增 ad-admob adapter 和按 source 的 UMP 隐私接口。宿主提供独立页面广告会话/布局协调器，广告不持有业务 Repository。SDK 类型不泄漏。统一列表位置规则与锚点算法为纯协作者。
 
 单列列表优先把广告作为稳定业务 Lazy item 外层 Column 的尾槽（广告不在业务卡片手势内部），保留原 Paging 索引与取消置顶行为，广告子树使用独立请求身份。图片网格使用外层 Column 分配空间：网格占剩余高度，下方广告按实际素材高度独立测量；不再合并首行或向网格插入广告条目。首批真实图片出现且页面可见后准备唯一广告，图片追加、删除和滚动不改变请求身份；只处理已加载快照。
 
@@ -362,7 +362,7 @@ INFO/DEBUG：首次请求、加载、展示、释放，字段仅 source/placemen
 - `:feature:ad-debug`：通过 Hilt `@IntoSet` 注入 `debug` 广告源，只在 debug 请求下显示固定占位 UI，不接入真实 SDK。
 - `:feature:ad-csj`：通过 Hilt `@IntoSet` 注入 `csj` 广告源，`priority = 100`，只支持 `AdPlacement.DetailNative`；SDK 初始化、配置、loader、模板广告 View、事件去重、释放和异常兜底全部封装在 adapter 内。
 - `:feature:ad-uniad`：通过 Hilt `@IntoSet` 注入 `uniad` 广告源，`priority = 100`，只支持 `AdPlacement.DetailNative`；uni-ad SDK 初始化、配置、`DCFeedAdLoader`、`DCFeedAd`、广告 View 生命周期、事件去重、释放和异常兜底全部封装在 adapter 内。
-- `:app`：注入广告源集合、选择器和会话保险丝，将 `AppSetting.activeAdSourceIdFlow`、`AppSetting.adsGlobalEnabledFlow` 与保险丝禁用集合传给详情页。
+- `:app`：注入广告源集合、选择器和会话保险丝，将 `AdSettingsRepository.data` 映射的来源、总开关和隐私状态传给详情页；未就绪或读取失败时禁止真实广告初始化。
 - 未来其它真实广告源继续使用独立 adapter 模块，例如 `:feature:ad-admob`、`:feature:ad-gdt`；SDK 初始化、Manifest metadata、权限、R8/consumer rules、广告单元 ID 和隐私同意都留在 adapter 内。
 - 渠道裁剪优先：Google Play 包优先只带 AdMob，国内渠道包优先只带国内 SDK 或必要 SDK；运行时多源切换只用于同包内已内置来源。
 
@@ -439,9 +439,9 @@ INFO/DEBUG：首次请求、加载、展示、释放，字段仅 source/placemen
 
 ## 设置与备份边界
 
-- `AppSetting.activeAdSourceId` 保存 `auto`、`off` 或稳定 sourceId，只影响本机广告选择，不进入 WebDAV/本地备份。
-- `AppSetting.adsGlobalEnabled` 是广告总开关，只影响本机广告展示，不进入 WebDAV/本地备份。
-- `AppSetting.adConsentState` 和 `AppSetting.adPrivacyPolicyVersion` 是本机隐私/运营态入口，用于阻止真实广告 SDK 初始化，不进入 WebDAV/本地备份，也不触发 backup dirty。
+- `AdSettingsRepository` 保存 `auto`、`off` 或稳定 sourceId，只影响本机广告选择，不进入 WebDAV/本地备份。
+- `AdSettingsRepository` 保存广告总开关，只影响本机广告展示，不进入 WebDAV/本地备份。
+- `AdSettingsRepository.setConsent` 原子保存同意状态和政策版本；未就绪时按未同意处理，不进入 WebDAV/本地备份，也不触发 backup dirty。
 - `AdSessionFailureFuse` 只保存当前进程内的临时禁用集合，不持久化、不进入备份、不触发 dirty。
 - `local.properties` 中的 `uniad...`、`csj...` 和 release 签名配置属于本机/CI 构建态，不进入 WebDAV/本地备份，也不能写入运行时日志。
 - 卸载重装后广告选择恢复默认 `auto`、广告总开关恢复默认开启，实际是否显示仍由广告源集合、隐私同意和渠道包决定。
@@ -488,6 +488,8 @@ INFO/DEBUG：首次请求、加载、展示、释放，字段仅 source/placemen
 - 是否需要灰度平台、SDK 版本快速回滚面板和广告包构建报告自动化，后续结合发布渠道与运营能力再评估。
 
 ## 变更记录
+
+- 2026-09-29：广告来源、总开关和隐私状态改从宿主 DataStore 领域仓库读取，未就绪时禁止真实 SDK 启动；原因是移除旧同步设置入口并保持隐私门禁。
 
 - 2026-06-01：新增广告模块化方案，规划 `:feature:ad-api`、`:feature:ad-debug` 和详情页广告位；原因是详情页需要接入可热插拔广告能力，同时先用调试实现验证模块边界、隐私边界和页面布局。
 - 2026-06-01：补充国内广告第一家穿山甲 CSJ adapter 的实现计划和真实接入边界，新增 `:feature:ad-csj`、官方 SDK 版本、Gradle 属性、隐私同意、敏感详情隐藏、生命周期释放、下载类广告拒绝、R8/manifest/渠道验证和 v1/v1.1 范围；原因是详情页需要优先接入国内信息流广告并保持默认/海外包可裁剪。

@@ -228,7 +228,6 @@ internal class TorrentSearchBackupContributor @Inject constructor(
             if (buffer.size >= PAGE_SIZE) flushBookmarks(buffer, counter)
         }
         flushBookmarks(buffer, counter)
-        counter.markDirtyIfChanged(backupDirtyMarker)
         return counter.toReport(BOOKMARK_REPORT_CODE)
     }
 
@@ -249,21 +248,25 @@ internal class TorrentSearchBackupContributor @Inject constructor(
         counter.skippedCount += deduplicated.duplicateCount
         /** candidates 是当前事务内稳定键唯一且时间最新的合法书签。 */
         val candidates = deduplicated.candidates
-        database.withTransaction {
-            /** localByKey 是当前事务内用于冲突判断的本地书签索引。 */
-            val localByKey = bookmarkDao.findByInfoHashes(candidates.map(BookmarkedTorrentEntity::infoHash))
-                .associateBy(BookmarkedTorrentEntity::infoHash)
-            /** mutations 只包含缺失或备份时间更新的合法记录。 */
-            val mutations = candidates.filter { candidate ->
-                /** local 是相同稳定键的本地记录。 */
-                val local = localByKey[candidate.infoHash]
-                when (decideTorrentSearchRestore(candidate.bookmarkedAtEpochMillis, local?.bookmarkedAtEpochMillis)) {
-                    TorrentSearchRestoreDecision.INSERT -> true.also { counter.insertedCount += 1 }
-                    TorrentSearchRestoreDecision.UPDATE -> true.also { counter.updatedCount += 1 }
-                    TorrentSearchRestoreDecision.SKIP -> false.also { counter.skippedCount += 1 }
+        /** 每页独立事务成功后立即等待版本标记，后续页失败不丢已提交变更。 */
+        runRestoreBatchAndMarkDirty(backupDirtyMarker) {
+            database.withTransaction {
+                /** localByKey 是当前事务内用于冲突判断的本地书签索引。 */
+                val localByKey = bookmarkDao.findByInfoHashes(candidates.map(BookmarkedTorrentEntity::infoHash))
+                    .associateBy(BookmarkedTorrentEntity::infoHash)
+                /** mutations 只包含缺失或备份时间更新的合法记录。 */
+                val mutations = candidates.filter { candidate ->
+                    /** local 是相同稳定键的本地记录。 */
+                    val local = localByKey[candidate.infoHash]
+                    when (decideTorrentSearchRestore(candidate.bookmarkedAtEpochMillis, local?.bookmarkedAtEpochMillis)) {
+                        TorrentSearchRestoreDecision.INSERT -> true.also { counter.insertedCount += 1 }
+                        TorrentSearchRestoreDecision.UPDATE -> true.also { counter.updatedCount += 1 }
+                        TorrentSearchRestoreDecision.SKIP -> false.also { counter.skippedCount += 1 }
+                    }
                 }
+                if (mutations.isNotEmpty()) bookmarkDao.upsertAll(mutations)
+                mutations.size
             }
-            if (mutations.isNotEmpty()) bookmarkDao.upsertAll(mutations)
         }
         buffer.clear()
     }
@@ -280,7 +283,6 @@ internal class TorrentSearchBackupContributor @Inject constructor(
             if (buffer.size >= PAGE_SIZE) flushHistory(buffer, counter)
         }
         flushHistory(buffer, counter)
-        counter.markDirtyIfChanged(backupDirtyMarker)
         return counter.toReport(HISTORY_REPORT_CODE)
     }
 
@@ -301,21 +303,25 @@ internal class TorrentSearchBackupContributor @Inject constructor(
         counter.skippedCount += deduplicated.duplicateCount
         /** candidates 是当前事务内稳定键唯一且时间最新的合法历史。 */
         val candidates = deduplicated.candidates
-        database.withTransaction {
-            /** localByKey 是当前事务内用于冲突判断的本地历史索引。 */
-            val localByKey = historyDao.findByNormalizedQueries(candidates.map(TorrentSearchHistoryEntity::normalizedQuery))
-                .associateBy(TorrentSearchHistoryEntity::normalizedQuery)
-            /** mutations 只包含缺失或备份时间更新的合法记录。 */
-            val mutations = candidates.filter { candidate ->
-                /** local 是相同稳定键的本地记录。 */
-                val local = localByKey[candidate.normalizedQuery]
-                when (decideTorrentSearchRestore(candidate.updatedAtEpochMillis, local?.updatedAtEpochMillis)) {
-                    TorrentSearchRestoreDecision.INSERT -> true.also { counter.insertedCount += 1 }
-                    TorrentSearchRestoreDecision.UPDATE -> true.also { counter.updatedCount += 1 }
-                    TorrentSearchRestoreDecision.SKIP -> false.also { counter.skippedCount += 1 }
+        /** 每页独立事务成功后立即等待版本标记，后续页失败不丢已提交变更。 */
+        runRestoreBatchAndMarkDirty(backupDirtyMarker) {
+            database.withTransaction {
+                /** localByKey 是当前事务内用于冲突判断的本地历史索引。 */
+                val localByKey = historyDao.findByNormalizedQueries(candidates.map(TorrentSearchHistoryEntity::normalizedQuery))
+                    .associateBy(TorrentSearchHistoryEntity::normalizedQuery)
+                /** mutations 只包含缺失或备份时间更新的合法记录。 */
+                val mutations = candidates.filter { candidate ->
+                    /** local 是相同稳定键的本地记录。 */
+                    val local = localByKey[candidate.normalizedQuery]
+                    when (decideTorrentSearchRestore(candidate.updatedAtEpochMillis, local?.updatedAtEpochMillis)) {
+                        TorrentSearchRestoreDecision.INSERT -> true.also { counter.insertedCount += 1 }
+                        TorrentSearchRestoreDecision.UPDATE -> true.also { counter.updatedCount += 1 }
+                        TorrentSearchRestoreDecision.SKIP -> false.also { counter.skippedCount += 1 }
+                    }
                 }
+                if (mutations.isNotEmpty()) historyDao.upsertAll(mutations)
+                mutations.size
             }
-            if (mutations.isNotEmpty()) historyDao.upsertAll(mutations)
         }
         buffer.clear()
     }
@@ -332,7 +338,6 @@ internal class TorrentSearchBackupContributor @Inject constructor(
             if (buffer.size >= PAGE_SIZE) flushViewed(buffer, counter)
         }
         flushViewed(buffer, counter)
-        counter.markDirtyIfChanged(backupDirtyMarker)
         return counter.toReport(VIEWED_REPORT_CODE)
     }
 
@@ -353,21 +358,25 @@ internal class TorrentSearchBackupContributor @Inject constructor(
         counter.skippedCount += deduplicated.duplicateCount
         /** candidates 是当前事务内稳定键唯一且时间最新的合法已查看记录。 */
         val candidates = deduplicated.candidates
-        database.withTransaction {
-            /** localByKey 是当前事务内用于冲突判断的本地已查看索引。 */
-            val localByKey = viewedDao.findByInfoHashes(candidates.map(ViewedTorrentEntity::infoHash))
-                .associateBy(ViewedTorrentEntity::infoHash)
-            /** mutations 只包含缺失或备份时间更新的合法记录。 */
-            val mutations = candidates.filter { candidate ->
-                /** local 是相同稳定键的本地记录。 */
-                val local = localByKey[candidate.infoHash]
-                when (decideTorrentSearchRestore(candidate.viewedAtEpochMillis, local?.viewedAtEpochMillis)) {
-                    TorrentSearchRestoreDecision.INSERT -> true.also { counter.insertedCount += 1 }
-                    TorrentSearchRestoreDecision.UPDATE -> true.also { counter.updatedCount += 1 }
-                    TorrentSearchRestoreDecision.SKIP -> false.also { counter.skippedCount += 1 }
+        /** 每页独立事务成功后立即等待版本标记，后续页失败不丢已提交变更。 */
+        runRestoreBatchAndMarkDirty(backupDirtyMarker) {
+            database.withTransaction {
+                /** localByKey 是当前事务内用于冲突判断的本地已查看索引。 */
+                val localByKey = viewedDao.findByInfoHashes(candidates.map(ViewedTorrentEntity::infoHash))
+                    .associateBy(ViewedTorrentEntity::infoHash)
+                /** mutations 只包含缺失或备份时间更新的合法记录。 */
+                val mutations = candidates.filter { candidate ->
+                    /** local 是相同稳定键的本地记录。 */
+                    val local = localByKey[candidate.infoHash]
+                    when (decideTorrentSearchRestore(candidate.viewedAtEpochMillis, local?.viewedAtEpochMillis)) {
+                        TorrentSearchRestoreDecision.INSERT -> true.also { counter.insertedCount += 1 }
+                        TorrentSearchRestoreDecision.UPDATE -> true.also { counter.updatedCount += 1 }
+                        TorrentSearchRestoreDecision.SKIP -> false.also { counter.skippedCount += 1 }
+                    }
                 }
+                if (mutations.isNotEmpty()) viewedDao.upsertAll(mutations)
+                mutations.size
             }
-            if (mutations.isNotEmpty()) viewedDao.upsertAll(mutations)
         }
         buffer.clear()
     }
@@ -496,6 +505,18 @@ internal fun <T> deduplicateTorrentSearchRestoreCandidates(
     )
 }
 
+/** 等待每页 Room 提交完成后才标记宿主版本；事务失败或无变化时不标记。 */
+internal suspend fun runRestoreBatchAndMarkDirty(
+    /** 已提交批次变更对应的宿主版本标记。 */
+    marker: TorrentSearchBackupDirtyMarker,
+    /** 返回已提交插入和更新数量；异常表示事务未成功。 */
+    commit: suspend () -> Int,
+) {
+    /** Room 事务正常返回后，本批次实际持久化的变化数。 */
+    val committedChanges = commit()
+    if (committedChanges > 0) marker.markDirty()
+}
+
 /** 恢复分类计数器，只保留脱敏数量。 */
 private class RestoreCounter(
     /** 新增记录数。 */
@@ -505,11 +526,6 @@ private class RestoreCounter(
     /** 本地较新、重复或非法记录数。 */
     var skippedCount: Int = 0,
 ) {
-    /** 仅在真实写入后标记 dirty。 */
-    fun markDirtyIfChanged(marker: TorrentSearchBackupDirtyMarker) {
-        if (insertedCount + updatedCount > 0) marker.markDirty()
-    }
-
     /** 生成 base 可聚合的稳定恢复报告。 */
     fun toReport(category: String): BackupRestoreCategoryReport {
         return BackupRestoreCategoryReport(category, insertedCount, updatedCount, skippedCount)

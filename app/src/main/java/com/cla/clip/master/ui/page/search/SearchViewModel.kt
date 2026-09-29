@@ -8,6 +8,9 @@ import androidx.paging.PagingConfig
 import androidx.paging.cachedIn
 import androidx.paging.map
 import com.cla.clip.base.general.dao.SearchHistoryData
+import com.cla.clip.base.general.config.clip.ClipSettingsRepository
+import com.cla.clip.base.general.config.ClipItemQuickAction
+import com.cla.clip.base.general.utils.logE
 import com.cla.clip.base.general.dao.SourceAppData
 import com.cla.clip.base.general.entity.ClipVisibilityScope
 import com.cla.clip.base.general.entity.toUi
@@ -20,12 +23,14 @@ import dagger.Lazy
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
@@ -88,8 +93,19 @@ class SearchViewModel @Inject constructor(
     @param:ApplicationContext private val appContext: Context,
     private val clipRepository: Lazy<ClipRepository>,
     private val searchHistoryRepository: Lazy<SearchHistoryRepository>,
+    /** 普通搜索快捷动作来自已提交配置，折叠搜索仍由页面禁用。 */
+    private val clipSettingsRepository: ClipSettingsRepository,
     private val clipboardDataProcessor: DefaultClipboardDataProcessor,
 ) : ViewModel(), ClipboardDataProcessor by clipboardDataProcessor {
+
+    /** 搜索页可见时才收集的快捷动作领域流，不在 ViewModel 初始化期启动 IO。 */
+    val quickAction = clipSettingsRepository.data.map { settings -> settings.quickAction }
+        .catch { error ->
+            if (error is CancellationException) throw error
+            // 数据源读失败时停用快捷动作，避免继续消费旧设置状态。
+            logE("SearchViewModel", error) { "读取搜索快捷动作失败 reasonCode=settings_read_failed" }
+            emit(ClipItemQuickAction.None)
+        }
 
     companion object {
         /** 搜索历史提示防抖时间，单位毫秒；只影响历史表查询，不延迟剪贴内容搜索结果。 */
@@ -221,7 +237,7 @@ class SearchViewModel @Inject constructor(
         if (query.trim().isBlank()) return
         viewModelScope.launch {
             searchHistoryRepository.get().saveHistory(scope, query)
-            BackupAutoScheduler.markDirtyAndSchedule(appContext)
+            BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
         }
     }
 
@@ -236,7 +252,7 @@ class SearchViewModel @Inject constructor(
         _filterState.update { it.copy(query = singleLineQuery) }
         viewModelScope.launch {
             searchHistoryRepository.get().saveHistory(scope, singleLineQuery)
-            BackupAutoScheduler.markDirtyAndSchedule(appContext)
+            BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
         }
     }
 
@@ -248,7 +264,7 @@ class SearchViewModel @Inject constructor(
     fun deleteHistory(id: Long) {
         viewModelScope.launch {
             searchHistoryRepository.get().deleteHistory(id)
-            BackupAutoScheduler.markDirtyAndSchedule(appContext)
+            BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
         }
     }
 
@@ -261,7 +277,7 @@ class SearchViewModel @Inject constructor(
         val scope = visibilityScope.value ?: return
         viewModelScope.launch {
             searchHistoryRepository.get().clearHistories(scope)
-            BackupAutoScheduler.markDirtyAndSchedule(appContext)
+            BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
         }
     }
 }

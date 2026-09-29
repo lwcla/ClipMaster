@@ -4,10 +4,20 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.cla.clip.base.general.config.ad.AdSettingsRepository
+import com.cla.clip.base.general.config.ad.AdSettingsSnapshot
 import com.cla.clip.base.general.utils.logI
+import com.cla.clip.base.general.utils.logE
 import com.cla.clip.master.entity.ExtraData
 import com.cla.clip.master.entity.ImageFolderOpenData
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
 @HiltViewModel
@@ -17,7 +27,37 @@ import javax.inject.Inject
  * 通知点击可能带来剪贴板记录 id、视频下载任务 id 或图片保存目录；这些目标需要在 Compose 中被消费一次，
  * 否则重组、横竖屏或重复 intent 可能导致重复导航。
  */
-class MainVm @Inject constructor() : ViewModel() {
+class MainVm @Inject constructor(
+    /** 广告设置由宿主单例 DataStore 提供，未就绪时 SDK 保持禁用。 */
+    adSettingsRepository: AdSettingsRepository,
+) : ViewModel() {
+
+    /** Activity 可见时订阅的广告设置；null 表示尚未读到已提交配置。 */
+    val adSettings: StateFlow<AdSettingsSnapshot?> = adSettingsRepository.data
+        .map { settings -> settings as AdSettingsSnapshot? }
+        .catch { error ->
+            if (error is CancellationException) throw error
+            // 读失败时撤销广告资格，不保留此前可能已同意的旧内存值。
+            logE(TAG, error) { "读取广告设置失败 reasonCode=ad_settings_read_failed" }
+            emit(null)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** 未就绪时使用自动来源标识，但总开关保持关闭。 */
+    val activeAdSourceIdFlow = adSettings.map { settings -> settings?.activeSourceId ?: AdSettingsRepository.DEFAULT_ACTIVE_SOURCE_ID }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, AdSettingsRepository.DEFAULT_ACTIVE_SOURCE_ID)
+
+    /** 未就绪或读失败时广告总开关为 false，禁止 SDK 提前启动。 */
+    val adsGlobalEnabledFlow = adSettings.map { settings -> settings?.adsGlobalEnabled ?: false }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /** 未就绪时的同意状态为 unknown，不能提前授予来源资格。 */
+    val adConsentStateFlow = adSettings.map { settings -> settings?.consentState ?: AdSettingsRepository.DEFAULT_CONSENT_STATE }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, AdSettingsRepository.DEFAULT_CONSENT_STATE)
+
+    /** 未就绪时不具备政策版本；同意状态不能跨版本误用。 */
+    val adPrivacyPolicyVersionFlow = adSettings.map { settings -> settings?.privacyPolicyVersion.orEmpty() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "")
 
     companion object {
         /** ViewModel 日志标签，用于排查通知目标是否被重复消费。 */

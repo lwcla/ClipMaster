@@ -3,7 +3,7 @@ package com.cla.clip.base.general.repository
 import android.content.Context
 import androidx.paging.PagingSource
 import com.cla.clip.base.general.R
-import com.cla.clip.base.general.config.AppSetting
+import com.cla.clip.base.general.backup.settings.BackupRuntimeRepository
 import com.cla.clip.base.general.dao.DownloadDao
 import com.cla.clip.base.general.dao.DownloadTaskData
 import com.cla.clip.base.general.dao.VideoMediaReferenceUpdate
@@ -22,7 +22,9 @@ import javax.inject.Singleton
  * 封装 `download_tasks` 表的创建、观察和状态更新，作为视频提取页、下载页和 DownloadVideoWorker 之间的唯一数据契约。
  */
 class DownloadRepository @Inject constructor(
-    private val downloadDao: DownloadDao
+    private val downloadDao: DownloadDao,
+    /** 下载数据提交后的可等待备份变更标记。 */
+    private val backupRuntimeRepository: BackupRuntimeRepository,
 ) {
     companion object {
         /** 仓库日志标签，当前保留给后续诊断任务创建和状态回写。 */
@@ -57,7 +59,7 @@ class DownloadRepository @Inject constructor(
         )
 
         val id = downloadDao.insertTask(task)
-        AppSetting.markBackupDirty()
+        backupRuntimeRepository.markChanged()
         return id
     }
 
@@ -126,19 +128,19 @@ class DownloadRepository @Inject constructor(
     /** 记录当前下载占用的 MediaStore 输出 URI（用于异常恢复时清理半成品） */
     suspend fun markPath(taskId: Long, uri: String?, savePath: String?) {
         downloadDao.updatePath(taskId, uri, savePath)
-        AppSetting.markBackupDirty()
+        backupRuntimeRepository.markChanged()
     }
 
     /** 标记任务下载成功；输出路径应已通过 markPath 写入。 */
     suspend fun markSuccess(taskId: Long) {
         downloadDao.updateStatus(taskId, STATUS_SUCCESS)
-        AppSetting.markBackupDirty()
+        backupRuntimeRepository.markChanged()
     }
 
     /** 标记任务失败，并使用字符串资源兜底错误文案，避免 UI 展示空错误。 */
     suspend fun markFailed(context: Context, taskId: Long, errorMsg: String?) {
         downloadDao.updateStatus(id = taskId, status = STATUS_FAILED, errorMsg = errorMsg ?: context.getString(R.string.base_general_download_failed))
-        AppSetting.markBackupDirty()
+        backupRuntimeRepository.markChanged()
     }
 
     /** 按 id 获取任务，Worker 启动时用来读取 URL、请求头和文件名。 */
@@ -160,13 +162,13 @@ class DownloadRepository @Inject constructor(
     suspend fun updateVideoMediaReferencesForRelocation(updates: List<VideoMediaReferenceUpdate>) {
         if (updates.isEmpty()) return
         downloadDao.updateMediaReferencesForRelocation(updates)
-        AppSetting.markBackupDirty()
+        backupRuntimeRepository.markChanged()
     }
 
     /** 删除任务记录；不会删除已经发布到媒体库的视频文件。 */
     suspend fun deleteTask(taskId: Long) {
         downloadDao.deleteTask(taskId)
-        AppSetting.markBackupDirty()
+        backupRuntimeRepository.markChanged()
     }
 
     /** 批量读取任务，用于删除前取消 Worker、清理精确关联的媒体项或生成结果汇总。 */
@@ -179,6 +181,6 @@ class DownloadRepository @Inject constructor(
     suspend fun deleteTasks(taskIds: Set<Long>) {
         if (taskIds.isEmpty()) return
         downloadDao.deleteTasks(taskIds)
-        AppSetting.markBackupDirty()
+        backupRuntimeRepository.markChanged()
     }
 }

@@ -115,7 +115,7 @@ class ClipboardBridgeIconCommitter @Inject constructor(
             primaryColor = primaryColor,
             iconHash = iconResolution.iconHash
         )
-        BackupAutoScheduler.markDirtyAndSchedule(appContext)
+        BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
 
         logI(TAG) {
             "Provider 图标提交成功 eventId=${request.eventId} packageName=$packageName iconHash=${iconResolution.iconHash}"

@@ -175,13 +175,13 @@ class TorrentSearchSettingsRepositoryTest {
     }
 }
 
-/** 设置测试用 dirty 标记器，不接触宿主 MMKV。 */
+/** 设置测试用 dirty 标记器，不接触宿主持久化。 */
 private class RecordingSettingsBackupDirtyMarker : TorrentSearchBackupDirtyMarker {
     /** count 是排序白名单持久化后的标记次数。 */
     var count: Int = 0
 
     /** 每次标记只增加确定性计数。 */
-    override fun markDirty() {
+    override suspend fun markDirty() {
         count += 1
     }
 }

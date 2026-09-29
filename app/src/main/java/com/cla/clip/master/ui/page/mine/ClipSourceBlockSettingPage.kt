@@ -62,6 +62,8 @@ fun ClipSourceBlockSettingPage(
 ) {
     /** 当前已持久化的过滤包名集合。 */
     val blockedPackages by viewModel.blockedClipSourcePackages.collectAsStateWithLifecycle()
+    /** DataStore 读取失败与安装应用列表失败分开显示，保证保存动作可重试。 */
+    val settingsLoadFailed by viewModel.settingsLoadFailed.collectAsStateWithLifecycle()
     /** 当前合并后的候选 App 列表。 */
     val candidates by viewModel.blockedSourceAppCandidates.collectAsStateWithLifecycle()
     /** 当前安装列表、搜索和图标加载状态。 */
@@ -69,7 +71,7 @@ fun ClipSourceBlockSettingPage(
     /** 当前安装应用图标专用 ImageLoader；可见行按包名从 PackageManager 懒加载图标。 */
     val installedAppIconImageLoader = rememberInstalledAppIconImageLoader()
     /** 完整编辑草稿包含未安装应用的隐藏规则；显隐、搜索和刷新不得裁剪它，确认前不写设置。 */
-    var draftPackages by remember(blockedPackages) { mutableStateOf(blockedPackages) }
+    var draftPackages by remember(blockedPackages) { mutableStateOf(blockedPackages.orEmpty()) }
     /** 是否显示清空二次确认弹窗。 */
     var showClearConfirm by rememberSaveable { mutableStateOf(false) }
     /** 是否显示手动添加包名弹窗。 */
@@ -93,7 +95,7 @@ fun ClipSourceBlockSettingPage(
         title = stringResource(R.string.base_general_clip_source_block_setting),
         onBack = onBack,
         actions = {
-            IconButton(onClick = { showManualAddDialog = true }) {
+            IconButton(enabled = blockedPackages != null && !settingsLoadFailed, onClick = { showManualAddDialog = true }) {
                 Icon(Icons.Default.Add, contentDescription = stringResource(R.string.base_general_clip_source_block_manual_add))
             }
             IconButton(
@@ -106,11 +108,13 @@ fun ClipSourceBlockSettingPage(
         bottomBar = {
             ClipSourceBlockSettingBottomBar(
                 draftCount = draftPackages.size,
+                enabled = blockedPackages != null && !settingsLoadFailed,
                 onClear = { showClearConfirm = true },
                 onConfirm = {
                     // 保存完整草稿，不能从可见行重建名单，否则会误删隐藏规则。
-                    viewModel.replaceBlockedSourcePackages(draftPackages)
-                    onBack()
+                    if (blockedPackages != null) {
+                        viewModel.replaceBlockedSourcePackages(draftPackages, onSaved = onBack)
+                    }
                 }
             )
         }
@@ -121,6 +125,13 @@ fun ClipSourceBlockSettingPage(
                 .padding(paddingValues),
             verticalArrangement = Arrangement.spacedBy(ClipMasterThemeTokens.tokens.spacing.small)
         ) {
+            if (settingsLoadFailed) {
+                TextButton(onClick = viewModel::retrySettingsLoad) {
+                    Text(stringResource(R.string.base_general_data_load_failed_retry))
+                }
+            } else if (blockedPackages == null) {
+                Text(stringResource(R.string.base_general_loading))
+            }
             ClipSourceBlockSettingHeader(
                 selectedCount = draftPackages.size,
                 state = installedState,
@@ -381,6 +392,7 @@ private fun ClipSourceBlockCandidateIcon(
 @Composable
 private fun ClipSourceBlockSettingBottomBar(
     draftCount: Int,
+    enabled: Boolean,
     onClear: () -> Unit,
     onConfirm: () -> Unit,
 ) {
@@ -391,13 +403,13 @@ private fun ClipSourceBlockSettingBottomBar(
         verticalAlignment = Alignment.CenterVertically
     ) {
         TextButton(
-            enabled = draftCount > 0,
+            enabled = enabled && draftCount > 0,
             onClick = onClear
         ) {
             Text(stringResource(R.string.base_general_clip_source_block_clear_all))
         }
         Spacer(modifier = Modifier.weight(1f))
-        TextButton(onClick = onConfirm) {
+        TextButton(enabled = enabled, onClick = onConfirm) {
             Text(stringResource(R.string.base_general_sure))
         }
     }

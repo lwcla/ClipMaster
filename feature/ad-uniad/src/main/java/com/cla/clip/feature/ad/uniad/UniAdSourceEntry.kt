@@ -44,8 +44,13 @@ internal class UniAdSourceEntry @Inject constructor(
      * 这里只做同步规则判断；SDK 初始化在 NativeAdSlot 内按需懒执行。
      */
     override fun isAvailable(consentState: AdConsentState, runtimePolicy: AdRuntimePolicy): Boolean {
+        /** 来源自身读到的同一次已提交快照；不得仅信任可能晚一帧更新的宿主同意值。 */
+        val settings = consentProvider.settingsFlow.value
+        if (consentState != AdConsentState.Granted ||
+            consentProvider.toAdConsentState(settings?.consentState.orEmpty()) != AdConsentState.Granted
+        ) return false
         /** 当前用户同意的广告隐私版本；用于防止旧隐私版本启动新增 SDK。 */
-        val acceptedPrivacyPolicyVersion = consentProvider.privacyPolicyVersionFlow.value
+        val acceptedPrivacyPolicyVersion = settings?.privacyPolicyVersion.orEmpty()
         return availabilityPolicy.isAvailable(
             config = configProvider.config,
             consentState = consentState,
@@ -65,15 +70,13 @@ internal class UniAdSourceEntry @Inject constructor(
         onEvent: (AdSlotEvent) -> Unit,
         modifier: Modifier,
     ) {
-        /** 当前广告隐私同意 code；撤回时内部 slot 会释放当前广告并停止新请求。 */
-        val consentStateCode by consentProvider.consentStateFlow.collectAsStateWithLifecycle()
-        /** 当前用户同意的广告隐私版本；版本过期时隐藏广告。 */
-        val acceptedPrivacyPolicyVersion by consentProvider.privacyPolicyVersionFlow.collectAsStateWithLifecycle()
+        /** 同一次已提交的隐私快照；未加载时维持 unknown 与空政策版本。 */
+        val settings by consentProvider.settingsFlow.collectAsStateWithLifecycle()
         UniAdFeedAdSlot(
             request = request,
             config = configProvider.config,
-            consentState = consentProvider.toAdConsentState(consentStateCode),
-            acceptedPrivacyPolicyVersion = acceptedPrivacyPolicyVersion,
+            consentState = consentProvider.toAdConsentState(settings?.consentState.orEmpty()),
+            acceptedPrivacyPolicyVersion = settings?.privacyPolicyVersion.orEmpty(),
             initializer = initializer,
             sdkClient = sdkClient,
             availabilityPolicy = availabilityPolicy,

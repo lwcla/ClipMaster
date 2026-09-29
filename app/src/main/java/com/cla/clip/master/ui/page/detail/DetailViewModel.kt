@@ -5,8 +5,8 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cla.clip.base.general.R
-import com.cla.clip.base.general.config.AppSetting
 import com.cla.clip.base.general.config.ClipSourceBlockRules
+import com.cla.clip.base.general.config.clip.ClipSettingsRepository
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.base.general.utils.logD
@@ -19,12 +19,15 @@ import com.cla.clip.master.work.BackupAutoScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.flow.update
@@ -67,7 +70,10 @@ class DetailViewModel @Inject constructor(
     private val clipRepository: dagger.Lazy<ClipRepository>,
 
     /** 通用剪贴操作处理器，详情页通过委托保持复制、删除和列表页行为一致。 */
-    private val clipboardDataProcessor: DefaultClipboardDataProcessor
+    private val clipboardDataProcessor: DefaultClipboardDataProcessor,
+
+    /** 详情操作读取并原子更新来源过滤规则，失败时不显示虚假成功。 */
+    private val clipSettingsRepository: ClipSettingsRepository,
 ) : ViewModel(), ClipboardDataProcessor by clipboardDataProcessor {
 
     companion object {
@@ -103,7 +109,14 @@ class DetailViewModel @Inject constructor(
     )
 
     /** 详情页订阅的来源过滤名单；从“我的”页或备份恢复改变后，详情动作会自动刷新。 */
-    val blockedClipSourcePackages = AppSetting.blockedClipSourcePackagesFlow
+    val blockedClipSourcePackages = clipSettingsRepository.data
+        .map { settings -> settings.blockedPackages as Set<String>? }
+        .catch { error ->
+            if (error is CancellationException) throw error
+            logE(TAG, error) { "读取详情来源过滤规则失败 reasonCode=settings_read_failed" }
+            emit(null)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null as Set<String>?)
 
     /**
      * 提交需要展示的剪贴 ID。
@@ -123,11 +136,24 @@ class DetailViewModel @Inject constructor(
         /** 规范化后的来源包名；为空或非法时不写入过滤名单。 */
         val normalizedPackageName = ClipSourceBlockRules.normalizeSinglePackage(packageName) ?: return
         viewModelScope.launch(Dispatchers.IO) {
-            if (AppSetting.addBlockedPackage(normalizedPackageName)) {
-                logI(TAG) { "详情页加入来源过滤名单 reasonCode=detail_block_source_added" }
-                BackupAutoScheduler.markDirtyAndSchedule(appContext)
+            try {
+                if (clipSettingsRepository.addBlockedPackage(normalizedPackageName)) {
+                    logI(TAG) { "详情页加入来源过滤名单 reasonCode=detail_block_source_added" }
+                    try {
+                        BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        logE(TAG, error) { "来源规则已提交但备份调度失败 reasonCode=backup_schedule_failed" }
+                    }
+                }
+                appContext.toast(R.string.base_general_clip_source_block_detail_added)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                logE(TAG, error) { "详情页保存来源过滤规则失败 reasonCode=settings_write_failed" }
+                appContext.toast(com.cla.clip.master.R.string.host_settings_save_failed_retry)
             }
-            appContext.toast(R.string.base_general_clip_source_block_detail_added)
         }
     }
 
@@ -140,11 +166,24 @@ class DetailViewModel @Inject constructor(
         /** 规范化后的来源包名；为空或非法时不写入过滤名单。 */
         val normalizedPackageName = ClipSourceBlockRules.normalizeSinglePackage(packageName) ?: return
         viewModelScope.launch(Dispatchers.IO) {
-            if (AppSetting.removeBlockedPackage(normalizedPackageName)) {
-                logI(TAG) { "详情页移除来源过滤名单 reasonCode=detail_block_source_removed" }
-                BackupAutoScheduler.markDirtyAndSchedule(appContext)
+            try {
+                if (clipSettingsRepository.removeBlockedPackage(normalizedPackageName)) {
+                    logI(TAG) { "详情页移除来源过滤名单 reasonCode=detail_block_source_removed" }
+                    try {
+                        BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        logE(TAG, error) { "来源规则已提交但备份调度失败 reasonCode=backup_schedule_failed" }
+                    }
+                }
+                appContext.toast(R.string.base_general_clip_source_block_detail_removed)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                logE(TAG, error) { "详情页移除来源过滤规则失败 reasonCode=settings_write_failed" }
+                appContext.toast(com.cla.clip.master.R.string.host_settings_save_failed_retry)
             }
-            appContext.toast(R.string.base_general_clip_source_block_detail_removed)
         }
     }
 

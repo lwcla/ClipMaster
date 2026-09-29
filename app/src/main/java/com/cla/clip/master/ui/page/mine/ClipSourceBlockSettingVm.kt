@@ -3,13 +3,15 @@ package com.cla.clip.master.ui.page.mine
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.cla.clip.base.general.config.AppSetting
 import com.cla.clip.base.general.config.ClipSourceBlockRules
+import com.cla.clip.base.general.config.clip.ClipSettingsRepository
 import com.cla.clip.base.general.config.ManualPackageValidationResult
 import com.cla.clip.base.general.dao.SourceAppData
 import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.base.general.utils.isUsableCachedIconFile
 import com.cla.clip.base.general.utils.logI
+import com.cla.clip.base.general.utils.logE
+import com.cla.clip.base.general.utils.toast
 import com.cla.clip.master.installedapps.INSTALLED_APP_REASON_PACKAGE_SCAN_EMPTY
 import com.cla.clip.master.installedapps.InstalledAppInfo
 import com.cla.clip.master.installedapps.InstalledAppLoadResult
@@ -27,8 +29,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -39,6 +45,7 @@ import kotlinx.coroutines.launch
  * 负责在页面可见时读取当前安装应用元数据、合并历史来源和维护搜索/系统应用开关；设置本身仍只保存包名。
  */
 @HiltViewModel
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class ClipSourceBlockSettingVm @Inject constructor(
     /** 应用级 Context，用于读取当前应用包名和调度过滤名单备份。 */
     @param:ApplicationContext private val appContext: Context,
@@ -46,6 +53,9 @@ class ClipSourceBlockSettingVm @Inject constructor(
     private val clipRepository: Lazy<ClipRepository>,
     /** 主进程安装应用读取器，依赖 QUERY_ALL_PACKAGES 读取当前用户可见应用。 */
     private val installedAppReader: InstalledAppReader,
+
+    /** 原子保存来源过滤名单；页面草稿不直接接触持久化键。 */
+    private val clipSettingsRepository: ClipSettingsRepository,
 ) : ViewModel() {
 
     companion object {
@@ -56,10 +66,34 @@ class ClipSourceBlockSettingVm @Inject constructor(
         private const val AUTO_LOAD_THROTTLE_MS = 10 * 60 * 1000L
     }
 
-    /** 来源过滤名单，详情页和保存链路也读取同一份 AppSetting 状态。 */
-    val blockedClipSourcePackages = AppSetting.blockedClipSourcePackagesFlow
+    /** 设置重读序号；读取失败后由页面点击重试触发重新订阅。 */
+    private val settingsReload = MutableStateFlow(0L)
 
-    /** 当前页面会话读取到的安装应用列表；不写入数据库、MMKV 或备份。 */
+    /** 设置读取失败标记；安装应用扫描失败与此独立。 */
+    private val _settingsLoadFailed = MutableStateFlow(false)
+
+    /** 页面可观察的设置读取失败状态。 */
+    val settingsLoadFailed = _settingsLoadFailed.asStateFlow()
+
+    /** 已提交的来源过滤名单；null 表示首次读取未完成或重试尚未成功。 */
+    val blockedClipSourcePackages = settingsReload.flatMapLatest {
+        clipSettingsRepository.data.map { settings -> settings.blockedPackages }
+            .onEach { _settingsLoadFailed.value = false }
+            .catch { error ->
+                if (error is CancellationException) throw error
+                logE(TAG, error) { "读取来源过滤名单失败 reasonCode=settings_read_failed" }
+                _settingsLoadFailed.value = true
+            }
+    }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null as Set<String>?)
+
+    /** 用户显式重试读取设置；不会清空已保存过滤规则。 */
+    fun retrySettingsLoad() {
+        // 旧快照保持禁用，直到本次重读实际发出已提交名单。
+        settingsReload.update { sequence -> sequence + 1L }
+    }
+
+    /** 当前页面会话读取到的安装应用列表；不写入数据库、DataStore 或备份。 */
     private val installedApps = MutableStateFlow<List<InstalledAppInfo>>(emptyList())
 
     /** 安装应用读取内存态；加载/失败/摘要不写入数据库或备份。 */
@@ -85,7 +119,7 @@ class ClipSourceBlockSettingVm @Inject constructor(
         clipRepository.get().loadAllSourceApps(),
     ) { blockedPackages, currentInstalledApps, historySourceApps ->
         buildBlockedSourceAppCandidates(
-            blockedPackages = blockedPackages,
+            blockedPackages = blockedPackages.orEmpty(),
             installedApps = currentInstalledApps,
             historySourceApps = historySourceApps,
         )
@@ -222,11 +256,28 @@ class ClipSourceBlockSettingVm @Inject constructor(
     /**
      * 替换剪贴来源 App 过滤名单。
      *
-     * 设置页确认多选时调用；AppSetting 内部会统一去重、排序和裁剪，并标记备份 dirty。
+     * 设置页确认多选时调用；仓库原子规范化并提交，成功后才触发返回页面。
      */
-    fun replaceBlockedSourcePackages(packages: Set<String>) {
-        if (AppSetting.replaceBlockedPackages(packages)) {
-            BackupAutoScheduler.markDirtyAndSchedule(appContext)
+    fun replaceBlockedSourcePackages(packages: Set<String>, onSaved: () -> Unit) {
+        viewModelScope.launch {
+            try {
+                if (clipSettingsRepository.replaceBlockedPackages(packages)) {
+                    try {
+                        BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        // 已提交名单和 dirty 版本保留，周期备份可继续兜底。
+                        logE(TAG, error) { "来源过滤已保存但备份调度失败 reasonCode=backup_schedule_failed" }
+                    }
+                }
+                onSaved()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                logE(TAG, error) { "来源过滤名单保存失败 reasonCode=settings_write_failed" }
+                appContext.toast(com.cla.clip.master.R.string.host_settings_save_failed_retry)
+            }
         }
     }
 

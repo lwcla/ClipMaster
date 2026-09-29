@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cla.clip.base.general.R
+import com.cla.clip.master.R as HostR
 import com.cla.clip.base.general.backup.BackupKind
 import com.cla.clip.base.general.backup.BackupProgress
 import com.cla.clip.base.general.backup.BackupProgressPhase
@@ -78,7 +79,8 @@ fun BackupPage(
     // 列表只展示会参与保留份数的普通备份；历史 safety 或异常文件隐藏，避免数量超过用户设置造成误解。
     val normalLocalBackups = state.localBackups.filter { it.isRegularBackup }
     val normalRemoteBackups = state.remoteBackups.filter { it.isRegularBackup }
-    val pageActionsEnabled = !state.isBusy
+    // 只有身份和设置均成功读取后才开放文件、网络和调度副作用。
+    val pageActionsEnabled = state.settingsLoaded && !state.isBusy
 
     // 待确认的备份创建动作只保留在当前页面生命周期内；持久化的仅是用户是否已经确认风险。
     var pendingDisclosureAction by remember { mutableStateOf<BackupPlaintextDisclosureAction?>(null) }
@@ -92,7 +94,9 @@ fun BackupPage(
     val listState = rememberLazyListState()
     // 只测量首卡正文，广告尾部可见时由下一张真实正文卡承接阅读锚点。
     var autoContentHeight by remember { mutableIntStateOf(0) }
-    val bodyKeys = listOf<Any>("auto", "local") + normalLocalBackups.map { it.lazyListKey() } +
+    // 设置错误项动态出现时仍使用稳定 key，避免列表锚点误复用。
+    val bodyKeys = (if (state.settingsLoadFailed) listOf<Any>("settings_error") else emptyList()) +
+        listOf<Any>("auto", "local") + normalLocalBackups.map { it.lazyListKey() } +
         listOf("webdav") + if (normalRemoteBackups.isEmpty()) listOf("remote_empty") else normalRemoteBackups.map { it.lazyListKey() }
     val adBlocked = editingCredentials || pickerOpen || pendingDisclosureAction != null || state.busyOperation.isModalProgress
     SideEffect { adSession.suppressed = adBlocked }
@@ -161,6 +165,18 @@ fun BackupPage(
             contentPadding = PaddingValues(bottom = 24.dp),
             verticalArrangement = Arrangement.Top
         ) {
+            if (state.settingsLoadFailed) {
+                item(key = "settings_error") {
+                    ClipMasterCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(text = androidx.compose.ui.res.stringResource(HostR.string.host_backup_settings_load_failed))
+                            OutlinedButton(onClick = backupVm::retrySettingsLoad) {
+                                Text(text = androidx.compose.ui.res.stringResource(HostR.string.host_backup_settings_retry))
+                            }
+                        }
+                    }
+                }
+            }
             item(key = "auto") {
                 // 广告放在正文尾部并共享稳定容器，加载前后既保留组合身份，也不移动首卡正文锚点。
                 Column(modifier = Modifier.fillMaxWidth()) {
@@ -223,6 +239,7 @@ fun BackupPage(
                     onEndpointChange = backupVm::updateEndpoint,
                     onUsernameChange = backupVm::updateUsername,
                     onPasswordChange = backupVm::updatePassword,
+                    onClearPassword = backupVm::clearWebDavPassword,
                     onRemoteDirChange = backupVm::updateRemoteDir,
                     onAllowHttpChange = backupVm::updateAllowHttp,
                     onTest = backupVm::testWebDav,
@@ -267,15 +284,16 @@ fun BackupPage(
         BackupPlaintextDisclosureDialog(
             onDismiss = { pendingDisclosureAction = null },
             onConfirm = {
-                backupVm.acceptBackupPlaintextDisclosure()
                 pendingDisclosureAction = null
-                when (action) {
-                    BackupPlaintextDisclosureAction.ManualLocal -> {
-                        pickerOpen = true
-                    exportLauncher.launch(backupVm.suggestedBackupFileName())
+                backupVm.acceptBackupPlaintextDisclosure {
+                    when (action) {
+                        BackupPlaintextDisclosureAction.ManualLocal -> {
+                            pickerOpen = true
+                            exportLauncher.launch(backupVm.suggestedBackupFileName())
+                        }
+                        BackupPlaintextDisclosureAction.ManualWebDav -> backupVm.uploadWebDavBackup()
+                        BackupPlaintextDisclosureAction.EnableAuto -> backupVm.updateAutoBackupEnabled(true)
                     }
-                    BackupPlaintextDisclosureAction.ManualWebDav -> backupVm.uploadWebDavBackup()
-                    BackupPlaintextDisclosureAction.EnableAuto -> backupVm.updateAutoBackupEnabled(true)
                 }
             },
         )
@@ -346,18 +364,18 @@ private fun AutoBackupSection(
                 Switch(
                     checked = state.autoBackupEnabled,
                     onCheckedChange = onEnabledChange,
-                    enabled = !state.isBusy
+                    enabled = state.settingsLoaded && !state.isBusy
                 )
             }
             RetentionControl(
                 count = state.backupRetentionCount,
-                enabled = !state.isBusy,
+                enabled = state.settingsLoaded && !state.isBusy,
                 onChange = onRetentionChange
             )
             ToggleRow(
                 title = androidx.compose.ui.res.stringResource(R.string.base_general_backup_auto_only_wifi),
                 checked = state.autoBackupOnlyWifi,
-                enabled = !state.isBusy,
+                enabled = state.settingsLoaded && !state.isBusy,
                 onCheckedChange = onOnlyWifiChange
             )
             state.lastBackupSuccessSummary?.let { summary ->
@@ -494,6 +512,8 @@ private fun WebDavConfigSection(
     onEndpointChange: (String) -> Unit,
     onUsernameChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
+    /** 用户显式要求删除已保存密文，空输入默认保留旧密码。 */
+    onClearPassword: () -> Unit,
     onRemoteDirChange: (String) -> Unit,
     onAllowHttpChange: (Boolean) -> Unit,
     onTest: () -> Unit,
@@ -515,6 +535,7 @@ private fun WebDavConfigSection(
                 value = state.webDavEndpoint,
                 onValueChange = onEndpointChange,
                 modifier = Modifier.fillMaxWidth(),
+                enabled = actionsEnabled,
                 singleLine = true,
                 label = { Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_webdav_endpoint)) }
             )
@@ -522,6 +543,7 @@ private fun WebDavConfigSection(
                 value = state.webDavUsername,
                 onValueChange = onUsernameChange,
                 modifier = Modifier.fillMaxWidth(),
+                enabled = actionsEnabled,
                 singleLine = true,
                 label = { Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_webdav_username)) }
             )
@@ -529,12 +551,27 @@ private fun WebDavConfigSection(
                 value = state.webDavPassword,
                 onValueChange = onPasswordChange,
                 modifier = Modifier.fillMaxWidth(),
+                enabled = actionsEnabled,
                 label = { Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_webdav_password)) }
             )
+            if (state.hasWebDavPassword || state.webDavPasswordClearPending) {
+                Text(
+                    text = androidx.compose.ui.res.stringResource(
+                        if (state.webDavPasswordClearPending) HostR.string.host_webdav_password_clear_pending
+                        else HostR.string.host_webdav_password_saved
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedButton(onClick = onClearPassword, enabled = actionsEnabled) {
+                    Text(text = androidx.compose.ui.res.stringResource(HostR.string.host_webdav_password_clear))
+                }
+            }
             OutlinedTextField(
                 value = state.webDavRemoteDir,
                 onValueChange = onRemoteDirChange,
                 modifier = Modifier.fillMaxWidth(),
+                enabled = actionsEnabled,
                 singleLine = true,
                 label = { Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_webdav_remote_dir)) }
             )

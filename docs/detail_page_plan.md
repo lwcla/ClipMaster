@@ -58,10 +58,10 @@
 - 详情页通过 `LaunchedEffect(clip.id)` 在剪贴切换时清空已选链接和底部弹层状态，避免 A 剪贴的旧链接残留到 B 剪贴。
 - 详情页先用本地 `DetailAdSensitivityPolicy` 判断剪贴内容是否明显像验证码、密码、Token、密钥或银行卡号，只把敏感布尔值传给广告选择器和 adapter，不记录原文或命中片段。
 - 详情页通过 `AdSourceSelector` 选择当前可用广告源，并向 adapter 传入 `AdSlotRequest(placement = DetailNative, requestNonce, isDebugRequest, isSensitiveContext)`；请求对象不包含剪贴正文、完整 URL 或搜索词。
-- 详情页从 `AppSetting.adConsentStateFlow` 和 `AppSetting.adPrivacyPolicyVersionFlow` 收集广告隐私状态；真实 SDK 只有在明确同意且版本满足 adapter 要求时可用，debug 占位源仍可在调试构建降级展示。
+- 详情页从 `AdSettingsRepository.data` 收集广告隐私状态；读取失败或未就绪时按未同意处理，真实 SDK 只有在明确同意且版本满足 adapter 要求时可用。
 - 广告源初始化失败或渲染失败事件会触发 `AdSessionFailureFuse`，当前会话后续跳过该 source，回退到其它 source 或隐藏广告位。
-- 详情页订阅 `AppSetting.blockedClipSourcePackagesFlow`，因此从“我的”页或备份恢复改变名单后，返回详情页时动作文案会自动刷新。
-- 详情页调用 `AppSetting.addBlockedPackage()` / `removeBlockedPackage()` 原子方法，不新增独立详情设置；成功变化后标记 backup dirty 并调度自动备份。
+- 详情页订阅 `ClipSettingsRepository.data` 的过滤名单，返回详情页时动作文案会随已提交设置刷新；读取失败时禁用依赖名单的动作。
+- 详情页调用 `ClipSettingsRepository.addBlockedPackage()` / `removeBlockedPackage()` 的挂起原子方法；提交成功后标记 backup dirty 并调度自动备份。
 
 ## 涉及文件
 
@@ -126,6 +126,8 @@
 - 后续如果用户需要更明确的可访问性提示，可考虑为正文卡片补充“复制内容”、为链接摘要补充“打开链接操作”的语义说明，但当前公共卡片入口还没有统一暴露语义标签参数，需要先评估共享组件契约。
 
 ## 变更记录
+
+- 2026-09-29：详情页的过滤名单与广告隐私状态改为读取领域仓库，保存动作等待提交后再反馈；原因是宿主设置改为 DataStore。
 
 - 2026-09-27：广告临时暂停、弹窗和多选仅阻止新增请求/布局与点击；页面离开、停止、销毁或隐私撤销才释放，Lazy 离屏解绑遵循页面最多 3 个资源的有限缓存。完整契约与释放诊断以 [广告主方案](ad_module_plan.md) 为准。
 

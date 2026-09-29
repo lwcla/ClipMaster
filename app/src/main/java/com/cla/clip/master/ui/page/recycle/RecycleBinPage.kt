@@ -45,7 +45,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.flowWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
-import com.cla.clip.base.general.config.AppSetting
+import com.cla.clip.base.general.config.clip.ClipSettingsRepository
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.widget.DeleteActionIcon
 import com.cla.clip.master.ui.widget.SecondaryPageScaffold
@@ -76,6 +76,8 @@ fun RecycleBinPage(
     val selectedIds by viewModel.selectedIds.collectAsStateWithLifecycle()
     val selectionMode by viewModel.selectionMode.collectAsStateWithLifecycle()
     val retentionDays by viewModel.retentionDays.collectAsStateWithLifecycle()
+    /** 保留天数读取失败时仍可浏览回收站，但编辑入口显示重试。 */
+    val settingsLoadFailed by viewModel.settingsLoadFailed.collectAsStateWithLifecycle()
     var restoreClip by remember { mutableStateOf<ClipShowEntity?>(null) }
     var showClearConfirm by remember { mutableStateOf(false) }
     var showDeleteSelectedConfirm by remember { mutableStateOf(false) }
@@ -113,7 +115,7 @@ fun RecycleBinPage(
                         tint = MaterialTheme.colorScheme.error
                     )
                 }
-                IconButton(onClick = { showSettingSheet = true }) {
+                IconButton(enabled = retentionDays != null && !settingsLoadFailed, onClick = { showSettingSheet = true }) {
                     Icon(
                         imageVector = Icons.Default.Settings,
                         contentDescription = stringResource(com.cla.clip.base.general.R.string.base_general_recycle_bin_settings)
@@ -165,6 +167,14 @@ fun RecycleBinPage(
                 selectionMode = selectionMode,
                 onToggleSelection = viewModel::toggleSelection,
             )
+            if (settingsLoadFailed) {
+                TextButton(
+                    modifier = Modifier.align(Alignment.TopCenter),
+                    onClick = viewModel::retrySettingsLoad,
+                ) {
+                    Text(stringResource(com.cla.clip.base.general.R.string.base_general_data_load_failed_retry))
+                }
+            }
         }
     }
 
@@ -199,13 +209,13 @@ fun RecycleBinPage(
         }
     )
 
-    if (showSettingSheet) {
+    /** 初次读取完成后才展示可编辑天数，存储失败不会使用伪默认值。 */
+    if (showSettingSheet && retentionDays != null && !settingsLoadFailed) {
         RecycleBinSettingSheet(
-            currentDays = retentionDays,
+            currentDays = retentionDays!!,
             onDismiss = { showSettingSheet = false },
             onSave = { days ->
-                showSettingSheet = false
-                viewModel.saveRetentionDays(days)
+                viewModel.saveRetentionDays(days) { showSettingSheet = false }
             }
         )
     }
@@ -315,7 +325,7 @@ private fun RecycleBinSettingSheet(
         else -> customDays
     }
     val canSave = effectiveDays != null &&
-        effectiveDays in AppSetting.MIN_RECYCLE_BIN_RETENTION_DAYS..AppSetting.MAX_RECYCLE_BIN_RETENTION_DAYS
+        effectiveDays in ClipSettingsRepository.MIN_RECYCLE_BIN_RETENTION_DAYS..ClipSettingsRepository.MAX_RECYCLE_BIN_RETENTION_DAYS
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,

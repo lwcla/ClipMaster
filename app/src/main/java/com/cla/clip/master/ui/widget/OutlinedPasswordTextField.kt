@@ -26,6 +26,7 @@ import com.cla.clip.master.R
  * @param value 调用方持有的密码原文，切换显隐不会改写该值。
  * @param onValueChange 用户编辑文本时通知调用方，由调用方决定存储方式。
  * @param modifier 调用方控制输入框尺寸和外部布局。
+ * @param enabled 宿主配置读盘或提交期间禁用输入与显隐动作，避免草稿和已提交状态错位。
  * @param label 调用方提供领域标签，避免通用组件绑定 WebDAV 文案。
  */
 @Composable
@@ -33,6 +34,8 @@ internal fun OutlinedPasswordTextField(
     value: String,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
+    /** 宿主配置尚未加载或正在保存时禁止修改密码草稿。 */
+    enabled: Boolean = true,
     label: @Composable () -> Unit,
 ) {
     // 显隐属于临时 UI 状态，不使用 rememberSaveable，避免重建页面后自动暴露明文。
@@ -42,6 +45,7 @@ internal fun OutlinedPasswordTextField(
         value = value,
         onValueChange = onValueChange,
         modifier = modifier,
+        enabled = enabled,
         singleLine = true,
         label = label,
         // 两种显示状态均使用密码键盘，避免明文查看时切回普通文本联想输入。
@@ -53,6 +57,7 @@ internal fun OutlinedPasswordTextField(
         },
         trailingIcon = {
             IconButton(
+                enabled = enabled,
                 onClick = {
                     // 只切换绘制方式，不触发文本修改或凭据持久化回调。
                     passwordVisible = !passwordVisible

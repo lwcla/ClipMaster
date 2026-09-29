@@ -15,7 +15,7 @@
         <!-- WebDAV 密码、备份目录授权和备份健康状态属于设备绑定/敏感配置，不应由系统云备份自动恢复。 -->
         <exclude
             domain="file"
-            path="mmkv/" />
+            path="datastore/app_settings.preferences_pb" />
         <!-- Shizuku Provider 图标传输目录只保存临时 PNG，恢复后无法复用且会被下一次调用清理。 -->
         <exclude
             domain="file"
@@ -50,6 +50,8 @@
         -->
     </cloud-backup>
     <device-transfer>
+        <!-- 宿主 DataStore 包含本机身份、授权和设备绑定密文，设备迁移后必须重新配置。 -->
+        <exclude domain="file" path="datastore/app_settings.preferences_pb" />
         <!-- 仅排除已由 GMA 1.4.0 / UMP 4.0.0 字节码核实的广告专用偏好；不排除应用默认偏好或其他业务文件。 -->
         <exclude domain="sharedpref" path="__GOOGLE_FUNDING_CHOICE_SDK_INTERNAL__.xml" />
         <exclude domain="sharedpref" path="GoogleMobileAds.xml" />

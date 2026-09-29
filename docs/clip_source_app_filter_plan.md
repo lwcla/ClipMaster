@@ -21,7 +21,7 @@
 
 ## 范围
 
-- `AppSetting.blockedClipSourcePackages`、原子 add/remove/replace 方法和纯规则 `ClipSourceBlockRules`。
+- `ClipSettingsRepository` 的挂起原子 add/remove/replace 方法和纯规则 `ClipSourceBlockRules`。
 - `ClipHelper.processClipText(...)` 的来源过滤分支和 `ClipProcessResult.FilteredBySourceApp`。
 - Provider `commit_clip` 返回 `source_app_blocked` 且 `clipCommitted=false`。
 - app 层 `InstalledAppReader`、`PackageManagerInstalledAppReader`、`InstalledAppIconLoader` 和过滤页候选合并。
@@ -33,7 +33,7 @@
 
 - 不删除、不隐藏、不迁移历史剪贴记录。
 - 不把 App 名称、图标、系统安装列表或拦截次数统计保存进过滤名单或 WebDAV/本地备份。
-- 不持久化当前安装应用列表，不写 Room，不写 MMKV，不写 no-backup 图标目录。
+- 不持久化当前安装应用列表，不写 Room，也不写 no-backup 图标目录。
 - 不提供“测试当前剪贴来源”按钮；只承诺之后由 Shizuku 识别到这些包名时不保存。
 - 不做 App 名匹配、前缀匹配、包含匹配或大小写归一。
 - 不区分主空间与工作资料空间；当前按包名过滤，同包名在不同空间会一起命中。
@@ -51,10 +51,10 @@
 
 ## 数据和规则
 
-- 名单持久化在 MMKV key `blocked_clip_source_packages`，内部为换行分隔包名；`AppSetting` 对外只暴露规范化后的 `Set<String>` 和 `StateFlow`。
+- 名单持久化在宿主 Preferences DataStore 的字符串集合键中；`ClipSettingsRepository.data` 对外只暴露规范化后的名单快照，写入在单次 `edit` 内完成。
 - 规范化规则：trim、去空、拒绝空白/控制字符/少数危险分隔符、单个包名最多 200 字符、去重、排序、总数最多 500。
 - 匹配规则：`null` 或空来源不匹配；只按完整包名精确匹配；大小写保持原样，不做归一。
-- 保存链路读取本次处理开始时的名单快照，后续用户修改名单不会回溯影响已经开始的处理。
+- 保存链路在入库前读取已提交名单快照；读取失败则阻止本次入库，后续用户修改名单不会回溯影响已经开始的处理。
 - 链接预览异步补齐复用首次保存已通过过滤的语义；一条剪贴已完成首次保存后，后续元数据补齐不再因为用户刚屏蔽来源而中断。
 - 备份只导出规范化包名；恢复旧备份缺字段时按空名单兼容；恢复新字段时与本机名单取并集并按同一规则裁剪。
 
@@ -113,10 +113,10 @@
 
 ### 数据流与保存边界
 
-1. `AppSetting.blockedClipSourcePackages` 提供完整已保存名单，包括未安装应用；页面草稿仍从完整名单初始化。
+1. `ClipSettingsRepository.data` 提供完整已保存名单，包括未安装应用；页面草稿从完整名单初始化，读取失败提供显式重试。
 2. `buildBlockedSourceAppCandidates` 继续合并已保存名单、本机安装结果和历史来源，内部保留候选元数据；最终可见列表才应用安装条件。
 3. 点击可见行只增删该行包名；不能用可见列表或搜索结果重新生成完整草稿。单包名勾选规则不得更改其他隐藏包名。
-4. 页面确认仍把完整 `draftPackages` 传给 `replaceBlockedSourcePackages`，继续复用 `AppSetting.replaceBlockedPackages` 的规范化、真实变化判断和现有 dirty/自动备份调度。
+4. 页面确认仍把完整 `draftPackages` 传给 `replaceBlockedSourcePackages`，复用 `ClipSettingsRepository.replaceBlockedPackages` 的规范化、真实变化判断和原子 dirty 版本；写入成功后调度自动备份。
 5. 手动添加未安装包名仍允许校验后加入草稿，但不出现占位行；退出前仍需确认保存。500 条限制按完整名单计算。
 6. “清空名单”保留既有全部清空含义：二次确认后清空完整草稿，包含隐藏包名，页面确认后才落盘。更新确认文案明确此范围；取消清空或放弃页面草稿不修改已保存数据。
 
@@ -186,6 +186,8 @@
 - 若后续出现性能证据，再评估移除过滤页不可见历史候选的图标读取；本轮保留现有候选合并，避免扩展到历史来源观察与数据重构。
 
 ## 变更记录
+
+- 2026-09-29：过滤名单改为 DataStore 字符串集合与原子提交，读取失败禁止剪贴入库并在设置页提供重试；原因是删除旧设置介质且防止失败时放行剪贴。
 
 - 2026-09-28：按最新截图反馈移除重复数量简报及未使用资源，保留标题下原有数量/加载摘要；原因是两个区域重复显示相同数量，额外简报没有必要。
 - 2026-09-28：根据截图反馈，把搜索框上方长说明收敛为“当前读取 X 个 App，已经屏蔽了 Y 个 App”，直接复用安装快照数量与完整草稿数量；原因是该区域只需呈现当前数据摘要，不需要长篇规则说明。

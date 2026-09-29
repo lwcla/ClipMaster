@@ -16,7 +16,6 @@ import androidx.compose.ui.Modifier
 import androidx.navigation.compose.rememberNavController
 import com.cla.clip.base.general.BaseApplication
 import com.cla.clip.base.general.R
-import com.cla.clip.base.general.config.AppSetting
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.toast
 import com.cla.clip.feature.ad.api.AdSessionFailureFuse
@@ -140,16 +139,16 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
-                        AdHostProvider(adSources, adSourceSelector, adSessionFailureFuse, isAppMainProcess) {
+                        AdHostProvider(adSources, adSourceSelector, adSessionFailureFuse, isAppMainProcess, mainVm.adSettings) {
                         AppNavigation(
                             navController = navController,
                             torrentSearchFeatures = torrentSearchFeatures,
                             adSources = adSources,
                             adSourceSelector = adSourceSelector,
-                            activeAdSourceIdFlow = AppSetting.activeAdSourceIdFlow,
-                            adsGlobalEnabledFlow = AppSetting.adsGlobalEnabledFlow,
-                            adConsentStateFlow = AppSetting.adConsentStateFlow,
-                            adPrivacyPolicyVersionFlow = AppSetting.adPrivacyPolicyVersionFlow,
+                            activeAdSourceIdFlow = mainVm.activeAdSourceIdFlow,
+                            adsGlobalEnabledFlow = mainVm.adsGlobalEnabledFlow,
+                            adConsentStateFlow = mainVm.adConsentStateFlow,
+                            adPrivacyPolicyVersionFlow = mainVm.adPrivacyPolicyVersionFlow,
                             adDisabledSourceIdsFlow = adSessionFailureFuse.disabledSourceIdsFlow,
                             isMainProcess = isAppMainProcess,
                             detailAdSensitivityPolicy = detailAdSensitivityPolicy,

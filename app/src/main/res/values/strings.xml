@@ -9,4 +9,23 @@
     <string name="host_notification_permission_tip_dialog">通知权限用于展示剪贴保存、下载进度和 Shizuku 状态提醒；关闭后剪贴仍会保存。\n请在下一步授权中点击“允许”。</string>
     <string name="host_show_password">查看密码</string>
     <string name="host_hide_password">隐藏密码</string>
+    <string name="host_settings_save_failed_retry">设置保存失败，请重试。</string>
+    <string name="host_recycle_cleanup_failed_retry">保留天数已保存，但即时清理失败，请稍后重试。</string>
+    <string name="host_webdav_password_saved">已保存密码；留空会保留原密码。更换服务地址或用户名时，请输入新密码或明确移除原密码。</string>
+    <string name="host_webdav_password_clear">移除已保存密码</string>
+    <string name="host_webdav_password_clear_pending">密码将在下次测试连接、上传或刷新时移除。</string>
+    <string name="host_webdav_password_unavailable">已保存密码无法读取，请重新输入密码后重试。</string>
+    <string name="host_webdav_config_invalid">WebDAV 地址或备份目录无效，请检查输入后重试。</string>
+    <string name="host_backup_settings_load_failed">备份设置读取失败，当前操作已暂停。</string>
+    <string name="host_backup_settings_retry">重试读取</string>
+    <string name="host_backup_restore_partial_title">部分恢复完成</string>
+    <string name="host_backup_restore_partial_message">数据库内容已恢复，但设置未能保存。下方显示已恢复数量；可重试恢复同一备份以再次提交设置。</string>
+    <string name="host_backup_restore_feature_partial_message">宿主数据库内容已恢复，但可选功能数据未能完整恢复，设置阶段也尚未执行。下方仅统计已确认的宿主数据；可重试同一备份继续恢复。</string>
+    <string name="host_backup_restore_retry_partial">重试未完成步骤</string>
+    <string name="host_backup_sync_failed_title">备份待同步状态未保存</string>
+    <string name="host_backup_sync_failed_message">恢复的数据库内容已保存，但自动备份待同步状态未能记录。可重试同一备份；重复恢复会按原有规则跳过相同数据。</string>
+    <string name="host_media_backup_schedule_failed_message">媒体关联和待同步状态已保存，但自动备份任务未能调度。请重试调度，无需再次扫描媒体。</string>
+    <string name="host_backup_schedule_retry">重试调度</string>
+    <string name="host_backup_export_sync_failed">备份文件已保存，但待同步状态未能确认。请稍后重新备份。</string>
+    <string name="host_backup_upload_sync_failed">WebDAV 备份已上传，但待同步状态未能确认。请稍后重新备份。</string>
 </resources>

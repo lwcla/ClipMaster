@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -72,13 +73,15 @@ fun MinePage(
     val clipItemQuickAction by mineVm.clipItemQuickAction.collectAsStateWithLifecycle()
     /** 当前剪贴来源过滤名单。 */
     val blockedClipSourcePackages by mineVm.blockedClipSourcePackages.collectAsStateWithLifecycle()
+    /** 设置读取失败时展示重试入口，禁止把旧展示值当作可编辑状态。 */
+    val settingsLoadFailed by mineVm.settingsLoadFailed.collectAsStateWithLifecycle()
     /** 更新入口当前展示状态。 */
     val appUpdateUiState by mineVm.appUpdateUiState.collectAsStateWithLifecycle()
     /** 当前页面 Context；只用于系统跳转和 toast。 */
     val context = LocalContext.current
     /** 页面级协程作用域；用于浏览器打开失败后的短时 toast。 */
     val coroutineScope = rememberCoroutineScope()
-    // 设置弹窗属于页面瞬时状态，配置值本身由 AppSetting/MMKV 持久化。
+    // 设置弹窗属于页面瞬时状态，正式配置通过 DataStore 提交后的 Flow 更新。
     var showClipItemActionDialog by remember { mutableStateOf(false) }
 
     /**
@@ -154,6 +157,15 @@ fun MinePage(
             }
 
             item { MineSectionHeader(title = stringResource(R.string.base_general_mine_settings_section)) }
+            if (settingsLoadFailed) {
+                item {
+                    TextButton(onClick = mineVm::retrySettingsLoad) {
+                        Text(stringResource(R.string.base_general_data_load_failed_retry))
+                    }
+                }
+            } else if (clipItemQuickAction == null || blockedClipSourcePackages == null) {
+                item { Text(stringResource(R.string.base_general_loading)) }
+            }
             privacySources.forEach { source ->
                 item(key = "privacy_${source.sourceId}") {
                     ListEntryCard(
@@ -164,24 +176,30 @@ fun MinePage(
                     )
                 }
             }
-            item {
-                ClipItemActionSettingEntry(
-                    action = clipItemQuickAction,
-                    onClick = { showClipItemActionDialog = true }
-                )
+            /** 快捷动作首次加载前不开放编辑，避免把默认值误当成已保存值。 */
+            clipItemQuickAction?.takeUnless { settingsLoadFailed }?.let { action ->
+                item {
+                    ClipItemActionSettingEntry(
+                        action = action,
+                        onClick = { showClipItemActionDialog = true }
+                    )
+                }
             }
-            item {
-                ClipSourceBlockSettingEntry(
-                    blockedCount = blockedClipSourcePackages.size,
-                    onClick = { onNavigate(ClipSourceBlockSettingRoute) }
-                )
+            /** 过滤名单首次加载前不进入编辑页，防止空草稿覆盖真实规则。 */
+            blockedClipSourcePackages?.takeUnless { settingsLoadFailed }?.let { blockedPackages ->
+                item {
+                    ClipSourceBlockSettingEntry(
+                        blockedCount = blockedPackages.size,
+                        onClick = { onNavigate(ClipSourceBlockSettingRoute) }
+                    )
+                }
             }
         }
     }
 
-    if (showClipItemActionDialog) {
+    if (showClipItemActionDialog && clipItemQuickAction != null && !settingsLoadFailed) {
         ClipItemActionSettingDialog(
-            currentAction = clipItemQuickAction,
+            currentAction = clipItemQuickAction!!,
             onSelect = { action ->
                 mineVm.updateClipItemQuickAction(action)
                 showClipItemActionDialog = false

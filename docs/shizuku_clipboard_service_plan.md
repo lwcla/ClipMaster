@@ -89,9 +89,11 @@
 - 不保留旧 `read_clip` / `onOpNoted(...)` 兼容逻辑，也不设计旧版本回退路径。
 - Provider 模式不再 fallback 到 overlay 或 AIDL，原因是正式链路需要暴露 Shizuku 直读与 payload 提交的真实失败率。
 - 第一版仍只处理第一个 `ClipData.Item`，多 item、URI、Intent、图片和文件搬运留到后续阶段。
-- `AppSetting.shizukuSuffix` 属于本机运行态，不纳入备份。
+- `InstallationIdentityRepository` 保存已提交的期望 Shizuku 进程名，属于本机运行态，不纳入备份；Provider 只返回持久化成功的身份。
 
 ## 变更记录
+
+- 2026-09-29：安装身份改由 DataStore 原子提交，Provider 非主线程限时查询已提交进程名，连接前先等待身份就绪；剪贴来源名单读取失败时不入库也不把内容标记为已处理。原因是移除旧初始化与同步读取，同时避免过滤失败时放行。
 
 - 2026-06-29：删除未发布的过滤页安装应用缓存同步方案，移除 `refreshInstalledAppCache` AIDL、`installed_app_*` Provider 协议、Shizuku 安装缓存 syncer/contract/diagnostics，并将 `ShizukuConnector.VERSION` 从 `27` 升级到 `28`；原因是过滤页改为主进程 `QUERY_ALL_PACKAGES` 直读。
 - 2026-06-18：废弃前方案曾新增批量安装应用图标状态查询与 no-backup 安装图标目录；本轮已删除可执行链路，仅作为历史取舍记录保留。

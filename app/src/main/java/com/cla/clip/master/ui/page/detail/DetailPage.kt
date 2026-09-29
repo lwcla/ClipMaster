@@ -308,7 +308,7 @@ private fun DetailActionSections(
     // 正文惯性状态决定是否允许底部广告改变可用高度。
     contentScrolling: Boolean,
     detailAdSensitivityPolicy: DetailAdSensitivityPolicy,
-    blockedSourcePackages: Set<String>,
+    blockedSourcePackages: Set<String>?,
 ) {
     /** 详情页操作区间距 token，确保正文、能力入口和普通操作区节奏一致。 */
     val spacing = ClipMasterThemeTokens.tokens.spacing
@@ -399,11 +399,14 @@ private fun DetailActionSections(
             }
         }
 
-        DetailSourceBlockSection(
-            clip = clip,
-            blockedSourcePackages = blockedSourcePackages,
-            onRequestAction = { action -> sourceBlockAction = action }
-        )
+        /** 来源过滤设置尚未提交到 UI 时隐藏动作，避免把未知状态当成未屏蔽。 */
+        blockedSourcePackages?.let { packages ->
+            DetailSourceBlockSection(
+                clip = clip,
+                blockedSourcePackages = packages,
+                onRequestAction = { action -> sourceBlockAction = action }
+            )
+        }
     }
 
     if (showAllLinks) {
