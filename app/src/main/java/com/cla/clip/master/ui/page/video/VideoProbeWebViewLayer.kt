@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.viewinterop.AndroidView
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logI
@@ -41,6 +42,12 @@ private const val AUTO_PLAY_JS = """
 })();
 """
 
+/**
+ * 复用通用 ProbeWebView 的隐藏视频探测层。
+ *
+ * 完整视口用于网页加载和自动播放触发；透明显示并屏蔽用户触摸，让用户只操作前景提取内容。
+ * 透明配置不停止网页探测，WebView 的重试和销毁仍由页面管理；当前不承载手动播放辅助流程。
+ */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 internal fun SharedVideoProbeWebViewLayer(
@@ -50,36 +57,43 @@ internal fun SharedVideoProbeWebViewLayer(
     onSaveLinkPreview: suspend (WebView) -> Unit,
     onVideoCandidate: (VideoCandidate) -> Unit,
 ) {
+    // 视频资源拦截日志沿用既有标签，隐藏配置不新增日志。
     val tag = "webView"
+    // 预览补全和候选回调使用探测层协程作用域，组件离开组合时取消未完成的任务。
     val coroutineScope = rememberCoroutineScope()
 
-    /**
-     * 复用通用 ProbeWebView 的视频探测层。
-     *
-     * 当前页面只关心请求拦截和候选地址回调，具体 WebView 配置集中在 `ProbeWebView` 中维护。
-     */
     ProbeWebView(
         targetUrl = targetUrl,
+        // 与图片提取页一致：保留真实视口继续探测，透明显示避免网页内容露出前景遮罩。
+        modifier = Modifier.fillMaxSize().alpha(0f),
+        // 用户触摸只交给前景页面，避免透明网页被误点、滚动或触发跳转。
+        consumeUserTouch = true,
         onWebViewReady = onWebViewReady,
+        // 页面加载完成后补全预览并尝试触发视频请求，透明配置不改变原有执行时机。
         onPageFinished = { view, _ ->
             coroutineScope.launch {
                 // WebView 真实加载后补齐链接预览，解决首轮 OkHttp/Jsoup 被 403 拦截时列表只有域名兜底的问题。
                 onSaveLinkPreview(view)
             }
             // 页面加载完成后尝试触发 video 播放，部分站点只有播放后才会请求真实视频资源。
+            // WebView 加载进度达到完成时才执行原有自动播放脚本。
             val progress = view.progress
             if (progress > 99) {
                 logW(tag) { "onPageFinished: progress=${progress}" }
                 view.evaluateJavascript(AUTO_PLAY_JS, null)
             }
         },
+        // 继续从网页请求中识别候选，保留下载需要的请求上下文。
         shouldInterceptRequest = { view, request ->
+            // 当前资源地址用于视频判断；请求头用于恢复下载请求的来源和客户端上下文。
             val reqUrl = request.url.toString()
             val headers = request.requestHeaders.orEmpty()
             logD(tag) { "shouldInterceptRequest: reqUrl=$reqUrl" }
             if (isLikelyVideoRequest(request.url, headers)) {
+                // 候选资源的站点 Cookie 沿用既有鉴权透传，不因隐藏网页而清除。
                 val cookie = android.webkit.CookieManager.getInstance().getCookie(reqUrl)
                 view.post {
+                    // 在 WebView 所在线程构造候选，交给页面完成成功状态切换和资源释放。
                     val candidate = VideoCandidate(
                         url = reqUrl,
                         referer = headers["Referer"],
