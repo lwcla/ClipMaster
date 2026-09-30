@@ -27,6 +27,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.catch
@@ -61,9 +63,6 @@ class ClipSourceBlockSettingVm @Inject constructor(
     companion object {
         /** 设置页日志标签，方便区分主页 MineVm 日志。 */
         private const val TAG = "ClipSourceBlockSettingVm"
-
-        /** 自动读取节流窗口；10 分钟内已有成功读取时页面进入不重复扫描。 */
-        private const val AUTO_LOAD_THROTTLE_MS = 10 * 60 * 1000L
     }
 
     /** 设置重读序号；读取失败后由页面点击重试触发重新订阅。 */
@@ -105,9 +104,6 @@ class ClipSourceBlockSettingVm @Inject constructor(
     /** 当前安装应用读取任务；连续刷新时取消旧任务，避免旧扫描继续消耗资源。 */
     private var installedAppLoadJob: Job? = null
 
-    /** 当前安装应用读取请求序号；即使旧任务晚返回也不能覆盖新请求结果。 */
-    private var installedAppLoadRequestId: Long = 0L
-
     /**
      * 来源过滤候选列表。
      *
@@ -129,48 +125,35 @@ class ClipSourceBlockSettingVm @Inject constructor(
         emptyList()
     )
 
-    /** 打开设置页时按节流规则触发本机安装应用读取。 */
+    /** 页面自动入口仅加载当前会话尚未成功读取的安装列表；首次失败允许下次进入时重试。 */
     fun loadInstalledAppsIfNeeded() {
-        /** 当前读取内存态；如果正在读取或 10 分钟内已成功读取，则跳过自动刷新。 */
+        /** 当前页面会话的读取内存态；随导航条目的 ViewModel 清理，不提供跨页面缓存。 */
         val state = _installedAppListState.value
-        /** 当前墙钟时间；只用于页面会话内节流判断，不写入数据库或备份。 */
-        val nowMillis = System.currentTimeMillis()
-        /** 距离上次成功读取的时间；未成功过时按最大值处理，确保首次进入会触发自动读取。 */
-        val elapsedSinceLastSuccess = if (state.everLoaded && state.lastLoadedAtMillis > 0L) {
-            nowMillis - state.lastLoadedAtMillis
-        } else {
-            Long.MAX_VALUE
-        }
-        if (state.loading) {
-            logI(TAG) { "installed_app_load_skip reasonCode=already_loading force=false" }
-            return
-        }
-        if (elapsedSinceLastSuccess < AUTO_LOAD_THROTTLE_MS) {
+        // 正在读取或已有成功结果时仅跳过自动入口，手动刷新不经过此判断。
+        if (!state.needsInitialLoad) {
+            /** 自动跳过的低敏原因；读取中优先于已成功，避免误把任务替换当成过期刷新。 */
+            val reasonCode = if (state.loading) "already_loading" else "already_loaded"
             logI(TAG) {
-                "installed_app_load_skip reasonCode=auto_throttled elapsedMs=$elapsedSinceLastSuccess " +
-                    "throttleMs=$AUTO_LOAD_THROTTLE_MS"
+                "跳过自动读取安装应用 reasonCode=$reasonCode"
             }
             return
         }
-        refreshInstalledApps(forceRefresh = false)
-    }
-
-    /** 用户手动重新读取本机安装应用列表。 */
-    fun refreshInstalledApps() {
-        refreshInstalledApps(forceRefresh = true)
+        refreshInstalledApps()
     }
 
     /**
-     * 触发本机安装应用读取。
+     * 重新读取本机安装应用；自动入口先判断会话状态，用户手动刷新始终直接重读。
      *
-     * @param forceRefresh 是否由用户手动刷新触发；手动刷新绕过 10 分钟自动节流。
+     * 页面在主线程调用；新刷新取消旧 Job，旧扫描晚返回时通过取消检查阻止状态写入。
+     * 取消异常由协程直接传播，不转换成读取失败，也不单独维护请求序号。
      */
-    private fun refreshInstalledApps(forceRefresh: Boolean) {
-        /** 本次请求序号；旧请求完成时会被丢弃。 */
-        val requestId = ++installedAppLoadRequestId
+    fun refreshInstalledApps() {
+        // 立即取消旧任务；不等待不可中断的系统扫描结束，避免延迟本次刷新。
         installedAppLoadJob?.cancel()
+        // 读取任务归 ViewModel 管理；取消后不再应用结果，也不清除新任务的 loading 状态。
         installedAppLoadJob = viewModelScope.launch {
-            logI(TAG) { "installed_app_load_start force=$forceRefresh requestId=$requestId" }
+            logI(TAG) { "开始读取安装应用" }
+            // state 是已有读取状态；开始刷新时保留旧列表并清除上次失败与摘要。
             _installedAppListState.update { state ->
                 state.copy(
                     loading = true,
@@ -178,19 +161,13 @@ class ClipSourceBlockSettingVm @Inject constructor(
                     lastLoadSummary = null,
                 )
             }
-            try {
-                /** 本次 PackageManager 读取结果；成功时刷新内存列表，失败时按原因保留或清空旧列表。 */
-                val loadResult = installedAppReader.loadInstalledApps()
-                if (requestId != installedAppLoadRequestId) {
-                    logI(TAG) { "installed_app_load_drop_stale requestId=$requestId latest=$installedAppLoadRequestId" }
-                    return@launch
-                }
-                when (loadResult) {
-                    is InstalledAppLoadResult.Success -> applyInstalledAppLoadSuccess(loadResult)
-                    is InstalledAppLoadResult.Failed -> applyInstalledAppLoadFailure(loadResult)
-                }
-            } catch (error: CancellationException) {
-                throw error
+            /** 本次 PackageManager 读取结果；成功时刷新内存列表，失败时按原因保留或清空旧列表。 */
+            val loadResult = installedAppReader.loadInstalledApps()
+            // 同步扫描可能晚返回；在主线程无挂起的状态写入前检查当前任务是否已取消。
+            currentCoroutineContext().ensureActive()
+            when (loadResult) {
+                is InstalledAppLoadResult.Success -> applyInstalledAppLoadSuccess(loadResult)
+                is InstalledAppLoadResult.Failed -> applyInstalledAppLoadFailure(loadResult)
             }
         }
     }
@@ -204,7 +181,6 @@ class ClipSourceBlockSettingVm @Inject constructor(
             state.copy(
                 loading = false,
                 everLoaded = true,
-                lastLoadedAtMillis = loadResult.loadedAtMillis,
                 unavailableReasonCode = null,
                 loadedAppCount = apps.size,
                 lastLoadSummary = InstalledAppLoadSummary(
@@ -228,7 +204,6 @@ class ClipSourceBlockSettingVm @Inject constructor(
             state.copy(
                 loading = false,
                 unavailableReasonCode = loadResult.reasonCode,
-                lastLoadedAtMillis = loadResult.loadedAtMillis,
                 loadedAppCount = installedApps.value.size,
                 lastLoadSummary = null,
             )
@@ -323,7 +298,6 @@ internal fun buildBlockedSourceAppCandidates(
             icon = BlockedSourceAppIcon.None,
             installed = false,
             systemApp = false,
-            launchableApp = false,
             savedBlocked = true,
             historySource = false,
         )
@@ -339,7 +313,6 @@ internal fun buildBlockedSourceAppCandidates(
             icon = BlockedSourceAppIcon.Installed(packageName = packageName),
             installed = true,
             systemApp = installedApp.isSystemApp,
-            launchableApp = installedApp.isLaunchableApp,
             savedBlocked = packageName in blockedPackages,
             historySource = existing?.historySource ?: false,
         )
@@ -361,7 +334,6 @@ internal fun buildBlockedSourceAppCandidates(
             },
             installed = existing?.installed ?: false,
             systemApp = existing?.systemApp ?: false,
-            launchableApp = existing?.launchableApp ?: false,
             savedBlocked = packageName in blockedPackages,
             historySource = true,
         )
@@ -399,8 +371,6 @@ data class InstalledAppListState(
     val loading: Boolean = false,
     /** 当前页面会话是否至少成功读取过一次安装列表。 */
     val everLoaded: Boolean = false,
-    /** 最近一次成功读取或失败返回时间；仅用于页面会话自动读取节流和摘要展示。 */
-    val lastLoadedAtMillis: Long = 0L,
     /** 本机安装应用读取失败的低敏原因码；为空表示当前没有错误。 */
     val unavailableReasonCode: String? = null,
     /** 是否在默认候选中显示系统应用；搜索时 UI 仍可命中系统应用。 */
@@ -411,7 +381,11 @@ data class InstalledAppListState(
     val lastLoadSummary: InstalledAppLoadSummary? = null,
     /** 当前内存安装应用数量；失败保留旧列表时用于头部摘要。 */
     val loadedAppCount: Int = 0,
-)
+) {
+    /** 当前会话是否需要自动读取；首次失败允许重试，成功后仅通过手动刷新更新列表。 */
+    internal val needsInitialLoad: Boolean
+        get() = !loading && !everLoaded
+}
 
 /** 安装应用读取摘要。 */
 data class InstalledAppLoadSummary(
@@ -419,7 +393,7 @@ data class InstalledAppLoadSummary(
     val appCount: Int,
     /** 本次读取耗时毫秒。 */
     val elapsedMs: Long,
-    /** 本次读取完成时间；只用于页面会话展示和节流。 */
+    /** 本次成功读取完成时间；只用于页面会话的读取摘要，不参与自动加载判断。 */
     val loadedAtMillis: Long,
 )
 
@@ -460,8 +434,6 @@ data class BlockedSourceAppCandidate(
     val installed: Boolean,
     /** 是否系统应用；默认列表隐藏系统应用，搜索时可展示。 */
     val systemApp: Boolean,
-    /** 是否有启动入口；默认列表优先展示可启动应用。 */
-    val launchableApp: Boolean,
     /** 当前是否已在过滤名单中。 */
     val savedBlocked: Boolean,
     /** 是否曾作为剪贴来源被记录过。 */
@@ -471,7 +443,7 @@ data class BlockedSourceAppCandidate(
     val displayName: String
         get() = appName?.takeIf { name -> name.isNotBlank() } ?: packageName
 
-    /** 默认分类可见性；最终列表还必须满足安装条件，已过滤和历史来源不能绕过它。 */
+    /** 所有非系统应用默认可见，系统应用保留已过滤及历史来源例外；最终仍必须满足安装条件。 */
     val defaultVisible: Boolean
-        get() = savedBlocked || historySource || (launchableApp && !systemApp)
+        get() = savedBlocked || historySource || !systemApp
 }

@@ -145,13 +145,11 @@ class ClipSourceBlockSettingStateTest {
         packageName: String,
         appName: String,
         isSystemApp: Boolean = false,
-        isLaunchableApp: Boolean = true,
     ): InstalledAppInfo {
         return InstalledAppInfo(
             packageName = packageName,
             appName = appName,
             isSystemApp = isSystemApp,
-            isLaunchableApp = isLaunchableApp,
         )
     }
 }

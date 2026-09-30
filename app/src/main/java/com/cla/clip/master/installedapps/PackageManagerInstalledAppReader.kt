@@ -1,7 +1,6 @@
 package com.cla.clip.master.installedapps
 
 import android.content.Context
-import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Build
@@ -59,16 +58,14 @@ class PackageManagerInstalledAppReader : InstalledAppReader {
         this.dispatcher = dispatcher
     }
 
+    /** 在 IO 调度器读取并规范化安装应用；不检查桌面入口，扫描异常映射为低敏失败结果。 */
     override suspend fun loadInstalledApps(): InstalledAppLoadResult = withContext(dispatcher) {
         /** 本次读取开始时间；只用于低敏耗时日志。 */
         val startedAtMillis = clock()
         try {
-            /** Launcher 包名集合；一次性查询，避免逐个包名调用 getLaunchIntentForPackage。 */
-            val launchablePackages = packageReader.loadLauncherPackageNames()
             /** 规范化后的安装应用列表；不包含当前 App，也不携带图标对象。 */
             val apps = normalizeInstalledAppEntries(
                 entries = packageReader.loadInstalledApplications(),
-                launcherPackages = launchablePackages,
                 selfPackageName = selfPackageName,
             )
             /** 本次读取结束时间；只保存到 ViewModel 内存态，不持久化。 */
@@ -87,8 +84,7 @@ class PackageManagerInstalledAppReader : InstalledAppReader {
                 )
             } else {
                 logI(TAG) {
-                    "installed_app_scan_result reasonCode=success appCount=${apps.size} " +
-                        "launcherCount=${launchablePackages.size} elapsedMs=$elapsedMs"
+                    "安装应用读取成功 reasonCode=success appCount=${apps.size} elapsedMs=$elapsedMs"
                 }
                 InstalledAppLoadResult.Success(
                     apps = apps,
@@ -136,11 +132,10 @@ class PackageManagerInstalledAppReader : InstalledAppReader {
 /**
  * 规范化 PackageManager 原始安装应用条目。
  *
- * 只负责纯规则：排除当前 App、裁剪名称、空标签回退包名、标记可启动状态并稳定排序。
+ * 只负责纯规则：排除当前 App、裁剪名称、空标签回退包名并稳定排序，不按桌面入口筛选。
  */
 internal fun normalizeInstalledAppEntries(
     entries: List<InstalledAppPackageEntry>,
-    launcherPackages: Set<String>,
     selfPackageName: String,
 ): List<InstalledAppInfo> {
     /** 当前 App 包名；空白时仍按空串比较，避免误删其他条目。 */
@@ -157,7 +152,6 @@ internal fun normalizeInstalledAppEntries(
             packageName = packageName,
             appName = appName,
             isSystemApp = entry.isSystemApp,
-            isLaunchableApp = packageName in launcherPackages,
         )
     }.distinctBy { app -> app.packageName }
         .sortedWith(
@@ -179,6 +173,7 @@ private class AndroidInstalledAppPackageReader(
     private val packageManager: PackageManager,
 ) : InstalledAppPackageReader {
 
+    /** 批量读取当前可见安装应用并提取标签和系统标记；无桌面入口的应用也保留，异常交由上层处理。 */
     override fun loadInstalledApplications(): List<InstalledAppPackageEntry> {
         /** 当前用户可见安装应用；不使用 MATCH_DISABLED_COMPONENTS 强行展示禁用或冻结 App。 */
         val applications = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -195,22 +190,6 @@ private class AndroidInstalledAppPackageReader(
                 label = label,
                 isSystemApp = applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM != 0,
             )
-        }
-    }
-
-    override fun loadLauncherPackageNames(): Set<String> {
-        /** Launcher 查询 Intent；一次性收集可启动包名，避免逐个应用查询。 */
-        val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        /** 当前用户可见 Launcher Activity；不请求禁用组件。 */
-        val resolveInfos = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            packageManager.queryIntentActivities(launcherIntent, PackageManager.ResolveInfoFlags.of(0))
-        } else {
-            @Suppress("DEPRECATION")
-            packageManager.queryIntentActivities(launcherIntent, 0)
-        }
-        return resolveInfos.mapNotNullTo(mutableSetOf()) { resolveInfo ->
-            /** Launcher Activity 所属包名；异常空包名不参与可启动标记。 */
-            resolveInfo.activityInfo?.packageName?.trim()?.takeIf { packageName -> packageName.isNotEmpty() }
         }
     }
 }

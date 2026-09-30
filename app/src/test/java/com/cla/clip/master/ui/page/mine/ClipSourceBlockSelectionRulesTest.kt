@@ -86,7 +86,7 @@ class ClipSourceBlockSelectionRulesTest {
         /** 模拟手动刷新成功后读取到 A。 */
         val afterInstall = buildBlockedSourceAppCandidates(
             draft,
-            listOf(InstalledAppInfo("com.example.a", "应用 A", false, true)),
+            listOf(InstalledAppInfo("com.example.a", "应用 A", false)),
             emptyList(),
         )
         /** 安装后最终可见的单个候选，状态仍由完整名单提供。 */
@@ -127,14 +127,14 @@ class ClipSourceBlockSelectionRulesTest {
     }
 
     @Test
-    /** 无启动入口的已安装应用仍可通过搜索或历史来源进入列表。 */
-    fun installedNonLauncherPackageKeepsSearchAndHistoryVisibility() {
-        /** 默认不展示的无启动入口应用。 */
-        val installedApp = candidate("com.example.service", launchableApp = false)
+    /** 无桌面入口的非系统应用也必须默认可见，防止筛选误依赖 Launcher 查询。 */
+    fun installedNonSystemPackageIsVisibleWithoutLauncherOrHistory() {
+        /** 没有桌面入口、没有过滤或历史记录的已安装非系统应用。 */
+        val installedApp = candidate("com.example.service")
         /** 同包名曾是剪贴来源时，沿用历史来源默认可见规则。 */
         val historyApp = installedApp.copy(historySource = true)
 
-        assertTrue(filterClipSourceBlockCandidates(listOf(installedApp), emptySet(), "", false).isEmpty())
+        assertEquals(listOf(installedApp), filterClipSourceBlockCandidates(listOf(installedApp), emptySet(), "", false))
         assertEquals(listOf(installedApp), filterClipSourceBlockCandidates(listOf(installedApp), emptySet(), "service", false))
         assertEquals(listOf(historyApp), filterClipSourceBlockCandidates(listOf(historyApp), emptySet(), "", false))
     }
@@ -183,14 +183,12 @@ class ClipSourceBlockSelectionRulesTest {
         installed: Boolean = true,
         savedBlocked: Boolean = false,
         systemApp: Boolean = false,
-        launchableApp: Boolean = true,
     ): BlockedSourceAppCandidate = BlockedSourceAppCandidate(
         packageName = packageName,
         appName = null,
         icon = BlockedSourceAppIcon.None,
         installed = installed,
         systemApp = systemApp,
-        launchableApp = launchableApp,
         savedBlocked = savedBlocked,
         historySource = false,
     )

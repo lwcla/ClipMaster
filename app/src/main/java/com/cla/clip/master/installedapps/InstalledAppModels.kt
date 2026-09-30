@@ -20,8 +20,6 @@ data class InstalledAppInfo(
     val appName: String,
     /** 是否系统应用；默认列表隐藏系统应用，搜索或开关可展示。 */
     val isSystemApp: Boolean,
-    /** 是否拥有 Launcher 入口；默认列表优先展示可启动非系统应用。 */
-    val isLaunchableApp: Boolean,
 )
 
 /** 主进程安装应用读取结果；状态只服务当前页面会话，不进入数据库或备份。 */
@@ -70,7 +68,4 @@ internal interface InstalledAppPackageReader {
 
     /** 一次性读取当前用户可见的安装应用列表。 */
     fun loadInstalledApplications(): List<InstalledAppPackageEntry>
-
-    /** 一次性读取拥有 Launcher 入口的包名集合，避免逐个包名查询启动 Intent。 */
-    fun loadLauncherPackageNames(): Set<String>
 }
