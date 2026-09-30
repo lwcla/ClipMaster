@@ -46,7 +46,7 @@ class ClipListModel @Inject constructor(
 ) : ViewModel() , ClipboardDataProcessor by clipboardDataProcessor {
 
     /** 快捷动作领域流由页面生命周期控制收集，空初值只由页面用于暂时关闭快捷操作。 */
-    val quickAction = clipSettingsRepository.data.map { settings -> settings.quickAction }
+    val quickAction = clipSettingsRepository.quickAction
         .catch { error ->
             if (error is CancellationException) throw error
             // 读取失败后撤销旧快捷动作，整卡点击仍可进入详情。

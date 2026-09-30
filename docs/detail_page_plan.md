@@ -60,7 +60,7 @@
 - 详情页通过 `AdSourceSelector` 选择当前可用广告源，并向 adapter 传入 `AdSlotRequest(placement = DetailNative, requestNonce, isDebugRequest, isSensitiveContext)`；请求对象不包含剪贴正文、完整 URL 或搜索词。
 - 详情页从 `AdSettingsRepository.data` 收集广告隐私状态；读取失败或未就绪时按未同意处理，真实 SDK 只有在明确同意且版本满足 adapter 要求时可用。
 - 广告源初始化失败或渲染失败事件会触发 `AdSessionFailureFuse`，当前会话后续跳过该 source，回退到其它 source 或隐藏广告位。
-- 详情页订阅 `ClipSettingsRepository.data` 的过滤名单，返回详情页时动作文案会随已提交设置刷新；读取失败时禁用依赖名单的动作。
+- 详情页订阅 `ClipSettingsRepository.blockedPackages` 的过滤名单，返回详情页时动作文案会随已提交设置刷新；读取失败时禁用依赖名单的动作。
 - 详情页调用 `ClipSettingsRepository.addBlockedPackage()` / `removeBlockedPackage()` 的挂起原子方法；提交成功后标记 backup dirty 并调度自动备份。
 
 ## 涉及文件
@@ -126,6 +126,8 @@
 - 后续如果用户需要更明确的可访问性提示，可考虑为正文卡片补充“复制内容”、为链接摘要补充“打开链接操作”的语义说明，但当前公共卡片入口还没有统一暴露语义标签参数，需要先评估共享组件契约。
 
 ## 变更记录
+
+- 2026-09-30：剪贴设置改接对应字段的独立 Flow，减少其他设置变化造成的无关通知；生命周期、读取失败与保存契约沿用原行为，字段 Flow 设计以 [DataStore 主方案](datastore_replacement_plan.md) 为准。
 
 - 2026-09-29：详情页的过滤名单与广告隐私状态改为读取领域仓库，保存动作等待提交后再反馈；原因是宿主设置改为 DataStore。
 

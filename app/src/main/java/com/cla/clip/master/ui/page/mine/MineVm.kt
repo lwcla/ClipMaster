@@ -8,7 +8,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cla.clip.base.general.config.ClipItemQuickAction
 import com.cla.clip.base.general.config.clip.ClipSettingsRepository
-import com.cla.clip.base.general.config.clip.ClipSettingsSnapshot
 import com.cla.clip.base.general.config.update.AppUpdateCheckStore
 import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.base.general.utils.hasNotificationPermission
@@ -36,6 +35,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
@@ -150,38 +150,48 @@ class MineVm @Inject constructor(
     /** 设置加载重试序号；变化时重新订阅 DataStore，而不修改持久化内容。 */
     private val settingsReload = MutableStateFlow(0L)
 
-    /** 设置读取失败标记；页面据此显示重试入口并暂停编辑。 */
-    private val _settingsLoadFailed = MutableStateFlow(false)
+    /** 快捷动作读取失败标记，不由名单读取成功清除。 */
+    private val quickActionLoadFailed = MutableStateFlow(false)
 
-    /** 页面只读的设置读取失败状态。 */
-    val settingsLoadFailed = _settingsLoadFailed.asStateFlow()
+    /** 名单读取失败标记，不由快捷动作读取成功清除。 */
+    private val blockedPackagesLoadFailed = MutableStateFlow(false)
 
-    /** 两个设置入口共用的一份已提交快照；失败需要显式重试。 */
-    private val clipSettings = settingsReload.flatMapLatest {
-        clipSettingsRepository.data
-            .onEach { _settingsLoadFailed.value = false }
+    /** 页面沿用统一重试入口；任一字段读取失败都暂停编辑，不组合设置值。 */
+    val settingsLoadFailed = combine(quickActionLoadFailed, blockedPackagesLoadFailed) { actionFailed, packagesFailed ->
+        actionFailed || packagesFailed
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /** 快捷动作仅在页面订阅时读取；null 表示未加载或失败，禁止据此启用编辑。 */
+    val clipItemQuickAction = settingsReload.flatMapLatest {
+        clipSettingsRepository.quickAction
+            .map { action -> action as ClipItemQuickAction? }
+            .onEach { quickActionLoadFailed.value = false }
             .catch { error ->
                 if (error is CancellationException) throw error
-                logE(TAG, error) { "读取剪贴设置失败 reasonCode=settings_read_failed" }
-                _settingsLoadFailed.value = true
+                logE(TAG, error) { "读取剪贴快捷动作失败 reasonCode=settings_read_failed" }
+                quickActionLoadFailed.value = true
+                // 读取失败时撤销旧值；显式重试成功后恢复编辑。
+                emit(null)
             }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null as ClipSettingsSnapshot?)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null as ClipItemQuickAction?)
 
-    /**
-     * 普通剪贴 item 快捷动作设置。
-     *
-     * 仅在页面订阅时读取已提交设置；null 表示尚未加载或读取失败，页面需禁用编辑。
-     */
-    val clipItemQuickAction = clipSettings.map { settings -> settings?.quickAction }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null as ClipItemQuickAction?)
-
-    /** 已提交来源过滤名单；null 防止首次读取前将真实名单误呈现为空。 */
-    val blockedClipSourcePackages = clipSettings.map { settings -> settings?.blockedPackages }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null as Set<String>?)
+    /** 名单独立收集；null 避免首次读取或故障时把真实名单显示为空。 */
+    val blockedClipSourcePackages = settingsReload.flatMapLatest {
+        clipSettingsRepository.blockedPackages
+            .map { packages -> packages as Set<String>? }
+            .onEach { blockedPackagesLoadFailed.value = false }
+            .catch { error ->
+                if (error is CancellationException) throw error
+                logE(TAG, error) { "读取剪贴来源名单失败 reasonCode=settings_read_failed" }
+                blockedPackagesLoadFailed.value = true
+                // 故障不伪装成空名单，避免错误编辑覆盖已保存设置。
+                emit(null)
+            }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null as Set<String>?)
 
     /** 用户点击错误入口后重新读取设置，成功时解除编辑禁用。 */
     fun retrySettingsLoad() {
-        // 重试期间继续保持错误门禁；只有新快照真正读取成功后才重新允许编辑。
+        // 重试期间继续保持错误门禁；只有各字段真正读取成功后才重新允许编辑。
         settingsReload.update { sequence -> sequence + 1L }
     }
 

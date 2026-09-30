@@ -99,7 +99,7 @@ class SearchViewModel @Inject constructor(
 ) : ViewModel(), ClipboardDataProcessor by clipboardDataProcessor {
 
     /** 搜索页可见时才收集的快捷动作领域流，不在 ViewModel 初始化期启动 IO。 */
-    val quickAction = clipSettingsRepository.data.map { settings -> settings.quickAction }
+    val quickAction = clipSettingsRepository.quickAction
         .catch { error ->
             if (error is CancellationException) throw error
             // 数据源读失败时停用快捷动作，避免继续消费旧设置状态。

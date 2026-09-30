@@ -50,7 +50,7 @@ TorrentSearch 保留独立文件及独立 Repository，不合并领域模型。�
 | 位置与建议类型 | 职责 |
 | --- | --- |
 | `base/general/.../config/datastore/HostSettingsDataStoreModule` | 唯一实例、qualifier、文件与作用域装配 |
-| `base/general/.../config/clip/ClipSettingsRepository` | 快捷动作、过滤名单、回收站保留策略及其强类型快照 |
+| `base/general/.../config/clip/ClipSettingsRepository` | 快捷动作、过滤名单、回收站保留策略的独立 Flow；一次性快照仅供备份和任务读取 |
 | `base/general/.../config/ad/AdSettingsRepository` | 广告开关、来源与成组隐私状态 |
 | `base/general/.../config/installation/InstallationIdentityRepository` | 安装 ID 原子生成、Shizuku 期望进程身份 |
 | `base/general/.../backup/settings/BackupSettingsRepository` | 备份目标、授权目录、开关、保留份数与白名单恢复入口 |
@@ -86,7 +86,7 @@ TorrentSearch 保留独立文件及独立 Repository，不合并领域模型。�
 
 ## 异步接口、生命周期与用户体验
 
-1. 持续读取暴露只读领域 `Flow<Snapshot>`，映射后按领域值去重，避免其他设置更新造成无关刷新；必要时由 ViewModel `stateIn` 转为 UI 状态，页面使用 `collectAsStateWithLifecycle`。不在 Repository 手动维护另一份可写设置镜像。
+1. 持续读取按消费边界暴露只读 Flow。剪贴设置提供 `quickAction`、`blockedPackages`、`recycleBinRetentionDays` 三个独立 Flow，直接从原始 Preferences 提取对应字段并按业务值去重，取消整体 `data` 快照流；过滤名单先按原始集合去重，再规范化并按业务集合去重，避免其他字段写入时重复规范化。其他有成组消费需求的领域仍可提供 `Flow<Snapshot>`。必要时由 ViewModel `stateIn` 转为 UI 状态，页面使用 `collectAsStateWithLifecycle`，不在 Repository 维护可写镜像。剪贴 `snapshot()` 仅在备份或一次性任务读取时构造完整对象，不参与持续订阅。
 2. 首次读取区分 `Loading`、`Ready`、`Error`。不存在文件或键才使用业务默认值，磁盘错误不能伪装成新安装。安全决定所需的设置就绪前，禁用相应操作；普通页面仍可展示不依赖设置的区域。
 3. 写入为有业务含义的 `suspend` 方法。正常返回表示 DataStore 已完成持久化；存储失败向调用者传播并映射为稳定错误，取消继续抛出。`Changed/Unchanged` 这类业务结果不能兼作 IO 失败。该提交契约依据 [DataStore API](https://developer.android.com/reference/androidx/datastore/core/DataStore)。
 4. UI 可以立即显示草稿，但成功提示、关闭保存弹窗、启用后台任务必须等待写入完成；失败保留草稿并显示重试。写入采用提交后的 Flow 更新正式状态，不用属性赋值伪装成功。
@@ -173,6 +173,8 @@ WebDAV 存储版本、IV 和带认证标签的密文，采用小型显式格式�
 
 ## 测试验证
 
+2026-09-30 剪贴字段 Flow：先验证名单修改不会重复通知快捷动作与保留天数，再验证三个字段各自变化、同文件其他领域变化、默认值/规范化与 IO 失败传播。复用 JVM 内存 fake 和已有测试依赖；页面改动只替换订阅接线，编译及既有 app 单测覆盖接入，生命周期与重试方式保持原契约。
+
 `repo-unit-test-gate` 判断：本次实施涉及纯规则、并发、Flow、数据协议和失败契约，已对 DataStore 原子写入、恢复合并、凭据失败、Provider 超时与密码决策选择性补充单元测试；设备绑定 Keystore 另以 instrumentation 编译和后续实机验证覆盖。
 
 | 测试层 | 必须覆盖 |
@@ -201,7 +203,12 @@ Release/R8 验证关注从枚举 name 改为稳定 code 后的状态恢复、摘
 
 最终扫描标准：项目维护的源码、测试、构建脚本和资源配置经不区分大小写的 `mmkv` 搜索无命中；同时检查依赖解析与 APK，确认不再由项目直接打包 MMKV。旧 `AppSetting` 持久化调用归零；每个新设置都有归属、默认值、失败策略和备份决策；没有主线程同步磁盘读取和静默异步 setter。扫描不以删除仍有价值的业务测试代替迁移测试契约。
 
+
+2026-09-30 字段 Flow 验证结果：旧实现回归实际失败，名单变化使快捷动作历史从预期 `[Copy]` 变成 `[Copy, Copy]`；改为独立字段接口后，新增 3 项测试全部通过。执行 `.\gradlew.bat -I build/clip-settings-flows-validation.init.gradle :base:general:testDebugUnitTest :app:compileDebugKotlin :app:testDebugUnitTest --no-daemon '-Pkotlin.compiler.execution.strategy=in-process' '-Pksp.incremental=false' --console=plain`，结果 `BUILD SUCCESSFUL`，general 共 67 项、app 共 154 项单测，失败、错误、跳过均为 0。原构建目录 `classes.jar` 被其他程序占用，临时 init script 仅将 general 产物改到 `build/clip-settings-flow-validation/base-general`；沙箱内缓存 jar 访问被拒绝后，同命令沙箱外重试完成验证，未改动工程配置、JDK 配置或设备。RED 和 GREEN 日志分别为 `build/clip-settings-flows-red-retry.log`、`build/clip-settings-flows-green.log`，`git diff --check` 通过。页面生命周期、重新进入与错误重试的设备交互未验证；本次仓库 Flow 测试覆盖字段通知及异常契约，未新增 MineVm 专项设备/UI 测试。无外部协议、反射或混淆规则变更，不安排 release/R8；备份写入与导出白名单沿用原契约。
+
 ## 日志与诊断计划
+
+2026-09-30 字段订阅调整不新增副作用或高频日志，沿用各页面既有读取失败、保存失败日志及稳定 reasonCode。我的页两个字段分别记录读取失败，页面错误入口取两者任一失败，防止一个字段读取成功掩盖另一字段故障。不改变设置键、写入事务、dirty 版本、备份白名单或外部协议；无新增 keep/R8 契约，本次不安排 release/R8 或设备验证。
 
 复用项目 `logD/logI/logW/logE` 与既有 taskId/eventId。日志正文简体中文；设置值、密码、密文、安装 ID、完整进程名、包名名单、地址、URI 和备份正文不进入新增日志。
 
@@ -228,6 +235,8 @@ Release/R8 验证关注从枚举 name 改为稳定 code 后的状态恢复、摘
 - 仍需用设备校准 Provider 超时、验证 merged manifest 与功能开关组合；这些是设备验证项，不影响当前选型。
 
 ## 变更记录
+
+- 2026-09-30：按用户要求取消剪贴设置整体快照 Flow，改为三个独立字段 Flow 并更新页面订阅；原因是独立设置没有成组消费需求，整体对象增加无关映射与通知。备份和任务的一次性一致快照保留；验证结果见本次字段 Flow 验证记录。
 
 - 2026-09-30：按用户补充要求取消表单保存密码说明、移除按钮和账号变更的额外密码动作校验；提交始终保存当前输入值，空输入提交空密码。仓库加密与事务边界保持不变，页面接入以备份主方案为准。
 - 2026-09-30：按用户要求撤销密码不回填的展示约束，改为页面内回填、默认遮蔽和按钮切换；保留存储加密、备份排除、编辑保护与目标变更校验，交互细节归口备份主方案。

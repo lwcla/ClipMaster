@@ -91,7 +91,7 @@ class RecycleBinVm @Inject constructor(
 
     /** 页面订阅已提交保留天数；null 时设置弹层不可打开。 */
     val retentionDays = settingsReload.flatMapLatest {
-        clipSettingsRepository.data.map { settings -> settings.recycleBinRetentionDays }
+        clipSettingsRepository.recycleBinRetentionDays
             .onEach { _settingsLoadFailed.value = false }
             .catch { error ->
                 if (error is CancellationException) throw error

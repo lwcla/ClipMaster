@@ -109,8 +109,8 @@ class DetailViewModel @Inject constructor(
     )
 
     /** 详情页订阅的来源过滤名单；从“我的”页或备份恢复改变后，详情动作会自动刷新。 */
-    val blockedClipSourcePackages = clipSettingsRepository.data
-        .map { settings -> settings.blockedPackages as Set<String>? }
+    val blockedClipSourcePackages = clipSettingsRepository.blockedPackages
+        .map { packages -> packages as Set<String>? }
         .catch { error ->
             if (error is CancellationException) throw error
             logE(TAG, error) { "读取详情来源过滤规则失败 reasonCode=settings_read_failed" }

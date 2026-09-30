@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 
-/** 一份已提交的剪贴设置快照；页面与后台任务不接触原始 Preferences。 */
+/** 备份和一次性任务读取的已提交快照；页面持续订阅使用各字段 Flow。 */
 data class ClipSettingsSnapshot(
     /** 普通剪贴项快捷动作，未知 code 安全回退复制。 */
     val quickAction: ClipItemQuickAction,
@@ -35,10 +35,21 @@ class ClipSettingsRepository @Inject internal constructor(
         const val MAX_RECYCLE_BIN_RETENTION_DAYS = 3650
     }
 
-    /** 已提交设置的领域流；其他领域写入不触发相同快照的刷新。 */
-    val data: Flow<ClipSettingsSnapshot> = store.data.map(::mapSnapshot).distinctUntilChanged()
+    /** 快捷动作独立订阅；仅业务动作变化才通知，不构造其他设置或完整快照。 */
+    val quickAction: Flow<ClipItemQuickAction> = store.data.map(::readQuickAction).distinctUntilChanged()
 
-    /** 读取一次真实设置；介质损坏或 IO 失败向调用方抛出。 */
+    /** 完整过滤名单独立订阅；先对原始集合去重，避免其他键写入时重复规范化。 */
+    val blockedPackages: Flow<Set<String>> = store.data
+        .map { preferences -> preferences[HostSettingsKeys.BLOCKED_CLIP_SOURCE_PACKAGES].orEmpty() }
+        .distinctUntilChanged()
+        // 不同原始集合可能规范化成同一名单，业务层再次去重后才通知页面。
+        .map { packages -> ClipSourceBlockRules.normalizePackageSet(packages) }
+        .distinctUntilChanged()
+
+    /** 保留天数独立订阅；按裁剪后的有效天数去重，IO 故障仍向调用方传播。 */
+    val recycleBinRetentionDays: Flow<Int> = store.data.map(::readRetentionDays).distinctUntilChanged()
+
+    /** 备份或任务显式读取一次完整设置；不参与持续订阅，介质损坏或 IO 失败向调用方抛出。 */
     suspend fun snapshot(): ClipSettingsSnapshot = mapSnapshot(store.snapshot())
 
     /** 保存快捷动作；只有业务值真实变化才推进备份版本。 */
@@ -165,17 +176,21 @@ class ClipSettingsRepository @Inject internal constructor(
         return changed
     }
 
-    /** 将原始设置映射为可安全消费的一致快照，不在读取时隐式修复文件。 */
-    private fun mapSnapshot(preferences: Preferences): ClipSettingsSnapshot {
-        /** 当前快捷动作；未知持久化值按现有规则回退复制。 */
-        val action = ClipItemQuickAction.fromStorageValue(preferences[HostSettingsKeys.CLIP_ITEM_QUICK_ACTION])
-        /** 当前来源过滤名单；排序保证备份与 UI 输出稳定。 */
-        val packages = readBlockedPackages(preferences)
-        /** 当前回收站天数；异常值仅在内存中裁剪。 */
-        val retentionDays = (preferences[HostSettingsKeys.RECYCLE_BIN_RETENTION_DAYS] ?: DEFAULT_RECYCLE_BIN_RETENTION_DAYS)
+    /** 一次性读取从同一已提交版本提取字段；仅备份和任务需要完整对象。 */
+    private fun mapSnapshot(preferences: Preferences): ClipSettingsSnapshot = ClipSettingsSnapshot(
+        quickAction = readQuickAction(preferences),
+        blockedPackages = readBlockedPackages(preferences),
+        recycleBinRetentionDays = readRetentionDays(preferences),
+    )
+
+    /** 读取动作稳定 code；未知值按既有规则回退复制，不修复磁盘。 */
+    private fun readQuickAction(preferences: Preferences): ClipItemQuickAction =
+        ClipItemQuickAction.fromStorageValue(preferences[HostSettingsKeys.CLIP_ITEM_QUICK_ACTION])
+
+    /** 读取有效保留天数；默认三十天，异常旧值只在内存中裁剪。 */
+    private fun readRetentionDays(preferences: Preferences): Int =
+        (preferences[HostSettingsKeys.RECYCLE_BIN_RETENTION_DAYS] ?: DEFAULT_RECYCLE_BIN_RETENTION_DAYS)
             .coerceIn(MIN_RECYCLE_BIN_RETENTION_DAYS, MAX_RECYCLE_BIN_RETENTION_DAYS)
-        return ClipSettingsSnapshot(action, packages, retentionDays)
-    }
 
     /** 从当前事务或快照中读取并规范化来源过滤名单。 */
     private fun readBlockedPackages(preferences: Preferences): Set<String> {

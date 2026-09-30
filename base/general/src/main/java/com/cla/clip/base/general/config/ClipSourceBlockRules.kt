@@ -24,6 +24,7 @@ object ClipSourceBlockRules {
     fun normalizePackageSet(packages: Iterable<String?>): Set<String> {
         /** 规范化后的候选包名；LinkedHashSet 保留排序后的稳定顺序，方便 UI 和备份输出一致。 */
         val normalizedPackages = packages
+            .asSequence()
             .mapNotNull { packageName -> normalizeSinglePackage(packageName) }
             .distinct()
             .sorted()

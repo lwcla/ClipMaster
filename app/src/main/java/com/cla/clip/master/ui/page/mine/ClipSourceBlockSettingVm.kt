@@ -76,15 +76,18 @@ class ClipSourceBlockSettingVm @Inject constructor(
 
     /** 已提交的来源过滤名单；null 表示首次读取未完成或重试尚未成功。 */
     val blockedClipSourcePackages = settingsReload.flatMapLatest {
-        clipSettingsRepository.data.map { settings -> settings.blockedPackages }
+        clipSettingsRepository.blockedPackages
             .onEach { _settingsLoadFailed.value = false }
             .catch { error ->
                 if (error is CancellationException) throw error
                 logE(TAG, error) { "读取来源过滤名单失败 reasonCode=settings_read_failed" }
                 _settingsLoadFailed.value = true
             }
-    }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null as Set<String>?)
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        null
+    )
 
     /** 用户显式重试读取设置；不会清空已保存过滤规则。 */
     fun retrySettingsLoad() {
