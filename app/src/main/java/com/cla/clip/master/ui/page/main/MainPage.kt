@@ -2,6 +2,7 @@ package com.cla.clip.master.ui.page.main
 
 import android.annotation.SuppressLint
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -70,6 +71,7 @@ private sealed class TabPage {
  *
  * 使用 HorizontalPager 承载剪贴列表和我的页，底部 Tab 控制页面切换；
  * 列表页的竖向列表状态放在主页面持有，便于重复点击列表 Tab 时滚回顶部。
+ * Pager 应用并消费首页底栏 padding，子页面骨架只补尚未处理的导航栏 Insets，避免重复留白。
  *
  * @param torrentSearchFeatures 可选功能入口集合；只透传给“我的”页，不在首页启动功能内任务。
  * @param onLaunchTorrentSearch 用户点击可选入口后的启动回调；Context 和来源由导航层统一提供。
@@ -157,6 +159,8 @@ fun MainPage(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                // 已为首页底栏及系统导航区留出空间，向子树声明消费，避免一级骨架再次添加安全区。
+                .consumeWindowInsets(paddingValues)
         ) { index ->
             /** 当前 Pager 页对应的底部 Tab 配置。 */
             val tab = tabs[index]

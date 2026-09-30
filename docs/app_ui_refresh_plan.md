@@ -4,6 +4,8 @@
 
 ## 当前状态
 
+2026-09-30 提交前最终复核：app Kotlin 编译、app 150 项单测及 base/general 64 项单测全部通过，失败、错误和跳过均为 0；`git diff --check` 通过。导航栏 Insets 的编译结果以本次成功验证为准，下文缓存访问拒绝保留为实现阶段历史记录；三键/手势导航、横屏与动态底栏仍需设备验收。
+
 当前应用已经有 `TitleBar`、`TopLevelTitleBar`、`ClipMasterCard`、`ListEntryCard`、`MediaStateContent`、`PagingStateContent` 和 `SharedImagePreview` 等共享组件。本轮已把主题层从默认 Material 紫色模板收敛为动态取色优先、固定品牌色板回退的主题策略，并新增主题 token 与一级/二级页面骨架；首页底部导航已移除临时红色背景，列表页和折叠页搜索入口已移到标题栏，搜索页顶部控件已从滚动折叠改为稳定搜索框 + 紧凑筛选行，详情页已按正文、提取能力和普通操作分区，删除入口上移到标题栏右侧低频危险操作位。
 
 本方案作为本轮应用内 UI 刷新的主文档。后续涉及固定品牌主题、页面骨架、标题栏、底部导航、主要内容卡片、状态组件、列表/搜索/详情/我的主链路、流程页统一视觉或设计例外记录时，优先更新本文；页面文档只记录本页面接入方式、影响摘要和差异化行为。
@@ -42,13 +44,24 @@
 - 首页列表结果区只保留一层 12dp 的页面私有底部留白，让最后一条记录和底部导航之间有明确但不过分的呼吸感，不再出现明显空白带。
 - 所有复用 `ClipResultList` 的普通态页面统一使用 12dp 底部留白；只有回收站多选态这类存在底部操作栏的页面，才继续单独预留更大底部空间。
 - 下载记录的视频列表和图片列表虽然不复用 `ClipResultList`，但普通态底部留白也对齐到同一档 12dp 视觉节奏；页面根布局已改为标准 `Scaffold`，多选态底部删除条和系统导航区统一通过 `bottomBar`/`paddingValues` 参与内容布局，避免最后几项被遮挡。
-- 一级页面骨架默认不再消费底部系统导航区 inset，避免列表页和我的页正文被整体抬离底部导航。
+- 一级页面骨架处理父层尚未消费的导航栏 Insets；首页 Pager 应用并消费外层底栏 padding，避免我的页再次留出系统导航区。完整共享契约见下节。
 - 列表页搜索入口从右下角 FAB 移到一级标题栏右侧动作，减少悬浮控件对最后一屏内容的遮挡。
 - 折叠数据页继续保留搜索能力，并和列表页一样收敛到标题栏动作，避免右下角悬浮按钮遮挡最后一屏内容。
 - 搜索页改为稳定的返回栏、搜索框、紧凑筛选行和结果区结构，不再使用滚动折叠顶部控件；保留搜索历史、来源筛选和查询逻辑。
 - 搜索页单独验收键盘弹出、焦点切换、提交搜索、返回键关闭历史面板、筛选区高度和结果列表剩余空间。
 - 详情页改为分区式布局：正文内容、链接提取能力、普通操作；复制保留为主操作，删除上移到标题栏右侧低频危险操作位。
 - 我的页入口按“权限”“数据管理”“功能入口”“设置”分组，权限分组置顶；页面仍只负责权限动作、系统跳转和设置保存。
+
+## 页面骨架导航栏 Insets 契约（2026-09-30）
+
+- `TopLevelPageScaffold` 与 `SecondaryPageScaffold` 的根 modifier 先绘制页面背景，再用 `navigationBarsPadding()` 避让并消费尚未处理的系统导航栏 Insets。顶部继续交给标题栏处理；子页面继续使用 Scaffold 提供的 `PaddingValues` 留出标题栏和业务底栏空间，无需单独处理系统导航区。
+- `MainPage` 保留标准 `NavigationBar` 的默认 Insets；Pager 在 `.padding(paddingValues)` 后调用 `.consumeWindowInsets(paddingValues)`，向子树声明首页底栏及其系统安全区已经留出。一级骨架嵌在首页时不再加导航栏间距，独立路由下仍能自行兜底。
+- 根层消费导航栏 Insets 后，二级 Scaffold 默认内容 Insets 会排除已消费部分；有底栏、无底栏和动态显示底栏都统一走这一边界。一级 Scaffold 保留零 `contentWindowInsets`，避免重复处理标题栏和根层已负责的空间。
+- 来源过滤底栏与 `BackupRestoreFlowActions` 移除局部 `navigationBarsPadding()`，改由公共二级骨架负责；原有业务间距和回调保持不变。媒体重新关联页仍使用原生 Scaffold，保留局部处理；剪贴列表、下载记录、搜索与提取等独立骨架不在本轮迁入范围，不能将公共骨架覆盖理解为全应用已统一。
+- 复用与职责：复用现有两个骨架、Material3 NavigationBar 和 Compose Insets API，不新增组件、方法、变量、配置或状态。无新 IO、设置、备份、反射或外部协议变化，不新增日志、不改备份覆盖、不执行 release/R8。
+- 单元测试判断：纯 Compose Insets 归属调整，无抽出的纯规则，不新增 JVM 单测、不采用 TDD。编译验证使用 `.\gradlew.bat :app:compileDebugKotlin '-Pkotlin.compiler.execution.strategy=in-process' --console=plain` 和 `git diff --check`；设备验收覆盖三键/手势导航、横屏、独立我的页、首页我的 Tab、二级页有/无底栏及回收站多选切换，确认无遮挡和重复留白。
+- 日志与诊断计划：通过截图、布局检查与编译诊断确认 Insets 消费边界，不在高频重组时输出日志，不记录剪贴、包名或搜索内容。
+- 本轮验证结果：`git diff --check` 通过；上述 app 编译命令返回 `BUILD FAILED`，在依赖任务 `:base:general:compileDebugJavaWithJavac` 读取 Gradle transforms 缓存 `okhttp-release-api.jar` 时发生 `AccessDeniedException`，未执行到 app Kotlin 编译，不能据源码检查宣称编译通过。日志保留在 `build/shared-scaffold-insets-compile.log`，不清理缓存或修改权限；三键/手势导航、横屏、独立我的页及多选底栏的真实设备效果尚未验证。
 
 ## 设计例外和后续收敛
 
@@ -76,6 +89,10 @@
 - 反回归筛查：使用 `rg "Color\\.|\\.dp|RoundedCornerShape|shadow"` 等方式人工检查硬编码样式，合理例外记录到本文或对应页面文档。
 
 ## 变更记录
+
+- 2026-09-30：补齐提交前最终验证记录。运行 `.\gradlew.bat :app:compileDebugKotlin :app:testDebugUnitTest :base:general:testDebugUnitTest --no-daemon '-Pkotlin.compiler.execution.strategy=in-process' '-Pksp.incremental=false' --console=plain`，结果 `BUILD SUCCESSFUL`，150 项 app 和 64 项 base/general 单测通过；日志位于 `build/commit-validation.log`。纯 Insets 布局未新增 JVM 单测，设备效果及 release/R8 未验证；不新增运行时日志。
+
+- 2026-09-30：按用户确认将导航栏 Insets 避让集中到一级/二级公共骨架，首页 Pager 同步消费已应用的底栏 padding，移除过滤页和恢复流程页的局部处理；原因是逐页处理容易遗漏，而只给一级骨架加间距会重复留白。原生 Scaffold 页面保留现有归属。
 
 - 2026-06-08：统一全 App 删除类入口为列表菜单同款删除图标，并明确清空类入口只统一危险色、不替换成单条删除图标；原因是删除动作需要一致识别，清空动作仍需保留批量清理语义。
 - 2026-06-05：我的页权限分组独立并置顶，“设置与权限”改为“设置”；原因是权限状态需要成为我的页第一组信息，设置分组只保留普通偏好。

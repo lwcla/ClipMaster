@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
@@ -75,6 +74,7 @@ internal fun BackupRestoreFlowContent(
 
 /**
  * 备份恢复流程页底部操作区。
+ * 只处理业务间距和操作按钮，系统导航区统一由调用方的 SecondaryPageScaffold 避让。
  *
  * @param onDone 恢复结果页底部“完成”的闭环回调，只在 Result 状态按钮触发。
  */
@@ -90,8 +90,7 @@ internal fun BackupRestoreFlowActions(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 12.dp)
-            .navigationBarsPadding(),
+            .padding(horizontal = 20.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.CenterVertically
     ) {

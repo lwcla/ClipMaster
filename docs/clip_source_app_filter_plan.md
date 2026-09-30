@@ -8,6 +8,8 @@
 
 2026-09-30 已按用户确认调整默认列表：显示所有已安装的非系统应用，不再要求桌面启动入口。复用现有候选构建与最终筛选，移除安装列表专用的 Launcher 查询和可启动字段；当前纯规则直接 JVM 执行 15 个测试通过，标准 Gradle 测试及编译仍被缓存访问拒绝阻断，详见“默认展示所有非系统应用”。
 
+2026-09-30 底部操作栏导航栏避让已改由公共 `SecondaryPageScaffold` 统一负责，移除本页局部 padding；完整契约以 UI 主方案为准，接入及验证边界见“底部操作栏导航栏避让”。
+
 2026-09-30 已按确认方案移除安装列表的 10 分钟节流：同一 ViewModel 会话内正在读取或已有成功结果时跳过自动加载，首次失败允许下次自动入口重试；手动刷新始终重读。返回弹出导航条目后重新打开创建新 ViewModel，仍自动读取，不引入应用级缓存。独立 Kotlin 编译、6 个新增纯状态测试及差异检查通过；完整 Gradle 单测仍受缓存 JAR 访问拒绝阻断，详见测试验证。
 
 2026-09-30 已完成安装列表刷新方法的协程取消简化。`git diff --check` 通过；定向测试与 app 编译均在依赖模块 `:base:hidden-api:compileDebugJavaWithJavac` 被 Gradle 缓存 `appcompat-1.7.1-api.jar` 的 `AccessDeniedException` 阻断，提升权限重试仍失败，因此本次编译和测试未完成。
@@ -192,6 +194,15 @@
 - 日志与备份：无新副作用，不新增日志；不改变完整草稿、备份协议、dirty 或恢复策略。无反射或协议变化，不运行 release/R8。
 - 验证：`git diff --check` 通过，生产代码已无简报及旧长说明资源引用。运行 `.\gradlew.bat :app:compileDebugKotlin -Pkotlin.compiler.execution.strategy=in-process --no-daemon --max-workers=1 --console=plain`，在 `:base:general:compileDebugJavaWithJavac` 访问 Gradle transforms 缓存中的 `lifecycle-viewmodel-savedstate-release-api.jar` 时发生 `AccessDeniedException`，因此本次 app 编译尚未验证通过。日志保留在 `build/clip-source-block-verification/remove-summary-compile.log`；本轮不扩大到清理缓存、修改权限或终止其他进程。
 
+## 底部操作栏导航栏避让（2026-09-30）
+
+- 原因：主 Activity 开启 `enableEdgeToEdge()`，`SecondaryPageScaffold` 将自定义底栏直接交给 Material3 `Scaffold.bottomBar`；底栏存在时需自行处理系统 Insets，普通 `Row` 的固定上下间距不能避让三键导航区域。
+- 最终实现：按用户后续确认将避让移到公共 `SecondaryPageScaffold` 根层，本页底栏移除局部 `navigationBarsPadding()`，保持水平 20.dp、垂直 8.dp 业务间距；主体继续应用既有 `paddingValues`。先前的逐页最小修复已被共享方案替代，完整 Insets 契约以 [UI 主方案](app_ui_refresh_plan.md#页面骨架导航栏-insets-契约2026-09-30) 为准。
+- 页面影响：清空与确定按钮由共享骨架留在导航区域外；本页筛选、完整草稿、保存回调和备份契约不变，无新增组件、方法、变量或状态。
+- 单元测试检查：纯 Compose 布局 Insets 调整，依赖真实系统导航模式，不新增 JVM 单测、不采用 TDD；通过 app Kotlin 编译和 `git diff --check` 验证引用与差异，三键导航、手势导航、横屏的按钮可见性和点击仍需设备验收。
+- 日志与诊断计划：无业务副作用，不新增运行时日志，避免布局重组噪声；诊断通过截图或布局检查确认按钮位于导航区之外，不输出包名、搜索词或剪贴内容。无数据、反射或外部协议变化，不修改备份逻辑，不安排 release/R8。
+- 前一轮局部修复验证：`git diff --check` 通过；app Kotlin 编译在依赖任务 `:base:hidden-api:compileDebugJavaWithJavac` 读取 Gradle transforms 缓存 `appcompat-1.7.1-api.jar` 时发生 `AccessDeniedException`，未执行到 app Kotlin 编译。最新共享方案验证结果见 UI 主方案；真实设备布局未验证。
+
 ## 默认展示所有非系统应用（2026-09-30）
 
 - 当前状态：已完成代码与纯规则验证，标准 Gradle 构建和设备展示未验证。用户确认默认显示所有已安装的非系统应用；旧实现额外要求 Launcher 入口，与需求不符。
@@ -215,6 +226,10 @@
 - 2026-09-30：补齐提交前组合验证结果，解除实现阶段缓存访问拒绝造成的编译与标准单测未验证状态。执行 `.\gradlew.bat :app:compileDebugKotlin :app:testDebugUnitTest :base:general:testDebugUnitTest --no-daemon '-Pkotlin.compiler.execution.strategy=in-process' '-Pksp.incremental=false' --console=plain`，结果 `BUILD SUCCESSFUL`；150 项 app 和 64 项 base/general 单测通过。仅本次命令关闭 Kotlin daemon 和 KSP 增量生成，未更改构建配置；日志位于 `build/commit-validation.log`。设备与 release/R8 未验证，无新增外部协议，不新增运行时日志。
 
 - 2026-09-30：按用户确认把默认候选改为所有已安装非系统应用，移除安装列表的 Launcher 批量查询、可启动字段和过期测试断言；原因是桌面入口与用户所需默认展示范围无关。保留系统应用例外、搜索、完整名单、备份和图标兜底契约；直接 JVM 观察回归预期失败后，当前生产纯规则 15 个测试全部通过。标准 Gradle 编译和安装读取器测试受缓存访问拒绝阻断，差异检查通过，设备展示未验证。
+
+- 2026-09-30：按用户后续确认移除过滤底栏局部导航栏 padding，改由公共二级骨架统一避让；原因是收敛职责，避免其他接入页面再次遗漏。完整共享契约与最新验证以 UI 主方案为准。
+
+- 2026-09-30：按用户确认的最小方案为来源过滤页底部按钮栏补充 `navigationBarsPadding()` 并更新中文注释；原因是全面屏绘制时普通 `Row` 未处理底部系统 Insets，清空与确定按钮被三键导航栏遮挡。仅调整本页布局，沿用备份恢复页做法。
 
 - 2026-09-30：按用户确认简化安装列表自动加载，移除 10 分钟窗口、`forceRefresh` 重载和仅服务旧节流的 `lastLoadedAtMillis`，保留读取摘要时间。自动判断复用 `InstalledAppListState` 的派生属性并补充会话边界单测；原因是页面返回后 ViewModel 被清理，原时间窗口不能提供跨页面缓存。现有读取器、成功/失败处理、Job 取消及 `ensureActive()` 不变，日志去掉 `force` 并区分自动跳过原因。不涉及设置持久化、备份、外部协议或反射，无需新增 keep 或 release/R8。Kotlin 编译、直接 JVM 执行的 6 个新增单测和差异检查通过；完整 Gradle 单测及测试先行的失败断言观察受缓存访问拒绝阻断，真实设备交互未验证。
 

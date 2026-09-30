@@ -388,7 +388,7 @@ private fun ClipSourceBlockCandidateIcon(
     }
 }
 
-/** 设置页底部操作栏，承载清空和确认保存。 */
+/** 设置页底部操作栏只承载清空和确认保存，系统导航区由公共二级页面骨架统一避让。 */
 @Composable
 private fun ClipSourceBlockSettingBottomBar(
     draftCount: Int,
