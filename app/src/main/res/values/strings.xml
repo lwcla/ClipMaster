@@ -11,9 +11,6 @@
     <string name="host_hide_password">隐藏密码</string>
     <string name="host_settings_save_failed_retry">设置保存失败，请重试。</string>
     <string name="host_recycle_cleanup_failed_retry">保留天数已保存，但即时清理失败，请稍后重试。</string>
-    <string name="host_webdav_password_saved">已保存密码；留空会保留原密码。更换服务地址或用户名时，请输入新密码或明确移除原密码。</string>
-    <string name="host_webdav_password_clear">移除已保存密码</string>
-    <string name="host_webdav_password_clear_pending">密码将在下次测试连接、上传或刷新时移除。</string>
     <string name="host_webdav_password_unavailable">已保存密码无法读取，请重新输入密码后重试。</string>
     <string name="host_webdav_config_invalid">WebDAV 地址或备份目录无效，请检查输入后重试。</string>
     <string name="host_backup_settings_load_failed">备份设置读取失败，当前操作已暂停。</string>

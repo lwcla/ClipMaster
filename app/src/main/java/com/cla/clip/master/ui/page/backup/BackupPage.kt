@@ -239,7 +239,6 @@ fun BackupPage(
                     onEndpointChange = backupVm::updateEndpoint,
                     onUsernameChange = backupVm::updateUsername,
                     onPasswordChange = backupVm::updatePassword,
-                    onClearPassword = backupVm::clearWebDavPassword,
                     onRemoteDirChange = backupVm::updateRemoteDir,
                     onAllowHttpChange = backupVm::updateAllowHttp,
                     onTest = backupVm::testWebDav,
@@ -503,7 +502,7 @@ private fun LocalBackupSection(
     }
 }
 
-/** WebDAV 配置和手动操作区；密码显隐委托给通用输入组件，凭据修改仍由调用方处理。 */
+/** WebDAV 配置和手动操作区；只展示当前凭据输入，密码显隐委托通用组件，连接结果由调用方反馈。 */
 @Composable
 private fun WebDavConfigSection(
     state: BackupUiState,
@@ -512,8 +511,6 @@ private fun WebDavConfigSection(
     onEndpointChange: (String) -> Unit,
     onUsernameChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
-    /** 用户显式要求删除已保存密文，空输入默认保留旧密码。 */
-    onClearPassword: () -> Unit,
     onRemoteDirChange: (String) -> Unit,
     onAllowHttpChange: (Boolean) -> Unit,
     onTest: () -> Unit,
@@ -554,19 +551,6 @@ private fun WebDavConfigSection(
                 enabled = actionsEnabled,
                 label = { Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_webdav_password)) }
             )
-            if (state.hasWebDavPassword || state.webDavPasswordClearPending) {
-                Text(
-                    text = androidx.compose.ui.res.stringResource(
-                        if (state.webDavPasswordClearPending) HostR.string.host_webdav_password_clear_pending
-                        else HostR.string.host_webdav_password_saved
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                OutlinedButton(onClick = onClearPassword, enabled = actionsEnabled) {
-                    Text(text = androidx.compose.ui.res.stringResource(HostR.string.host_webdav_password_clear))
-                }
-            }
             OutlinedTextField(
                 value = state.webDavRemoteDir,
                 onValueChange = onRemoteDirChange,

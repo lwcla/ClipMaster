@@ -41,15 +41,15 @@ data class BackupSettingsSnapshot(
     val autoBackupOnlyWifi: Boolean = false,
 )
 
-/** 同一次 DataStore 读取取得的目标配置与短生命周期密码，避免旧地址配新密码。 */
+/** 同一次 DataStore 读取取得的目标配置与密码，供网络动作或页面内存回填使用，避免旧地址配新密码。 */
 data class WebDavConnectionSnapshot(
     /** 与下方密码同一次读取的本机备份设置。 */
     val settings: BackupSettingsSnapshot,
-    /** 仅供当前网络动作使用的明文，未设置时为空。 */
+    /** 当前网络动作或备份页内存回填使用的明文，未设置时为空；不得持久化到状态恢复或备份。 */
     val password: String?,
 )
 
-/** 保存密码时的明确操作；保留既有密文不会把密码搬到页面状态。 */
+/** 保存密码时的明确操作；只查看回填密码不触发替换，保留操作不重新加密。 */
 sealed interface WebDavPasswordUpdate {
     /** 使用既有密文，调用方须确认目标未被不经意替换。 */
     data object Retain : WebDavPasswordUpdate
@@ -174,7 +174,7 @@ class BackupSettingsRepository @Inject internal constructor(
         }
     }
 
-    /** 从单份已提交快照读取目标与认证信息，网络操作只使用这一份组合。 */
+    /** 从单份已提交快照读取目标与认证信息，供网络操作或页面回填使用；解密错误显式传播。 */
     suspend fun loadWebDavConnection(): WebDavConnectionSnapshot = withContext(Dispatchers.IO) {
         /** 目标配置和密码密文的同一次 DataStore 快照。 */
         val preferences = store.snapshot()
@@ -183,7 +183,7 @@ class BackupSettingsRepository @Inject internal constructor(
         /** 只有配置了远端服务才需要取出和解密认证密文。 */
         val encrypted = preferences[HostSettingsKeys.WEBDAV_PASSWORD_CIPHERTEXT]
             ?.takeIf { settings.webDavEndpoint.isNotBlank() }
-        /** 当前网络动作的密码，Keystore 失败需用户重新输入。 */
+        /** 当前网络动作或页面回填的密码，Keystore 失败需用户重新输入。 */
         val password = encrypted?.let { ciphertext ->
             try {
                 credentialCodec.decrypt(ciphertext)

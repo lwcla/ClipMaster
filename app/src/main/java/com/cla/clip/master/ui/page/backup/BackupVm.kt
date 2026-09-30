@@ -33,7 +33,6 @@ import com.cla.clip.base.general.backup.settings.BackupRuntimeRepository
 import com.cla.clip.base.general.backup.settings.BackupSettingsRepository
 import com.cla.clip.base.general.backup.settings.WebDavConnectionSnapshot
 import com.cla.clip.base.general.backup.settings.WebDavCredentialUnavailable
-import com.cla.clip.base.general.backup.settings.WebDavSettingsInput
 import com.cla.clip.base.general.config.installation.InstallationIdentityRepository
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
@@ -52,6 +51,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -96,9 +96,6 @@ class BackupVm @Inject constructor(
     /** 表单有未提交改动时，仓库更新不能覆盖用户正在输入的草稿。 */
     private var webDavDraftDirty = false
 
-    /** 用户明确点击移除密码后，下一次提交清除密文；空输入本身只表示保留。 */
-    private var clearSavedWebDavPassword = false
-
     /** 本次安装的已提交身份；设置加载完成前不开放创建备份。 */
     private var installId = ""
 
@@ -125,12 +122,22 @@ class BackupVm @Inject constructor(
         observeSettings()
     }
 
-    /** 读取安装身份及备份配置；任何磁盘错误显式关闭副作用入口。 */
+    /** 读取安装身份及备份配置并回填密码；磁盘错误关闭操作，凭据失效则允许重新输入修复。 */
     private fun observeSettings() {
         settingsCollectionJob = viewModelScope.launch {
             try {
                 installId = installationIdentity.getOrCreateInstallId()
-                combine(backupSettings.data, backupRuntime.data) { settings, runtime -> settings to runtime }
+                combine(
+                    // 仅设置快照变化时按需读取密码，运行状态刷新不重复解密；输入中的草稿始终优先。
+                    backupSettings.data.onEach {
+                        if (!webDavDraftDirty) {
+                            /** 从同份磁盘快照取得目标和密码，读取期间开始编辑则保留用户草稿。 */
+                            val connection = readWebDavFormConnection()
+                            _uiState.update { current -> current.withWebDavConnection(connection, preserveDraft = webDavDraftDirty) }
+                        }
+                    },
+                    backupRuntime.data,
+                ) { settings, runtime -> settings to runtime }
                     .collect { (settings, runtime) ->
                         _uiState.update { current ->
                             current.copy(
@@ -140,7 +147,6 @@ class BackupVm @Inject constructor(
                                 webDavUsername = if (webDavDraftDirty) current.webDavUsername else settings.webDavUsername,
                                 webDavRemoteDir = if (webDavDraftDirty) current.webDavRemoteDir else settings.webDavRemoteDir,
                                 webDavAllowHttp = if (webDavDraftDirty) current.webDavAllowHttp else settings.webDavAllowInsecureHttp,
-                                hasWebDavPassword = settings.hasWebDavPassword,
                                 localBackupDirUri = settings.localBackupDirUri,
                                 localBackupDirLabel = settings.localBackupDirLabel,
                                 autoBackupEnabled = settings.autoBackupEnabled,
@@ -164,6 +170,18 @@ class BackupVm @Inject constructor(
                 logE(TAG) { "备份设置加载失败 reasonCode=${throwable.backupReasonCode()} type=${throwable::class.simpleName}" }
                 emitMessage(mapErrorMessage(throwable))
             }
+        }
+    }
+
+    /** 在仓库 IO 边界读取回填凭据；解密失败保留密文和配置，提供可编辑空密码及明确提示。 */
+    private suspend fun readWebDavFormConnection(): WebDavConnectionSnapshot {
+        return try {
+            backupSettings.loadWebDavConnection()
+        } catch (failure: WebDavCredentialUnavailable) {
+            // 不将凭据失效升级为全部设置读取失败，否则用户无法输入新密码修复。
+            logW(TAG) { "备份页密码回填失败 reasonCode=webdav_credential_unavailable type=${failure::class.simpleName}" }
+            emitMessage(HostR.string.host_webdav_password_unavailable)
+            WebDavConnectionSnapshot(backupSettings.snapshot(), null)
         }
     }
 
@@ -205,18 +223,10 @@ class BackupVm @Inject constructor(
         _uiState.update { it.copy(webDavUsername = value) }
     }
 
-    /** 更新 WebDAV 密码。 */
+    /** 更新密码输入框当前值，用户删空文本就提交空密码；显隐切换不会进入此回调。 */
     fun updatePassword(value: String) {
         webDavDraftDirty = true
-        clearSavedWebDavPassword = false
-        _uiState.update { it.copy(webDavPassword = value, webDavPasswordClearPending = false) }
-    }
-
-    /** 用户主动清除已保存的设备绑定密码；正式删除在下一次配置提交时完成。 */
-    fun clearWebDavPassword() {
-        webDavDraftDirty = true
-        clearSavedWebDavPassword = true
-        _uiState.update { it.copy(webDavPassword = "", webDavPasswordClearPending = true, webDavHealth = BackupTargetHealth.Unknown) }
+        _uiState.update { it.copy(webDavPassword = value) }
     }
 
     /** 更新 WebDAV 远端目录，保存时先做规范化，失败则保留用户输入并显示错误。 */
@@ -550,35 +560,17 @@ class BackupVm @Inject constructor(
         }.getOrNull()
     }
 
-    /** 把用户草稿一次性提交，失败时保留草稿与明确的密码动作供重试。 */
+    /** 按表单当前值成组提交并回填结果；不拦截账号变更，失败时保留完整草稿供重试。 */
     private suspend fun commitWebDavDraftIfNeeded() {
         if (!webDavDraftDirty) return
-        /** 提交前的已保存配置，用于阻止新目标无意继承旧目标密码。 */
-        val saved = backupSettings.snapshot()
         /** 本次 UI 内存草稿，只在当前页面生命周期内保留。 */
         val draft = uiState.value
-        /** 空密码输入保留既有密文；清除只接受明确的清除动作。 */
-        val passwordUpdate = decideWebDavPasswordUpdate(
-            savedEndpoint = saved.webDavEndpoint,
-            savedUsername = saved.webDavUsername,
-            draftEndpoint = draft.webDavEndpoint,
-            draftUsername = draft.webDavUsername,
-            hasSavedPassword = saved.hasWebDavPassword,
-            passwordDraft = draft.webDavPassword,
-            clearRequested = clearSavedWebDavPassword,
-        )
-        backupSettings.saveWebDav(
-            WebDavSettingsInput(
-                endpoint = draft.webDavEndpoint,
-                username = draft.webDavUsername,
-                remoteDir = draft.webDavRemoteDir,
-                allowInsecureHttp = draft.webDavAllowHttp,
-                passwordUpdate = passwordUpdate,
-            )
-        )
+        // 当前输入框密码（包括空字符串）直接替换保存值，认证是否成功由实际连接决定。
+        backupSettings.saveWebDav(draft.toWebDavSettingsInput())
+        /** 保存后读取真实已提交的密码，包括用户清空后保存的空字符串。 */
+        val connection = readWebDavFormConnection()
         webDavDraftDirty = false
-        clearSavedWebDavPassword = false
-        _uiState.update { it.copy(webDavPassword = "", webDavPasswordClearPending = false, webDavRemoteDir = normalizeWebDavRemoteDir(draft.webDavRemoteDir)) }
+        _uiState.update { it.withWebDavConnection(connection, preserveDraft = false) }
         BackupAutoScheduler.reschedule(appContext)
     }
 
@@ -731,7 +723,7 @@ enum class BackupBusyOperation {
     PreviewingRemote,
 }
 
-/** 备份页 UI 状态。 */
+/** 备份页 UI 状态；凭据草稿只存在页面内存，密码表示输入框当前值，不写入状态恢复或备份。 */
 data class BackupUiState(
     /** 配置和安装身份均读取成功后才允许触发副作用。 */
     val settingsLoaded: Boolean = false,
@@ -743,12 +735,8 @@ data class BackupUiState(
     val webDavEndpoint: String = "",
     /** WebDAV 用户名。 */
     val webDavUsername: String = "",
-    /** 用户本次输入的密码草稿，已保存密码不回填到此状态。 */
+    /** 已保存密码回填或用户输入的明文，仅保留在页面内存；共享输入组件默认遮蔽，不写入状态恢复或备份。 */
     val webDavPassword: String = "",
-    /** 本机存在已保存密文，仅用于提示用户可明确清除或覆盖。 */
-    val hasWebDavPassword: Boolean = false,
-    /** 用户明确要求在下一次提交时移除旧密文。 */
-    val webDavPasswordClearPending: Boolean = false,
     /** WebDAV 远端目录。 */
     val webDavRemoteDir: String = "/ClipMaster/backups/",
     /** 是否允许 HTTP。 */
