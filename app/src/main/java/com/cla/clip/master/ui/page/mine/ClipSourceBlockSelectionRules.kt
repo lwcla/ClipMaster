@@ -4,30 +4,25 @@ import com.cla.clip.base.general.config.ClipSourceBlockRules
 import java.util.Locale
 
 /**
- * 仅展示本机已识别的安装应用，再按搜索、系统应用开关和完整草稿筛选，保留输入顺序。
+ * 对当前扫描候选应用搜索和系统应用开关，保留已保存屏蔽优先的输入顺序。
  *
  * 只返回展示列表，不修改完整草稿或持久设置；页面确认必须仍保存完整草稿。
  */
 internal fun filterClipSourceBlockCandidates(
     candidates: List<BlockedSourceAppCandidate>,
-    draftPackages: Set<String>,
     searchQuery: String,
     showSystemApps: Boolean,
 ): List<BlockedSourceAppCandidate> {
     /** 标准化后的搜索关键词；只用于 UI 匹配，不影响保存规则。 */
     val normalizedQuery = searchQuery.trim().lowercase(Locale.ROOT)
     return candidates.filter { candidate ->
-        /** 搜索模式下系统应用也可命中；默认模式下按开关隐藏未选中的系统应用。 */
-        val visibleByDefault = candidate.packageName in draftPackages ||
-            showSystemApps ||
-            candidate.defaultVisible ||
-            normalizedQuery.isNotEmpty()
+        /** 系统应用只由开关放行；已保存、草稿勾选和搜索都不改变分类显隐。 */
+        val visibleBySystemSetting = showSystemApps || !candidate.systemApp
         /** 搜索命中 App 名或包名。 */
         val matchesQuery = normalizedQuery.isEmpty() ||
-            candidate.displayName.lowercase(Locale.ROOT).contains(normalizedQuery) ||
+            candidate.appName.lowercase(Locale.ROOT).contains(normalizedQuery) ||
             candidate.packageName.lowercase(Locale.ROOT).contains(normalizedQuery)
-        // 安装条件独立于勾选、历史来源和搜索，避免隐藏规则经其他可见性分支重新出现。
-        candidate.installed && visibleByDefault && matchesQuery
+        visibleBySystemSetting && matchesQuery
     }
 }
 

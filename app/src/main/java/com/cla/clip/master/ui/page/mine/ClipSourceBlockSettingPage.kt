@@ -13,7 +13,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
@@ -33,22 +32,18 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil3.ImageLoader
 import coil3.compose.AsyncImage
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.config.ManualPackageValidationResult
-import com.cla.clip.master.installedapps.InstalledAppIconRequest
-import com.cla.clip.master.installedapps.rememberInstalledAppIconImageLoader
 import com.cla.clip.master.ui.theme.ClipMasterThemeTokens
 import com.cla.clip.master.ui.widget.SecondaryPageScaffold
-import com.cla.clip.master.ui.widget.clip.rememberSourceAppIconModel
 
 /**
  * 剪贴来源过滤设置页。
@@ -64,23 +59,20 @@ fun ClipSourceBlockSettingPage(
     val blockedPackages by viewModel.blockedClipSourcePackages.collectAsStateWithLifecycle()
     /** DataStore 读取失败与安装应用列表失败分开显示，保证保存动作可重试。 */
     val settingsLoadFailed by viewModel.settingsLoadFailed.collectAsStateWithLifecycle()
-    /** 当前合并后的候选 App 列表。 */
+    /** 当前扫描候选列表；已保存屏蔽项优先，不包含历史来源或未安装占位行。 */
     val candidates by viewModel.blockedSourceAppCandidates.collectAsStateWithLifecycle()
     /** 当前安装列表、搜索和图标加载状态。 */
     val installedState by viewModel.installedAppListState.collectAsStateWithLifecycle()
-    /** 当前安装应用图标专用 ImageLoader；可见行按包名从 PackageManager 懒加载图标。 */
-    val installedAppIconImageLoader = rememberInstalledAppIconImageLoader()
     /** 完整编辑草稿包含未安装应用的隐藏规则；显隐、搜索和刷新不得裁剪它，确认前不写设置。 */
     var draftPackages by remember(blockedPackages) { mutableStateOf(blockedPackages.orEmpty()) }
     /** 是否显示清空二次确认弹窗。 */
     var showClearConfirm by rememberSaveable { mutableStateOf(false) }
     /** 是否显示手动添加包名弹窗。 */
     var showManualAddDialog by rememberSaveable { mutableStateOf(false) }
-    /** 最终可见候选只包含已安装应用；搜索和系统开关不能放行未安装的已保存规则。 */
-    val visibleCandidates = remember(candidates, draftPackages, installedState.searchQuery, installedState.showSystemApps) {
+    /** 最终可见候选仅按搜索与系统开关筛选；草稿变化只更新勾选，不改变分类或已保存排序。 */
+    val visibleCandidates = remember(candidates, installedState.searchQuery, installedState.showSystemApps) {
         filterClipSourceBlockCandidates(
             candidates = candidates,
-            draftPackages = draftPackages,
             searchQuery = installedState.searchQuery,
             showSystemApps = installedState.showSystemApps
         )
@@ -186,7 +178,6 @@ fun ClipSourceBlockSettingPage(
                     ClipSourceBlockCandidateRow(
                         candidate = candidate,
                         selected = candidate.packageName in draftPackages,
-                        installedAppIconImageLoader = installedAppIconImageLoader,
                         onToggle = {
                             // 只切换当前可见包名，完整草稿中的隐藏规则继续保留。
                             draftPackages = toggleBlockedSourcePackage(draftPackages, candidate.packageName)
@@ -288,16 +279,15 @@ private fun clipSourceBlockHeaderSubtitle(
     }
 }
 
-/** 来源过滤候选行，主视觉使用图标和 App 名，包名只作为辅助确认信息。 */
+/** 当前扫描候选行；空名称保留空标题，直接展示已读取图标，勾选由页面完整草稿控制。 */
 @Composable
 private fun ClipSourceBlockCandidateRow(
     candidate: BlockedSourceAppCandidate,
     selected: Boolean,
-    installedAppIconImageLoader: ImageLoader,
     onToggle: () -> Unit,
 ) {
-    /** 通用 App 兜底图标；没有可读图标路径时直接绘制，避免 Coil 对 null model 产生噪声错误。 */
-    val fallbackIconPainter = rememberVectorPainter(Icons.Default.Apps)
+    /** Android 默认图标仅在读取失败或不可用时保留原色展示，加载期间图标区域留空。 */
+    val defaultAppIconPainter = painterResource(com.cla.clip.master.R.drawable.host_ic_app_icon_default)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -305,25 +295,24 @@ private fun ClipSourceBlockCandidateRow(
             .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        ClipSourceBlockCandidateIcon(
-            icon = candidate.icon,
-            fallbackIconPainter = fallbackIconPainter,
-            installedAppIconImageLoader = installedAppIconImageLoader,
+        AsyncImage(
+            model = candidate.icon,
+            contentDescription = null,
+            error = defaultAppIconPainter,
+            fallback = defaultAppIconPainter,
+            modifier = Modifier.size(40.dp),
+            contentScale = ContentScale.Crop,
         )
         Spacer(modifier = Modifier.size(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = candidate.displayName,
+                text = candidate.appName,
                 style = MaterialTheme.typography.bodyLarge,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = if (candidate.installed) {
-                    candidate.packageName
-                } else {
-                    stringResource(R.string.base_general_clip_source_block_unrecognized_package, candidate.packageName)
-                },
+                text = candidate.packageName,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -334,57 +323,6 @@ private fun ClipSourceBlockCandidateRow(
             checked = selected,
             onCheckedChange = { onToggle() }
         )
-    }
-}
-
-/** 来源过滤候选图标；当前安装应用按包名懒加载，历史来源继续读取旧文件路径。 */
-@Composable
-private fun ClipSourceBlockCandidateIcon(
-    icon: BlockedSourceAppIcon,
-    fallbackIconPainter: androidx.compose.ui.graphics.painter.Painter,
-    installedAppIconImageLoader: ImageLoader,
-) {
-    when (icon) {
-        is BlockedSourceAppIcon.Installed -> {
-            AsyncImage(
-                model = InstalledAppIconRequest(packageName = icon.packageName),
-                imageLoader = installedAppIconImageLoader,
-                contentDescription = null,
-                placeholder = fallbackIconPainter,
-                error = fallbackIconPainter,
-                modifier = Modifier.size(40.dp),
-                contentScale = ContentScale.Crop,
-            )
-        }
-        is BlockedSourceAppIcon.HistoryFile -> {
-            /** 历史来源图标请求模型；为空时直接使用通用 App 图标。 */
-            val iconModel = rememberSourceAppIconModel(icon.iconPath, icon.iconHash)
-            if (iconModel == null) {
-                Icon(
-                    painter = fallbackIconPainter,
-                    contentDescription = null,
-                    modifier = Modifier.size(40.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                AsyncImage(
-                    model = iconModel,
-                    contentDescription = null,
-                    placeholder = fallbackIconPainter,
-                    error = fallbackIconPainter,
-                    modifier = Modifier.size(40.dp),
-                    contentScale = ContentScale.Crop,
-                )
-            }
-        }
-        BlockedSourceAppIcon.None -> {
-            Icon(
-                painter = fallbackIconPainter,
-                contentDescription = null,
-                modifier = Modifier.size(40.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
     }
 }
 

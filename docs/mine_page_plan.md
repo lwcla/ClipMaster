@@ -47,7 +47,7 @@
 - 我的页 ViewModel 只负责读取和写入设置，不直接操作剪贴列表数据。
 - 普通列表页和普通搜索页观察同一设置状态并传给 `ClipResultList`；折叠列表、折叠搜索和回收站忽略该设置。
 - 后续新增剪贴 item 快捷动作时，需要同步扩展设置枚举、字符串资源、单选弹窗选项、共享 item 动作映射和本文档。
-- 来源过滤名单读取 `ClipSettingsRepository.blockedPackages`，快捷动作独立读取 `ClipSettingsRepository.quickAction`；页面合并两路失败标记用于统一重试入口，候选合并当前 `PackageManager` 直读安装应用、`source_apps` 历史来源和已过滤包名；读取失败时提供重试且不允许以空名单覆盖已保存规则。安装应用读取结果、读取状态和当前安装图标不持久化、不进入 WebDAV/本地备份，搜索页来源筛选仍只读取 `source_apps`。
+- 来源过滤名单读取 `ClipSettingsRepository.blockedPackages`，快捷动作独立读取 `ClipSettingsRepository.quickAction`；页面只合并两路读取失败标记用于统一重试入口，候选仅来自当前 `PackageManager` 扫描的安装应用，系统应用是否参与由页面开关决定；完整已保存名单仍独立保留；读取失败时提供重试且不允许以空名单覆盖已保存规则。安装应用读取结果、读取状态和当前安装图标不持久化、不进入 WebDAV/本地备份，搜索页来源筛选仍只读取 `source_apps`。
 - 来源过滤名单保存后标记 backup dirty 并调度自动备份；具体备份字段和恢复并集策略见 `docs/clip_source_app_filter_plan.md` 与 `docs/webdav_backup_plan.md`。
 - 检查更新使用 app 模块内的自更新协作者；我的页只持有入口 UI state、触发检查和分发外部链接打开事件，不承载 manifest 解析、版本比较或下载源排序逻辑。
 - Shizuku 和通知权限项只使用页面内瞬时状态，不保存“权限说明是否展开”的 MMKV 偏好；历史 `permission_expanded` key 已废弃且不进入备份恢复协议。

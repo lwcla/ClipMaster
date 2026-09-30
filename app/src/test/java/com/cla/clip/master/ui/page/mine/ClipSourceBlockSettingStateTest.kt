@@ -1,155 +1,66 @@
 package com.cla.clip.master.ui.page.mine
 
-import com.cla.clip.base.general.dao.SourceAppData
 import com.cla.clip.master.installedapps.InstalledAppInfo
-import java.io.File
+import android.graphics.drawable.ColorDrawable
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
-import org.junit.Rule
 import org.junit.Test
-import org.junit.rules.TemporaryFolder
 
-/** 剪贴来源过滤设置页状态测试，保护候选合并和图标来源模型规则。 */
+/** 当前扫描候选规则测试，保护候选范围、已保存优先和名称缺失边界。 */
 class ClipSourceBlockSettingStateTest {
 
-    @get:Rule
-    /** 测试专用临时目录，用于构造可读或失效的历史图标文件路径。 */
-    val temporaryFolder = TemporaryFolder()
-
     @Test
-    /** 当前安装应用存在时，应优先使用主进程直读到的名称和安装图标模型。 */
-    fun buildCandidatesPrefersInstalledAppNameAndIconModel() {
-        /** 可读历史图标文件；模拟 source_apps 中仍有效的正式来源图标缓存。 */
-        val historyIcon = temporaryFolder.newFile("history-icon.png").apply { writeText("history-icon") }
-        /** 历史来源缓存；名称和图标都应被当前安装应用信息覆盖。 */
-        val historySourceApp = sourceApp(
-            packageName = "com.example.app",
-            appName = "历史名称",
-            iconPath = historyIcon.absolutePath,
-            iconHash = "history-hash",
-        )
-        /** 主进程 PackageManager 当前读到的安装应用；不携带 Drawable 或文件路径。 */
-        val installedApp = installedApp(
-            packageName = "com.example.app",
-            appName = "安装名称",
-        )
-
-        /** 合并后的候选列表；单个包名只应出现一次。 */
-        val candidates = buildBlockedSourceAppCandidates(
-            blockedPackages = setOf("com.example.app"),
-            installedApps = listOf(installedApp),
-            historySourceApps = listOf(historySourceApp),
-        )
-
-        /** 目标候选项；包名是唯一稳定身份。 */
-        val candidate = candidates.single()
-        assertEquals("安装名称", candidate.appName)
-        assertEquals(BlockedSourceAppIcon.Installed(packageName = "com.example.app"), candidate.icon)
-        assertTrue(candidate.savedBlocked)
-        assertTrue(candidate.historySource)
-        assertTrue(candidate.installed)
-    }
-
-    @Test
-    /** 未安装应用的历史图标保留在内部候选中，但不能让它进入最终可见列表。 */
-    fun buildCandidatesFallsBackToHistoryFileIconWhenNotInstalled() {
-        /** 可读历史图标文件；证明有历史图标也不能让未安装应用重新出现。 */
-        val historyIcon = temporaryFolder.newFile("history-icon.png").apply { writeText("history-icon") }
-        /** 历史来源缓存；名称和图标都来自 source_apps。 */
-        val historySourceApp = sourceApp(
-            packageName = "com.example.app",
-            appName = "历史名称",
-            iconPath = historyIcon.absolutePath,
-            iconHash = "history-hash",
-        )
-
-        /** 内部候选的名称和图标来自历史来源，但仍未获得本机安装标记。 */
-        val candidates = buildBlockedSourceAppCandidates(
+    /** 页面候选直接传递扫描图标，不按包名再次发起系统读取。 */
+    fun buildCandidatesPreservesScannedIcon() {
+        /** 合成图标只检查对象身份，避免测试依赖真实 Android 资源。 */
+        val icon = ColorDrawable()
+        /** 已读取图标应沿候选映射原样传到页面。 */
+        val candidate = buildBlockedSourceAppCandidates(
             blockedPackages = emptySet(),
-            installedApps = emptyList(),
-            historySourceApps = listOf(historySourceApp),
-        )
-
-        /** 目标候选项；图标模型应指向历史来源文件而不是安装应用图标。 */
-        val candidate = candidates.single()
-        assertEquals("历史名称", candidate.appName)
-        assertEquals(
-            BlockedSourceAppIcon.HistoryFile(iconPath = historyIcon.absolutePath, iconHash = "history-hash"),
-            candidate.icon,
-        )
-        assertTrue(candidate.historySource)
-        assertTrue(filterClipSourceBlockCandidates(candidates, emptySet(), "", true).isEmpty())
+            installedApps = listOf(InstalledAppInfo("com.example.a", "Alpha", false, icon)),
+        ).single()
+        assertSame(icon, candidate.icon)
     }
 
     @Test
-    /** 历史来源图标文件不可读时，应退化为无图标模型。 */
-    fun buildCandidatesDropsUnreadableHistoryIconFile() {
-        /** 已不存在的历史图标路径；恢复或清理缓存后可能残留在 source_apps 中。 */
-        val missingHistoryIcon = File(temporaryFolder.root, "missing-history-icon.png")
-        /** 历史来源缓存；图标路径不可读，只能保留名称和包名。 */
-        val historySourceApp = sourceApp(
-            packageName = "com.example.app",
-            appName = "历史名称",
-            iconPath = missingHistoryIcon.absolutePath,
-            iconHash = "history-hash",
-        )
-
-        /** 合并后的候选列表；坏历史图标应被过滤。 */
+    /** 未扫描到的保存规则不得生成候选，防止设置名单变成占位行。 */
+    fun buildCandidatesIncludesOnlyScannedApps() {
+        /** 只有 B 出现在当前扫描中，A 仅是保存规则。 */
         val candidates = buildBlockedSourceAppCandidates(
+            blockedPackages = setOf("com.example.a"),
+            installedApps = listOf(InstalledAppInfo("com.example.b", "应用 B", false)),
+        )
+        assertEquals(listOf("com.example.b"), candidates.map { it.packageName })
+    }
+
+    @Test
+    /** 当前扫描名称缺失时显示空名，不使用包名作为主标题。 */
+    fun buildCandidatesKeepsMissingNameEmpty() {
+        /** 空名候选仍保留包名身份，供副标题、搜索和系统图标读取使用。 */
+        val candidate = buildBlockedSourceAppCandidates(
             blockedPackages = emptySet(),
-            installedApps = emptyList(),
-            historySourceApps = listOf(historySourceApp),
-        )
-
-        /** 目标候选项；图标模型保持无图标，方便 UI 使用通用 App 图标兜底。 */
-        val candidate = candidates.single()
-        assertEquals("历史名称", candidate.appName)
-        assertEquals(BlockedSourceAppIcon.None, candidate.icon)
+            installedApps = listOf(InstalledAppInfo("com.example.a", "", false)),
+        ).single()
+        assertEquals("", candidate.appName)
+        assertEquals("com.example.a", candidate.packageName)
     }
 
     @Test
-    /** 未安装但已保存的包名仍保留为内部候选，展示筛选不应删除完整名单。 */
-    fun buildCandidatesKeepsBlockedUnrecognizedPackageWithoutIcon() {
-        /** 合并后的候选列表；只有已保存包名，没有历史来源和安装列表。 */
-        val candidates = buildBlockedSourceAppCandidates(
-            blockedPackages = setOf("com.missing.app"),
-            installedApps = emptyList(),
-            historySourceApps = emptyList(),
+    /** 已屏蔽应用稳定移到前面，各组保持读取器已确定的名称顺序。 */
+    fun buildCandidatesPlacesSavedAppsFirstAndKeepsGroupOrder() {
+        /** 扫描器已经按名称排序的合成应用，其中 B/D 被屏蔽。 */
+        val scannedApps = listOf(
+            InstalledAppInfo("com.example.a", "Alpha", false),
+            InstalledAppInfo("com.example.b", "Beta", false),
+            InstalledAppInfo("com.example.c", "Charlie", false),
+            InstalledAppInfo("com.example.d", "Delta", true),
         )
-
-        /** 内部候选仍保留包名和屏蔽状态；最终是否可见由独立筛选规则决定。 */
-        val candidate = candidates.single()
-        assertEquals("com.missing.app", candidate.displayName)
-        assertEquals(BlockedSourceAppIcon.None, candidate.icon)
-        assertTrue(candidate.savedBlocked)
-    }
-
-    /** 构造测试用历史来源 App 缓存。 */
-    private fun sourceApp(
-        packageName: String,
-        appName: String,
-        iconPath: String?,
-        iconHash: String?,
-    ): SourceAppData {
-        return SourceAppData(
-            packageName = packageName,
-            appName = appName,
-            iconPath = iconPath,
-            primaryColor = null,
-            iconHash = iconHash,
-        )
-    }
-
-    /** 构造测试用当前安装应用信息。 */
-    private fun installedApp(
-        packageName: String,
-        appName: String,
-        isSystemApp: Boolean = false,
-    ): InstalledAppInfo {
-        return InstalledAppInfo(
-            packageName = packageName,
-            appName = appName,
-            isSystemApp = isSystemApp,
-        )
+        /** 候选构建只改变屏蔽分组，不对各组再次排序或去掉系统应用。 */
+        val candidates = buildBlockedSourceAppCandidates(setOf("com.example.b", "com.example.d"), scannedApps)
+        assertEquals(listOf("com.example.b", "com.example.d", "com.example.a", "com.example.c"), candidates.map { it.packageName })
+        assertEquals(listOf(true, true, false, false), candidates.map { it.savedBlocked })
+        assertTrue(candidates[1].systemApp)
+        assertEquals(listOf("Alpha", "Beta", "Charlie", "Delta"), scannedApps.map { it.appName })
     }
 }

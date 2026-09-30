@@ -4,7 +4,13 @@
 
 ## 当前状态
 
-2026-09-30 提交前最终复核：app Kotlin 编译、app 150 项单测及 base/general 64 项单测全部通过，失败、错误和跳过均为 0；`git diff --check` 通过。下文缓存访问拒绝属于实现阶段的历史验证记录，最终构建结果以本条为准；设备列表展示与连续刷新取消交互仍未验收。
+2026-09-30 已移除安装应用名称规范化：直接保留 PackageManager 标签，缺失标签才转为空串，删除 80 字符上限和名称 trim。名称显示复用现有行宽约束、单行与省略号；本轮 app Kotlin 编译、完整 app 155 项单测及差异检查通过，名称读取测试 8 项通过；独立构建输出绕开原 general/classes.jar 占用，未修改工程配置。真实设备显示与 release/R8 未验证，最终名称契约以“原样保留安装应用名称”章节为准。
+
+2026-09-30 已完成“先按系统开关过滤，再随列表读取图标”：读取器先排除自身和范围外系统应用，再读取名称与 Application 图标，页面直接展示 Drawable，专用 Coil 图标加载器已删除。开关变化重新扫描；完整草稿与备份契约保持。app Kotlin 编译、完整 app 154 项单测及差异检查通过；因原 general/classes.jar 被占用，本轮通过临时 init 将该模块输出改到独立验证目录，未修改工程配置。最终契约及本轮验证以“扫描时读取应用图标”章节为准；真实设备图标、开关与耗时/内存尚未验收，未运行 release/R8。
+
+2026-09-30 当前扫描候选简化已完成：设置页仅使用本机扫描到的应用，不再订阅历史来源或创建未安装占位候选；已保存屏蔽应用优先，默认严格隐藏系统应用，名称缺失显示空名，图标不可用显示默认图标。app Kotlin 编译和完整 app 147 项单测通过，相关测试 15 项，差异检查通过；真实设备与 release/R8 未验证。当前实现及验证以“仅使用当前扫描应用”章节为准，下文旧的候选合并、历史名称/图标兜底与系统应用例外均为被替代的历史设计。
+
+2026-09-30 此前提交的历史复核：app Kotlin 编译、app 150 项单测及 base/general 64 项单测全部通过，失败、错误和跳过均为 0；`git diff --check` 通过。这是本次候选简化之前的验证记录，本次结果以“仅使用当前扫描应用”章节为准；设备列表展示与连续刷新取消交互仍未验收。
 
 2026-09-30 已按用户确认调整默认列表：显示所有已安装的非系统应用，不再要求桌面启动入口。复用现有候选构建与最终筛选，移除安装列表专用的 Launcher 查询和可启动字段；当前纯规则直接 JVM 执行 15 个测试通过，标准 Gradle 测试及编译仍被缓存访问拒绝阻断，详见“默认展示所有非系统应用”。
 
@@ -18,7 +24,7 @@
 
 应用通过 Shizuku 进程直读剪贴板，并把来源包名、来源名称、来源图标 hash 和剪贴 payload 提交给主进程 Provider。主进程由 `ClipHelper.processClipText(...)` 统一执行去重、链接解析、入库、通知和自动备份 dirty 标记。历史来源 App 继续缓存在 `source_apps` 表，搜索页来源筛选只读取 `source_apps`。
 
-来源过滤能力已经落地：过滤名单只保存完整包名，按完整包名精确匹配，只影响未来剪贴保存，不删除、不隐藏历史记录。过滤页按自用/私有分发取舍声明 `android.permission.QUERY_ALL_PACKAGES`，在页面可见或用户刷新时由主进程 `PackageManager` 直接读取当前安装应用名称、包名和系统标记，可见行按需读取图标；安装列表不再查询或保存可启动标记。不再使用 Shizuku 安装应用缓存、Provider 同步、Room `installed_app_cache` 或 no-backup 安装图标目录。未安装包名继续参与完整名单和备份恢复，最终列表仅显示安装列表已识别的候选；本轮显隐调整不要求卸载重装，不新增数据迁移或清理代码。
+来源过滤能力已经落地：过滤名单只保存完整包名，按完整包名精确匹配，只影响未来剪贴保存，不删除、不隐藏历史记录。过滤页按自用/私有分发取舍声明 `android.permission.QUERY_ALL_PACKAGES`，由页面自动入口、用户刷新或系统开关变化触发主进程 `PackageManager` 读取；先按范围过滤，再读取名称与 Application 图标。安装列表不查询或保存可启动标记，不使用 Shizuku 安装应用缓存、Provider 同步、Room `installed_app_cache` 或 no-backup 安装图标目录。未安装包名继续参与完整名单和备份恢复，最终列表仅显示安装列表已识别的候选；本轮无需卸载重装，不新增数据迁移或清理代码。
 
 ## 目标
 
@@ -34,7 +40,7 @@
 - `ClipSettingsRepository` 的挂起原子 add/remove/replace 方法和纯规则 `ClipSourceBlockRules`。
 - `ClipHelper.processClipText(...)` 的来源过滤分支和 `ClipProcessResult.FilteredBySourceApp`。
 - Provider `commit_clip` 返回 `source_app_blocked` 且 `clipCommitted=false`。
-- app 层 `InstalledAppReader`、`PackageManagerInstalledAppReader`、`InstalledAppIconLoader` 和过滤页候选合并。
+- app 层 `InstalledAppReader`、`PackageManagerInstalledAppReader`、安装范围规则和仅扫描应用的过滤页候选构建。
 - “我的”页过滤名单入口、独立二级选择页、显示系统应用、手动添加、清空确认和重新读取应用列表。
 - 详情页来源快捷屏蔽/取消屏蔽动作与确认弹窗。
 - 备份导出和恢复的 `blocked_clip_source_packages` 字段。
@@ -52,8 +58,8 @@
 
 - “我的/设置”新增“剪贴保存过滤”入口，描述为“未设置”或“已过滤 N 个 App”。
 - 点击入口进入独立二级选择页，只显示当前安装列表能识别的应用，候选行以图标和 App 名作为主识别信息、包名作为副标题；未安装或暂不可识别的已保存规则不显示占位行。
-- 内部候选继续合并已过滤包名、当前安装应用直读结果和历史来源；同包名名称和图标冲突时优先使用当前安装应用信息。历史来源元数据可保留在内部候选，但不能绕过最终安装筛选。
-- 在已安装前提下，默认展示所有非系统 App，不要求桌面入口、历史来源或已过滤记录；已过滤及历史来源系统 App 仍默认可见，其他系统 App 保留搜索/开关/草稿勾选规则。搜索或打开系统开关也不会显示未安装应用。
+- 候选只来自当前安装扫描结果，已保存屏蔽应用稳定排在前面，同组沿用扫描器的名称/包名排序；不读取历史来源、不生成保存名单占位行。名称缺失显示空名，包名仍作为副标题。
+- 默认展示所有非系统 App，不要求桌面入口、历史来源或已过滤记录；系统 App 仅由“显示系统应用”开关放行，已保存、草稿勾选和搜索命中都不提供例外。
 - 首次未读取到安装列表时不显示历史/已保存占位行；普通刷新失败保留当前内存安装列表并显示错误。允许手动添加、明确清空完整草稿和重新读取，读取失败本身不删除规则。
 - 手动添加拒绝空白、当前 App、超长、明显危险字符和超过 500 个的名单；不过度限制厂商特殊包名。添加未安装包名后仅加入完整草稿、不新增可见行，页面确认后保存。
 - 数量统计包含隐藏规则的完整名单/草稿，标题下沿用“已选 X 个，已读取 Y 个 App”摘要，不再添加第二行数量简报；清空全部需要二次确认并包含隐藏规则，页面确认保存后才落盘。
@@ -61,7 +67,7 @@
 
 ## 数据和规则
 
-- 名单持久化在宿主 Preferences DataStore 的字符串集合键中；`ClipSettingsRepository.data` 对外只暴露规范化后的名单快照，写入在单次 `edit` 内完成。
+- 名单持久化在宿主 Preferences DataStore 的字符串集合键中；`ClipSettingsRepository.blockedPackages` 对外只暴露规范化后的名单快照，写入在单次 `edit` 内完成。
 - 规范化规则：trim、去空、拒绝空白/控制字符/少数危险分隔符、单个包名最多 200 字符、去重、排序、总数最多 500。
 - 匹配规则：`null` 或空来源不匹配；只按完整包名精确匹配；大小写保持原样，不做归一。
 - 保存链路在入库前读取已提交名单快照；读取失败则阻止本次入库，后续用户修改名单不会回溯影响已经开始的处理。
@@ -73,18 +79,18 @@
 - 主 App 声明 `android.permission.QUERY_ALL_PACKAGES`，旁边保留私有分发取舍注释和 `tools:ignore="QueryAllPackagesPermission"`；未来如果要上架 Google Play，必须重新评估。
 - `PackageManagerInstalledAppReader` 在 `Dispatchers.IO` 读取安装应用，Android 13+ 使用 `ApplicationInfoFlags.of(0)`，低版本使用旧 flags API，不使用 `MATCH_DISABLED_COMPONENTS` 强行展示禁用/冻结 App。
 - 安装列表只批量调用一次 `getInstalledApplications`，再读取标签并规范化；不查询 Launcher 包名集合，也不逐个检查启动 Intent。是否具有桌面入口不参与候选显隐。
-- 读取规则：排除当前 App，App 名裁剪到 80 字符，空标签回退包名，按 App 名和包名稳定排序；当前 App 包名拒绝规则同时用于安装列表和手动添加。
+- 读取规则：排除当前 App，App 名原样保留 PackageManager 标签，包括超长名称与首尾空白；仅缺失标签转为空串。按完整 App 名和包名稳定排序；当前 App 包名拒绝规则同时用于安装列表和手动添加。页面使用现有 `Modifier.weight(1f)`、`maxLines = 1` 和 `TextOverflow.Ellipsis` 约束显示，不在数据层截断名称，搜索同样使用完整名称。
 - ViewModel 只保存当前页面会话内存列表、loading、是否已成功读取、失败 reason 和摘要；不在 ViewModel 初始化时读取，只在页面进入或用户刷新时读取。
 - 连续刷新会取消旧读取 Job；读取结果返回后调用 `currentCoroutineContext().ensureActive()`，防止已取消的扫描晚返回后覆盖新状态，不再维护请求序号。刷新入口与结果应用都在主线程，取消检查到状态写入之间没有挂起点；同步 PackageManager 扫描不保证立即停止，但取消后不再应用结果。只重抛取消异常的 `try/catch` 已移除，取消直接沿协程传播。
-- UI 使用明确图标模型区分“当前安装应用图标 / 历史文件图标 / 无图标”。当前安装应用图标不进入 ViewModel，不携带 Drawable，不写文件。
-- `InstalledAppIconLoader` 只在可见行按包名通过 Coil fetcher 读取图标：Launcher Activity 图标优先，Application 图标兜底，失败显示通用 App 图标；历史来源继续用 `SourceAppIconModel` 加载旧文件路径。
+- 读取器接收当前系统应用开关，先排除自身及范围外应用，再加载名称与 Application 图标；结果携带仅页面会话内存使用的 Drawable，不写文件或备份。
+- UI 直接将候选 Drawable 交给现有 `AsyncImage`，不再按包名查询图标；null 或展示失败均显示原有 Android 默认图标。开关变化重新读取对应范围，重复同值不读取。
 
 ## 日志与诊断计划
 
 - 过滤命中日志只记录 `reasonCode=source_app_blocked`、来源是否可识别和文本长度摘要，不记录包名、剪贴正文、HTML、完整 URL、链接标题或拦截次数统计。
 - 安装应用读取日志只记录阶段、数量、耗时和 reasonCode，例如 `package_visibility_denied`、`package_scan_failed`、`package_scan_empty`；禁止记录完整 App 列表、图标内容或用户剪贴内容。
 - 刷新开始沿用 INFO 日志，不再记录已移除的 `force` 参数、请求编号或旧请求丢弃事件；自动加载跳过沿用 INFO，记录 `reasonCode=already_loading` 或 `reasonCode=already_loaded`，不输出安装名单、包名或搜索词。取消是正常任务替换，不新增失败日志；成功/失败数量与耗时日志保持原有覆盖。通过状态规则单测、编译和日志分支检查验证。
-- 当前安装应用图标加载失败日志限频，只按包名 hash 首次记录 `installed_app_icon_failed`、reasonCode 和异常类型；不输出完整包名、完整安装列表或图标字节。
+- 当前安装应用图标失败每次扫描只汇总一次 WARN，记录 `failureCount`、`showSystemApps` 和稳定 reasonCode；不输出包名、名称、图标字节或逐项日志。
 - 手动添加、拒绝当前 App、详情页加入/移除和备份裁剪使用低敏 reasonCode：`manual_package_added`、`self_package_rejected`、`detail_block_source_added`、`detail_block_source_removed`、`backup_blocked_packages_trimmed`。
 - 后台过滤命中不 toast；只有详情页主动加入或移除名单后展示轻提示。
 
@@ -95,8 +101,8 @@
 - 独立执行 `.\gradlew.bat :app:compileDebugKotlin '-Pkotlin.compiler.execution.strategy=in-process' --console=plain` 返回 `BUILD SUCCESSFUL`，日志位于 `build/clip-source-block-verification/session-auto-load-compile.log`。随后用现有缓存中 Kotlin 2.2.10 编译器的 `org.jetbrains.kotlin.cli.jvm.K2JVMCompiler` 编译 `InstalledAppAutoLoadStateTest.kt`，classpath 与 friend paths 指向本次 `app/build/tmp/kotlin-classes/debug` 的真实生产类，再通过 `org.junit.runner.JUnitCore com.cla.clip.master.ui.page.mine.InstalledAppAutoLoadStateTest` 执行，结果 `OK (6 tests)`。该直接 JVM 验证只覆盖新增纯状态规则，不替代完整 Gradle 单测、既有读取器/候选测试或设备验收。`git diff --check` 通过。
 - 2026-09-30 协程简化验证命令：`.\gradlew.bat :app:testDebugUnitTest --tests 'com.cla.clip.master.installedapps.PackageManagerInstalledAppReaderTest' --tests 'com.cla.clip.master.ui.page.mine.ClipSourceBlockSettingStateTest' --tests 'com.cla.clip.master.ui.page.mine.ClipSourceBlockSelectionRulesTest' :app:compileDebugKotlin '-Pkotlin.compiler.execution.strategy=in-process' --console=plain`。普通执行及提升权限重试均被上述缓存 JAR 访问拒绝阻断，未执行到目标测试或 app 编译；真实设备和连续刷新取消交互未验证。PowerShell 中含点的 `-P` 参数须整体加引号，避免被拆成任务名。
 - 纯 JVM 单测覆盖包名规范化、空来源不拦截、精确命中、大小写不误合并、重复去重、当前 App 拒绝、长度和总数限制、危险字符拒绝。
-- 安装应用 reader 单测覆盖排除当前 App、名称裁剪、空标签回退、系统标记、稳定排序和失败 reason；删除已废弃的 Launcher 集合与可启动字段断言。
-- 设置页测试区分内部候选与最终可见列表，覆盖当前安装信息优先、历史元数据保留但未安装行隐藏、搜索/系统开关不能放行未安装包名、完整草稿编辑保留隐藏规则和重新安装显示。
+- 安装应用 reader 单测覆盖排除当前 App、完整长名称和首尾/纯空白标签保留、缺失标签转为空串、系统标记、稳定排序和失败 reason。
+- 设置页测试覆盖只构建当前扫描候选、已保存屏蔽优先且保持组内顺序、空名称、系统开关无例外、名称/包名搜索、完整草稿保留隐藏规则及重新安装显示；已废弃的历史合并、历史文件图标和未安装候选测试由新契约替代。
 - Provider/映射测试覆盖 `FilteredBySourceApp` 转为 `source_app_blocked`，且 `clipCommitted=false`。
 - 备份测试覆盖 `blocked_clip_source_packages` 导出、旧备份缺字段兼容、恢复时与本机名单取并集、异常超量备份裁剪。
 - 本轮验证：两个过滤设置规则测试类、`:app:compileDebugKotlin` 和 `git diff --check`；不重复运行与显隐无关的 Shizuku 或发布构建。
@@ -110,6 +116,8 @@
 - v1 不做后台安装/卸载监听；进入页面读取一次，用户刷新时重新读取一次。
 
 ## 未安装应用隐藏方案（已完成）
+
+> 历史实施记录：本节的三源候选合并、`installed` 字段和系统应用显隐例外已被“仅使用当前扫描应用”替代；完整草稿保存、跨安装规则及备份边界继续适用。
 
 ### 目标与影响范围
 
@@ -128,7 +136,7 @@
 
 ### 数据流与保存边界
 
-1. `ClipSettingsRepository.data` 提供完整已保存名单，包括未安装应用；页面草稿从完整名单初始化，读取失败提供显式重试。
+1. `ClipSettingsRepository.blockedPackages` 提供完整已保存名单，包括未安装应用；页面草稿从完整名单初始化，读取失败提供显式重试。
 2. `buildBlockedSourceAppCandidates` 继续合并已保存名单、本机安装结果和历史来源，内部保留候选元数据；最终可见列表才应用安装条件。
 3. 点击可见行只增删该行包名；不能用可见列表或搜索结果重新生成完整草稿。单包名勾选规则不得更改其他隐藏包名。
 4. 页面确认仍把完整 `draftPackages` 传给 `replaceBlockedSourcePackages`，复用 `ClipSettingsRepository.replaceBlockedPackages` 的规范化、真实变化判断和原子 dirty 版本；写入成功后调度自动备份。
@@ -205,6 +213,8 @@
 
 ## 默认展示所有非系统应用（2026-09-30）
 
+> 历史实施记录：本节的历史来源、已保存系统应用和搜索显隐例外已被“仅使用当前扫描应用”的严格系统开关规则替代；非系统应用无需桌面入口的规则继续适用。
+
 - 当前状态：已完成代码与纯规则验证，标准 Gradle 构建和设备展示未验证。用户确认默认显示所有已安装的非系统应用；旧实现额外要求 Launcher 入口，与需求不符。
 - 实现与边界：复用 `buildBlockedSourceAppCandidates`、`defaultVisible` 和 `filterClipSourceBlockCandidates`，将默认分类条件改为 `savedBlocked || historySource || !systemApp`，最终仍要求 `installed`。已过滤、历史来源系统应用、搜索、系统开关、完整草稿和未安装规则保留既有契约。
 - 读取与职责：删除 `InstalledAppPackageReader.loadLauncherPackageNames`、Android 适配实现和 `InstalledAppInfo.isLaunchableApp` / `BlockedSourceAppCandidate.launchableApp`，规范化只接收安装条目与当前包名。沿用既有读取器和 mapper，不新增组件或类，也不改页面加载/取消边界。
@@ -219,9 +229,56 @@
 
 - 未来若要上架 Google Play，需要评估是否回到 Shizuku 查询、用户手动添加、系统 picker 或更窄的 `<queries>` 声明。
 - 若当前安装图标在个别 ROM 上仍显示默认图标，再补 ROM 维度的低敏诊断，但不恢复旧 Provider 安装缓存方案。
-- 若后续出现性能证据，再评估移除过滤页不可见历史候选的图标读取；本轮保留现有候选合并，避免扩展到历史来源观察与数据重构。
+- 历史来源订阅、不可见历史候选和历史文件图标读取已在“仅使用当前扫描应用”中删除，不再作为后续优化待办。
+
+## 仅使用当前扫描应用（2026-09-30）
+
+- 当前状态：已完成。移除与当前展示无关的历史来源合并，减少数据库观察、文件校验和候选状态。
+- 数据流：`InstalledAppReader` 提供规范化、去重和稳定排序后的扫描结果；`buildBlockedSourceAppCandidates` 只为扫描应用标记 `savedBlocked` 并把已保存屏蔽项稳定移到前面。ViewModel 只组合扫描结果和已保存名单，不再注入 `ClipRepository` 或调用 `loadAllSourceApps`。
+- 展示：默认只显示非系统应用；已保存、草稿选中、历史来源和搜索命中都不能绕过系统开关，只有开启“显示系统应用”后才可显示系统应用。搜索仅匹配当前名称或包名；名称缺失保留空串，包名仍作为独立副标题，不再作为主名称兜底。
+- 图标：本节原专用 ImageLoader 和按可见行懒加载已被“扫描时读取应用图标”替代。当前扫描前先过滤系统范围，图标随结果返回；仍不提供加载占位，读取失败或不可用时使用 `drawable/host_ic_app_icon_default.xml` 原路径与绿色/白色，不额外 tint。
+- 职责：候选模型与纯构建函数移到同 feature 的 `ClipSourceBlockCandidates.kt`；筛选/完整草稿勾选继续放在 `ClipSourceBlockSelectionRules.kt`。候选只保留包名、名称、系统标记和已保存屏蔽标记，不新增 Repository 或公共 UI 抽象。
+- 保存与备份：完整名单/草稿继续保留未安装和隐藏系统包名，确认保存完整草稿；名单容量、清空确认、手动添加、备份协议及 dirty 契约不变，安装候选仍是内存派生数据，无需修改备份主方案或 schema。
+- 生命周期：沿用页面生命周期感知收集、ViewModel 会话自动加载与手动刷新；去掉历史来源数据库订阅，不新增后台观察或轮询。
+- 测试验证：先补仅扫描候选、空名称和系统应用无例外的失败回归；旧生产逻辑下标准 Gradle 执行 21 项测试，4 项预期断言失败，其余 17 项通过。实施后同步移除旧历史合并/图标测试，运行 `.\gradlew.bat :app:compileDebugKotlin :app:testDebugUnitTest --no-daemon '-Pkotlin.compiler.execution.strategy=in-process' '-Pksp.incremental=false' --console=plain`；初次执行完成 app Kotlin 编译后在 app Java 编译读取缓存 `okhttp-release-api.jar` 时访问拒绝，沙箱外同命令重试 `BUILD SUCCESSFUL`。完整 app 147 项测试通过（相关三个测试类 15 项），失败、错误和跳过均为 0；`git diff --check` 通过。日志为 `build/clip-source-simplify-red.log`、`build/clip-source-simplify-green.log` 和 `build/clip-source-simplify-verify.log`。真实 PackageManager 图标、空名行布局和系统开关需设备验收；未操作设备。
+- 日志与诊断计划：不新增运行时日志，纯构建/筛选无副作用且已删除历史文件 IO，安装读取与图标失败的现有低敏日志继续覆盖。禁止输出包名名单、App 名称、搜索词或剪贴内容；以合成 fixture、编译与人工界面检查验证。
+- 取舍/开放问题：没有外部协议、序列化、反射或持久化模型变化，不新增 keep 或 release/R8 验证；扫描排除自身和失败保留旧快照继续适用，图标懒加载已被后续“扫描时读取应用图标”方案替代。
+
+## 扫描时读取应用图标（2026-09-30）
+
+- 目标与范围：关闭系统应用时，在读取名称和图标之前排除系统应用及自身；开启后重新读取完整候选。为简化状态与失败边界，开关双向变化均重新扫描，重复设置同值不刷新，手动刷新使用当前开关范围。
+- 数据流与职责：沿用 `InstalledAppReader`、`PackageManagerInstalledAppReader`、规范化与候选构建；读取器在 IO 线程调用 `ApplicationInfo.loadIcon()`，图标随安装信息与候选只保存在页面会话内存。页面 `AsyncImage` 直接接收 Drawable，删除 `InstalledAppIconLoader.kt` 的 Request、Fetcher、Keyer 与专用 ImageLoader，不再查询 Launcher Activity。
+- 边界：图标读取失败返回 null，页面使用已有 `host_ic_app_icon_default`；单项图标失败不让扫描失败。空的所选范围仍沿用空列表提示。刷新保留旧快照，系统应用显隐继续受页面筛选约束；连续开关/刷新沿用旧 Job 取消和结果应用前 `ensureActive()`，系统适配器增加逐项取消检查，单次系统调用返回后不再读取旧范围后续资源。读取只由页面自动入口、用户开关或刷新触发，不增加后台观察；ViewModel 清理时取消任务和释放会话图标。
+- 性能取舍：默认不加载系统图标；仍提前加载所选范围中尚未滚动到或被搜索隐藏的应用。开关变化重新读取以避免额外缓存状态，接受有限应用列表的一次扫描成本；真实设备耗时与内存需验收。
+- 保存与备份：完整草稿和已保存包名独立于扫描范围，隐藏系统/未安装规则不裁剪；无数据库、DataStore、备份字段或 dirty 契约变化。图标不持久化、不进入外部协议或反射模型，无需 keep 或 release/R8。
+- 实现步骤：先补默认扫描排除系统应用的失败回归；再调整读取接口、过滤规则和图标传递，接入开关重扫并删除加载器；最后运行完整 app 单测、Kotlin 编译和差异检查。具体文件为 `installedapps/InstalledAppModels.kt`、`PackageManagerInstalledAppReader.kt`、安装筛选规则、`ClipSourceBlockCandidates.kt`、`ClipSourceBlockSettingVm.kt`、`ClipSourceBlockSettingPage.kt` 及相关测试。
+- 日志与诊断计划：INFO 扫描开始和读取器成功日志加入 `showSystemApps` 布尔字段，结果日志沿用当前数量、耗时和失败 reason；WARN 图标失败改为每次扫描汇总 `failureCount`，不记录包名 hash 或逐项日志。禁止输出包名、名称、搜索词、图标字节与剪贴内容；通过合成 fixture、日志分支检查和设备验收核对。
+- 单元测试检查：筛选、图标传递和刷新范围属于行为变更，采用选择性 TDD。纯规则及可替换读取器使用 JVM 单测；真实 PackageManager 图标、系统开关交互和快速取消依赖设备，暂不新增 Android UI 测试，设备验收列为待办。
+- 注释与职责：修改的方法、图标字段、扫描范围变量和取消分支均补齐简体中文注释；新纯范围规则归到 `installedapps/InstalledAppSelectionRules.kt`，系统读取复用现有适配器，页面只传递与展示图标，未新增 UI 组件或依赖。
+- 验证：标准 RED 命令及沙箱外同命令重试均在 `:base:general:bundleLibCompileToJarDebug` 被原 `classes.jar` 文件占用阻断。临时 `build/installed-app-icons-validation.init.gradle` 只将 general 的构建输出移到 `build/installed-app-icon-validation/base-general`，不修改工程配置、不清理缓存、不终止其他程序；独立输出下单项 RED 实际执行并出现预期断言失败。随后执行 `.\gradlew.bat -I build/installed-app-icons-validation.init.gradle :app:compileDebugKotlin :app:testDebugUnitTest --no-daemon '-Pkotlin.compiler.execution.strategy=in-process' '-Pksp.incremental=false' --console=plain`，`BUILD SUCCESSFUL`；完整 app 154 项单测通过，失败/错误/跳过均为 0，其中本轮新增 7 项（扫描/读取 4、范围 2、候选图标传递 1），相关五类测试共 28 项。`git diff --check` 通过，生产 Kotlin 源码已无专用图标加载器引用。日志为 `build/installed-app-icons-red.log`、`installed-app-icons-red-retry.log`、`installed-app-icons-red-isolated.log` 和 `installed-app-icons-green.log`。未执行设备交互或 release/R8；前者仍需人工验收，后者因无外部协议/反射变化不安排。
+
+## 原样保留安装应用名称（2026-09-30）
+
+- 目标与范围：移除 `normalizeInstalledAppName` 和 `MAX_INSTALLED_APP_NAME_LENGTH`，安装条目直接使用 `entry.label.orEmpty()`，不 trim、不截断；完整名称用于排序、候选展示和搜索，缺失标签仍为空串。
+- 职责与复用：沿用读取器、候选构建与现有行组件；显示长度由页面的可用宽度、单行及省略号控制，不新增工具方法、组件或类。安装标签不持久化、不参与备份或外部协议，包名身份与保存规则沿用。
+- 单元测试检查：更新既有读取测试验证 88 字符名称完整保留与 null 标签兜底，新增合成首尾空白/纯空白标签回归；先运行旧实现观察两项预期断言失败（共 8 项测试），再删除名称处理逻辑。修改的函数、字段与测试变量已补齐简体中文注释，无新增生产类或方法。
+- 验证结果：普通 RED 命令先被 Gradle 缓存 `okhttp-release-api.jar` 访问拒绝阻断，沙箱外重试又被原 general/classes.jar 占用阻断；临时 `build/installed-app-name-validation.init.gradle` 仅把 general 输出移到 `build/installed-app-name-validation/base-general`。独立输出下 RED 命令执行 8 项测试，长名称与空白保留两项按预期失败。随后执行 `.\gradlew.bat -I build/installed-app-name-validation.init.gradle :app:compileDebugKotlin :app:testDebugUnitTest --no-daemon '-Pkotlin.compiler.execution.strategy=in-process' '-Pksp.incremental=false' --console=plain`，结果 `BUILD SUCCESSFUL`；完整 app 155 项测试通过，失败、错误和跳过均为 0，读取测试 8 项通过。`git diff --check` 通过，生产源码无已删除方法及长度常量的引用；日志为 `build/installed-app-name-red.log`、`installed-app-name-red-isolated.log` 和 `installed-app-name-green.log`。未清理缓存、终止其他程序或操作设备。
+- 日志与诊断计划：本次只移除无副作用的字符串处理，沿用扫描数量、耗时和失败原因日志，不新增逐项名称日志，以免泄露应用名单或产生噪声；用回归断言和现有布局约束核对。
+- 取舍与待办：仅修改页面会话内存名称契约，无序列化、反射或备份变化，不安排 release/R8；真实设备超长名称的显示观感仍需人工验收。
 
 ## 变更记录
+
+- 2026-09-30：按用户要求原样保留安装应用名称，删除读取层的名称 trim 和 80 字符截断；显示长度由既有行宽、单行和省略号控制。先观察长名称和空白保留两项预期失败，再完成生产修改；app Kotlin 编译、完整 app 155 项单测（读取 8 项）与差异检查通过，设备显示未验收。名称仅用于页面内存，不改备份或 keep/R8，无需新增日志。
+
+- 2026-09-30：剪贴设置改接对应字段的独立 Flow，减少其他设置变化造成的无关通知；生命周期、读取失败与保存契约沿用原行为，字段 Flow 设计以 [DataStore 主方案](datastore_replacement_plan.md) 为准。
+
+- 2026-09-30：按用户确认实施扫描范围前置过滤与图标随列表读取，简化设置页的图标加载链；双向开关变化重扫以减少缓存状态，备份与完整草稿保持原契约。
+
+- 2026-09-30：按用户最新要求区分默认图标与加载占位，移除来源过滤页 `AsyncImage.placeholder`；加载期间保留 40dp 空白区域，读取失败或不可用时才显示 Android 默认图标，沿用当前 `host_ic_app_icon_default` 资源命名并更新变量注释。复用既有加载器和 error painter，无新增组件、类或方法；纯展示调整，不新增单测或采用 TDD，不新增日志、备份逻辑或 release/R8。执行 `.\gradlew.bat :app:processDebugResources :app:compileDebugKotlin --no-daemon '-Pkotlin.compiler.execution.strategy=in-process' '-Pksp.incremental=false' --console=plain`，资源处理通过；依赖任务 `:base:general:bundleLibCompileToJarDebug` 因 `classes.jar` 被其他程序占用而失败，独占只读检查仍未获得访问，因此 app Kotlin 编译尚未验证。日志位于 `build/clip-source-icon-no-placeholder-verify.log`；未终止其他程序或修改构建配置，文件占用解除后需补跑。`git diff --check` 通过，设备加载过程需人工验收。
+
+- 2026-09-30：按用户提供的 `Android.svg` 替换来源过滤页默认图标，保留原路径与颜色并转为 VectorDrawable，复用既有 AsyncImage placeholder/error。纯展示资源替换，无状态或业务契约变化，不新增 JVM 单测或采用 TDD；7 条 SVG/Vector 路径及颜色逐项一致，`git diff --check` 通过。执行 `.\gradlew.bat :app:processDebugResources :app:compileDebugKotlin --no-daemon '-Pkotlin.compiler.execution.strategy=in-process' '-Pksp.incremental=false' --console=plain`，资源处理通过，首次编译在 hidden-api Java 任务访问缓存 `appcompat-1.7.1-api.jar` 时被拒绝；沙箱外同命令重试 `BUILD SUCCESSFUL`，日志位于 `build/clip-source-fallback-icon-compile.log` 与 `build/clip-source-fallback-icon-verify.log`。设备观感仍需人工验收。相关变量与资源注释已补齐，沿用现有图标失败日志，无需新增日志、备份逻辑或 release/R8。
+
+- 2026-09-30：按用户最新要求简化来源过滤候选，仅使用当前扫描应用，删除历史来源参与、未安装占位候选及历史图标兜底；系统应用严格由开关控制，空名称不再回退包名。原因是展示仅需当前安装信息，原三源合并增加无用状态与 IO。先观察 4 项预期失败回归，再实施；app Kotlin 编译、完整 app 147 项单测（含相关 15 项）及差异检查通过，设备与 release/R8 未验证，无需修改备份协议或新增日志。
 
 - 2026-09-30：补齐提交前组合验证结果，解除实现阶段缓存访问拒绝造成的编译与标准单测未验证状态。执行 `.\gradlew.bat :app:compileDebugKotlin :app:testDebugUnitTest :base:general:testDebugUnitTest --no-daemon '-Pkotlin.compiler.execution.strategy=in-process' '-Pksp.incremental=false' --console=plain`，结果 `BUILD SUCCESSFUL`；150 项 app 和 64 项 base/general 单测通过。仅本次命令关闭 Kotlin daemon 和 KSP 增量生成，未更改构建配置；日志位于 `build/commit-validation.log`。设备与 release/R8 未验证，无新增外部协议，不新增运行时日志。
 

@@ -4,25 +4,18 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cla.clip.base.general.config.ClipSourceBlockRules
-import com.cla.clip.base.general.config.clip.ClipSettingsRepository
 import com.cla.clip.base.general.config.ManualPackageValidationResult
-import com.cla.clip.base.general.dao.SourceAppData
-import com.cla.clip.base.general.repository.ClipRepository
-import com.cla.clip.base.general.utils.isUsableCachedIconFile
-import com.cla.clip.base.general.utils.logI
+import com.cla.clip.base.general.config.clip.ClipSettingsRepository
 import com.cla.clip.base.general.utils.logE
+import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.toast
 import com.cla.clip.master.installedapps.INSTALLED_APP_REASON_PACKAGE_SCAN_EMPTY
 import com.cla.clip.master.installedapps.InstalledAppInfo
 import com.cla.clip.master.installedapps.InstalledAppLoadResult
 import com.cla.clip.master.installedapps.InstalledAppReader
 import com.cla.clip.master.work.BackupAutoScheduler
-import dagger.Lazy
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import java.io.File
-import java.util.Locale
-import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,28 +24,26 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 /**
  * 剪贴来源过滤设置页 ViewModel。
  *
- * 负责在页面可见时读取当前安装应用元数据、合并历史来源和维护搜索/系统应用开关；设置本身仍只保存包名。
+ * 负责页面触发的安装应用与图标读取、搜索和系统开关；设置本身仍只保存完整包名。
  */
 @HiltViewModel
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class ClipSourceBlockSettingVm @Inject constructor(
     /** 应用级 Context，用于读取当前应用包名和调度过滤名单备份。 */
     @param:ApplicationContext private val appContext: Context,
-    /** 剪贴数据仓库，提供历史来源和来源图标缓存。 */
-    private val clipRepository: Lazy<ClipRepository>,
     /** 主进程安装应用读取器，依赖 QUERY_ALL_PACKAGES 读取当前用户可见应用。 */
     private val installedAppReader: InstalledAppReader,
 
@@ -110,17 +101,15 @@ class ClipSourceBlockSettingVm @Inject constructor(
     /**
      * 来源过滤候选列表。
      *
-     * 合并优先级固定为已过滤包名、当前安装应用直读结果、历史来源；同包名名称冲突时当前安装应用名称和图标优先。
+     * 仅从当前扫描结果构建候选，已保存屏蔽项优先；不观察历史来源或为未安装规则生成占位行。
      */
     val blockedSourceAppCandidates = combine(
         blockedClipSourcePackages,
         installedApps,
-        clipRepository.get().loadAllSourceApps(),
-    ) { blockedPackages, currentInstalledApps, historySourceApps ->
+    ) { blockedPackages, currentInstalledApps ->
         buildBlockedSourceAppCandidates(
             blockedPackages = blockedPackages.orEmpty(),
             installedApps = currentInstalledApps,
-            historySourceApps = historySourceApps,
         )
     }.stateIn(
         CoroutineScope(viewModelScope.coroutineContext + Dispatchers.Default),
@@ -151,11 +140,13 @@ class ClipSourceBlockSettingVm @Inject constructor(
      * 取消异常由协程直接传播，不转换成读取失败，也不单独维护请求序号。
      */
     fun refreshInstalledApps() {
+        /** 本次读取范围在主线程固定；开关变化取消旧任务，不让旧范围晚返回后覆盖新结果。 */
+        val showSystemApps = _installedAppListState.value.showSystemApps
         // 立即取消旧任务；不等待不可中断的系统扫描结束，避免延迟本次刷新。
         installedAppLoadJob?.cancel()
         // 读取任务归 ViewModel 管理；取消后不再应用结果，也不清除新任务的 loading 状态。
         installedAppLoadJob = viewModelScope.launch {
-            logI(TAG) { "开始读取安装应用" }
+            logI(TAG) { "开始读取安装应用 showSystemApps=$showSystemApps" }
             // state 是已有读取状态；开始刷新时保留旧列表并清除上次失败与摘要。
             _installedAppListState.update { state ->
                 state.copy(
@@ -165,7 +156,7 @@ class ClipSourceBlockSettingVm @Inject constructor(
                 )
             }
             /** 本次 PackageManager 读取结果；成功时刷新内存列表，失败时按原因保留或清空旧列表。 */
-            val loadResult = installedAppReader.loadInstalledApps()
+            val loadResult = installedAppReader.loadInstalledApps(showSystemApps)
             // 同步扫描可能晚返回；在主线程无挂起的状态写入前检查当前任务是否已取消。
             currentCoroutineContext().ensureActive()
             when (loadResult) {
@@ -213,17 +204,20 @@ class ClipSourceBlockSettingVm @Inject constructor(
         }
         logI(TAG) {
             "installed_app_load_result reasonCode=${loadResult.reasonCode} appCount=${installedApps.value.size} " +
-                "elapsedMs=${loadResult.elapsedMs}"
+                    "elapsedMs=${loadResult.elapsedMs}"
         }
     }
 
     /**
      * 切换系统应用显示开关。
      *
-     * 该开关只影响设置页内存态，不进入持久化或备份。
+     * 该开关只影响扫描范围和页面内存态，不进入持久化或备份；双向变化都重新读取名称和图标。
      */
     fun updateShowSystemApps(showSystemApps: Boolean) {
+        // 重复同值不扫描；范围改变立即替换旧任务，失败仍保留旧快照及完整草稿。
+        if (_installedAppListState.value.showSystemApps == showSystemApps) return
         _installedAppListState.update { state -> state.copy(showSystemApps = showSystemApps) }
+        refreshInstalledApps()
     }
 
     /** 设置候选搜索关键词；搜索只在页面内存中过滤候选，不影响已保存名单。 */
@@ -281,90 +275,6 @@ class ClipSourceBlockSettingVm @Inject constructor(
 }
 
 /**
- * 构建来源过滤设置页候选列表。
- *
- * @param blockedPackages 完整已保存名单，用于内部候选、勾选和排序；未安装候选由页面最终筛选隐藏。
- * @param installedApps 主进程当前直读的安装应用列表，名称和安装图标模型优先用于展示。
- * @param historySourceApps 数据库中历史来源 App 缓存，图标路径必须真实存在才可展示。
- */
-internal fun buildBlockedSourceAppCandidates(
-    blockedPackages: Set<String>,
-    installedApps: List<InstalledAppInfo>,
-    historySourceApps: List<SourceAppData>,
-): List<BlockedSourceAppCandidate> {
-    /** 候选索引，LinkedHashMap 用于保持已过滤、安装列表、历史来源三段合并时的稳定覆盖顺序。 */
-    val candidatesByPackage = linkedMapOf<String, BlockedSourceAppCandidate>()
-    blockedPackages.forEach { packageName ->
-        candidatesByPackage[packageName] = BlockedSourceAppCandidate(
-            packageName = packageName,
-            appName = null,
-            icon = BlockedSourceAppIcon.None,
-            installed = false,
-            systemApp = false,
-            savedBlocked = true,
-            historySource = false,
-        )
-    }
-    installedApps.forEach { installedApp ->
-        /** 安装应用包名；异常空包名不参与展示。 */
-        val packageName = installedApp.packageName.trim().takeIf { value -> value.isNotEmpty() } ?: return@forEach
-        /** 已存在候选；用于保留已过滤标记和历史来源标记。 */
-        val existing = candidatesByPackage[packageName]
-        candidatesByPackage[packageName] = BlockedSourceAppCandidate(
-            packageName = packageName,
-            appName = installedApp.appName.takeIf { name -> name.isNotBlank() } ?: existing?.appName,
-            icon = BlockedSourceAppIcon.Installed(packageName = packageName),
-            installed = true,
-            systemApp = installedApp.isSystemApp,
-            savedBlocked = packageName in blockedPackages,
-            historySource = existing?.historySource ?: false,
-        )
-    }
-    historySourceApps.forEach { sourceApp ->
-        /** 历史来源包名；空白来源不参与候选展示。 */
-        val packageName = sourceApp.packageName.trim().takeIf { value -> value.isNotEmpty() } ?: return@forEach
-        /** 已存在候选；用于保留已过滤标记和当前安装应用展示优先级。 */
-        val existing = candidatesByPackage[packageName]
-        /** 历史图标模型；只有真实文件、可读且非空时才可展示，避免坏路径触发 Coil 噪声。 */
-        val historyIcon = buildHistorySourceIcon(sourceApp)
-        candidatesByPackage[packageName] = BlockedSourceAppCandidate(
-            packageName = packageName,
-            appName = existing?.appName ?: sourceApp.appName.takeIf { name -> name.isNotBlank() },
-            icon = when (existing?.icon) {
-                is BlockedSourceAppIcon.Installed -> existing.icon
-                is BlockedSourceAppIcon.HistoryFile -> existing.icon
-                BlockedSourceAppIcon.None, null -> historyIcon
-            },
-            installed = existing?.installed ?: false,
-            systemApp = existing?.systemApp ?: false,
-            savedBlocked = packageName in blockedPackages,
-            historySource = true,
-        )
-    }
-    return candidatesByPackage.values.sortedWith(
-        compareByDescending<BlockedSourceAppCandidate> { candidate -> candidate.savedBlocked }
-            .thenByDescending { candidate -> candidate.defaultVisible }
-            .thenBy { candidate -> candidate.displayName.lowercase(Locale.ROOT) }
-            .thenBy { candidate -> candidate.packageName }
-    )
-}
-
-/** 将历史来源图标缓存转换成 UI 图标模型；坏路径直接返回无图标。 */
-private fun buildHistorySourceIcon(sourceApp: SourceAppData): BlockedSourceAppIcon {
-    /** 历史图标路径；为空、文件缺失、不可读或零字节时不可交给 UI。 */
-    val readableHistoryIconPath = sourceApp.iconPath
-        ?.takeIf { path -> path.isNotBlank() }
-        ?.takeIf { path -> File(path).isUsableCachedIconFile() }
-        ?: return BlockedSourceAppIcon.None
-    /** 历史图标 hash；可为空，存在时用于刷新 Coil 缓存 key。 */
-    val readableHistoryIconHash = sourceApp.iconHash?.takeIf { hash -> hash.isNotBlank() }
-    return BlockedSourceAppIcon.HistoryFile(
-        iconPath = readableHistoryIconPath,
-        iconHash = readableHistoryIconHash,
-    )
-}
-
-/**
  * 来源过滤设置页安装列表内存态。
  *
  * 安装列表只在页面会话内存保存；这里记录读取状态、搜索关键词和系统应用开关。
@@ -376,7 +286,7 @@ data class InstalledAppListState(
     val everLoaded: Boolean = false,
     /** 本机安装应用读取失败的低敏原因码；为空表示当前没有错误。 */
     val unavailableReasonCode: String? = null,
-    /** 是否在默认候选中显示系统应用；搜索时 UI 仍可命中系统应用。 */
+    /** 是否显示系统应用；关闭时已保存屏蔽、草稿勾选和搜索均不能放行系统应用。 */
     val showSystemApps: Boolean = false,
     /** 设置页搜索关键词，只影响候选展示。 */
     val searchQuery: String = "",
@@ -399,54 +309,3 @@ data class InstalledAppLoadSummary(
     /** 本次成功读取完成时间；只用于页面会话的读取摘要，不参与自动加载判断。 */
     val loadedAtMillis: Long,
 )
-
-/** 来源过滤候选图标模型；区分当前安装图标、历史文件图标和无图标。 */
-sealed interface BlockedSourceAppIcon {
-
-    /** 当前安装应用图标；UI 可见行按包名通过 PackageManager 加载。 */
-    data class Installed(
-        /** 应用包名；图标加载唯一身份。 */
-        val packageName: String,
-    ) : BlockedSourceAppIcon
-
-    /** 历史来源图标文件；只用于当前安装应用不可识别时兜底。 */
-    data class HistoryFile(
-        /** 历史来源图标缓存路径；已经过可读非空校验。 */
-        val iconPath: String,
-        /** 历史来源图标 hash；可为空，用于 Coil 缓存 key。 */
-        val iconHash: String?,
-    ) : BlockedSourceAppIcon
-
-    /** 无可用图标；UI 使用通用 App 图标。 */
-    data object None : BlockedSourceAppIcon
-}
-
-/**
- * 剪贴来源过滤候选项。
- *
- * 候选由已过滤包名、当前安装应用列表和历史来源合并而来；包名始终是稳定身份。
- */
-data class BlockedSourceAppCandidate(
-    /** 应用包名，作为过滤名单保存和匹配的唯一身份。 */
-    val packageName: String,
-    /** 用户可见应用名；未知或已卸载时为空并由 UI 回退包名。 */
-    val appName: String?,
-    /** UI 图标模型；不把当前安装图标塞进历史 iconPath 语义。 */
-    val icon: BlockedSourceAppIcon,
-    /** 当前安装列表是否能识别该包名。 */
-    val installed: Boolean,
-    /** 是否系统应用；默认列表隐藏系统应用，搜索时可展示。 */
-    val systemApp: Boolean,
-    /** 当前是否已在过滤名单中。 */
-    val savedBlocked: Boolean,
-    /** 是否曾作为剪贴来源被记录过。 */
-    val historySource: Boolean,
-) {
-    /** 内部候选名称，未知时回退包名；未安装候选即使有名称，也由最终展示筛选隐藏。 */
-    val displayName: String
-        get() = appName?.takeIf { name -> name.isNotBlank() } ?: packageName
-
-    /** 所有非系统应用默认可见，系统应用保留已过滤及历史来源例外；最终仍必须满足安装条件。 */
-    val defaultVisible: Boolean
-        get() = savedBlocked || historySource || !systemApp
-}
