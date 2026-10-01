@@ -83,8 +83,27 @@ fun MinePage(
     val context = LocalContext.current
     /** 页面级协程作用域；用于浏览器打开失败后的短时 toast。 */
     val coroutineScope = rememberCoroutineScope()
-    // 设置弹窗属于页面瞬时状态，正式配置通过 DataStore 提交后的 Flow 更新。
-    var showClipItemActionDialog by remember { mutableStateOf(false) }
+    // 菜单展开只属于页面瞬时状态，正式配置通过 DataStore 已提交 Flow 更新。
+    var showClipItemActionMenu by remember { mutableStateOf(false) }
+    // 页面生命周期宿主；失去前台时关闭菜单，避免返回应用后恢复旧弹层。
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    // Pager 切离我的页或设置不可编辑时关闭菜单；可见性变化不启动任何数据任务。
+    LaunchedEffect(visibleToUser, settingsLoadFailed, clipItemQuickAction) {
+        if (!visibleToUser || settingsLoadFailed || clipItemQuickAction == null) {
+            showClipItemActionMenu = false
+        }
+    }
+    // 监听应用/页面暂停；离开组合时移除观察器，并丢弃展开状态。
+    DisposableEffect(lifecycleOwner) {
+        // 暂停事件只关闭菜单，正式设置写入仍由 ViewModel 完成。
+        val menuLifecycleObserver = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE) showClipItemActionMenu = false
+        }
+        lifecycleOwner.lifecycle.addObserver(menuLifecycleObserver)
+        // 组件销毁时停止监听，避免不可见页面持有生命周期回调。
+        onDispose { lifecycleOwner.lifecycle.removeObserver(menuLifecycleObserver) }
+    }
 
     /**
      * 页面可见时触发自动检查更新。
@@ -119,8 +138,9 @@ fun MinePage(
         }
     }
 
-    // 只有 UMP 要求隐私选项时显示入口，国内同意逻辑不受影响。
+    // 当前广告宿主环境，仅用于展示已有隐私入口。
     val adEnvironment = LocalAdHostEnvironment.current
+    // 只有 UMP 要求隐私选项时显示入口，国内同意逻辑不受影响。
     val privacySources = adEnvironment?.sources.orEmpty().filter { adEnvironment?.privacyStates?.get(it.sourceId)?.privacyOptionsRequired == true }
 
     TopLevelPageScaffold(title = stringResource(R.string.base_general_mine)) { paddingValues ->
@@ -180,10 +200,14 @@ fun MinePage(
             }
             /** 快捷动作首次加载前不开放编辑，避免把默认值误当成已保存值。 */
             clipItemQuickAction?.takeUnless { settingsLoadFailed }?.let { action ->
-                item {
+                item(key = "clip_item_quick_action") {
                     ClipItemActionSettingEntry(
                         action = action,
-                        onClick = { showClipItemActionDialog = true }
+                        expanded = showClipItemActionMenu && visibleToUser,
+                        // 只提升菜单 UI 状态，所有保存事件由选择回调负责。
+                        onExpandedChange = { showClipItemActionMenu = it },
+                        // 新选项直接沿用保存链路，失败提示和已提交值回流保持不变。
+                        onSelect = mineVm::updateClipItemQuickAction,
                     )
                 }
             }
@@ -197,17 +221,6 @@ fun MinePage(
                 }
             }
         }
-    }
-
-    if (showClipItemActionDialog && clipItemQuickAction != null && !settingsLoadFailed) {
-        ClipItemActionSettingDialog(
-            currentAction = clipItemQuickAction!!,
-            onSelect = { action ->
-                mineVm.updateClipItemQuickAction(action)
-                showClipItemActionDialog = false
-            },
-            onDismiss = { showClipItemActionDialog = false }
-        )
     }
 
     /** 更新对话框只在 ViewModel 明确给出状态时展示。 */

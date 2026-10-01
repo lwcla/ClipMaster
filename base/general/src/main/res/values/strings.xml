@@ -224,12 +224,15 @@
     <string name="base_general_mine_feature_section">功能入口</string>
     <string name="base_general_mine_settings_section">设置</string>
     <string name="base_general_notice">通知</string>
-    <string name="base_general_clip_item_quick_action_setting">剪贴快捷操作</string>
-    <string name="base_general_clip_item_quick_action_setting_desc">普通列表和普通搜索结果的快捷动作区执行所选动作，其余区域进入详情。</string>
-    <string name="base_general_current_option">当前：%1$s</string>
+    <!-- 单行设置标题与当前值分开显示，不再显示第二行摘要。 -->
+    <string name="base_general_clip_item_quick_action_setting">快捷操作</string>
+    <!-- 读屏保留当前选项完整含义，点击只打开选择菜单。 -->
+    <string name="base_general_clip_item_quick_action_accessibility">快捷操作，当前：%1$s，点击选择</string>
     <string name="base_general_fold_clip">折叠</string>
     <string name="base_general_folded_clip_count">已折叠 %1$d 条</string>
     <string name="base_general_no_quick_action">无（整卡进入详情）</string>
+    <!-- 仅用于单行设置右侧，菜单和无障碍说明仍使用完整文案。 -->
+    <string name="base_general_no_quick_action_short">无</string>
     <!-- 我的页入口和过滤设置页共用短标题，避免两处命名不一致。 -->
     <string name="base_general_clip_source_block_setting">剪贴过滤</string>
     <!-- 没有过滤规则时入口只显示简短状态，业务行为仍由既有过滤规则决定。 -->

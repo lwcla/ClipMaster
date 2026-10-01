@@ -26,6 +26,8 @@ import com.cla.clip.master.ui.navigation.FoldedClipsRoute
 import com.cla.clip.master.ui.navigation.RecycleBinRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.widget.ListEntryCard
+import com.cla.clip.master.ui.widget.SettingDropdownEntryCard
+import com.cla.clip.master.ui.widget.SingleChoiceOption
 
 /**
  * 回收站入口。
@@ -84,16 +86,27 @@ internal fun AppUpdateEntry(
 }
 
 /**
- * 普通剪贴 item 快捷动作设置入口。
+ * 普通剪贴 item 的单行快捷动作设置适配层。
  *
- * 该设置只影响普通列表和普通搜索结果；折叠列表、折叠搜索和回收站继续由各自页面保持整卡点击语义。
+ * 业务枚举和资源文案在此转换，共享卡片只展示和抛事件；当前值始终取已提交 Flow。
+ * 该设置只影响普通列表和普通搜索结果；折叠列表、折叠搜索和回收站不消费此设置。
  */
 @Composable
 internal fun ClipItemActionSettingEntry(
+    // 来自设置 Flow 的已提交值；保存失败不由 UI 乐观覆盖。
     action: ClipItemQuickAction,
-    onClick: () -> Unit,
+    // 页面提升管理的菜单展开状态，不跨离页或应用后台恢复。
+    expanded: Boolean,
+    // 回传菜单开关，页面负责可见性和生命周期关闭边界。
+    onExpandedChange: (Boolean) -> Unit,
+    // 新选项直接交给既有 ViewModel 保存，不增加确认步骤。
+    onSelect: (ClipItemQuickAction) -> Unit,
 ) {
-    ListEntryCard(
+    // 沿用既有五选一顺序和完整文案，业务枚举不进入公共组件。
+    val options = clipItemQuickActionOptions.map { option ->
+        SingleChoiceOption(value = option, title = option.labelText())
+    }
+    SettingDropdownEntryCard(
         icon = {
             Icon(
                 imageVector = Icons.Default.Tune,
@@ -102,10 +115,32 @@ internal fun ClipItemActionSettingEntry(
             )
         },
         title = stringResource(R.string.base_general_clip_item_quick_action_setting),
-        description = stringResource(R.string.base_general_current_option, action.labelText()),
-        onClick = onClick
+        // 仅右侧“无”使用短文案；菜单和读屏保留“整卡进入详情”的完整含义。
+        selectedLabel = if (action == ClipItemQuickAction.None) {
+            stringResource(R.string.base_general_no_quick_action_short)
+        } else {
+            action.labelText()
+        },
+        options = options,
+        selectedValue = action,
+        expanded = expanded,
+        onExpandedChange = onExpandedChange,
+        onSelect = onSelect,
+        accessibilityDescription = stringResource(
+            R.string.base_general_clip_item_quick_action_accessibility,
+            action.labelText(),
+        ),
     )
 }
+
+/** 沿用既有快捷动作选择顺序；新增动作时同步更新业务枚举、文案和共享列表映射。 */
+private val clipItemQuickActionOptions = listOf(
+    ClipItemQuickAction.Copy,
+    ClipItemQuickAction.Pin,
+    ClipItemQuickAction.Delete,
+    ClipItemQuickAction.Fold,
+    ClipItemQuickAction.None,
+)
 
 /**
  * 剪贴来源 App 过滤设置入口。
