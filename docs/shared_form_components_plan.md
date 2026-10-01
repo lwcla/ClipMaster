@@ -13,6 +13,15 @@
 ## 目标
 
 - 把视觉结构和交互模式通用的 Compose 组件沉淀到 `ui/widget`。
+本轮来源过滤即时生效实现已新增两个小型共享展示组件：`ToolbarSwitchAction` 和 `SelectableAppRow`，分别承载紧凑标题开关及应用候选行。完整业务流程以 [来源过滤方案](clip_source_app_filter_plan.md#即时生效与下拉刷新修改方案2026-09-30) 为准；此项已完成，app Kotlin 编译及 168 项单测通过；入口卡片说明 slot 本轮已接入，验证记录以备份主方案为准。
+
+### 来源过滤共享展示组件（已完成，2026-09-30）
+
+- `ToolbarSwitchAction` 接收短标签、完整无障碍描述、checked、callback 和 modifier，宽度控制在标题栏已预留的 112dp 保护区以内；标签可省略，开关保持可见且全区域有 Switch 语义。组件不扫描应用、不持久化设置。
+- `SelectableAppRow` 接收具名 UI state：标题、副标题、内存图标、已提交勾选及 `Available/Disabled/Submitting` 交互状态。整行和 Checkbox 只触发一个明确目标状态 callback；提交中展示局部进度并禁用，Drawable 失败使用现有默认 App 图标。
+- 页面负责将候选与提交状态转换为共享 UI state，并执行保存、错误提示和导航。组件不持有页面 ViewModel/Repository，不读取安装列表；包名稳定 key 由列表调用方设置。
+- 文案由调用方字符串资源传入，颜色/字体来自 MaterialTheme；无新增业务日志、数据库或备份数据。提供窄屏长标题、提交中和深色 Preview，单测保护提交/筛选规则，布局已编译，Preview 已定义但未渲染；设备未连接，真实触控、读屏和视觉留待设备验收，不写镜像样式测试。
+
 - 页面目录只保留业务实体到 UI state 的薄适配层，以及 ViewModel、导航、权限、删除授权、下载重试等页面流程。
 - 公共组件提供 `modifier`、slot、UI state/config 和 callback，不直接依赖页面 ViewModel、Repository、NavController 或具体 Room 实体。
 - 避免公共组件 Boolean 参数堆叠，复杂状态用具名 state/config/sealed model 表达。
@@ -87,3 +96,6 @@
 - 2026-05-31：同步搜索页时间筛选接入方式；原因是搜索页已从横向时间 Chips 改为“时间 / 来源”两个等宽单行选择器，并复用现有单选弹窗承载时间选择。
 - 2026-05-18：新增共享表单与选择组件方案并标记为实现中；原因是按照最新 Compose 规则，需要再次整理所有页面组件，把通用 UI 形态从页面目录收敛到共享组件。
 - 2026-05-18：完成共享表单、选择、分页状态和共享剪贴结果组件收敛，并通过 `./gradlew :app:compileDebugKotlin` 验证；原因是当前页面组件已按默认公共化规则迁入 `ui/widget` 或 `ui/widget/clip`，页面目录只保留强业务耦合适配。
+- 2026-09-30：完成 ToolbarSwitchAction 与 SelectableAppRow，使用资源化文案、单一点击语义和具名行状态；app 编译与 168 项单测通过，独立审查复核通过，Preview 渲染与设备验收未执行。原因是来源过滤即时提交与顶部开关接入已完成；其他入口说明 slot 仍保持草案。
+
+- 2026-09-30：新增来源过滤共享紧凑标题开关与应用候选行的实现说明，明确 UI state、回调、触控/无障碍、Preview、日志和备份边界；原因是即时保存需要局部提交反馈且系统开关移到右上角，复用公共骨架而不让新 UI 堆入页面。本轮仍保留其他任务的入口卡片 slot 草案。

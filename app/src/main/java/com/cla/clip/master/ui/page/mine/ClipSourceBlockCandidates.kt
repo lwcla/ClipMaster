@@ -6,7 +6,7 @@ import com.cla.clip.master.installedapps.InstalledAppInfo
 /**
  * 从当前扫描结果构建过滤候选，已保存屏蔽项优先，同组保留读取器的名称/包名排序。
  *
- * 扫描结果已由读取器规范化、去重；未扫描到的保存规则不生成行，完整名单仍由页面草稿保存。
+ * 扫描结果已由读取器规范化、去重；未扫描到的保存规则不生成行，完整名单仍由仓库原子增删保存。
  * 此函数不读取数据库、文件或图标，也不修改输入。
  */
 internal fun buildBlockedSourceAppCandidates(
@@ -33,7 +33,7 @@ data class BlockedSourceAppCandidate(
     val appName: String,
     /** 扫描得到的系统应用标记；默认隐藏，仅由系统应用开关放行。 */
     val systemApp: Boolean,
-    /** 已提交名单中的屏蔽状态，仅用于候选排序，当前勾选以页面完整草稿为准。 */
+    /** 已提交名单中的屏蔽状态，仅用于候选排序，当前勾选以完整已提交名单为准。 */
     val savedBlocked: Boolean,
     /** 扫描时读取的 Application 图标；仅页面内存持有，null 显示默认图标。 */
     val icon: Drawable? = null,

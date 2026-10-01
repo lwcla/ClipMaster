@@ -27,7 +27,7 @@ class PackageManagerInstalledAppReader : InstalledAppReader {
     /** Android PackageManager 适配器；隔离 API 版本差异和 Android 对象读取。 */
     private val packageReader: InstalledAppPackageReader
 
-    /** 当前 App 包名；安装列表和手动添加都必须拒绝该包名。 */
+    /** 当前 App 包名；安装列表必须排除自身，避免把本应用内部复制误屏蔽。 */
     private val selfPackageName: String
 
     /** 当前墙钟时间；生产环境使用系统时间，单测通过内部构造函数注入。 */

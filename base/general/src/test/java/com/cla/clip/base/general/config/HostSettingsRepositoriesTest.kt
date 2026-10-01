@@ -75,6 +75,47 @@ class HostSettingsRepositoriesTest {
     }
 
     @Test
+    /** 单项编辑必须保留其他隐藏规则，仅真实变化提交名单。 */
+    fun singlePackageEditsPreserveHiddenRulesAndOnlyRealChangesCommit() = runBlocking {
+        /** 独立文件 scope、仓库和初始名单，全部使用合成包名。 */
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            /** 真实 DataStore 事务，覆盖协调器假存储无法证明的 名单原子性。 */
+            val store = createTestHostSettingsStore(scope, File(folder.root, "single-packages.preferences_pb"))
+            /** 沿用生产仓库增删，不能使用整单替换模拟单项操作。 */
+            val repository = ClipSettingsRepository(store)
+            repository.replaceBlockedPackages(setOf("com.example.hidden", "com.example.visible"))
+            /** 核对两次业务提交保留了候选范围外的已保存规则。 */
+            assertTrue(repository.removeBlockedPackage("com.example.visible"))
+            assertTrue(repository.addBlockedPackage("com.example.new"))
+            assertFalse(repository.addBlockedPackage("com.example.new"))
+            assertFalse(repository.removeBlockedPackage("com.example.absent"))
+            assertEquals(setOf("com.example.hidden", "com.example.new"), repository.snapshot().blockedPackages)
+        } finally { scope.coroutineContext[Job]?.cancelAndJoin() }
+    }
+
+    @Test
+    /** 完整名单达到容量后拒绝新增且不写入名单，删除规则仍然可提交。 */
+    fun fullBlockedListRejectsAdditionWithoutWritingButAllowsRemoval() = runBlocking {
+        /** 真实临时文件作用域，容量 fixture 不包含用户数据。 */
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            /** 500 条规则同样包含隐藏项，不能以可见项数量绕过限制。 */
+            val store = createTestHostSettingsStore(scope, File(folder.root, "full-packages.preferences_pb"))
+            /** 原子仓库是名单状态唯一持久化边界。 */
+            val repository = ClipSettingsRepository(store)
+            /** 合成满容量名单，隐藏状态不影响规则总量。 */
+            val fullPackages = (1..500).map { index -> "com.example.app$index" }.toSet()
+            repository.replaceBlockedPackages(fullPackages)
+            /** 拒绝新增不改变名单，满容量仍能删除已有规则。 */
+            assertFalse(repository.addBlockedPackage("com.example.extra"))
+            assertEquals(fullPackages, repository.snapshot().blockedPackages)
+            assertTrue(repository.removeBlockedPackage("com.example.app1"))
+            assertEquals(499, repository.snapshot().blockedPackages.size)
+        } finally { scope.coroutineContext[Job]?.cancelAndJoin() }
+    }
+
+    @Test
     /** 未知快捷动作恢复为复制，替换名单时按既有规则去重排序。 */
     fun clipSettingsNormalizePersistedCodesAndPackages() = runBlocking {
         /** 独立 DataStore 生命周期。 */

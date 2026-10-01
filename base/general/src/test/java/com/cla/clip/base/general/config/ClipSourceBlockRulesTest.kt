@@ -37,34 +37,19 @@ class ClipSourceBlockRulesTest {
     }
 
     @Test
-    /** 手动添加应拒绝空白、当前应用、超长、危险字符和超量名单。 */
-    fun validateManualPackageRejectsInvalidInputs() {
-        /** 当前应用自身包名。 */
-        val selfPackageName = "com.cla.clip.master"
-        /** 超长包名。 */
-        val longPackageName = "a".repeat(ClipSourceBlockRules.MAX_PACKAGE_NAME_LENGTH + 1)
-
-        assertEquals(ManualPackageValidationResult.Blank, ClipSourceBlockRules.validateManualPackage(" ", selfPackageName, 0))
-        assertEquals(ManualPackageValidationResult.SelfPackage, ClipSourceBlockRules.validateManualPackage(selfPackageName, selfPackageName, 0))
-        assertEquals(ManualPackageValidationResult.TooLong, ClipSourceBlockRules.validateManualPackage(longPackageName, selfPackageName, 0))
-        assertEquals(ManualPackageValidationResult.UnsafeCharacters, ClipSourceBlockRules.validateManualPackage("com.demo bad", selfPackageName, 0))
-        assertEquals(
-            ManualPackageValidationResult.TooManyPackages,
-            ClipSourceBlockRules.validateManualPackage("com.demo.ok", selfPackageName, ClipSourceBlockRules.MAX_PACKAGE_COUNT)
-        )
+    /** 删除手动输入入口仍保留共享包名边界，空白、危险字符与超长来源继续拒绝。 */
+    fun normalizeSinglePackageRejectsUnsafeInput() {
+        assertEquals(null, ClipSourceBlockRules.normalizeSinglePackage(null))
+        assertEquals(null, ClipSourceBlockRules.normalizeSinglePackage(" "))
+        assertEquals(null, ClipSourceBlockRules.normalizeSinglePackage("com.example bad"))
+        assertEquals(null, ClipSourceBlockRules.normalizeSinglePackage("com.example/bad"))
+        assertEquals(null, ClipSourceBlockRules.normalizeSinglePackage("a".repeat(ClipSourceBlockRules.MAX_PACKAGE_NAME_LENGTH + 1)))
     }
 
     @Test
-    /** 手动添加成功时应返回 trim 后的包名，并保留大小写。 */
-    fun validateManualPackageReturnsTrimmedExactPackage() {
-        /** 手动添加校验结果。 */
-        val result = ClipSourceBlockRules.validateManualPackage(
-            packageName = " com.vendor.Special_App ",
-            selfPackageName = "com.cla.clip.master",
-            currentPackageCount = 0
-        )
-
-        assertEquals(ManualPackageValidationResult.Valid("com.vendor.Special_App"), result)
+    /** 合法来源沿用 trim 与精确大小写，不因移除手动校验而改变持久化协议。 */
+    fun normalizeSinglePackageKeepsTrimmedExactIdentity() {
+        assertEquals("com.vendor.Special_App", ClipSourceBlockRules.normalizeSinglePackage(" com.vendor.Special_App "))
     }
 
     @Test

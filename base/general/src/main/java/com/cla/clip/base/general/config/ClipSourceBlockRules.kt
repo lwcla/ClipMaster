@@ -45,38 +45,6 @@ object ClipSourceBlockRules {
     }
 
     /**
-     * 校验用户手动输入的包名。
-     *
-     * @param packageName 用户输入的包名文本。
-     * @param selfPackageName 当前应用自身包名；拒绝加入自身，避免把本应用内部复制误屏蔽。
-     * @param currentPackageCount 当前已保存数量；达到上限时拒绝继续添加。
-     */
-    fun validateManualPackage(
-        packageName: String,
-        selfPackageName: String,
-        currentPackageCount: Int,
-    ): ManualPackageValidationResult {
-        /** 去掉首尾空白后的用户输入；中间空白仍视为危险字符。 */
-        val trimmedPackageName = packageName.trim()
-        if (trimmedPackageName.isEmpty()) {
-            return ManualPackageValidationResult.Blank
-        }
-        if (trimmedPackageName.length > MAX_PACKAGE_NAME_LENGTH) {
-            return ManualPackageValidationResult.TooLong
-        }
-        if (!hasSafeCharacters(trimmedPackageName)) {
-            return ManualPackageValidationResult.UnsafeCharacters
-        }
-        if (trimmedPackageName == selfPackageName.trim()) {
-            return ManualPackageValidationResult.SelfPackage
-        }
-        if (currentPackageCount >= MAX_PACKAGE_COUNT) {
-            return ManualPackageValidationResult.TooManyPackages
-        }
-        return ManualPackageValidationResult.Valid(trimmedPackageName)
-    }
-
-    /**
      * 规范化单个包名。
      *
      * 返回 null 表示该包名不应参与保存、匹配或备份；大小写保持原样，避免把不同字面值误合并。
@@ -104,32 +72,4 @@ object ClipSourceBlockRules {
             unsafe
         }
     }
-}
-
-/**
- * 手动包名添加校验结果。
- *
- * UI 根据不同结果展示短提示；成功结果携带 trim 后的包名，调用方不需要再次处理空白。
- */
-sealed interface ManualPackageValidationResult {
-    /** 输入合法，可以加入过滤名单。 */
-    data class Valid(
-        /** 已 trim 的包名，保持用户输入大小写。 */
-        val packageName: String,
-    ) : ManualPackageValidationResult
-
-    /** 输入为空或只有空白。 */
-    data object Blank : ManualPackageValidationResult
-
-    /** 输入等于当前应用自身包名。 */
-    data object SelfPackage : ManualPackageValidationResult
-
-    /** 输入超过单个包名长度上限。 */
-    data object TooLong : ManualPackageValidationResult
-
-    /** 输入包含空白、控制字符或明显危险分隔符。 */
-    data object UnsafeCharacters : ManualPackageValidationResult
-
-    /** 当前过滤名单已经达到数量上限。 */
-    data object TooManyPackages : ManualPackageValidationResult
 }
