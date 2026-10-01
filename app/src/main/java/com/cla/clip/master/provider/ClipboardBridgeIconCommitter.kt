@@ -6,7 +6,6 @@ import com.cla.clip.base.general.utils.extractUsableColor
 import com.cla.clip.base.general.utils.logE
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.logW
-import com.cla.clip.master.work.BackupAutoScheduler
 import com.cla.clip.shizuku.ClipboardBridgeContract
 import dagger.Lazy
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -115,7 +114,6 @@ class ClipboardBridgeIconCommitter @Inject constructor(
             primaryColor = primaryColor,
             iconHash = iconResolution.iconHash
         )
-        BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
 
         logI(TAG) {
             "Provider 图标提交成功 eventId=${request.eventId} packageName=$packageName iconHash=${iconResolution.iconHash}"

@@ -2,7 +2,6 @@ package com.cla.clip.base.general.repository
 
 import androidx.paging.PagingSource
 import androidx.room.withTransaction
-import com.cla.clip.base.general.backup.settings.BackupRuntimeRepository
 import com.cla.clip.base.general.dao.AppDatabase
 import com.cla.clip.base.general.dao.ClipDao
 import com.cla.clip.base.general.dao.ClipData
@@ -31,8 +30,6 @@ class ClipRepositoryImpl @Inject constructor(
     private val clipDao: ClipDao,
     private val sourceAppDao: SourceAppDao,
     private val linkPreviewDao: LinkPreviewDao,
-    /** Room 成功写入后等待备份变更版本落盘；失败由调用方诊断。 */
-    private val backupRuntimeRepository: BackupRuntimeRepository,
 ) : ClipRepository {
 
     companion object {
@@ -253,7 +250,6 @@ class ClipRepositoryImpl @Inject constructor(
                 }
                 is DuplicateClipSaveAction.SkipDuplicate -> error("addNewClip: skip action should return before writing")
             }
-            backupRuntimeRepository.markChanged()
             ClipSaveResult.Saved(clipId)
         }
     }
@@ -299,16 +295,19 @@ class ClipRepositoryImpl @Inject constructor(
         moveClipsToRecycleBin(setOf(clip.id)) > 0
     }
 
+    /** 分批移入回收站后直接返回业务提交数量，不维护备份版本。 */
     override suspend fun moveClipsToRecycleBin(ids: Set<Long>): Int = withContext(Dispatchers.IO) {
+        /** 有效且唯一的业务身份。 */
         val normalizedIds = ids.filter { it > 0L }.distinct()
         if (normalizedIds.isEmpty()) return@withContext 0
+        /** 同一批次共享的回收站时间。 */
         val deletedAt = System.currentTimeMillis()
+        /** 原子提交的实际移入数量。 */
         val moved = appDatabase.withTransaction {
             normalizedIds.chunked(ID_BATCH_SIZE).sumOf { chunk ->
                 clipDao.moveClipsToRecycleBin(chunk, deletedAt)
             }
         }
-        if (moved > 0) backupRuntimeRepository.markChanged()
         moved
     }
 
@@ -316,27 +315,31 @@ class ClipRepositoryImpl @Inject constructor(
         deleteClipsPermanently(setOf(clip.id)) > 0
     }
 
+    /** 在事务内分批永久删除，失败仅由业务数据库决定。 */
     override suspend fun deleteClipsPermanently(ids: Set<Long>): Int = withContext(Dispatchers.IO) {
+        /** 排除非法和重复业务身份。 */
         val normalizedIds = ids.filter { it > 0L }.distinct()
         if (normalizedIds.isEmpty()) return@withContext 0
+        /** 实际永久删除数量。 */
         val deleted = appDatabase.withTransaction {
             normalizedIds.chunked(ID_BATCH_SIZE).sumOf { chunk ->
                 clipDao.deleteClipsByIds(chunk)
             }
         }
-        if (deleted > 0) backupRuntimeRepository.markChanged()
         deleted
     }
 
+    /** 分批恢复业务记录，完成后不额外生成备份。 */
     override suspend fun restoreClipsFromRecycleBin(ids: Set<Long>): Int = withContext(Dispatchers.IO) {
+        /** 有效且唯一的待恢复身份。 */
         val normalizedIds = ids.filter { it > 0L }.distinct()
         if (normalizedIds.isEmpty()) return@withContext 0
+        /** 事务成功恢复的记录数量。 */
         val restored = appDatabase.withTransaction {
             normalizedIds.chunked(ID_BATCH_SIZE).sumOf { chunk ->
                 clipDao.restoreClipsFromRecycleBin(chunk)
             }
         }
-        if (restored > 0) backupRuntimeRepository.markChanged()
         restored
     }
 
@@ -344,16 +347,18 @@ class ClipRepositoryImpl @Inject constructor(
         return clipDao.loadRecycleBinClips()
     }
 
+    /** 只提交置顶业务时间，不引入备份写入依赖。 */
     override suspend fun updatePinStatus(clipId: Long, isPinned: Boolean) {
+        /** 零表示取消置顶，非零为此次置顶时间。 */
         val pinnedTime = if (isPinned) System.currentTimeMillis() else 0L
         clipDao.updatePinStatus(clipId, pinnedTime)
-        backupRuntimeRepository.markChanged()
     }
 
+    /** 提交折叠状态和对应业务时间。 */
     override suspend fun updateFoldStatus(clipId: Long, isFolded: Boolean) = withContext(Dispatchers.IO) {
+        /** 取消折叠时清空时间，避免保留失效排序值。 */
         val foldedAt = if (isFolded) System.currentTimeMillis() else 0L
         clipDao.updateFoldStatus(clipId, isFolded, foldedAt)
-        backupRuntimeRepository.markChanged()
     }
 
     override suspend fun foldVisibleClips(ids: Set<Long>): Int = withContext(Dispatchers.IO) {
@@ -368,15 +373,15 @@ class ClipRepositoryImpl @Inject constructor(
                 clipDao.foldVisibleClips(chunk, foldedAt)
             }
         }
-        if (folded > 0) backupRuntimeRepository.markChanged()
         folded
     }
 
+    /** 更新时间仅影响业务排序，下一次备份读取提交后的值。 */
     override suspend fun updateTimestamp(clipId: Long) {
+        /** 此次业务更新时间。 */
         val currentTime = System.currentTimeMillis()
-        // 这里直接调用 upsertClip 来更新 timestamp，保持逻辑一致性
+        // 复用专用 DAO 更新，避免重写无关实体字段。
         clipDao.updateTimestamp(clipId, currentTime)
-        backupRuntimeRepository.markChanged()
     }
 
     override fun loadClips(visibilityScope: ClipVisibilityScope): PagingSource<Int, ClipDetail> {
@@ -391,29 +396,34 @@ class ClipRepositoryImpl @Inject constructor(
         return clipDao.observeRecycleBinCount()
     }
 
+    /** 清空回收站并返回实际删除数量。 */
     override suspend fun clearRecycleBinPermanently(): Int = withContext(Dispatchers.IO) {
+        /** 数据库提交的真实删除数量。 */
         val deleted = clipDao.clearRecycleBinPermanently()
-        if (deleted > 0) backupRuntimeRepository.markChanged()
         deleted
     }
 
+    /** 按既有保留范围清理过期记录，不触发即时备份。 */
     override suspend fun cleanupExpiredRecycleBinClips(days: Int): Int = withContext(Dispatchers.IO) {
+        /** 产品允许的保留天数。 */
         val safeDays = days.coerceIn(MIN_RETENTION_DAYS, MAX_RETENTION_DAYS)
+        /** 毫秒边界与数据库时间单位保持一致。 */
         val cutoffMillis = System.currentTimeMillis() - safeDays * 24L * 60L * 60L * 1_000L
+        /** 真正被清理的记录数。 */
         val deleted = clipDao.cleanupExpiredRecycleBinClips(cutoffMillis)
-        if (deleted > 0) backupRuntimeRepository.markChanged()
         deleted
     }
 
+    /** 清空业务记录，数据库错误直接传播。 */
     override suspend fun clearAll() = withContext(Dispatchers.IO) {
         clipDao.clearAll()
-        backupRuntimeRepository.markChanged()
     }
 
     override suspend fun loadSourceApp(packageName: String) = withContext(Dispatchers.IO) {
         sourceAppDao.loadByPackageName(packageName)
     }
 
+    /** 更新来源图标缓存，不维护备份变更标记。 */
     override suspend fun updateSourceAppIcon(
         packageName: String,
         appName: String?,
@@ -434,15 +444,14 @@ class ClipRepositoryImpl @Inject constructor(
             existingSourceApp = existingSourceApp
         )
         sourceAppDao.upsert(sourceApp)
-        backupRuntimeRepository.markChanged()
+        Unit
     }
 
+    /** 清除单个来源缓存字段，业务提交后直接结束。 */
     override suspend fun clearSourceAppIconCache(packageName: String) = withContext(Dispatchers.IO) {
-        /** 只有数据库里已存在对应来源缓存时才需要清理并标记备份 dirty。 */
-        val clearedRows = sourceAppDao.clearIconCache(packageName)
-        if (clearedRows > 0) {
-            backupRuntimeRepository.markChanged()
-        }
+        /** 直接提交已有缓存清理，不产生额外备份副作用。 */
+        sourceAppDao.clearIconCache(packageName)
+        Unit
     }
 
     override fun loadAllSourceApps(): Flow<List<SourceAppData>> {
@@ -470,7 +479,6 @@ class ClipRepositoryImpl @Inject constructor(
             siteName = old?.siteName.takeUnless { it.isNullOrBlank() } ?: preview.siteName,
         )
         linkPreviewDao.upsert(merged)
-        backupRuntimeRepository.markChanged()
 
         clipDao.loadClipDetailsByLink(preview.link).forEach { detail ->
             val clip = detail.clip

@@ -42,7 +42,7 @@ class BackupSnapshotExporter @Inject constructor(
     /**
      * 生成完整备份快照和 manifest。
      *
-     * 导出开始时读取 high-water mark，后续分页只导出这些边界内的数据；导出期间新增变化由 dirty 机制留给下一次备份。
+ * 导出开始时读取 high-water mark，后续分页只导出这些边界内的数据；新增变化在下一次每日或手动备份中读取。
      */
     suspend fun export(
         source: BackupSource,

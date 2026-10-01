@@ -1,4 +1,4 @@
-package com.cla.clip.master.ui.page.backup
+package com.cla.clip.master.backup.local
 
 import android.content.Context
 import android.net.Uri
@@ -25,7 +25,7 @@ import javax.inject.Inject
 /**
  * 本地备份文件夹写入器。
  *
- * 该类专门处理 SAF 目录授权下的文件创建和字节写入；ViewModel 只负责“先本地、后 WebDAV”的业务流程，
+ * 该类专门处理 SAF 目录授权下的文件创建和字节写入；备份协调器负责“先本地、后 WebDAV”的业务流程，
  * 避免把 ContentResolver 副作用散落在页面状态编排中。目录 URI 来自用户主动授权，失效或不可写时统一抛出
  * `BackupFailure.StorageNotWritable`，由 UI 显示可行动提示。
  */

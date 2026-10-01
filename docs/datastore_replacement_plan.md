@@ -79,7 +79,7 @@ TorrentSearch 保留独立文件及独立 Repository，不合并领域模型。�
 | `webDavPassword` | 替换为版本化 Keystore 密文；缺失表示未设置 | 排除，凭据 |
 | `localBackupDirUri`、`localBackupDirLabel` | 默认空；保存、清空时成组提交，使用前校验 SAF 授权 | 排除，设备绑定授权 |
 | `autoBackupEnabled`、`backupPlaintextDisclosureAccepted`、`autoBackupOnlyWifi`、`backupRetentionCount` | 默认 false、false、false、5；保留份数 1–20，开关不绕过披露和目标检查 | 排除，本机执行策略 |
-| `backupDirty` | 对 UI 保留 dirty 语义；内部改为当前变更版本与已备份版本的比较 | 排除，本机运行状态 |
+| 本地/WebDAV 结果及待上传身份 | 每个目标保存最近完成时间、失败标志和低敏原因；上传身份按文件管理，不关联业务变化版本 | 排除，本机运行状态 |
 | `lastAutoBackupStatus`、`lastAutoBackupSuccessAt`、`lastAutoBackupFailureReason`、`lastAutoBackupSkipReason` | 默认 idle、0、空、空；状态写稳定 code，原因优先存 code 并在 UI 资源化 | 排除，可重建状态 |
 | `webDavHealth`、`webDavHealthCheckedAt` | 默认 unknown、0；配置变化时同事务使旧健康状态失效 | 排除，目标探测缓存 |
 | `lastBackupSuccessSummary` | 继续复用 `BackupJson` 的小型摘要编码；默认无摘要 | 排除，本机成功记录 |
@@ -135,21 +135,14 @@ WebDAV 存储版本、IV 和带认证标签的密文，采用小型显式格式�
 
 - 将 `AppSetting.toBackupSettings()` 改为接收一次读取的领域快照的纯 mapper；只导出快捷动作、回收站天数和来源过滤名单。单次导出的设置内容、摘要与校验使用同一份快照。
 - 复用 `BackupSnapshotExporter`、`BackupSnapshotRestorer`、`BackupJson` 和 `BackupFeatureContributor`，不重新实现 ZIP、checksum、分页和幂等合并。
-- 恢复设置时，在同一次 `edit` 内读取最新本地过滤名单、计算并集、更新其他白名单字段和变更版本。不要拿恢复开始前的旧名单覆盖用户期间新增的规则。
+- 恢复设置时，在同一次 `edit` 内读取最新本地过滤名单、计算并集、更新其他白名单字段，不附加备份版本写入。不要拿恢复开始前的旧名单覆盖用户期间新增的规则。
 - Room 与 DataStore 没有共同事务。恢复先完成既有数据库阶段，再等待设置提交；设置失败必须报告数据库已恢复、设置未恢复的部分结果，重试设置阶段仍应幂等。不能把 `edit` 放进 Room 事务就宣称跨库原子成功。
-- 可选功能库使用独立 Room 文件：宿主 Room 提交后再恢复功能库，再提交宿主设置；后续阶段失败携带已完成的宿主报告，页面显示部分恢复并提供同一备份重试。功能库分批写入后立即等待 dirty 标记；进程在两个存储之间中断仍由每日完整备份兜底。
+- 可选功能库使用独立 Room 文件：宿主 Room 提交后再恢复功能库，再提交宿主设置；后续阶段失败携带已完成的宿主报告，页面显示部分恢复并提供同一备份重试。功能库分批提交保持，取消跨存储 dirty 标记；下一次每日/手动快照读取最新数据。
 - 不把整份 Preferences、WebDAV 配置、密码、授权 URI、隐私同意、安装 ID 或任务状态加入 ZIP。
 
-### dirty 的异步化
+### 每日备份接入（2026-10-01）
 
-现有布尔值存在“导出期间发生新变化，备份结束仍清为 false”的竞态。替换时建议改为 `changeRevision` 与 `backedUpRevision`，初始值分别为 1、0，dirty 为二者不相等。
-
-1. 宿主可备份设置真实改变时，在同一个 `edit` 内递增变更版本；相同值不产生无意义变化。
-2. Room 和 TorrentSearch 的成功变更，通过可等待的 dirty 接口记录版本；调整现有 `TorrentSearchBackupDirtyMarker` 与 fake，不用未等待的 `launch` 代写。失败区分业务数据已提交与标记失败，不让调用者盲目重复非幂等业务动作。
-3. 导出前捕获版本 R。所有本次配置目标成功后，只确认已覆盖 R；不把导出结束时的新版本当成已备份。部分失败、取消、设置读取失败均保留待备份状态。
-4. Room/独立 DataStore 写入与宿主标记仍有进程中断窗口。当前方案不引入跨库事务或 outbox；每日周期任务作为全量兜底时不因 dirty=false 跳过，短延迟任务仍可按 dirty 合并。该行为相较当前周期任务也是明确调整，会增加无变化时的备份 IO。
-5. 已在各领域仓库原子更新 dirty 版本的操作只调用 `scheduleAfterCommittedChange`；调度失败返回 false、保留已提交结果和 dirty，页面按需显示“重试调度”。只有未由仓库标记的直接恢复写入才调用 `markDirtyAndSchedule`，避免重复递增版本。
-6. 若未来要求进程中断后也立即准确触发备份，另行设计 Room 事务内 outbox 或持久化变更日志；本轮承诺最终兜底，不承诺跨库恰好一次。WorkManager 运行时间仍受系统调度约束。
+业务保存仅提交业务数据，不维护备份变更/确认版本，也不调用备份调度。备份运行仓库只保存两个目标的完成结果、待上传文件身份与稳定阶段；每日生成无网络约束，WebDAV 同包上传独立等待网络。完整设计、兼容初始化、清理与日志以 [备份主方案](webdav_backup_plan.md) 为准。
 
 ### 系统备份
 
@@ -165,7 +158,7 @@ WebDAV 存储版本、IV 和带认证标签的密文，采用小型显式格式�
 2. **普通设置和 UI**：替换 `MineVm`、`ClipSourceBlockSettingVm`、`DetailViewModel`、`RecycleBinVm`、列表/搜索页，以及 `ClipHelper` 的设置入口。复用现有组件，只增加必要的加载、保存失败和重试状态及字符串资源。
 3. **安装身份和后台入口**：替换 `ShizukuConnector`、`ClipboardBridgeShizukuProcessCoordinator`、Provider 冷启动、下载/回收站 Worker、自升级限频；验证写入与副作用的先后顺序。
 4. **广告与敏感配置**：替换 `MainActivity`、`AdHostEnvironment`、`UniAdConsentProvider`、`CsjAdConsentProvider` 的同步来源；下沉通用 Keystore 原语并接入 WebDAV。广告 SDK 保持现有合规门禁，不用默认值提前初始化。
-5. **备份闭环**：替换 `BackupVm`、`BackupRestoreVm`、Exporter/Restorer/mapper、自动备份 Worker/Scheduler、媒体关联及各 Repository 的 dirty 调用；覆盖保存后调度、恢复部分失败、导出期间新变化和系统备份排除。
+5. **备份闭环**：每日无网络约束生成最新数据，本地先发布，网络满足后消费同包；移除各 Repository、恢复和媒体关联后的版本/调度调用。设置白名单、部分恢复报告和系统备份排除保持，以备份主方案为准。
 6. **完全切换**：删除 `AppSetting` 的持久化门面、`MmkvInitializer`、Application/Provider MMKV 初始化、Gradle MMKV alias 与依赖、旧加密常量、MMKV 专用测试与配置、备份 XML 中的 `mmkv/` 排除项和相关代码注释。仍有价值的领域枚举/常量移至对应领域，保留业务测试并改测 DataStore 契约。MMKV 名称只可出现在替换方案和必要的历史文档记录中，不留可执行代码或配置例外。
 7. **收尾**：同步设置、来源过滤、Shizuku、广告、回收站、下载及备份主文档中的实际行为；关联页面只写接入差异。受影响代码中的每个方法、参数/变量声明与关键分支按仓库规则补简体中文注释。
 
@@ -182,7 +175,7 @@ WebDAV 存储版本、IV 和带认证标签的密文，采用小型显式格式�
 | 纯规则 | 全字段默认值、稳定 code、未知值、范围裁剪、包名规范化与确定顺序、备份白名单、密文格式坏输入 |
 | 真实临时文件 DataStore | 写后重新创建实例可读；先取消并 join 旧 scope；并发名单更新不丢数据；安装 ID 只生成一份；关联字段只出现完整组合 |
 | 失败与状态 | 读写 IO 失败、取消传播、损坏文件不静默重置、保存失败不显示成功、不启动任务、广告未就绪不初始化 |
-| 备份协作者 | 设置导出快照一致、恢复名单并集、重复恢复幂等、数据库成功而设置失败的报告、版本确认不吞新变化、周期兜底不按 clean 跳过 |
+| 备份协作者 | 设置导出快照一致、恢复名单并集、重复恢复幂等、数据库成功而设置失败的报告、两目标结果隔离、周期不依赖保存变化、终态包不复活 |
 | Provider / Shizuku | Provider 先于 Application 冷启动、并发查询、IO 超时、Main 调用保护、提交进程名后再绑定、无回调循环等待 |
 | 密码学边界 | JVM fake 测失败分支与配置原子提交；Android 设备测 Keystore 加解密、密钥失效、篡改和重新输入；只用合成凭据 |
 | 手工/设备 | 设置跨页面刷新、进程重启、关闭页面取消收集、SAF 失效、冷启动 Worker、系统云备份/设备迁移、功能开关开关两种装配 |
@@ -217,7 +210,7 @@ Release/R8 验证关注从枚举 name 改为稳定 code 后的状态恢复、摘
 | 设置首次加载/保存 | D 开始，I 用户提交成功，W 可重试 IO，E 损坏或不可恢复写入 | operation、domain、durationMs、reasonCode、retryable | fake logger 检查开始/结束及失败；不记录每次 Flow 发射 |
 | 安装身份准备/Provider | D 准备与查询，W 超时，E 持久化失败 | eventId、created、ready、durationMs、reasonCode | 冷启动、超时和 Main 保护测试，不打印身份内容 |
 | 凭据存取 | D 操作，W 暂时不可访问，E 认证失败/永久失效 | operation、hasCredential、reasonCode、异常类型 | 合成哨兵凭据扫描日志，禁止 throwable.message |
-| 备份版本确认 | D 捕获/确认/保留待备份，I 任务完成，W 部分失败 | taskId、dirty、revisionChanged、targetCount、reasonCode | 并发变更与跨存储失败注入 |
+| 备份结果及私有包 | I 发布/交接/完成，W 清理失败，E 任务失败 | taskId、source、phase、targetCount、reasonCode；不输出内容或授权 | 独立结果、身份替换和终态清理失败注入 |
 | 恢复分阶段提交 | I 阶段成功，W 部分成功，E 设置提交失败 | taskId、stage、changedCount、reasonCode | 报告与真实提交结果一致 |
 
 普通状态映射、键声明和纯规则不新增日志，避免高频噪声；敏感异常只记录类型与稳定原因码。Worker、Provider 和调度失败分支记录低敏 reasonCode，不输出密码、身份或剪贴内容。
@@ -230,7 +223,7 @@ Release/R8 验证关注从枚举 name 改为稳定 code 后的状态恢复、摘
 - 同步 Binder 协程桥接是局部规则例外，限非 Main、有超时的协议边界；不得向普通读取接口扩散。
 - 每日完整备份兜底会增加磁盘和网络使用；若之后要同时减少无变化备份并保证崩溃一致性，应设计持久化变更日志，不能仅恢复 clean 跳过。
 - 独立 Room 与 DataStore 不提供全局事务，恢复报告必须真实表达阶段结果；本轮不做全库 schema 重构。
-- 自动备份在本地目标成功而 WebDAV 失败时保留 dirty 并重试；重试可能再次写入本地归档、占用保留份额。后续若需要避免重复归档，应为每个目标保存可恢复的完成标记，本轮不引入跨目标事务。
+- 本地和 WebDAV 保存独立结果；本地成功后远端失败只更新远端，私有包先记录终态再释放，不主动退避重试、不再次写本地归档。次日或手动生成新包，保留当前每目标普通备份滚动份数。
 - 本轮只下沉可复用密码学原语，不顺便将 Torznab 的 SharedPreferences 密文介质迁移到 DataStore。
 - 仍需用设备校准 Provider 超时、验证 merged manifest 与功能开关组合；这些是设备验证项，不影响当前选型。
 

@@ -7,9 +7,6 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.room.Room
-import com.cla.clip.base.general.backup.settings.BackupRuntimeRepository
-import com.cla.clip.feature.torrent.search.backup.BackupRuntimeTorrentSearchBackupDirtyMarker
-import com.cla.clip.feature.torrent.search.backup.TorrentSearchBackupDirtyMarker
 import com.cla.clip.feature.torrent.search.data.local.BookmarkedTorrentDao
 import com.cla.clip.feature.torrent.search.data.document.AndroidBookmarkDocumentGateway
 import com.cla.clip.feature.torrent.search.data.document.BookmarkDocumentGateway
@@ -123,12 +120,7 @@ internal object TorrentSearchDataModule {
     @Provides
     fun provideDataLogger(): TorrentSearchDataLogger = AndroidTorrentSearchDataLogger
 
-    /** 提供宿主统一备份 dirty 标记适配器，不在 feature 内调度 Worker。 */
-    @Provides
-    fun provideBackupDirtyMarker(
-        /** 宿主版本仓库，只有白名单真实写入后才推进。 */
-        backupRuntimeRepository: BackupRuntimeRepository,
-    ): TorrentSearchBackupDirtyMarker = BackupRuntimeTorrentSearchBackupDirtyMarker(backupRuntimeRepository)
+
 
     /** 提供只访问应用私有 databases/cache 固定目标的旧磁力清理器。 */
     @Provides
@@ -182,9 +174,7 @@ internal object TorrentSearchDataModule {
         logger: TorrentSearchDataLogger,
         /** 共享 DNS 路由只接收稳定模式，不在设置读取时主动联网。 */
         dnsModeApplier: TorrentSearchDnsModeApplier,
-        /** 只有排序白名单变化会通过该边界标记 dirty。 */
-        backupDirtyMarker: TorrentSearchBackupDirtyMarker,
-    ): TorrentSearchSettingsRepository = TorrentSearchSettingsRepository(dataStore, logger, dnsModeApplier, backupDirtyMarker)
+    ): TorrentSearchSettingsRepository = TorrentSearchSettingsRepository(dataStore, logger, dnsModeApplier)
 
     /** 提供书签 Repository，并把真实时钟限制在依赖装配层。 */
     @Provides
@@ -194,14 +184,11 @@ internal object TorrentSearchDataModule {
         dao: BookmarkedTorrentDao,
         /** 固定 code 低敏日志。 */
         logger: TorrentSearchDataLogger,
-        /** 跨安装数据变化标记。 */
-        backupDirtyMarker: TorrentSearchBackupDirtyMarker,
     ): BookmarkRepository {
         return BookmarkRepositoryImpl(
             dao = dao,
             logger = logger,
             nowMillis = System::currentTimeMillis,
-            backupDirtyMarker = backupDirtyMarker,
         )
     }
 
@@ -213,14 +200,11 @@ internal object TorrentSearchDataModule {
         dao: TorrentSearchHistoryDao,
         /** 固定 code 低敏日志。 */
         logger: TorrentSearchDataLogger,
-        /** 跨安装数据变化标记。 */
-        backupDirtyMarker: TorrentSearchBackupDirtyMarker,
     ): TorrentSearchHistoryRepository {
         return TorrentSearchHistoryRepositoryImpl(
             dao = dao,
             logger = logger,
             nowMillis = System::currentTimeMillis,
-            backupDirtyMarker = backupDirtyMarker,
         )
     }
 
@@ -232,14 +216,11 @@ internal object TorrentSearchDataModule {
         dao: ViewedTorrentDao,
         /** 固定 code 低敏日志。 */
         logger: TorrentSearchDataLogger,
-        /** 跨安装数据变化标记。 */
-        backupDirtyMarker: TorrentSearchBackupDirtyMarker,
     ): ViewedTorrentRepository {
         return ViewedTorrentRepositoryImpl(
             dao = dao,
             logger = logger,
             nowMillis = System::currentTimeMillis,
-            backupDirtyMarker = backupDirtyMarker,
         )
     }
 

@@ -1,5 +1,7 @@
 package com.cla.clip.master.ui.page.backup
 
+import com.cla.clip.master.backup.local.LocalBackupFile
+
 import android.net.Uri
 import com.cla.clip.base.general.backup.RemoteBackupFile
 import com.cla.clip.base.general.utils.logD

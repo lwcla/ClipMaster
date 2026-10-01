@@ -30,6 +30,22 @@ internal fun ListEntryCard(
     modifier: Modifier = Modifier,
     icon: @Composable () -> Unit,
 ) {
+    // 字符串入口委托统一骨架，保持原调用方省略参数的兼容性。
+    ListEntryCard(title = title, onClick = onClick, modifier = modifier, icon = icon, descriptionContent = {
+        Text(text = description, style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    })
+}
+
+/** 多段说明入口共享骨架；调用方可按目标独立布局，组件不订阅业务状态。 */
+@Composable
+internal fun ListEntryCard(
+    title: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    icon: @Composable () -> Unit,
+    descriptionContent: @Composable () -> Unit,
+) {
     /** 入口卡片间距 token，保证我的页、磁力入口和设置项使用同一节奏。 */
     val spacing = ClipMasterThemeTokens.tokens.spacing
     ClipMasterCard(
@@ -56,13 +72,7 @@ internal fun ListEntryCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                descriptionContent()
             }
         }
     }

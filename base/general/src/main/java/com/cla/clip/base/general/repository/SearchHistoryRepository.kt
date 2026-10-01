@@ -1,7 +1,6 @@
 package com.cla.clip.base.general.repository
 
 import androidx.room.withTransaction
-import com.cla.clip.base.general.backup.settings.BackupRuntimeRepository
 import com.cla.clip.base.general.dao.AppDatabase
 import com.cla.clip.base.general.dao.SearchHistoryDao
 import com.cla.clip.base.general.dao.SearchHistoryData
@@ -50,8 +49,6 @@ interface SearchHistoryRepository {
 class SearchHistoryRepositoryImpl @Inject constructor(
     private val appDatabase: AppDatabase,
     private val searchHistoryDao: SearchHistoryDao,
-    /** 历史成功写入后等待备份变更标记，禁止异步丢失。 */
-    private val backupRuntimeRepository: BackupRuntimeRepository,
 ) : SearchHistoryRepository {
 
     companion object {
@@ -79,14 +76,19 @@ class SearchHistoryRepositoryImpl @Inject constructor(
         }
     }
 
+    /** 事务内保存并裁剪业务历史，不再等待备份状态写入。 */
     override suspend fun saveHistory(scope: ClipVisibilityScope, query: String) = withContext(Dispatchers.IO) {
+        /** 用户展示文案只裁剪边缘空白。 */
         val displayQuery = query.trim()
+        /** 规范化去重键，独立于展示大小写。 */
         val normalizedQuery = normalizeQuery(displayQuery)
         if (normalizedQuery.isBlank() || displayQuery.length > MAX_QUERY_LENGTH || normalizedQuery.length > MAX_QUERY_LENGTH) {
             return@withContext
         }
 
+        /** 当前业务历史分类。 */
         val isFolded = scope.toFoldState()
+        /** 同一次提交的更新时间。 */
         val now = System.currentTimeMillis()
         appDatabase.withTransaction {
             searchHistoryDao.upsert(
@@ -99,20 +101,21 @@ class SearchHistoryRepositoryImpl @Inject constructor(
             )
             searchHistoryDao.trimScopeToLimit(isFolded, HISTORY_LIMIT)
         }
-        backupRuntimeRepository.markChanged()
         Unit
     }
 
+    /** 删除单条历史后直接返回实际行数，不连接备份调度。 */
     override suspend fun deleteHistory(id: Long): Int = withContext(Dispatchers.IO) {
         if (id <= 0L) return@withContext 0
+        /** 数据库提交的真实删除数量。 */
         val deleted = searchHistoryDao.deleteById(id)
-        if (deleted > 0) backupRuntimeRepository.markChanged()
         deleted
     }
 
+    /** 清空指定分类的历史，其他分类保持不变。 */
     override suspend fun clearHistories(scope: ClipVisibilityScope): Int = withContext(Dispatchers.IO) {
+        /** 当前分类实际删除数量。 */
         val deleted = searchHistoryDao.clearByScope(scope.toFoldState())
-        if (deleted > 0) backupRuntimeRepository.markChanged()
         deleted
     }
 

@@ -105,7 +105,7 @@ internal fun BackupRestoreFlowActions(
                 }
             }
             is BackupRestoreFlowState.Result -> {
-                if (state.settingsRestoreFailed || state.featureRestoreFailed || state.backupSyncFailed) {
+                if (state.settingsRestoreFailed || state.featureRestoreFailed) {
                     // 媒体关联写库期间禁止再次恢复同一备份，避免两个流程交错写入。
                     TextButton(onClick = onRestore, enabled = !mediaRelocationEntryState.isRunning) {
                         Text(stringResource(HostR.string.host_backup_restore_retry_partial))
@@ -113,7 +113,7 @@ internal fun BackupRestoreFlowActions(
                     Spacer(modifier = Modifier.size(8.dp))
                 }
                 // 恢复链路有未完成阶段时先收敛备份数据，再开放依赖恢复结果的媒体关联。
-                if (!state.settingsRestoreFailed && !state.featureRestoreFailed && !state.backupSyncFailed) {
+                if (!state.settingsRestoreFailed && !state.featureRestoreFailed) {
                     MediaRelocationAction(
                         state = mediaRelocationEntryState,
                         onOpenMediaRelocation = onOpenMediaRelocation
@@ -277,15 +277,7 @@ private fun ResultContent(
             )
         }
     }
-    if (state.backupSyncFailed) {
-        FlowSection(title = stringResource(HostR.string.host_backup_sync_failed_title)) {
-            Text(
-                text = stringResource(HostR.string.host_backup_sync_failed_message),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error
-            )
-        }
-    }
+
     FlowSection(title = stringResource(R.string.base_general_backup_section_info)) {
         state.preview?.let { preview ->
             InfoRow(stringResource(R.string.base_general_backup_info_file_name), state.fileName, keepEnd = true)
@@ -319,7 +311,7 @@ private fun ResultContent(
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
-    if (!state.settingsRestoreFailed && !state.featureRestoreFailed && !state.backupSyncFailed) {
+    if (!state.settingsRestoreFailed && !state.featureRestoreFailed) {
         MediaRelocationEntryContent(
             entryState = mediaRelocationEntryState,
             summary = mediaRelocationSummary

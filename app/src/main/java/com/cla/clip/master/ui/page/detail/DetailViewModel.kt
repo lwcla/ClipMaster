@@ -15,7 +15,6 @@ import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.toast
 import com.cla.clip.master.processor.ClipboardDataProcessor
 import com.cla.clip.master.processor.DefaultClipboardDataProcessor
-import com.cla.clip.master.work.BackupAutoScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -139,13 +138,7 @@ class DetailViewModel @Inject constructor(
             try {
                 if (clipSettingsRepository.addBlockedPackage(normalizedPackageName)) {
                     logI(TAG) { "详情页加入来源过滤名单 reasonCode=detail_block_source_added" }
-                    try {
-                        BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
-                    } catch (error: CancellationException) {
-                        throw error
-                    } catch (error: Exception) {
-                        logE(TAG, error) { "来源规则已提交但备份调度失败 reasonCode=backup_schedule_failed" }
-                    }
+
                 }
                 appContext.toast(R.string.base_general_clip_source_block_detail_added)
             } catch (error: CancellationException) {
@@ -169,13 +162,7 @@ class DetailViewModel @Inject constructor(
             try {
                 if (clipSettingsRepository.removeBlockedPackage(normalizedPackageName)) {
                     logI(TAG) { "详情页移除来源过滤名单 reasonCode=detail_block_source_removed" }
-                    try {
-                        BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
-                    } catch (error: CancellationException) {
-                        throw error
-                    } catch (error: Exception) {
-                        logE(TAG, error) { "来源规则已提交但备份调度失败 reasonCode=backup_schedule_failed" }
-                    }
+
                 }
                 appContext.toast(R.string.base_general_clip_source_block_detail_removed)
             } catch (error: CancellationException) {

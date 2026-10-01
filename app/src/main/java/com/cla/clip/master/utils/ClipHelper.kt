@@ -17,7 +17,6 @@ import com.cla.clip.base.general.utils.ApplicationScope
 import com.cla.clip.base.general.utils.LinkUtils
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logI
-import com.cla.clip.master.work.BackupAutoScheduler
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
@@ -166,7 +165,7 @@ class ClipHelper @Inject constructor(
     /**
      * 处理已经提取成文本的剪贴板内容。
      *
-     * Shizuku Provider payload 和系统 `ClipData.Item` 都会委托到这里，确保去重、链接解析、备份 dirty 和通知语义一致。
+     * Shizuku Provider payload 和系统 `ClipData.Item` 都会委托到这里，确保去重、链接解析和通知语义一致。
      */
     suspend fun processClipText(
         contentText: String?,
@@ -253,7 +252,6 @@ class ClipHelper @Inject constructor(
             val saveResult = clipRepository.get().addNewClip(captureEntity)
             return when (saveResult) {
                 is ClipSaveResult.Saved -> {
-                    BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
                     logD(TAG) { "processClip: 保存到数据库 clipId=${saveResult.clipId}" }
                     notificationHelper.get().notifyClipUpdate(
                         title = "$appName ${appContext.getString(R.string.base_general_it_was_written_into_the_clipboard)}",

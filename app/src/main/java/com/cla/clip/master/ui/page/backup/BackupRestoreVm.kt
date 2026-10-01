@@ -1,5 +1,8 @@
 package com.cla.clip.master.ui.page.backup
 
+import com.cla.clip.master.backup.local.LocalBackupDirectoryWriter
+import com.cla.clip.master.backup.local.LocalBackupFile
+
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -28,7 +31,6 @@ import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.logW
-import com.cla.clip.master.work.BackupAutoScheduler
 import com.cla.clip.master.work.BackupTaskGate
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -159,15 +161,6 @@ class BackupRestoreVm @Inject constructor(
                         partialRestoreStage = partial.stage
                         partial.report
                     }
-                    /** Room 已提交后，即使同步标记失败也必须保留真实恢复报告。 */
-                    val backupSyncFailed = try {
-                        BackupAutoScheduler.markDirtyAndSchedule(appContext)
-                        false
-                    } catch (failure: Throwable) {
-                        if (failure is CancellationException) throw failure
-                        logE(TAG) { "恢复后备份标记失败 taskId=$taskId reasonCode=${failure.backupReasonCode()}" }
-                        true
-                    }
                     if (currentRestoreFlowTaskId() != taskId) {
                         logW(TAG) { "备份恢复结果已忽略 taskId=$taskId reasonCode=flow_closed" }
                         return@runExclusive
@@ -184,17 +177,16 @@ class BackupRestoreVm @Inject constructor(
                             completedAt = completedAt,
                             settingsRestoreFailed = partialRestoreStage == BackupPartialRestoreStage.Settings,
                             featureRestoreFailed = partialRestoreStage == BackupPartialRestoreStage.Feature,
-                            backupSyncFailed = backupSyncFailed,
                         ),
                         taskId = taskId,
                         reasonCode = when (partialRestoreStage) {
                             BackupPartialRestoreStage.Feature -> "restore_partial_feature_failed"
                             BackupPartialRestoreStage.Settings -> "restore_partial_settings_failed"
-                            null -> if (backupSyncFailed) "restore_partial_backup_sync_failed" else "restore_success"
+                            null -> "restore_success"
                         }
                     )
                     logI(TAG) {
-                        "备份恢复结束 taskId=$taskId partialStage=$partialRestoreStage backupSyncFailed=$backupSyncFailed " +
+                        "备份恢复结束 taskId=$taskId partialStage=$partialRestoreStage " +
                             "inserted=${report.insertedCount} updated=${report.updatedCount} " +
                             "skipped=${report.skippedCount} durationMs=${System.currentTimeMillis() - startedAt}"
                     }

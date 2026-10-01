@@ -29,7 +29,7 @@ class ClipboardBridgeClipCommitCoordinator @Inject constructor(
     @param:ApplicationContext private val appContext: Context,
     /** Provider 剪贴 payload 临时传输目录管理器。 */
     private val payloadStore: ClipboardBridgeClipPayloadStore,
-    /** 剪贴板入库助手，复用现有去重、链接解析、备份 dirty 和通知逻辑。 */
+    /** 剪贴板入库助手，复用现有去重、链接解析和通知逻辑。 */
     private val clipHelper: Lazy<ClipHelper>,
     /** 剪贴仓库，用于复用旧来源图标字段。 */
     private val clipRepository: Lazy<ClipRepository>,

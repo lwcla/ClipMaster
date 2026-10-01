@@ -479,30 +479,7 @@ data class BackupRestoreCategoryReport(
     ) : this(category.reportCode(), insertedCount, updatedCount, skippedCount)
 }
 
-/**
- * 备份长任务状态。
- *
- * 页面、Worker 和最近状态持久化都使用同一组状态，避免 UI 通过字符串拼接推断运行结果。
- * 最近状态由备份运行仓库映射为稳定 code 保存，不依赖枚举名称的混淆结果。
- */
-enum class BackupTaskStatus {
-    /** 没有任务或尚未产生结果。 */
-    Idle,
-    /** 当前正在执行备份或恢复。 */
-    Running,
-    /** 所有目标都成功。 */
-    Success,
-    /** 至少一个目标成功，同时存在另一个目标失败。 */
-    PartialSuccess,
-    /** 因 dirty=false、无目标或约束未满足而跳过。 */
-    Skipped,
-    /** 可重试失败已交给 WorkManager 退避。 */
-    RetryScheduled,
-    /** 不可自动恢复或最终失败。 */
-    Failed,
-}
-
-/** 最近一次自动备份摘要，保存到本机配置用于备份页无需刷新远端列表也能展示可用恢复点。 */
+/** 旧版全局成功摘要，仅用于明确成功目标的兼容读取；字段协议继续保持稳定。 */
 @Keep
 @Serializable
 data class BackupSuccessSummary(

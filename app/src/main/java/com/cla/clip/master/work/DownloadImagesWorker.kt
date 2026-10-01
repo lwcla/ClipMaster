@@ -152,7 +152,6 @@ class DownloadImagesWorker @AssistedInject constructor(
                 filteredCount = filteredCount,
                 outputDir = outputDir
             )
-            BackupAutoScheduler.scheduleAfterCommittedChange(applicationContext)
             notifyResult(batchId, outputFolderName, outputDir, publishResult.successCount, failedCount, filteredCount)
             Result.success()
         }.getOrElse { tr ->
@@ -166,7 +165,6 @@ class DownloadImagesWorker @AssistedInject constructor(
                 outputDir = outputDir,
                 errorMsg = tr.message
             )
-            BackupAutoScheduler.scheduleAfterCommittedChange(applicationContext)
             notifyResult(batchId, outputFolderName, outputDir, 0, items.size, 0)
             Result.failure()
         }

@@ -1,183 +1,153 @@
 package com.cla.clip.base.general.backup.settings
 
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
-import com.cla.clip.base.general.backup.BackupJson
-import com.cla.clip.base.general.backup.BackupSuccessSummary
 import com.cla.clip.base.general.backup.BackupTargetHealth
-import com.cla.clip.base.general.backup.BackupTaskStatus
-import com.cla.clip.base.general.config.datastore.HostSettingsKeys
+import com.cla.clip.base.general.config.datastore.HostSettingsKeys as Keys
 import com.cla.clip.base.general.config.datastore.HostSettingsStore
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** 本机备份任务状态快照；版本差值是唯一的 dirty 来源。 */
+/** 分目标结果与文件身份；测试连接和备份结果互不覆盖。 */
 data class BackupRuntimeSnapshot(
-    /** 本次安装内已提交的可备份数据变更版本。 */
-    val changeRevision: Long,
-    /** 已由所有目标完整备份的最近版本。 */
-    val backedUpRevision: Long,
-    /** 最近自动备份任务状态。 */
-    val status: BackupTaskStatus,
-    /** 最近成功备份时间，0 表示尚无成功记录。 */
-    val successAt: Long,
-    /** 已脱敏的最近失败原因；页面负责决定如何展示。 */
-    val failureReason: String,
-    /** 已脱敏的最近跳过原因。 */
-    val skipReason: String,
-    /** 最近一次 WebDAV 连通性检查状态。 */
-    val webDavHealth: BackupTargetHealth,
-    /** 最近一次 WebDAV 连通性检查时间。 */
-    val webDavHealthCheckedAt: Long,
-    /** 最近成功备份摘要，损坏摘要只在展示上回退为空。 */
-    val successSummary: BackupSuccessSummary?,
-) {
-    /** 当前仍有变更未包含进所有已确认目标的备份。 */
-    val dirty: Boolean get() = changeRevision != backedUpRevision
-}
+    /** 本地正式发布或手动导出的最近结果。 */
+    val localResult: BackupTargetResult = BackupTargetResult(),
+    /** WebDAV 实际上传的最近结果。 */
+    val webDavResult: BackupTargetResult = BackupTargetResult(),
+    /** 私有同包上传状态。 */
+    val pendingUpload: BackupPendingUpload? = null,
+    /** 连接测试缓存，不表示备份成功。 */
+    val webDavHealth: BackupTargetHealth = BackupTargetHealth.Unknown,
+    /** 最近连接测试时间。 */
+    val webDavHealthCheckedAt: Long = 0L,
+)
 
-/** DataStore 中的备份运行态：负责版本确认与一次事务内更新相关状态。 */
+/** 只保存备份结果和文件身份；业务保存不再依赖备份运行态。 */
 @Singleton
 class BackupRuntimeRepository @Inject internal constructor(
-    /** 唯一宿主设置文件；原始 key 仅在数据层使用。 */
+    /** 安装内设置的唯一事务入口。 */
     private val store: HostSettingsStore,
 ) {
-    /** 观察低敏运行状态，不在页面维护第二份可写镜像。 */
-    val data: Flow<BackupRuntimeSnapshot> = store.data.map(::decode).distinctUntilChanged()
+    /** 每个仓库仅核对一次旧键；多实例并发编辑仍由 DataStore 事务保证幂等。 */
+    @Volatile private var legacyChecked = false
 
-    /** 获取当前已提交状态；IO 失败由调用者处理，不能当作空配置。 */
-    suspend fun snapshot(): BackupRuntimeSnapshot = decode(store.snapshot())
+    /** 展示订阅由页面生命周期管理。 */
+    val data = store.data.onStart { migrateLegacy() }.map(::decode).distinctUntilChanged()
 
-    /** 在写入真正的可备份业务变化后递增版本；完成前不返回成功。 */
-    suspend fun markChanged() {
+    /** IO 失败向调用方传播，不伪装为未备份。 */
+    suspend fun snapshot(): BackupRuntimeSnapshot {
+        migrateLegacy()
+        return decode(store.snapshot())
+    }
+
+    /** 兼容事务失败向入口传播，不能把不可读存储伪装为全新安装。 */
+    private suspend fun migrateLegacy() {
+        if (legacyChecked) return
+        store.edit(BackupLegacyRuntimeMigration::apply)
+        legacyChecked = true
+    }
+
+    /** 仅更新实际执行的目标，非空错误码表示失败。 */
+    suspend fun recordTargetResult(target: BackupResultTarget, completedAt: Long, reasonCode: String = "") {
+        store.edit { preferences -> preferences.writeResult(target, completedAt, reasonCode) }
+    }
+
+    /** 完整包准备好后才切换指针，失败不会遗失旧包身份。 */
+    suspend fun replacePending(pending: BackupPendingUpload) {
         store.edit { preferences ->
-            /** 事务内最新变更版本，避免并发写入丢失递增。 */
-            val current = preferences[HostSettingsKeys.CHANGE_REVISION] ?: INITIAL_CHANGE_REVISION
-            check(current < Long.MAX_VALUE) { "backup_change_revision_exhausted" }
-            preferences[HostSettingsKeys.CHANGE_REVISION] = current + 1L
+            preferences[Keys.PENDING_ARTIFACT_ID] = pending.artifactId
+            preferences[Keys.PENDING_TARGET] = pending.targetFingerprint
+            preferences[Keys.PENDING_SOURCE] = pending.source
+            preferences[Keys.PENDING_PHASE] = pending.phase
+            preferences[Keys.PENDING_CREATED_AT] = pending.createdAt
         }
     }
 
-    /** 导出开始前捕获版本；后续更新必须留给下一次备份。 */
-    suspend fun captureRevision(): Long = snapshot().changeRevision
-
-    /** 只确认导出时捕获且当前仍存在的版本，避免旧备份吞掉并发新变化。 */
-    suspend fun acknowledgeRevision(revision: Long) {
+    /** 比较身份后推进阶段，旧 Worker 不能改变新任务。 */
+    suspend fun updatePendingPhase(artifactId: String, phase: String): Boolean {
+        /** 事务内是否仍拥有当前文件。 */
+        var updated = false
         store.edit { preferences ->
-            /** 事务内最新业务变更版本。 */
-            val current = preferences[HostSettingsKeys.CHANGE_REVISION] ?: INITIAL_CHANGE_REVISION
-            /** 此前已完整备份的版本，不允许倒退。 */
-            val previous = preferences[HostSettingsKeys.BACKED_UP_REVISION] ?: INITIAL_BACKED_UP_REVISION
-            if (revision > previous && revision <= current) {
-                preferences[HostSettingsKeys.BACKED_UP_REVISION] = revision
+            if (preferences[Keys.PENDING_ARTIFACT_ID] == artifactId && !BackupPendingUpload.isTerminalPhase(preferences[Keys.PENDING_PHASE])) {
+                preferences[Keys.PENDING_PHASE] = phase
+                updated = true
+            }
+        }
+        return updated
+    }
+
+    /** 上传结果与终态一次提交；先持久化终态，再清理私有 ZIP。 */
+    suspend fun finishPending(artifactId: String, completedAt: Long, reasonCode: String = ""): Boolean {
+        /** 身份匹配才能提交远端结果。 */
+        var finished = false
+        store.edit { preferences ->
+            if (preferences[Keys.PENDING_ARTIFACT_ID] == artifactId && !BackupPendingUpload.isTerminalPhase(preferences[Keys.PENDING_PHASE])) {
+                preferences.writeResult(BackupResultTarget.WebDav, completedAt, reasonCode)
+                preferences[Keys.PENDING_PHASE] = if (reasonCode.isBlank()) "succeeded" else "failed"
+                finished = true
+            }
+        }
+        return finished
+    }
+
+    /** 文件清理后移除对应指针，不会删除随后替换的新包。 */
+    suspend fun clearPending(artifactId: String) {
+        store.edit { preferences ->
+            if (preferences[Keys.PENDING_ARTIFACT_ID] == artifactId) {
+                preferences.remove(Keys.PENDING_ARTIFACT_ID)
+                preferences.remove(Keys.PENDING_TARGET)
+                preferences.remove(Keys.PENDING_SOURCE)
+                preferences.remove(Keys.PENDING_PHASE)
+                preferences.remove(Keys.PENDING_CREATED_AT)
             }
         }
     }
 
-    /** 一次写入任务状态及失败/跳过原因，避免页面观察到互相矛盾的组合。 */
-    suspend fun recordStatus(status: BackupTaskStatus, failureReason: String = "", skipReason: String = "") {
-        store.edit { preferences ->
-            preferences[HostSettingsKeys.LAST_AUTO_BACKUP_STATUS] = status.storageCode()
-            preferences[HostSettingsKeys.LAST_AUTO_BACKUP_FAILURE_REASON] = failureReason
-            preferences[HostSettingsKeys.LAST_AUTO_BACKUP_SKIP_REASON] = skipReason
-        }
-    }
-
-    /** 备份成功后一次写入状态、摘要及可选的已覆盖版本，避免成功展示和版本确认分离。 */
-    suspend fun recordSuccess(
-        status: BackupTaskStatus,
-        summary: BackupSuccessSummary,
-        failureReason: String = "",
-        acknowledgedRevision: Long? = null,
-    ) {
-        store.edit { preferences ->
-            preferences[HostSettingsKeys.LAST_AUTO_BACKUP_STATUS] = status.storageCode()
-            preferences[HostSettingsKeys.LAST_AUTO_BACKUP_SUCCESS_AT] = summary.createdAt
-            preferences[HostSettingsKeys.LAST_BACKUP_SUCCESS_SUMMARY] = BackupJson.encodeSuccessSummary(summary)
-            preferences[HostSettingsKeys.LAST_AUTO_BACKUP_FAILURE_REASON] = failureReason
-            preferences[HostSettingsKeys.LAST_AUTO_BACKUP_SKIP_REASON] = ""
-            if (acknowledgedRevision != null) {
-                /** 仅确认当前仍存在且尚未确认的导出版本，后续并发变化仍保持 dirty。 */
-                val current = preferences[HostSettingsKeys.CHANGE_REVISION] ?: INITIAL_CHANGE_REVISION
-                /** 此前完整备份的版本不得倒退。 */
-                val previous = preferences[HostSettingsKeys.BACKED_UP_REVISION] ?: INITIAL_BACKED_UP_REVISION
-                if (acknowledgedRevision > previous && acknowledgedRevision <= current) {
-                    preferences[HostSettingsKeys.BACKED_UP_REVISION] = acknowledgedRevision
-                }
-            }
-        }
-    }
-
-    /** 配置变更或检查完成时原子更新 WebDAV 健康状态和时间。 */
+    /** 连接测试只更新健康状态，不影响两类上次备份。 */
     suspend fun setWebDavHealth(health: BackupTargetHealth, checkedAt: Long) {
         store.edit { preferences ->
-            preferences[HostSettingsKeys.WEBDAV_HEALTH] = health.storageCode()
-            preferences[HostSettingsKeys.WEBDAV_HEALTH_CHECKED_AT] = checkedAt.coerceAtLeast(0L)
+            preferences[Keys.WEBDAV_HEALTH] = when (health) {
+                BackupTargetHealth.Available -> "available"
+                BackupTargetHealth.Unavailable -> "unavailable"
+                BackupTargetHealth.Unknown -> "unknown"
+            }
+            preferences[Keys.WEBDAV_HEALTH_CHECKED_AT] = checkedAt.coerceAtLeast(0L)
         }
     }
 
-    /** 从单份磁盘快照解码为强类型运行状态；坏摘要不会在读取时隐式写盘。 */
+    /** 固定字段写入；枚举只决定键，不保存名称或序号。 */
+    private fun MutablePreferences.writeResult(target: BackupResultTarget, completedAt: Long, reasonCode: String) {
+        /** 每个目标有独立键组。 */
+        val local = target == BackupResultTarget.Local
+        this[if (local) Keys.LOCAL_RESULT_AT else Keys.WEBDAV_RESULT_AT] = completedAt.coerceAtLeast(1L)
+        this[if (local) Keys.LOCAL_RESULT_FAILED else Keys.WEBDAV_RESULT_FAILED] = reasonCode.isNotBlank()
+        this[if (local) Keys.LOCAL_RESULT_REASON else Keys.WEBDAV_RESULT_REASON] = reasonCode
+    }
+
+    /** 新结果采用固定字段读取；旧兼容在事务内完成，不在每次展示时猜测。 */
     private fun decode(preferences: Preferences): BackupRuntimeSnapshot {
-        /** 已保存的摘要编码；只有非空内容才尝试解析。 */
-        val summaryText = preferences[HostSettingsKeys.LAST_BACKUP_SUCCESS_SUMMARY]
-        /** 可用于显示的成功摘要；损坏值只在展示时降级。 */
-        val summary = summaryText?.takeIf(String::isNotBlank)?.let { runCatching { BackupJson.decodeSuccessSummary(it) }.getOrNull() }
+        /** 空身份表示没有待上传任务。 */
+        val artifactId = preferences[Keys.PENDING_ARTIFACT_ID].orEmpty()
         return BackupRuntimeSnapshot(
-            changeRevision = preferences[HostSettingsKeys.CHANGE_REVISION] ?: INITIAL_CHANGE_REVISION,
-            backedUpRevision = preferences[HostSettingsKeys.BACKED_UP_REVISION] ?: INITIAL_BACKED_UP_REVISION,
-            status = parseStatus(preferences[HostSettingsKeys.LAST_AUTO_BACKUP_STATUS]),
-            successAt = preferences[HostSettingsKeys.LAST_AUTO_BACKUP_SUCCESS_AT] ?: 0L,
-            failureReason = preferences[HostSettingsKeys.LAST_AUTO_BACKUP_FAILURE_REASON].orEmpty(),
-            skipReason = preferences[HostSettingsKeys.LAST_AUTO_BACKUP_SKIP_REASON].orEmpty(),
-            webDavHealth = parseHealth(preferences[HostSettingsKeys.WEBDAV_HEALTH]),
-            webDavHealthCheckedAt = preferences[HostSettingsKeys.WEBDAV_HEALTH_CHECKED_AT] ?: 0L,
-            successSummary = summary,
+            localResult = BackupTargetResult(
+                preferences[Keys.LOCAL_RESULT_AT] ?: 0L,
+                preferences[Keys.LOCAL_RESULT_FAILED] ?: false, preferences[Keys.LOCAL_RESULT_REASON].orEmpty()),
+            webDavResult = BackupTargetResult(
+                preferences[Keys.WEBDAV_RESULT_AT] ?: 0L,
+                preferences[Keys.WEBDAV_RESULT_FAILED] ?: false, preferences[Keys.WEBDAV_RESULT_REASON].orEmpty()),
+            pendingUpload = artifactId.takeIf(String::isNotBlank)?.let {
+                BackupPendingUpload(it, preferences[Keys.PENDING_TARGET].orEmpty(), preferences[Keys.PENDING_SOURCE].orEmpty(),
+                    preferences[Keys.PENDING_PHASE].orEmpty(), preferences[Keys.PENDING_CREATED_AT] ?: 0L)
+            },
+            webDavHealth = when (preferences[Keys.WEBDAV_HEALTH]) {
+                "available" -> BackupTargetHealth.Available
+                "unavailable" -> BackupTargetHealth.Unavailable
+                else -> BackupTargetHealth.Unknown
+            },
+            webDavHealthCheckedAt = preferences[Keys.WEBDAV_HEALTH_CHECKED_AT] ?: 0L,
         )
-    }
-
-    /** 将任务状态映射为与枚举混淆名称无关的持久化 code。 */
-    private fun BackupTaskStatus.storageCode(): String = when (this) {
-        BackupTaskStatus.Idle -> "idle"
-        BackupTaskStatus.Running -> "running"
-        BackupTaskStatus.Success -> "success"
-        BackupTaskStatus.PartialSuccess -> "partial_success"
-        BackupTaskStatus.Skipped -> "skipped"
-        BackupTaskStatus.RetryScheduled -> "retry_scheduled"
-        BackupTaskStatus.Failed -> "failed"
-    }
-
-    /** 未知持久化状态回退 idle，不影响业务任务重新判断。 */
-    private fun parseStatus(code: String?): BackupTaskStatus = when (code) {
-        "running" -> BackupTaskStatus.Running
-        "success" -> BackupTaskStatus.Success
-        "partial_success" -> BackupTaskStatus.PartialSuccess
-        "skipped" -> BackupTaskStatus.Skipped
-        "retry_scheduled" -> BackupTaskStatus.RetryScheduled
-        "failed" -> BackupTaskStatus.Failed
-        else -> BackupTaskStatus.Idle
-    }
-
-    /** WebDAV 健康状态只保存稳定 code，不依赖枚举 name。 */
-    private fun BackupTargetHealth.storageCode(): String = when (this) {
-        BackupTargetHealth.Unknown -> "unknown"
-        BackupTargetHealth.Available -> "available"
-        BackupTargetHealth.Unavailable -> "unavailable"
-    }
-
-    /** 未知健康值回退 unknown，不能据此对不可验证的地址发起自动上传。 */
-    private fun parseHealth(code: String?): BackupTargetHealth = when (code) {
-        "available" -> BackupTargetHealth.Available
-        "unavailable" -> BackupTargetHealth.Unavailable
-        else -> BackupTargetHealth.Unknown
-    }
-
-    /** 初始版本和成功版本不同，保证新安装首次备份不会被跳过。 */
-    private companion object {
-        /** 首次安装时的待备份版本。 */
-        const val INITIAL_CHANGE_REVISION = 1L
-        /** 尚无任何成功备份时的已确认版本。 */
-        const val INITIAL_BACKED_UP_REVISION = 0L
     }
 }

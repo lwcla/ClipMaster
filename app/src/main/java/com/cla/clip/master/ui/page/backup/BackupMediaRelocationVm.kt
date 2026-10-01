@@ -17,7 +17,6 @@ import com.cla.clip.master.media.MediaRelocationProgress
 import com.cla.clip.master.media.MediaRelocationReason
 import com.cla.clip.master.media.MediaRelocationReport
 import com.cla.clip.master.media.MediaRelocationStage
-import com.cla.clip.master.work.BackupAutoScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -134,20 +133,9 @@ class BackupMediaRelocationVm @Inject constructor(
                     _uiState.update { MediaRelocationUiState.Running(progress) }
                 }
             }.onSuccess { report ->
-                /** 数据库 Repository 已提交变更版本，此处只安排任务，失败不能误报扫描失败。 */
-                var backupScheduleFailed = false
-                if (report.totalRelocated > 0) {
-                    try {
-                        backupScheduleFailed = !BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
-                    } catch (failure: Throwable) {
-                        if (failure is CancellationException) throw failure
-                        backupScheduleFailed = true
-                        logE(TAG) { "媒体关联后备份调度失败 restoreTaskId=$taskId reasonCode=${failure.backupReasonCode()}" }
-                    }
-                }
-                /** 终态摘要仍以已提交媒体关联报告为准，任务调度失败由页面单独提示。 */
+                /** 完成只报告媒体关联结果，每日备份独立执行。 */
                 val summary = MediaRelocationSummary(MediaRelocationSummaryType.Completed, report)
-                _uiState.update { MediaRelocationUiState.Result(preparation.estimate, report, backupScheduleFailed) }
+                _uiState.update { MediaRelocationUiState.Result(preparation.estimate, report) }
                 sendTerminal(taskId, summary)
             }.onFailure { throwable ->
                 if (throwable is CancellationException) {
@@ -161,26 +149,7 @@ class BackupMediaRelocationVm @Inject constructor(
         }
     }
 
-    /** 只重试备份任务调度，不重新扫描媒体或重复递增已提交的变更版本。 */
-    fun retryBackupSchedule() {
-        /** 当前已完成且仅待标记的真实结果。 */
-        val result = _uiState.value as? MediaRelocationUiState.Result ?: return
-        if (!result.backupScheduleFailed) return
-        viewModelScope.launch {
-            try {
-                /** 只有 WorkManager 调度确认成功后才清除页面告警。 */
-                val scheduled = BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
-                if (scheduled) {
-                    _uiState.update { current ->
-                        if (current is MediaRelocationUiState.Result) current.copy(backupScheduleFailed = false) else current
-                    }
-                }
-            } catch (failure: Throwable) {
-                if (failure is CancellationException) throw failure
-                logE(TAG) { "媒体关联备份调度重试失败 reasonCode=${failure.backupReasonCode()}" }
-            }
-        }
-    }
+
 
     private fun estimateMediaRelocation() {
         if (mediaRelocationJob?.isActive == true) return

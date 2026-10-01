@@ -576,9 +576,11 @@ Cloudflare 挑战只允许从标记 `isCloudflareProtected` 的已知 Provider �
 
 状态：已完成。TorrentSearch 通过 feature-local `TorrentSearchBackupContributor` 接入 base 的 `BackupFeatureContributor` 扩展点，备份主协议保持 `schemaVersion = 4`，子协议固定为 v1。四个白名单 entry 分别保存书签、搜索历史、已查看和默认排序设置；书签保留规范化 infoHash 与用户可见快照，历史按规范化查询键恢复，已查看按 infoHash 恢复，设置只允许稳定的排序条件/方向 code。Provider 开关、Torznab 配置/API Key、Cookie、安全模式、DoH、多来源披露、SAF URI、健康状态、缓存、临时文件和 WebView 数据均不进入自定义备份。
 
-导出与恢复边界：三张 Room 表新增固定 high-water mark 和 `(timestamp, stableKey)` keyset 分页 DAO，每页最多 300 条，避免全量加载；恢复逐页校验协议、折叠同页重复稳定键、批量查询本地状态并在 Room 事务内只插入缺失项或更新严格更新的备份项，本地相同/更新、非法和重复行均计入 skipped。设置恢复复用现有设置仓库；真实新增/更新后标记统一 backup dirty，重复恢复不会产生额外写入或 dirty。manifest 和恢复 UI 只使用四类稳定 count/report code；旧磁力 entry 只根据固定路径和脱敏计数生成“不兼容并跳过”报告，不读取正文、不迁移、不计成功。
+导出与恢复边界：三张 Room 表保留固定 high-water mark 和 `(timestamp, stableKey)` keyset 分页 DAO，每页最多 300 条，避免全量加载；恢复逐页校验协议、折叠同页重复稳定键、批量查询本地状态并在 Room 事务内只插入缺失项或更新严格更新的备份项，本地相同/更新、非法和重复行均计入 skipped。设置恢复复用现有仓库；2026-10-01 移除备份 dirty，业务更新与重复恢复计数规则保持。manifest 和恢复 UI 只使用四类稳定 count/report code；旧磁力 entry 只按固定路径和脱敏计数生成“不兼容并跳过”报告，不读取正文、不迁移、不计成功。
 
-dirty 与首次披露：书签、历史、已查看 Repository 仅在成功且实际发生变化的保存、删除、清空或导入写入后标记 dirty；设置仓库仅默认排序变化触发 dirty，本机联网、安全和隐私设置不触发。首次手动本地导出、手动 WebDAV 上传或开启自动备份前，备份页统一展示“本地 ZIP 与 WebDAV 备份不会加密”的确认；确认状态只保存在宿主 Preferences DataStore，不进入备份包，确认后继续原动作且以后不重复打断。
+每日备份接入（2026-10-01）：书签、历史、已查看 Repository 与排序设置仓库只提交业务数据，不再注入或调用 dirty marker；contributor 保留分批 Room 事务、恢复计数和幂等保护，移除恢复后的标记封装。下一次每日/手动快照读取最新内容，完整策略以 [备份主方案](webdav_backup_plan.md) 为准。首次手动本地导出、手动 WebDAV 上传或开启自动备份前的未加密披露保持。
+
+变更记录：2026-10-01，移除功能库备份 dirty marker、DI 和对应失效断言，保留业务写入、排序、字段白名单、恢复报告及 Auto Backup 排除；原因是备份统一改为每日生成后同包上传，不再由保存触发。
 
 旧数据与系统备份：功能入口先由 `LegacyMagnetCleanupViewModel` 检测固定旧库 `magnet_feature_database.db` 及 `-wal/-shm/-journal` sidecar、固定 `cache/magnet_source_cache/magnet_source_cache.db` 及 sidecar。存在时必须由用户确认后重新 canonicalize 并逐项核对白名单再删除；伪造路径、未知文件和非空缓存目录均保留，取消则不进入新功能。`backup_rules.xml` 与 `data_extraction_rules.xml` 精确排除新数据库及 sidecar、TorrentSearch DataStore、Torznab 密文和 `app_webview/`；普通 cache 本身不属于 Android Auto Backup 域。
 

@@ -13,7 +13,6 @@ import com.cla.clip.base.general.entity.toUi
 import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.base.general.utils.toast
 import com.cla.clip.base.general.utils.logE
-import com.cla.clip.master.work.BackupAutoScheduler
 import dagger.Lazy
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -176,14 +175,7 @@ class RecycleBinVm @Inject constructor(
                 return@launch
             }
             onSaved()
-            try {
-                BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                // 保留天数已提交；调度失败不会撤销用户设置。
-                logE("RecycleBinVm", error) { "保留天数已保存但备份调度失败 reasonCode=backup_schedule_failed" }
-            }
+
             try {
                 /** 保存完成后按同一天数立即清理，避免未提交草稿触发删除。 */
                 val count = clipRepository.get().cleanupExpiredRecycleBinClips(safeDays)

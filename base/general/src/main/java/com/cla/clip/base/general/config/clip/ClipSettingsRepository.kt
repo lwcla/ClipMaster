@@ -1,6 +1,5 @@
 package com.cla.clip.base.general.config.clip
 
-import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import com.cla.clip.base.general.config.ClipItemQuickAction
 import com.cla.clip.base.general.config.ClipSourceBlockRules
@@ -21,7 +20,7 @@ data class ClipSettingsSnapshot(
     val recycleBinRetentionDays: Int,
 )
 
-/** 剪贴领域设置仓库；名单更新及备份变更版本在同一事务内完成。 */
+/** 剪贴领域设置仓库；只提交业务设置，不维护备份调度或版本状态。 */
 class ClipSettingsRepository @Inject internal constructor(
     /** 宿主唯一 DataStore 介质，原始键不向调用方暴露。 */
     private val store: HostSettingsStore,
@@ -52,17 +51,16 @@ class ClipSettingsRepository @Inject internal constructor(
     /** 备份或任务显式读取一次完整设置；不参与持续订阅，介质损坏或 IO 失败向调用方抛出。 */
     suspend fun snapshot(): ClipSettingsSnapshot = mapSnapshot(store.snapshot())
 
-    /** 保存快捷动作；只有业务值真实变化才推进备份版本。 */
+    /** 保存快捷动作；只有业务值真实变化才写入设置。 */
     suspend fun setQuickAction(value: ClipItemQuickAction) {
         store.edit { preferences ->
             if (ClipItemQuickAction.fromStorageValue(preferences[HostSettingsKeys.CLIP_ITEM_QUICK_ACTION]) != value) {
                 preferences[HostSettingsKeys.CLIP_ITEM_QUICK_ACTION] = value.storageValue
-                preferences.markBackupChanged()
             }
         }
     }
 
-    /** 裁剪并保存回收站保留天数；无变化时不推进备份版本。 */
+    /** 裁剪并保存回收站保留天数；无变化时不重复写入。 */
     suspend fun setRecycleBinRetentionDays(value: Int) {
         /** 受产品边界限制的目标天数。 */
         val normalizedValue = value.coerceIn(MIN_RECYCLE_BIN_RETENTION_DAYS, MAX_RECYCLE_BIN_RETENTION_DAYS)
@@ -72,12 +70,11 @@ class ClipSettingsRepository @Inject internal constructor(
                 .coerceIn(MIN_RECYCLE_BIN_RETENTION_DAYS, MAX_RECYCLE_BIN_RETENTION_DAYS)
             if (currentValue != normalizedValue) {
                 preferences[HostSettingsKeys.RECYCLE_BIN_RETENTION_DAYS] = normalizedValue
-                preferences.markBackupChanged()
             }
         }
     }
 
-    /** 一次事务恢复可备份设置；本机名单优先并集，实际变化只推进一次备份版本。 */
+    /** 一次事务恢复业务设置；本机名单优先并集，备份任务独立按每日周期执行。 */
     suspend fun restoreFromBackup(
         quickAction: ClipItemQuickAction?,
         recycleBinRetentionDays: Int?,
@@ -118,7 +115,6 @@ class ClipSettingsRepository @Inject internal constructor(
                     changed = true
                 }
             }
-            if (changed) preferences.markBackupChanged()
         }
         return changed
     }
@@ -133,7 +129,6 @@ class ClipSettingsRepository @Inject internal constructor(
             val current = readBlockedPackages(preferences)
             if (packageName != null && packageName !in current && current.size < ClipSourceBlockRules.MAX_PACKAGE_COUNT) {
                 preferences[HostSettingsKeys.BLOCKED_CLIP_SOURCE_PACKAGES] = ClipSourceBlockRules.normalizePackageSet(current + packageName)
-                preferences.markBackupChanged()
                 changed = true
             }
         }
@@ -151,7 +146,6 @@ class ClipSettingsRepository @Inject internal constructor(
             val current = readBlockedPackages(preferences)
             if (packageName != null && packageName in current) {
                 preferences[HostSettingsKeys.BLOCKED_CLIP_SOURCE_PACKAGES] = ClipSourceBlockRules.normalizePackageSet(current - packageName)
-                preferences.markBackupChanged()
                 changed = true
             }
         }
@@ -169,7 +163,6 @@ class ClipSettingsRepository @Inject internal constructor(
             val current = readBlockedPackages(preferences)
             if (target != current) {
                 preferences[HostSettingsKeys.BLOCKED_CLIP_SOURCE_PACKAGES] = target
-                preferences.markBackupChanged()
                 changed = true
             }
         }
@@ -197,11 +190,5 @@ class ClipSettingsRepository @Inject internal constructor(
         return ClipSourceBlockRules.normalizePackageSet(preferences[HostSettingsKeys.BLOCKED_CLIP_SOURCE_PACKAGES].orEmpty())
     }
 
-    /** 同事务推进备份版本；耗尽 Long 范围时失败而非静默标记 clean。 */
-    private fun MutablePreferences.markBackupChanged() {
-        /** 当前可备份数据版本；新安装从 1 开始保持待备份。 */
-        val current = this[HostSettingsKeys.CHANGE_REVISION] ?: 1L
-        check(current < Long.MAX_VALUE) { "backup revision exhausted" }
-        this[HostSettingsKeys.CHANGE_REVISION] = current + 1L
-    }
+
 }

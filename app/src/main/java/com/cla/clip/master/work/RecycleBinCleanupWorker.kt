@@ -45,9 +45,6 @@ class RecycleBinCleanupWorker @AssistedInject constructor(
             /** 本轮已提交的保留天数，整次清理使用同一快照。 */
             val days = clipSettingsRepository.snapshot().recycleBinRetentionDays
             val count = clipRepository.get().cleanupExpiredRecycleBinClips(days)
-            if (count > 0) {
-                BackupAutoScheduler.scheduleAfterCommittedChange(applicationContext)
-            }
             logD(TAG) { "doWork: 清理过期回收站数据 days=$days count=$count" }
             Result.success()
         } catch (error: CancellationException) {

@@ -1,6 +1,5 @@
 package com.cla.clip.feature.torrent.search.data.repository
 
-import com.cla.clip.feature.torrent.search.backup.TorrentSearchBackupDirtyMarker
 import com.cla.clip.feature.torrent.search.data.local.BookmarkedTorrentDao
 import com.cla.clip.feature.torrent.search.data.local.BookmarkedTorrentEntity
 import com.cla.clip.feature.torrent.search.data.local.TorrentSearchHistoryDao
@@ -24,46 +23,27 @@ import org.junit.Test
 
 /** TorrentSearch 三类用户数据 Repository 的规范化、去重和边界测试。 */
 class TorrentSearchRepositoriesTest {
-    /** 只有成功写入白名单数据才标记备份 dirty，非法输入不得触发。 */
+    /** 三类白名单数据成功写入，非法输入不会改变数据。 */
     @Test
-    fun successfulWritesMarkBackupDirty() = runTest {
-        /** marker 记录三类 Repository 的成功写入次数。 */
-        val marker = RecordingBackupDirtyMarker()
+    fun successfulWritesValidateEachDataCategory() = runTest {
+
         /** bookmarkRepository 验证合法与非法书签分支。 */
-        val bookmarkRepository = BookmarkRepositoryImpl(FakeBookmarkedTorrentDao(), nowMillis = { 1L }, backupDirtyMarker = marker)
-        /** historyRepository 验证清洗失败不会误标记。 */
-        val historyRepository = TorrentSearchHistoryRepositoryImpl(FakeTorrentSearchHistoryDao(), nowMillis = { 2L }, backupDirtyMarker = marker)
-        /** viewedRepository 验证非法 hash 不会误标记。 */
-        val viewedRepository = ViewedTorrentRepositoryImpl(FakeViewedTorrentDao(), nowMillis = { 3L }, backupDirtyMarker = marker)
+        val bookmarkRepository = BookmarkRepositoryImpl(FakeBookmarkedTorrentDao(), nowMillis = { 1L })
+        /** historyRepository 验证清洗失败不会写入非法数据。 */
+        val historyRepository = TorrentSearchHistoryRepositoryImpl(FakeTorrentSearchHistoryDao(), nowMillis = { 2L })
+        /** viewedRepository 验证非法 hash 不会写入非法数据。 */
+        val viewedRepository = ViewedTorrentRepositoryImpl(FakeViewedTorrentDao(), nowMillis = { 3L })
 
         assertFalse(bookmarkRepository.save(bookmark("bad", "bad")))
         assertFalse(historyRepository.saveQuery(" "))
         assertFalse(viewedRepository.markViewed("bad"))
-        assertEquals(0, marker.count)
 
         assertTrue(bookmarkRepository.save(bookmark(HASH_A, "valid")))
         assertTrue(historyRepository.saveQuery("valid"))
         assertTrue(viewedRepository.markViewed(HASH_B))
-        assertEquals(3, marker.count)
     }
 
-    /** Repository 返回成功前必须等待跨存储备份标记提交。 */
-    @Test
-    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    fun bookmarkSaveWaitsForBackupMarker() = runTest {
-        /** 人为暂停的标记提交，用于证明保存结果不会先行返回。 */
-        val markerCommit = CompletableDeferred<Unit>()
-        /** 可挂起标记器代表宿主 DataStore 的持久化边界。 */
-        val marker = TorrentSearchBackupDirtyMarker { markerCommit.await() }
-        /** 已使用内存 DAO 的真实 Repository。 */
-        val repository = BookmarkRepositoryImpl(FakeBookmarkedTorrentDao(), nowMillis = { 1L }, backupDirtyMarker = marker)
-        /** 与标记提交并行的保存任务。 */
-        val saving = async { repository.save(bookmark(HASH_A, "valid")) }
-        runCurrent()
-        assertFalse(saving.isCompleted)
-        markerCommit.complete(Unit)
-        assertTrue(saving.await())
-    }
+
     /** 书签必须按规范化 infoHash 替换，同名但不同 hash 仍允许共存。 */
     @Test
     fun bookmarkRepositoryUsesCanonicalInfoHashAsStableIdentity() = runTest {
@@ -209,16 +189,7 @@ class TorrentSearchRepositoriesTest {
     }
 }
 
-/** 测试用 dirty 标记器，只记录调用次数且不接触实际持久化。 */
-private class RecordingBackupDirtyMarker : TorrentSearchBackupDirtyMarker {
-    /** count 是已成功写入跨安装数据的次数。 */
-    var count: Int = 0
 
-    /** 每次标记只增加确定性计数。 */
-    override suspend fun markDirty() {
-        count += 1
-    }
-}
 
 /** 内存书签 DAO，通过 Map 主键语义模拟 Room REPLACE 和时间倒序。 */
 private class FakeBookmarkedTorrentDao : BookmarkedTorrentDao {

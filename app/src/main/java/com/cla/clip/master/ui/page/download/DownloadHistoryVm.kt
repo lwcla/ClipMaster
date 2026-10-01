@@ -30,7 +30,6 @@ import com.cla.clip.base.general.utils.logE
 import com.cla.clip.base.general.utils.normalizeImageOutputDir
 import com.cla.clip.master.work.DownloadImagesWorker
 import com.cla.clip.master.work.DownloadVideoWorker
-import com.cla.clip.master.work.BackupAutoScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -522,7 +521,6 @@ class DownloadHistoryVm @Inject constructor(
                 message.value = appContext.getString(R.string.base_general_the_download_task_was_not_found)
             } else {
                 DownloadVideoWorker.enqueue(appContext, newTaskId)
-                BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
                 _actions.emit(DownloadHistoryAction.NavigateVideoDownload(newTaskId))
             }
             busy.value = false
@@ -539,7 +537,6 @@ class DownloadHistoryVm @Inject constructor(
             } else {
                 DownloadImagesWorker.enqueue(appContext, newBatchId)
                 message.value = appContext.getString(R.string.base_general_download_history_retry_started)
-                BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
             }
             busy.value = false
         }
@@ -714,7 +711,6 @@ class DownloadHistoryVm @Inject constructor(
             failedFileCount > 0 -> appContext.getString(R.string.base_general_download_history_delete_with_file_failed_summary, ids.size, failedFileCount)
             else -> appContext.getString(R.string.base_general_download_history_delete_with_file_summary, ids.size)
         }
-        BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
     }
 
     /** 直接删除一组媒体引用；遇到 Android 10 可恢复授权时返回授权请求并暂停数据库删除。 */

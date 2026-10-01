@@ -99,7 +99,7 @@ interface ClipRepository {
     /**
      * 更新来源 App 图标缓存。
      *
-     * 图标异步补全成功后调用；实现层需要只更新同包名来源 App，并标记备份 dirty。
+     * 图标异步补全成功后调用；实现层只更新同包名来源 App，备份独立读取最新数据。
      */
     suspend fun updateSourceAppIcon(
         packageName: String,

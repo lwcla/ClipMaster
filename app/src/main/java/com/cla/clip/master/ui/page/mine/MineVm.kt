@@ -6,6 +6,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.cla.clip.base.general.backup.settings.BackupSettingsRepository
+import com.cla.clip.base.general.backup.settings.BackupRuntimeRepository
+import com.cla.clip.master.backup.BackupEntryState
+import com.cla.clip.master.backup.BackupResultPresentation
+import com.cla.clip.master.backup.BackupResultKind
+import com.cla.clip.master.backup.BackupResultPresentationMapper
 import com.cla.clip.base.general.config.ClipItemQuickAction
 import com.cla.clip.base.general.config.clip.ClipSettingsRepository
 import com.cla.clip.base.general.config.update.AppUpdateCheckStore
@@ -22,7 +28,6 @@ import com.cla.clip.master.update.AppUpdateCheckTrigger
 import com.cla.clip.master.update.AppUpdateChecker
 import com.cla.clip.master.update.AppUpdateConfigFactory
 import com.cla.clip.master.update.AppUpdateLink
-import com.cla.clip.master.work.BackupAutoScheduler
 import com.cla.clip.shizuku.ShizukuStatus
 import com.cla.clip.shizuku.ShizukuUtils
 import dagger.Lazy
@@ -73,6 +78,10 @@ class MineVm @Inject constructor(
 
     /** 自升级限频时间的持久化入口；读取失败时不进行自动联网。 */
     private val appUpdateCheckStore: AppUpdateCheckStore,
+    /** 备份结果仅在入口可见时订阅，不读取凭据或导出数据库。 */
+    private val backupSettings: BackupSettingsRepository,
+    /** 手动与自动共用的独立目标结果。 */
+    private val backupRuntime: BackupRuntimeRepository,
 ) : ViewModel() {
 
     companion object {
@@ -150,6 +159,16 @@ class MineVm @Inject constructor(
     /** 设置加载重试序号；变化时重新订阅 DataStore，而不修改持久化内容。 */
     private val settingsReload = MutableStateFlow(0L)
 
+    /** 我的页结果随生命周期收集；读盘失败显示错误，不伪装成尚未备份。 */
+    val backupEntryState = settingsReload.flatMapLatest {
+        combine(backupSettings.data, backupRuntime.data, BackupResultPresentationMapper::map)
+            .catch { failure ->
+                if (failure is CancellationException) throw failure
+                logE(TAG) { "备份入口结果读取失败 reasonCode=runtime_store_failed type=${failure::class.simpleName}" }
+                emit(BackupEntryState(BackupResultPresentation(BackupResultKind.ReadFailed), BackupResultPresentation(BackupResultKind.ReadFailed)))
+            }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BackupEntryState())
+
     /** 快捷动作读取失败标记，不由名单读取成功清除。 */
     private val quickActionLoadFailed = MutableStateFlow(false)
 
@@ -209,14 +228,7 @@ class MineVm @Inject constructor(
         viewModelScope.launch {
             try {
                 clipSettingsRepository.setQuickAction(action)
-                try {
-                    BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (error: Exception) {
-                    // 设置已经提交且备份版本已标记；调度失败不能伪装成设置保存失败。
-                    logE(TAG, error) { "剪贴快捷动作已保存但备份调度失败 reasonCode=backup_schedule_failed" }
-                }
+
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {

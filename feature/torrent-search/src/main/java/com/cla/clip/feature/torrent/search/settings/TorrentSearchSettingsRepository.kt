@@ -7,8 +7,6 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
-import com.cla.clip.feature.torrent.search.backup.NoOpTorrentSearchBackupDirtyMarker
-import com.cla.clip.feature.torrent.search.backup.TorrentSearchBackupDirtyMarker
 import com.cla.clip.feature.torrent.search.data.repository.NoOpTorrentSearchDataLogger
 import com.cla.clip.feature.torrent.search.data.repository.TorrentSearchDataLogger
 import com.cla.clip.feature.torrent.search.model.contract.SortCriteria
@@ -50,8 +48,6 @@ internal class TorrentSearchSettingsRepository(
     private val logger: TorrentSearchDataLogger = NoOpTorrentSearchDataLogger,
     /** 将首个及后续设置快照幂等同步给共享 DNS 路由。 */
     private val dnsModeApplier: TorrentSearchDnsModeApplier = NoOpTorrentSearchDnsModeApplier,
-    /** 仅排序白名单变化时写入统一备份 dirty 标记。 */
-    private val backupDirtyMarker: TorrentSearchBackupDirtyMarker = NoOpTorrentSearchBackupDirtyMarker,
 ) {
     /** 设置 Flow；磁盘读取失败降级为安全默认，其他编程错误继续传播。 */
     val settings: Flow<TorrentSearchSettings> = dataStore.data
@@ -153,7 +149,6 @@ internal class TorrentSearchSettingsRepository(
             preferences[SORT_CRITERIA_CODE] = criteria.code
             preferences[SORT_ORDER_CODE] = order.code
         }
-        backupDirtyMarker.markDirty()
     }
 
     /** 保存首次多源隐私披露确认；该本机状态不进入任务 7 自定义备份。 */

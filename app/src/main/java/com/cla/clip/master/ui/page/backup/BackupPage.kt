@@ -1,5 +1,9 @@
 package com.cla.clip.master.ui.page.backup
 
+import com.cla.clip.master.backup.local.LocalBackupFile
+import com.cla.clip.master.ui.widget.BackupResultsSummary
+import com.cla.clip.master.ui.widget.BackupResultDetails
+
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.focusGroup
@@ -54,7 +58,6 @@ import com.cla.clip.base.general.backup.BackupKind
 import com.cla.clip.base.general.backup.BackupProgress
 import com.cla.clip.base.general.backup.BackupProgressPhase
 import com.cla.clip.base.general.backup.BackupTargetHealth
-import com.cla.clip.base.general.backup.BackupTaskStatus
 import com.cla.clip.base.general.backup.RemoteBackupFile
 import com.cla.clip.master.ui.navigation.BackupRestoreRoute
 import com.cla.clip.master.ui.navigation.Route
@@ -354,11 +357,7 @@ private fun AutoBackupSection(
                         text = androidx.compose.ui.res.stringResource(R.string.base_general_backup_auto_title),
                         style = MaterialTheme.typography.titleMedium
                     )
-                    Text(
-                        text = autoBackupStatusText(state),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    BackupResultsSummary(state.backupResults)
                 }
                 Switch(
                     checked = state.autoBackupEnabled,
@@ -366,6 +365,7 @@ private fun AutoBackupSection(
                     enabled = state.settingsLoaded && !state.isBusy
                 )
             }
+            BackupResultDetails(state.backupResults, state.pendingBackup)
             RetentionControl(
                 count = state.backupRetentionCount,
                 enabled = state.settingsLoaded && !state.isBusy,
@@ -377,20 +377,7 @@ private fun AutoBackupSection(
                 enabled = state.settingsLoaded && !state.isBusy,
                 onCheckedChange = onOnlyWifiChange
             )
-            state.lastBackupSuccessSummary?.let { summary ->
-                Text(
-                    text = androidx.compose.ui.res.stringResource(
-                        R.string.base_general_backup_last_success_summary,
-                        summary.createdAt.toBackupDisplayTime(),
-                        summary.summary.clipCount,
-                        formatBackupSize(summary.fileSize),
-                        summary.localRetentionDeleted,
-                        summary.webDavRetentionDeleted
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+
         }
     }
 }
@@ -782,34 +769,7 @@ fun formatBackupSize(size: Long): String {
     }
 }
 
-/** 自动备份状态展示文案，区分跳过和失败，避免用户误判。 */
-@Composable
-private fun autoBackupStatusText(state: BackupUiState): String {
-    return when (state.lastAutoBackupStatus) {
-        BackupTaskStatus.Idle -> androidx.compose.ui.res.stringResource(R.string.base_general_backup_auto_status_idle)
-        BackupTaskStatus.Running -> androidx.compose.ui.res.stringResource(R.string.base_general_backup_auto_status_running)
-        BackupTaskStatus.Success -> androidx.compose.ui.res.stringResource(
-            R.string.base_general_backup_auto_status_success,
-            state.lastAutoBackupSuccessAt.takeIf { it > 0 }?.toBackupDisplayTime().orEmpty()
-        )
-        BackupTaskStatus.PartialSuccess -> androidx.compose.ui.res.stringResource(
-            R.string.base_general_backup_auto_status_partial,
-            state.lastAutoBackupFailureReason.ifBlank { androidx.compose.ui.res.stringResource(R.string.base_general_backup_error_unknown) }
-        )
-        BackupTaskStatus.Skipped -> androidx.compose.ui.res.stringResource(
-            R.string.base_general_backup_auto_status_skipped,
-            state.lastAutoBackupSkipReason.ifBlank { androidx.compose.ui.res.stringResource(R.string.base_general_backup_auto_skip_unknown) }
-        )
-        BackupTaskStatus.RetryScheduled -> androidx.compose.ui.res.stringResource(
-            R.string.base_general_backup_auto_status_retry,
-            state.lastAutoBackupFailureReason.ifBlank { androidx.compose.ui.res.stringResource(R.string.base_general_backup_error_unknown) }
-        )
-        BackupTaskStatus.Failed -> androidx.compose.ui.res.stringResource(
-            R.string.base_general_backup_auto_status_failed,
-            state.lastAutoBackupFailureReason.ifBlank { androidx.compose.ui.res.stringResource(R.string.base_general_backup_error_unknown) }
-        )
-    }
-}
+
 
 /** WebDAV 健康状态展示文案，只读缓存，不触发网络请求。 */
 @Composable

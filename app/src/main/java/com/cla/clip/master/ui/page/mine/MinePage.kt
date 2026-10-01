@@ -69,6 +69,8 @@ fun MinePage(
     val foldedClipCount by mineVm.foldedClipCount.collectAsStateWithLifecycle()
     /** 回收站入口展示的轻量数量。 */
     val recycleBinCount by mineVm.recycleBinCount.collectAsStateWithLifecycle()
+    /** 两类上次备份随页面可见性订阅，手动结果提交后自动更新。 */
+    val backupEntryState by mineVm.backupEntryState.collectAsStateWithLifecycle()
     /** 普通剪贴 item 快捷动作当前设置。 */
     val clipItemQuickAction by mineVm.clipItemQuickAction.collectAsStateWithLifecycle()
     /** 当前剪贴来源过滤名单。 */
@@ -134,7 +136,7 @@ fun MinePage(
             item { Permission(mineVm = mineVm) }
 
             item { MineSectionHeader(title = stringResource(R.string.base_general_mine_data_management_section)) }
-            item { BackupEntry(onNavigate = onNavigate) }
+            item { BackupEntry(state = backupEntryState, onNavigate = onNavigate) }
             item { DownloadHistoryEntry(onNavigate = onNavigate) }
             item { FoldedClipsEntry(foldedClipCount = foldedClipCount, onNavigate = onNavigate) }
             item { RecycleBinEntry(recycleBinCount = recycleBinCount, onNavigate = onNavigate) }

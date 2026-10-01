@@ -52,22 +52,32 @@ internal object HostSettingsKeys {
     val BACKUP_RETENTION_COUNT = intPreferencesKey("backup_retention_count")
     /** WebDAV 自动备份仅 Wi-Fi 约束。 */
     val AUTO_BACKUP_ONLY_WIFI = booleanPreferencesKey("auto_backup_only_wifi")
-    /** 当前可备份数据的变更版本。 */
-    val CHANGE_REVISION = longPreferencesKey("backup_change_revision")
-    /** 已成功覆盖的最高备份版本。 */
-    val BACKED_UP_REVISION = longPreferencesKey("backup_backed_up_revision")
-    /** 最近自动备份任务状态的稳定 code。 */
-    val LAST_AUTO_BACKUP_STATUS = stringPreferencesKey("last_auto_backup_status")
-    /** 最近自动备份成功时间，单位毫秒。 */
-    val LAST_AUTO_BACKUP_SUCCESS_AT = longPreferencesKey("last_auto_backup_success_at")
-    /** 最近自动备份失败原因的低敏 code。 */
-    val LAST_AUTO_BACKUP_FAILURE_REASON = stringPreferencesKey("last_auto_backup_failure_reason")
-    /** 最近自动备份跳过原因的低敏 code。 */
-    val LAST_AUTO_BACKUP_SKIP_REASON = stringPreferencesKey("last_auto_backup_skip_reason")
     /** WebDAV 目标最近健康状态的稳定 code。 */
     val WEBDAV_HEALTH = stringPreferencesKey("webdav_health")
     /** WebDAV 最近健康检查时间，单位毫秒。 */
     val WEBDAV_HEALTH_CHECKED_AT = longPreferencesKey("webdav_health_checked_at")
-    /** 最近一次成功备份的小型摘要 JSON。 */
+    /** 仅用于旧运行态兼容读取，事务迁移后删除，不再写入。 */
     val LAST_BACKUP_SUCCESS_SUMMARY = stringPreferencesKey("last_backup_success_summary")
+    /** 本地最近完成时间，零/缺键表示尚无结果；不进入用户备份。 */
+    val LOCAL_RESULT_AT = longPreferencesKey("backup_local_result_at")
+    /** 本地最近一次是否失败，与等待状态分开；不进入用户备份。 */
+    val LOCAL_RESULT_FAILED = booleanPreferencesKey("backup_local_result_failed")
+    /** 本地失败的稳定低敏原因，不保存异常原文；不进入用户备份。 */
+    val LOCAL_RESULT_REASON = stringPreferencesKey("backup_local_result_reason")
+    /** 远端最近发布完成时间，不使用生成时间替代；不进入用户备份。 */
+    val WEBDAV_RESULT_AT = longPreferencesKey("backup_webdav_result_at")
+    /** 远端最近一次是否失败，本地成功不改变此值；不进入用户备份。 */
+    val WEBDAV_RESULT_FAILED = booleanPreferencesKey("backup_webdav_result_failed")
+    /** 远端失败的稳定低敏原因，不含凭据或地址；不进入用户备份。 */
+    val WEBDAV_RESULT_REASON = stringPreferencesKey("backup_webdav_result_reason")
+    /** 当前私有包身份，只由生成/上传管理，不是业务变化版本。 */
+    val PENDING_ARTIFACT_ID = stringPreferencesKey("backup_pending_artifact_id")
+    /** 待上传目的地摘要，阻止旧包误发到新配置；不进入用户备份。 */
+    val PENDING_TARGET = stringPreferencesKey("backup_pending_target")
+    /** auto/manual 固定来源决定等待网络策略；不进入用户备份。 */
+    val PENDING_SOURCE = stringPreferencesKey("backup_pending_source")
+    /** 私有包固定阶段 code，终态禁止重新入队；不进入用户备份。 */
+    val PENDING_PHASE = stringPreferencesKey("backup_pending_phase")
+    /** 待上传快照生成时间，供详情说明而非远端成功判断。 */
+    val PENDING_CREATED_AT = longPreferencesKey("backup_pending_created_at")
 }

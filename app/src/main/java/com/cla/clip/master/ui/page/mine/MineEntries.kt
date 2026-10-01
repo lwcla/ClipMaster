@@ -1,5 +1,8 @@
 package com.cla.clip.master.ui.page.mine
 
+import com.cla.clip.master.backup.BackupEntryState
+import com.cla.clip.master.ui.widget.BackupResultsSummary
+
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.SystemUpdateAlt
@@ -198,6 +201,8 @@ internal fun TorrentSearchFeatureEntry.MineListEntry(
  */
 @Composable
 internal fun BackupEntry(
+    /** 本地与 WebDAV 独立展示结果，由可见页面传入。 */
+    state: BackupEntryState,
     onNavigate: (route: Route) -> Unit,
 ) {
     ListEntryCard(
@@ -209,7 +214,7 @@ internal fun BackupEntry(
             )
         },
         title = stringResource(R.string.base_general_backup_restore),
-        description = stringResource(R.string.base_general_backup_restore_entry_desc),
+        descriptionContent = { BackupResultsSummary(state) },
         onClick = { onNavigate(BackupRoute) }
     )
 }

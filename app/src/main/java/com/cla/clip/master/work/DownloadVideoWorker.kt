@@ -172,7 +172,6 @@ class DownloadVideoWorker @AssistedInject constructor(
             logE(TAG, tr) { "doWork: 下载失败" }
             val errorMsg = tr.message ?: applicationContext.getString(R.string.base_general_download_failed)
             downloadRepo.markFailed(applicationContext, taskId, errorMsg)
-            BackupAutoScheduler.scheduleAfterCommittedChange(applicationContext)
             saveVideo.failure(applicationContext, mediaTarget)
             notificationHelper.notifyDownloadResult(
                 taskId,
@@ -249,7 +248,6 @@ class DownloadVideoWorker @AssistedInject constructor(
             start(response)
         }
         downloadRepo.markSuccess(taskId)
-        BackupAutoScheduler.scheduleAfterCommittedChange(applicationContext)
         saveVideo.success(applicationContext, mediaTarget)
         val savePath = mediaTarget.path
         logI(TAG) { "下载完成 taskId=$taskId path=${savePath}" }

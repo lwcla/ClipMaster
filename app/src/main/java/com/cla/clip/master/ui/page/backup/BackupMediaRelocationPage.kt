@@ -153,7 +153,6 @@ internal fun BackupMediaRelocationPage(
                 onBack = { requestBack() },
                 onDone = { requestDone() },
                 onRestart = relocationVm::restart,
-                onRetryBackupSchedule = relocationVm::retryBackupSchedule,
                 onRequestMediaPermission = { preparation ->
                     // 系统界面弹出前同步关闭广告交互，避免等待生命周期事件的窗口。
                     permissionRequestPending = true
@@ -265,13 +264,7 @@ private fun BackupMediaRelocationBody(state: MediaRelocationUiState) {
         is MediaRelocationUiState.Result -> {
             MediaRelocationSummaryText(MediaRelocationSummary(MediaRelocationSummaryType.Completed, state.report))
             MediaRelocationResultRows(state.report)
-            if (state.backupScheduleFailed) {
-                Text(
-                    text = stringResource(HostR.string.host_media_backup_schedule_failed_message),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error
-                )
-            }
+
         }
         is MediaRelocationUiState.Error -> Text(
             text = state.message.ifBlank { stringResource(R.string.base_general_backup_media_relocation_error) },
@@ -287,8 +280,6 @@ private fun BackupMediaRelocationActions(
     onBack: () -> Unit,
     onDone: () -> Unit,
     onRestart: () -> Unit,
-    /** 数据库和变更版本已提交但自动备份调度失败时，仅重试调度。 */
-    onRetryBackupSchedule: () -> Unit,
     onRequestMediaPermission: (MediaRelocationPreparation) -> Unit,
     onStartScan: (MediaRelocationPreparation) -> Unit,
 ) {
@@ -325,14 +316,8 @@ private fun BackupMediaRelocationActions(
             }
             is MediaRelocationUiState.NoWork,
             is MediaRelocationUiState.Result -> {
-                if (state is MediaRelocationUiState.Result && state.backupScheduleFailed) {
-                    TextButton(onClick = onRetryBackupSchedule) {
-                        Text(stringResource(HostR.string.host_backup_schedule_retry))
-                    }
-                } else {
-                    TextButton(onClick = onRestart) {
-                        Text(stringResource(R.string.base_general_backup_media_relocation_restart))
-                    }
+                TextButton(onClick = onRestart) {
+                    Text(stringResource(R.string.base_general_backup_media_relocation_restart))
                 }
                 Spacer(modifier = Modifier.size(8.dp))
                 Button(onClick = onDone) {

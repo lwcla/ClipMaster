@@ -18,7 +18,6 @@ import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.base.general.repository.SearchHistoryRepository
 import com.cla.clip.master.processor.ClipboardDataProcessor
 import com.cla.clip.master.processor.DefaultClipboardDataProcessor
-import com.cla.clip.master.work.BackupAutoScheduler
 import dagger.Lazy
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -232,12 +231,11 @@ class SearchViewModel @Inject constructor(
     fun submitCurrentQuery() {
         /** 当前搜索范围；范围尚未初始化时不能把历史误写到普通或折叠的错误分组。 */
         val scope = visibilityScope.value ?: return
-        /** 当前搜索框内容；空白搜索只用于展示全部匹配结果，不写历史也不触发备份 dirty。 */
+        /** 当前搜索框内容；空白搜索只用于展示全部匹配结果，不写历史。 */
         val query = _filterState.value.query
         if (query.trim().isBlank()) return
         viewModelScope.launch {
             searchHistoryRepository.get().saveHistory(scope, query)
-            BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
         }
     }
 
@@ -252,7 +250,6 @@ class SearchViewModel @Inject constructor(
         _filterState.update { it.copy(query = singleLineQuery) }
         viewModelScope.launch {
             searchHistoryRepository.get().saveHistory(scope, singleLineQuery)
-            BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
         }
     }
 
@@ -264,7 +261,6 @@ class SearchViewModel @Inject constructor(
     fun deleteHistory(id: Long) {
         viewModelScope.launch {
             searchHistoryRepository.get().deleteHistory(id)
-            BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
         }
     }
 
@@ -277,7 +273,6 @@ class SearchViewModel @Inject constructor(
         val scope = visibilityScope.value ?: return
         viewModelScope.launch {
             searchHistoryRepository.get().clearHistories(scope)
-            BackupAutoScheduler.scheduleAfterCommittedChange(appContext)
         }
     }
 }

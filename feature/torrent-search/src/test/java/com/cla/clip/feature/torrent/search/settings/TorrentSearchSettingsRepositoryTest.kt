@@ -6,7 +6,6 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.preferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
-import com.cla.clip.feature.torrent.search.backup.TorrentSearchBackupDirtyMarker
 import com.cla.clip.feature.torrent.search.model.contract.SortCriteria
 import com.cla.clip.feature.torrent.search.model.contract.SortOrder
 import com.cla.clip.feature.torrent.search.model.contract.Category
@@ -25,25 +24,23 @@ import org.junit.Test
 
 /** TorrentSearch Preferences DataStore 的默认值、稳定 code 与写入测试。 */
 class TorrentSearchSettingsRepositoryTest {
-    /** 只有排序白名单变化入口标记 dirty，本机网络与隐私设置不触发。 */
+    /** 排序和本机设置正常持久化，不产生备份副作用。 */
     @Test
-    fun onlySortWritesMarkBackupDirty() = runTest {
-        /** marker 记录设置仓库触发统一 dirty 的次数。 */
-        val marker = RecordingSettingsBackupDirtyMarker()
+    fun settingsWritesPreserveSortAndLocalPolicies() = runTest {
+
         /** repository 使用内存 DataStore 隔离 Android 持久化。 */
         val repository = TorrentSearchSettingsRepository(
             dataStore = FakePreferencesDataStore(preferencesOf()),
-            backupDirtyMarker = marker,
         )
 
         repository.setSafeModeEnabled(false)
         repository.setEnabledProviderIds(setOf(ProviderId("nyaa")))
         repository.setDnsMode(TorrentSearchDnsMode.CLOUDFLARE)
         repository.setMultiSourceDisclosureAccepted(true)
-        assertEquals(0, marker.count)
 
         repository.setSort(SortCriteria.DATE, SortOrder.ASCENDING)
-        assertEquals(1, marker.count)
+        assertEquals(SortCriteria.DATE, repository.settings.first().sortCriteria)
+        assertEquals(SortOrder.ASCENDING, repository.settings.first().sortOrder)
     }
 
     /** 损坏或未知持久值必须安全回退，非法 Provider ID 不得进入运行时设置。 */
@@ -102,6 +99,8 @@ class TorrentSearchSettingsRepositoryTest {
         repository.setEnabledProviderIds(setOf(ProviderId("nyaa"), ProviderId("yts")))
         repository.setSafeModeEnabled(false)
         repository.setSort(SortCriteria.DATE, SortOrder.ASCENDING)
+        assertEquals(SortCriteria.DATE, repository.settings.first().sortCriteria)
+        assertEquals(SortOrder.ASCENDING, repository.settings.first().sortOrder)
         repository.setMultiSourceDisclosureAccepted(true)
         repository.setDnsMode(TorrentSearchDnsMode.CLOUDFLARE)
         /** torznabConfig 是不含 API Key 明文的动态来源配置。 */
@@ -175,16 +174,7 @@ class TorrentSearchSettingsRepositoryTest {
     }
 }
 
-/** 设置测试用 dirty 标记器，不接触宿主持久化。 */
-private class RecordingSettingsBackupDirtyMarker : TorrentSearchBackupDirtyMarker {
-    /** count 是排序白名单持久化后的标记次数。 */
-    var count: Int = 0
 
-    /** 每次标记只增加确定性计数。 */
-    override suspend fun markDirty() {
-        count += 1
-    }
-}
 
 /** 内存 DataStore 保留真实 updateData 变换与 Flow 语义，只替代磁盘 IO。 */
 private class FakePreferencesDataStore(
