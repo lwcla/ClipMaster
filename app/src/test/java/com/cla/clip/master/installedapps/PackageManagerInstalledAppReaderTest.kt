@@ -119,9 +119,9 @@ class PackageManagerInstalledAppReaderTest {
     }
 
     @Test
-    /** 安装列表为空时应返回空列表 reason，避免 UI 误认为仍在同步旧 Shizuku 列表。 */
-    fun loadInstalledAppsMapsEmptyListToPackageScanEmpty() = runBlocking {
-        /** 假包读取器；模拟卸载重装或可见性配置异常导致的空结果。 */
+    /** 成功读取后仅有自身被排除，正常空结果应允许页面显示无应用提示。 */
+    fun loadInstalledAppsReturnsSuccessWhenOnlySelfRemains() = runBlocking {
+        /** 假包读取器返回自身，归一化后为空，不抛系统异常。 */
         val packageReader = FakeInstalledAppPackageReader(
             entries = listOf(
                 InstalledAppPackageEntry(
@@ -139,12 +139,59 @@ class PackageManagerInstalledAppReaderTest {
             dispatcher = Dispatchers.Unconfined,
         )
 
-        /** 读取结果；空列表应转成失败态供 UI 展示手动添加兜底。 */
+        /** 读取已完成且结果正常为空，不能误报权限或加载失败。 */
         val result = reader.loadInstalledApps()
 
+        assertTrue(result is InstalledAppLoadResult.Success)
+        result as InstalledAppLoadResult.Success
+        assertTrue(result.apps.isEmpty())
+        assertEquals(1000L, result.loadedAtMillis)
+        assertEquals(0L, result.elapsedMs)
+    }
+
+    /** 系统读取正常返回零条目，属于成功空列表，不能仅凭数量猜测读取失败。 */
+    @Test
+    fun loadInstalledAppsReturnsSuccessForEmptyRawList() = runBlocking {
+        /** 合成适配器正常返回空，不访问 PackageManager 或真实设备。 */
+        val packageReader = FakeInstalledAppPackageReader(emptyList())
+        /** 固定时间及调度器只验证空结果契约。 */
+        val reader = PackageManagerInstalledAppReader(packageReader, "com.example.self", { 1000L }, Dispatchers.Unconfined)
+        /** 读取结果仍需保留成功元数据，便于协调器结束加载并提交零结果快照。 */
+        val result = reader.loadInstalledApps()
+        assertTrue(result is InstalledAppLoadResult.Success)
+        result as InstalledAppLoadResult.Success
+        assertTrue(result.apps.isEmpty())
+        assertEquals(1000L, result.loadedAtMillis)
+        assertEquals(0L, result.elapsedMs)
+    }
+
+    /** 默认范围过滤掉所有系统应用时，同样是正常完成的空结果。 */
+    @Test
+    fun loadInstalledAppsReturnsSuccessWhenSystemFilterRemovesAllEntries() = runBlocking {
+        /** 仅提供一个范围外系统应用，归一化防御检查应移除它。 */
+        val packageReader = FakeInstalledAppPackageReader(listOf(InstalledAppPackageEntry("com.example.system", "System", true)))
+        /** 默认隐藏系统应用，不把用户选择导致的空列表当作系统失败。 */
+        val reader = PackageManagerInstalledAppReader(packageReader, "com.example.self", { 1000L }, Dispatchers.Unconfined)
+        /** 成功空结果允许范围胶囊继续切换并重新读取。 */
+        val result = reader.loadInstalledApps()
+        assertTrue(result is InstalledAppLoadResult.Success)
+        result as InstalledAppLoadResult.Success
+        assertTrue(result.apps.isEmpty())
+        assertEquals(false, packageReader.requestedSystemApps)
+    }
+
+    /** 普通读取异常仍是失败，允许空结果不能吞掉真正的系统错误。 */
+    @Test
+    fun loadInstalledAppsMapsOrdinaryExceptionToScanFailure() = runBlocking {
+        /** 合成平台异常只含固定短信息，不使用真实路径或系统消息。 */
+        val packageReader = FakeInstalledAppPackageReader(emptyList(), IllegalStateException("synthetic"))
+        /** 异常分支继续使用可控时间和调度器。 */
+        val reader = PackageManagerInstalledAppReader(packageReader, "com.example.self", { 1000L }, Dispatchers.Unconfined)
+        /** 失败类别与原因码不能因为正常空列表支持而改变。 */
+        val result = reader.loadInstalledApps()
         assertTrue(result is InstalledAppLoadResult.Failed)
         result as InstalledAppLoadResult.Failed
-        assertEquals(INSTALLED_APP_REASON_PACKAGE_SCAN_EMPTY, result.reasonCode)
+        assertEquals(INSTALLED_APP_REASON_PACKAGE_SCAN_FAILED, result.reasonCode)
     }
 
     @Test

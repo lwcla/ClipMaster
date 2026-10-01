@@ -4,6 +4,18 @@ import android.graphics.drawable.Drawable
 import com.cla.clip.master.installedapps.InstalledAppInfo
 
 /**
+ * 候选映射与来源扫描摘要一起发布，页面用摘要身份区分后台映射是否追上当前成功扫描。
+ * 保留对象身份，避免数值相同的连续成功快照在 StateFlow 中被结构相等合并。
+ * 初始空候选没有扫描摘要，仅表示尚未就绪，不表示成功空结果。
+ */
+internal class BlockedSourceAppCandidateSnapshot(
+    /** 仅为本次扫描构建的候选，包含已过滤优先排序但未裁剪搜索/范围。 */
+    val candidates: List<BlockedSourceAppCandidate> = emptyList(),
+    /** 原始扫描摘要引用，不复制或按字段重建，以保持内存身份。 */
+    val loadSummary: InstalledAppLoadSummary? = null,
+)
+
+/**
  * 从当前扫描结果构建过滤候选，已保存屏蔽项优先，同组保留读取器的名称/包名排序。
  *
  * 扫描结果已由读取器规范化、去重；未扫描到的保存规则不生成行，完整名单仍由仓库原子增删保存。

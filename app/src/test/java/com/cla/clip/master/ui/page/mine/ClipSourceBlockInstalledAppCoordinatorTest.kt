@@ -6,10 +6,12 @@ import com.cla.clip.master.installedapps.InstalledAppReader
 import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.junit.Assert.*
@@ -17,23 +19,143 @@ import org.junit.Test
 
 /** 可见生命周期和刷新回归，使用受控读取器，不访问真实安装列表或真实时钟。 */
 class ClipSourceBlockInstalledAppCoordinatorTest {
+    /** 正常成功零结果应替换旧行、结束加载，并让页面进入真正空态而非失败。 */
     @Test
-    /** 成功后普通或空扫描失败均保留旧列表、范围与查询条件。 */
+    fun successfulEmptyRefreshReplacesOldRowsAndShowsEmpty() = runBlocking {
+        /** 可控会话只使用合成读取结果，不访问本机应用。 */
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        /** 模拟下一次成功读取为空，不能通过 Failed 来模拟零结果。 */
+        var empty = false
+        try {
+            /** 先建立旧成功列表，再返回成功零应用，验证新快照真正替换旧行。 */
+            val scanner = scanner(scope) {
+                if (empty) InstalledAppLoadResult.Success(emptyList(), 0L, 0L) else success("com.example.a")
+            }
+            scanner.onVisible()
+            empty = true
+            scanner.refresh()
+            /** 协调器已发布零结果快照，候选映射沿用同一摘要即可判空。 */
+            val snapshot = scanner.snapshot.value!!
+            assertTrue(snapshot.apps.isEmpty())
+            assertEquals(0, scanner.state.value.loadedAppCount)
+            assertTrue(scanner.state.value.everLoaded)
+            assertFalse(scanner.state.value.loading)
+            assertNull(scanner.state.value.unavailableReasonCode)
+            assertEquals(ClipSourceBlockListContentState.Empty, resolveClipSourceBlockListContentState(scanner.state.value, 0, 0, snapshot.summary))
+        } finally { scope.cancel() }
+    }
+
+    /** 慢收集者错过中间 loading 时，也必须收到同数量同时间的新成功摘要，避免 UI 永久等待。 */
+    @Test
+    fun slowCollectorReceivesRepeatedSuccessWithEqualSummaryFields() = runBlocking {
+        /** 即时调度加显式门闩控制收集，不依赖真实线程或 sleep。 */
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        /** 首次状态已交付后暂停 collector，让它跳过刷新中的 loading 状态。 */
+        val gate = CompletableDeferred<Unit>()
+        /** 记录实际交付给 UI 的摘要引用，不能只检查 StateFlow.value。 */
+        val received = mutableListOf<InstalledAppLoadSummary?>()
+        try {
+            /** 连续成功使用相同合成应用、数量与时间，专门验证相等值的交付。 */
+            val scanner = scanner(scope) { success("com.example.a") }
+            scanner.onVisible()
+            // state 是 collector 实际收到的快照；首次交付后暂停，而协调器继续完成刷新。
+            scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                scanner.state.collect { state ->
+                    received.add(state.lastLoadSummary)
+                    if (received.size == 1) gate.await()
+                }
+            }
+            scanner.refresh()
+            /** 刷新后的真实摘要身份，收集者恢复后必须收到这一对象。 */
+            val latestSummary = scanner.state.value.lastLoadSummary
+            gate.complete(Unit)
+            assertEquals(2, received.size)
+            assertSame(latestSummary, received.last())
+        } finally { gate.complete(Unit); scope.cancel() }
+    }
+
+    /** 同数量、同时间的重复成功也应发布新快照，并保持应用与摘要的原子来源身份。 */
+    @Test
+    fun repeatedSuccessPublishesDistinctSnapshotWithSharedSummary() = runBlocking {
+        /** 独立即时会话，所有输入与时间均为 helper 构造值。 */
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        try {
+            /** 两次返回同一合成应用及时间，不能靠字段值变化驱动新快照。 */
+            val scanner = scanner(scope) { success("com.example.a") }
+            scanner.onVisible()
+            /** 首次成功的原子快照，摘要引用必须与扫描状态相同。 */
+            val previousSnapshot = scanner.snapshot.value!!
+            assertSame(previousSnapshot.summary, scanner.state.value.lastLoadSummary)
+            scanner.refresh()
+            /** 重读后的新对象必须发布，即使其字段值与上次相等。 */
+            val currentSnapshot = scanner.snapshot.value!!
+            assertNotSame(previousSnapshot, currentSnapshot)
+            assertNotSame(previousSnapshot.summary, currentSnapshot.summary)
+            assertSame(currentSnapshot.summary, scanner.state.value.lastLoadSummary)
+            assertEquals(listOf("com.example.a"), currentSnapshot.apps.map { app -> app.packageName })
+        } finally { scope.cancel() }
+    }
+
+    @Test
+    /** 输入和清空只更新内存关键词，不能意外执行安装扫描。 */
+    fun changingAndClearingSearchDoesNotScan() = runBlocking {
+        /** 合成会话使用即时调度，调用计数只统计真实协调器发起的读取。 */
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        /** 安装读取次数，关键词更新不能增加它。 */
+        var calls = 0
+        try {
+            /** 仅替换系统读取边界，不替换被验证的关键词协调规则。 */
+            val scanner = scanner(scope) { calls++; success("com.example.a") }
+            scanner.onVisible()
+            scanner.updateSearchQuery("synthetic")
+            assertEquals("synthetic", scanner.state.value.searchQuery)
+            assertEquals(1, calls)
+            scanner.updateSearchQuery("")
+            assertEquals("", scanner.state.value.searchQuery)
+            assertEquals(1, calls)
+        } finally { scope.cancel() }
+    }
+
+    @Test
+    /** 手动刷新及系统范围变化都保留当前输入，防止重扫时丢失搜索。 */
+    fun refreshAndSystemToggleKeepSearchQuery() = runBlocking {
+        /** 独立内存会话，不调用 PackageManager 或依赖设备安装状态。 */
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        /** 记录读取范围，确保关键词保留并非因为刷新没有执行。 */
+        val ranges = mutableListOf<Boolean>()
+        try {
+            /** 返回相同合成候选，范围和关键词才是本例保护的契约。 */
+            val scanner = scanner(scope) { showSystem ->
+                ranges.add(showSystem)
+                success("com.example.a")
+            }
+            scanner.onVisible()
+            scanner.updateSearchQuery("synthetic")
+            scanner.refresh()
+            assertEquals("synthetic", scanner.state.value.searchQuery)
+            scanner.updateShowSystemApps(true)
+            assertEquals("synthetic", scanner.state.value.searchQuery)
+            assertEquals(listOf(false, false, true), ranges)
+        } finally { scope.cancel() }
+    }
+
+    @Test
+    /** 成功后的读取异常应保留旧列表、范围与查询条件。 */
     fun refreshFailureKeepsLastUsableSnapshotAndSearch() = runBlocking {
         /** 测试 scope 与可切换读取结果，只有真实协调规则参与状态转换。 */
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
         /** 可切换合成失败，用于验证失败后的状态与重试。 */
         var fail = false
         try {
-            /** 空扫描失败与系统异常同样不能隐式清空历史成功快照。 */
-            val scanner = scanner(scope) { if (fail) failed("package_scan_empty") else success("com.example.a") }
+            /** 真正读取失败不能隐式清空历史成功快照，正常零结果由独立成功用例保护。 */
+            val scanner = scanner(scope) { if (fail) failed("package_scan_failed") else success("com.example.a") }
             scanner.onVisible()
             scanner.updateSearchQuery("app")
             fail = true
             scanner.refresh()
-            assertEquals(listOf("com.example.a"), scanner.apps.value.map { it.packageName })
+            assertEquals(listOf("com.example.a"), scanner.snapshot.value?.apps.orEmpty().map { it.packageName })
             assertEquals("app", scanner.state.value.searchQuery)
-            assertEquals("package_scan_empty", scanner.state.value.unavailableReasonCode)
+            assertEquals("package_scan_failed", scanner.state.value.unavailableReasonCode)
             assertEquals(1, scanner.state.value.loadedAppCount)
             assertFalse(scanner.state.value.loading)
         } finally { scope.cancel() }
@@ -60,7 +182,7 @@ class ClipSourceBlockInstalledAppCoordinatorTest {
             scanner.refresh()
             assertEquals(2, calls)
             assertTrue(scanner.state.value.loading)
-            assertEquals(1, scanner.apps.value.size)
+            assertEquals(1, scanner.snapshot.value?.apps.orEmpty().size)
             gate.complete(Unit)
             assertFalse(scanner.state.value.loading)
         } finally { scope.cancel() }
@@ -87,9 +209,9 @@ class ClipSourceBlockInstalledAppCoordinatorTest {
             scanner.onHidden()
             assertFalse(scanner.state.value.loading)
             scanner.onVisible()
-            assertEquals(listOf("com.example.new"), scanner.apps.value.map { it.packageName })
+            assertEquals(listOf("com.example.new"), scanner.snapshot.value?.apps.orEmpty().map { it.packageName })
             gate.complete(Unit)
-            assertEquals(listOf("com.example.new"), scanner.apps.value.map { it.packageName })
+            assertEquals(listOf("com.example.new"), scanner.snapshot.value?.apps.orEmpty().map { it.packageName })
             assertEquals(2, calls)
         } finally { gate.complete(Unit); scope.cancel() }
     }
@@ -113,9 +235,9 @@ class ClipSourceBlockInstalledAppCoordinatorTest {
             scanner.onVisible()
             scanner.updateShowSystemApps(true)
             assertEquals(listOf(false, true), ranges)
-            assertEquals(listOf("com.example.system"), scanner.apps.value.map { it.packageName })
+            assertEquals(listOf("com.example.system"), scanner.snapshot.value?.apps.orEmpty().map { it.packageName })
             gate.complete(Unit)
-            assertEquals(listOf("com.example.system"), scanner.apps.value.map { it.packageName })
+            assertEquals(listOf("com.example.system"), scanner.snapshot.value?.apps.orEmpty().map { it.packageName })
             assertFalse(scanner.state.value.loading)
         } finally { gate.complete(Unit); scope.cancel() }
     }
@@ -145,7 +267,7 @@ class ClipSourceBlockInstalledAppCoordinatorTest {
             assertTrue(scanner.state.value.loading)
             assertNull(scanner.state.value.unavailableReasonCode)
             newGate.complete(Unit)
-            assertEquals(listOf("com.example.system"), scanner.apps.value.map { it.packageName })
+            assertEquals(listOf("com.example.system"), scanner.snapshot.value?.apps.orEmpty().map { it.packageName })
             assertFalse(scanner.state.value.loading)
         } finally { oldGate.complete(Unit); newGate.complete(Unit); scope.cancel() }
     }
@@ -189,7 +311,7 @@ class ClipSourceBlockInstalledAppCoordinatorTest {
             scanner.onHidden()
             scanner.onVisible()
             assertEquals(2, systemReads)
-            assertEquals(listOf("com.example.system"), scanner.apps.value.map { it.packageName })
+            assertEquals(listOf("com.example.system"), scanner.snapshot.value?.apps.orEmpty().map { it.packageName })
         } finally { scope.cancel() }
     }
 

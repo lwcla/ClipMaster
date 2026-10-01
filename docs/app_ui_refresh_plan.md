@@ -63,10 +63,19 @@
 - 日志与诊断计划：通过截图、布局检查与编译诊断确认 Insets 消费边界，不在高频重组时输出日志，不记录剪贴、包名或搜索内容。
 - 本轮验证结果：`git diff --check` 通过；上述 app 编译命令返回 `BUILD FAILED`，在依赖任务 `:base:general:compileDebugJavaWithJavac` 读取 Gradle transforms 缓存 `okhttp-release-api.jar` 时发生 `AccessDeniedException`，未执行到 app Kotlin 编译，不能据源码检查宣称编译通过。日志保留在 `build/shared-scaffold-insets-compile.log`，不清理缓存或修改权限；三键/手势导航、横屏、独立我的页及多选底栏的真实设备效果尚未验证。
 
+## 二级骨架顶部 slot（已完成，2026-10-01）
+
+- 来源过滤页已通过 topBar slot 切换普通标题栏与共享 `SearchTopBar`；页面接入见 [来源过滤方案](clip_source_app_filter_plan.md)，搜索组件契约见 [共享表单方案](shared_form_components_plan.md)。
+- 为 `SecondaryPageScaffold` 增加可选 `topBar` 内容 slot：默认仍通过原 title/onBack/actions 构造 `TitleBar`；调用方提供 slot 时替换整条顶部栏。沿用现有导航栏 Insets、内容 padding、Snackbar 和底栏机制，顶部组件负责一次状态栏避让。
+- 不将无边框输入塞入居中标题插槽，不改变 `TitleBar` 每侧 112dp 的保护规则；其他页面无需改造。搜索顶部常规字体下与普通态同为 48dp，极大字体允许随输入内容增加高度，分隔线不占额外一行。
+- 实施时检查骨架所有调用方及默认行为兼容性，运行 `.\gradlew.bat :app:compileDebugKotlin --console=plain`；状态规则测试见来源过滤主文档，Preview/设备检查 Insets、窄屏和键盘，不能把现有编译结果当作草案验证。
+- 日志与诊断计划：展示 slot 无新增副作用，不新增重组日志；无数据或外部协议变化，无需备份及 release/R8 调整。
+- 最终验证：七处 SecondaryPageScaffold 调用方已检查，默认 topBar 为空继续构造原 TitleBar；app 190 项单测、Kotlin 编译、最后布局补验编译通过，只读审查无可行动问题。布局/IME/读屏未做设备验收，具体证据以来源过滤主文档为准。
+
 ## 设计例外和后续收敛
 
 - 回收站、折叠列表页、备份页、备份恢复流程页和视频下载页已接入统一二级页面骨架；下载记录、图片提取和视频提取本轮先接入共享主题 token、标题栏、卡片和状态组件，不强行改写内部状态机和复杂布局。
-- 下载记录暂未切入 `SecondaryPageScaffold`，原因是普通态和多选态标题栏需要在同一页面内切换并与选择操作条协同；但页面根布局已切到标准 `Scaffold`，后续只需在二级骨架支持可变标题栏插槽后再迁入该页面。
+- 下载记录暂未切入 `SecondaryPageScaffold`，原因是普通态和多选态标题栏需要与选择操作条协同；页面根布局已切到标准 `Scaffold`。本轮顶部 slot 已提供接入条件，后续单独迁入并验收多选、底栏及 Insets，不扩大来源过滤本轮范围。
 - 图片提取和视频提取暂未切入 `SecondaryPageScaffold`，原因是透明/隐藏 WebView、前景状态遮罩、探测超时和重试状态紧密绑定页面 chrome；后续应先抽出可复用的“WebView 探测页骨架”，再迁入两类提取页。
 - 任意页面如果保留硬编码尺寸、特殊布局或页面私有组件，必须说明业务原因和后续收敛方向。
 - 视觉完成线：所有页面完成统一骨架、主题 token、深浅色、动态字体、空态/错误态和关键交互验收后，才算本轮 UI 优化完成；只换颜色但未完成骨架统一的页面不能标记完成。
@@ -89,6 +98,10 @@
 - 反回归筛查：使用 `rg "Color\\.|\\.dp|RoundedCornerShape|shadow"` 等方式人工检查硬编码样式，合理例外记录到本文或对应页面文档。
 
 ## 变更记录
+
+- 2026-10-01：完成二级骨架可选 topBar slot，默认标题布局保持兼容；190 项 app 单测、Kotlin 编译和最后布局编译通过，只读审查无可行动问题。原因是来源过滤页需在标题与输入间切换；未迁移其他页面。
+
+- 2026-10-01：新增二级骨架顶部 slot 草案，记录默认 TitleBar 兼容、Insets 与顶部高度边界；原因是来源过滤页需要就地切换无边框搜索顶部。本次只写方案。
 
 - 2026-09-30：补齐提交前最终验证记录。运行 `.\gradlew.bat :app:compileDebugKotlin :app:testDebugUnitTest :base:general:testDebugUnitTest --no-daemon '-Pkotlin.compiler.execution.strategy=in-process' '-Pksp.incremental=false' --console=plain`，结果 `BUILD SUCCESSFUL`，150 项 app 和 64 项 base/general 单测通过；日志位于 `build/commit-validation.log`。纯 Insets 布局未新增 JVM 单测，设备效果及 release/R8 未验证；不新增运行时日志。
 

@@ -85,14 +85,17 @@ class ClipSourceBlockSettingVm @Inject constructor(
     )
     /** 当前会话扫描状态、搜索和系统范围，均不持久化。 */
     val installedAppListState = scanCoordinator.state
-    /** 候选仍复用扫描映射与已过滤优先，持久名单变化后才重新分组。 */
-    val blockedSourceAppCandidates = combine(blockedClipSourcePackages, scanCoordinator.apps) { packages, apps ->
-        // packages 是完整已提交名单，apps 只含扫描范围；隐藏规则不会生成行或被误删。
-        buildBlockedSourceAppCandidates(packages.orEmpty(), apps)
+    /** 候选及来源摘要一起发布，沿用扫描映射、后台调度及已过滤优先，避免 UI 混用两次扫描。 */
+    internal val blockedSourceAppCandidateSnapshot = combine(blockedClipSourcePackages, scanCoordinator.snapshot) { packages, snapshot ->
+        // packages 是完整已提交名单；snapshot 只含成功扫描范围，摘要引用必须随映射一起保留。
+        BlockedSourceAppCandidateSnapshot(
+            candidates = buildBlockedSourceAppCandidates(packages.orEmpty(), snapshot?.apps.orEmpty()),
+            loadSummary = snapshot?.summary,
+        )
     }.stateIn(
         CoroutineScope(viewModelScope.coroutineContext + Dispatchers.Default),
         SharingStarted.WhileSubscribed(5_000),
-        emptyList(),
+        BlockedSourceAppCandidateSnapshot(),
     )
 
     /** 页面恢复前台时按需扫描，同会话同范围成功后不重复 IO。 */

@@ -1,6 +1,5 @@
 package com.cla.clip.master.ui.page.mine
 
-import com.cla.clip.master.installedapps.InstalledAppInfo
 import com.cla.clip.master.installedapps.InstalledAppReader
 import com.cla.clip.master.installedapps.InstalledAppLoadResult
 import com.cla.clip.master.installedapps.INSTALLED_APP_REASON_PACKAGE_SCAN_FAILED
@@ -32,12 +31,12 @@ internal class ClipSourceBlockInstalledAppCoordinator(
 ) {
     /** 会话扫描状态及应用快照，只驻留当前 ViewModel 内存。 */
     private val mutableState = MutableStateFlow(InstalledAppListState())
-    /** 最近成功扫描快照，扫描失败和取消不清空它。 */
-    private val mutableApps = MutableStateFlow<List<InstalledAppInfo>>(emptyList())
+    /** 最近成功应用与摘要一起发布，扫描失败和取消不清空它，null 表示从未成功。 */
+    private val mutableSnapshot = MutableStateFlow<InstalledAppSnapshot?>(null)
     /** 提供给页面与候选构建的只读状态。 */
     val state = mutableState.asStateFlow()
-    /** 候选构建只观察本会话成功应用列表。 */
-    val apps = mutableApps.asStateFlow()
+    /** 候选构建观察原子成功快照，不用数量或时间猜测是否已经追上本次读取。 */
+    val snapshot = mutableSnapshot.asStateFlow()
 
     /** 页面是否位于前台可见态，不以系统开关替代生命周期。 */
     private var visible = false
@@ -127,7 +126,9 @@ internal class ClipSourceBlockInstalledAppCoordinator(
     private fun applyResult(result: InstalledAppLoadResult, showSystemApps: Boolean) {
         when (result) {
             is InstalledAppLoadResult.Success -> {
-                mutableApps.value = result.apps
+                /** 每次成功创建唯一摘要对象，同数量、同时间的刷新也有独立内存身份。 */
+                val summary = InstalledAppLoadSummary(result.apps.size, result.elapsedMs, result.loadedAtMillis)
+                mutableSnapshot.value = InstalledAppSnapshot(result.apps, summary)
                 loadedSystemRange = showSystemApps
                 mutableState.update { state ->
                     state.copy(
@@ -135,7 +136,7 @@ internal class ClipSourceBlockInstalledAppCoordinator(
                         everLoaded = true,
                         unavailableReasonCode = null,
                         loadedAppCount = result.apps.size,
-                        lastLoadSummary = InstalledAppLoadSummary(result.apps.size, result.elapsedMs, result.loadedAtMillis),
+                        lastLoadSummary = summary,
                     )
                 }
                 onDiagnostic("success", mutableState.value)

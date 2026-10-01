@@ -230,8 +230,10 @@
     <string name="base_general_fold_clip">折叠</string>
     <string name="base_general_folded_clip_count">已折叠 %1$d 条</string>
     <string name="base_general_no_quick_action">无（整卡进入详情）</string>
-    <string name="base_general_clip_source_block_setting">剪贴保存过滤</string>
-    <string name="base_general_clip_source_block_setting_empty_desc">未设置，所有可识别来源 App 的新剪贴都会保存</string>
+    <!-- 我的页入口和过滤设置页共用短标题，避免两处命名不一致。 -->
+    <string name="base_general_clip_source_block_setting">剪贴过滤</string>
+    <!-- 没有过滤规则时入口只显示简短状态，业务行为仍由既有过滤规则决定。 -->
+    <string name="base_general_clip_source_block_setting_empty_desc">未设置</string>
     <string name="base_general_clip_source_block_setting_enabled_desc">已过滤 %1$d 个 App</string>
     <string name="base_general_clip_source_block_search_hint">搜索 App 名或包名</string>
     <string name="base_general_clip_source_block_show_system_apps">显示系统应用</string>

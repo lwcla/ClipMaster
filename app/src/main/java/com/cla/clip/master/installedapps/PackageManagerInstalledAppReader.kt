@@ -62,7 +62,7 @@ class PackageManagerInstalledAppReader : InstalledAppReader {
         this.dispatcher = dispatcher
     }
 
-    /** 在 IO 调度器按所选范围读取名称和图标；取消直接传播，扫描异常映射为低敏失败结果。 */
+    /** 在 IO 调度器按范围读取名称和图标；正常空列表也返回成功，取消传播，异常才返回失败。 */
     override suspend fun loadInstalledApps(showSystemApps: Boolean): InstalledAppLoadResult = withContext(dispatcher) {
         /** 本次读取开始时间；只用于低敏耗时日志。 */
         val startedAtMillis = clock()
@@ -79,25 +79,15 @@ class PackageManagerInstalledAppReader : InstalledAppReader {
 
             /** 本次读取耗时；clock 在单测中可固定，避免断言依赖真实时间。 */
             val elapsedMs = (loadedAtMillis - startedAtMillis).coerceAtLeast(0L)
-            if (apps.isEmpty()) {
-                logW(TAG) {
-                    "installed_app_scan_result reasonCode=$INSTALLED_APP_REASON_PACKAGE_SCAN_EMPTY appCount=0 elapsedMs=$elapsedMs"
-                }
-                InstalledAppLoadResult.Failed(
-                    reasonCode = INSTALLED_APP_REASON_PACKAGE_SCAN_EMPTY,
-                    elapsedMs = elapsedMs,
-                    loadedAtMillis = loadedAtMillis,
-                )
-            } else {
-                logI(TAG) {
-                    "安装应用读取成功 reasonCode=success appCount=${apps.size} elapsedMs=$elapsedMs showSystemApps=$showSystemApps"
-                }
-                InstalledAppLoadResult.Success(
-                    apps = apps,
-                    elapsedMs = elapsedMs,
-                    loadedAtMillis = loadedAtMillis,
-                )
+            // 正常零结果同样完成读取，不能仅凭条目数量推断权限或系统失败。
+            logI(TAG) {
+                "安装应用读取成功 reasonCode=success appCount=${apps.size} elapsedMs=$elapsedMs showSystemApps=$showSystemApps"
             }
+            InstalledAppLoadResult.Success(
+                apps = apps,
+                elapsedMs = elapsedMs,
+                loadedAtMillis = loadedAtMillis,
+            )
         } catch (error: CancellationException) {
             // 切换范围和页面清理属于正常取消，不转换成读取失败。
             throw error

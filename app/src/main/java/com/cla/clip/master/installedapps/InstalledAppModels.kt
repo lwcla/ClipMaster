@@ -8,9 +8,6 @@ internal const val INSTALLED_APP_REASON_PACKAGE_VISIBILITY_DENIED = "package_vis
 /** PackageManager 扫描出现普通异常时的低敏原因码。 */
 internal const val INSTALLED_APP_REASON_PACKAGE_SCAN_FAILED = "package_scan_failed"
 
-/** PackageManager 扫描成功但排除当前 App 后没有候选时的低敏原因码。 */
-internal const val INSTALLED_APP_REASON_PACKAGE_SCAN_EMPTY = "package_scan_empty"
-
 /** 过滤页当前安装信息；图标只保存在页面会话内存，不参与持久化或外部协议。 */
 data class InstalledAppInfo(
     /** 应用包名，作为过滤名单保存和匹配的唯一身份。 */
@@ -26,9 +23,9 @@ data class InstalledAppInfo(
 /** 主进程安装应用读取结果；状态只服务当前页面会话，不进入数据库或备份。 */
 sealed interface InstalledAppLoadResult {
 
-    /** PackageManager 成功返回安装应用列表。 */
+    /** PackageManager 正常完成读取，允许范围过滤后的结果为空。 */
     data class Success(
-        /** 已按展示规则规范化和排序的安装应用列表。 */
+        /** 已规范化和排序的安装应用列表；空列表表示成功零结果，不表示读取失败。 */
         val apps: List<InstalledAppInfo>,
         /** 本次读取耗时毫秒；只用于低敏日志和调试。 */
         val elapsedMs: Long,
@@ -36,7 +33,7 @@ sealed interface InstalledAppLoadResult {
         val loadedAtMillis: Long,
     ) : InstalledAppLoadResult
 
-    /** PackageManager 读取失败或读取后为空。 */
+    /** PackageManager 因异常读取失败；正常空列表必须使用 Success。 */
     data class Failed(
         /** 低敏失败原因码；UI 只展示本地读取失败语义。 */
         val reasonCode: String,
@@ -50,7 +47,7 @@ sealed interface InstalledAppLoadResult {
 /** 安装应用读取入口；实现必须在 IO 调度器上访问 PackageManager。 */
 interface InstalledAppReader {
 
-    /** 按系统应用开关读取名称和图标；默认排除系统应用，整个过程在 IO 调度器执行。 */
+    /** 在 IO 按范围读取名称和图标；正常零结果返回 Success，异常返回 Failed，取消直接传播。 */
     suspend fun loadInstalledApps(showSystemApps: Boolean = false): InstalledAppLoadResult
 }
 

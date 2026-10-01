@@ -55,6 +55,7 @@ fun TopLevelPageScaffold(
  *
  * 统一返回标题栏、页面背景、可选底部栏和 Snackbar；复杂页面仍可在 content 内维护自己的业务状态。
  * 根层统一避让并消费导航栏 Insets，底栏只负责业务布局；内容仍需应用传入的标题栏和底栏 padding。
+ * 自定义 topBar 替换整条顶部栏并负责状态栏避让；未提供时保留原有 TitleBar 契约。
  */
 @Composable
 fun SecondaryPageScaffold(
@@ -64,6 +65,8 @@ fun SecondaryPageScaffold(
     snackbarHostState: SnackbarHostState? = null,
     actions: @Composable RowScope.() -> Unit = {},
     bottomBar: @Composable () -> Unit = {},
+    /** 可选顶部展示 slot，例如搜索输入栏；默认 null 保持所有既有调用方的标题布局。 */
+    topBar: (@Composable () -> Unit)? = null,
     content: @Composable (PaddingValues) -> Unit,
 ) {
     /** 二级页面背景色，确保子页面和根页面拥有一致底色。 */
@@ -75,11 +78,12 @@ fun SecondaryPageScaffold(
             // 有无业务底栏都在骨架根层处理导航区，内部 Scaffold 会排除已消费的 Insets。
             .navigationBarsPadding(),
         topBar = {
-            TitleBar(
-                title = title,
-                onBack = onBack,
-                actions = actions,
-            )
+            // 自定义顶部自行处理状态栏，骨架不能再叠加第二份 Insets。
+            if (topBar != null) {
+                topBar()
+            } else {
+                TitleBar(title = title, onBack = onBack, actions = actions)
+            }
         },
         bottomBar = bottomBar,
         snackbarHost = {
