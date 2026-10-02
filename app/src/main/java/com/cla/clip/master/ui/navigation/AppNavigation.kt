@@ -15,16 +15,14 @@ import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.NavDestination.Companion.hasRoute
+import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.toRoute
-import com.cla.clip.base.general.utils.logD
 import com.cla.clip.feature.ad.api.AdSourceEntry
 import com.cla.clip.feature.ad.api.AdSourceSelector
 import com.cla.clip.feature.torrent.search.api.TorrentSearchFeatureEntry
 import com.cla.clip.feature.torrent.search.api.TorrentSearchLaunchSource
 import com.cla.clip.master.ad.DetailAdSensitivityPolicy
-import com.cla.clip.master.ui.page.backup.BackupMediaRelocationPage
-import com.cla.clip.master.ui.page.backup.BackupPage
-import com.cla.clip.master.ui.page.backup.BackupRestoreFlowPage
 import com.cla.clip.master.ui.page.detail.DetailPage
 import com.cla.clip.master.ui.page.download.DownloadHistoryPage
 import com.cla.clip.master.ui.page.image.ImageExtractPage
@@ -43,8 +41,6 @@ private const val NAV_PAGE_ENTER_DURATION_MS = 260
 
 /** Compose Navigation 页面切换退出动画时长，单位毫秒；与进入动画接近，保证左进右出效果完整。 */
 private const val NAV_PAGE_EXIT_DURATION_MS = 260
-
-private const val TAG = "AppNavigation"
 
 /**
  * 应用主导航图。
@@ -73,8 +69,9 @@ fun AppNavigation(
     val context = LocalContext.current
     /** 子页面统一使用的跳转回调，保持所有页面都通过类型安全 Route 导航。 */
     val onNavigate = { route: Route ->
-        navController.navigate(route) {
-            launchSingleTop = route is BackupMediaRelocationRoute
+        // 组内忽略旧入口连点，不依赖 singleTop 去重整条返回栈。
+        if (route != BackupGraphRoute || navController.currentDestination?.hierarchy?.none { it.hasRoute<BackupGraphRoute>() } != false) navController.navigate(route) {
+            launchSingleTop = route == BackupGraphRoute
         }
     }
 
@@ -220,34 +217,8 @@ fun AppNavigation(
             )
         }
 
-        // 备份与恢复
-        composable<BackupRoute> {
-            BackupPage(
-                onBack = onBack,
-                onNavigate = onNavigate
-            )
-        }
-
-        // 备份恢复流程页
-        composable<BackupRestoreRoute> {
-            BackupRestoreFlowPage(
-                onBack = onBack,
-                onCloseRestoreFlow = { navController.closeBackupRestoreStack("restore_flow_done_close_stack") },
-                onNavigate = onNavigate,
-                torrentSearchFeatures = torrentSearchFeatures,
-            )
-        }
-
-        // 恢复本地媒体关联页
-        composable<BackupMediaRelocationRoute> { backStackEntry ->
-            /** 媒体重定位页路由参数；包含恢复任务 id。 */
-            val route = backStackEntry.toRoute<BackupMediaRelocationRoute>()
-            BackupMediaRelocationPage(
-                restoreTaskId = route.restoreTaskId,
-                onBack = onBack,
-                onCloseRestoreFlow = { navController.closeBackupRestoreStack("media_relocation_done_close_stack") }
-            )
-        }
+        // 备份恢复子图独立注册，宿主仅编排入口。
+        backupNavigation(navController, torrentSearchFeatures)
 
         composable<MineRoute> {
             MinePage(
@@ -267,24 +238,6 @@ fun AppNavigation(
                 onBack = onBack,
             )
         }
-    }
-}
-
-/**
- * 关闭备份、恢复和后续子页面链路，让用户回到进入备份前的页面状态。
- *
- * @param reasonCode 低敏关闭原因，用于区分恢复完成、媒体关联完成等不同入口来源。
- */
-private fun NavHostController.closeBackupRestoreStack(reasonCode: String) {
-    /** 是否成功从导航栈中移除了备份与恢复整条链路。 */
-    val closedRestoreStack = popBackStack<BackupRoute>(inclusive = true)
-    if (!closedRestoreStack) {
-        // 异常栈或深链入口缺少 BackupRoute 时，至少关闭当前页，避免硬跳到固定首页 Tab。
-        popBackStack()
-    }
-    logD(TAG) {
-        "备份恢复链路已关闭 closedRestoreStack=$closedRestoreStack " +
-            "reasonCode=$reasonCode"
     }
 }
 

@@ -4,6 +4,173 @@
 
 <!-- flow-title: WebDAV本地自动备份恢复流程 -->
 
+## 备份、恢复与媒体关联导航组改造（2026-10-02）
+
+本轮状态：已完成。2026-10-02 用户确认按本方案修改代码；保留现有工作区中尚未提交的方案及用户其他改动，就地实施，不创建提交。导航组、共享轻量会话及三个独立业务 VM 已接入；既有每日备份、恢复及媒体关联算法继续复用，下文同步为当前实现。app 单测、Kotlin 编译、R8 和独立代码复审通过；设备生命周期与真实权限交互验收另列待办。
+
+### 需求、可行性与范围
+
+用户要求把备份页、恢复页、恢复本地媒体关联页组织为一个导航组，起始页面为备份页。目标是让一次备份恢复流程拥有明确的入口、跨页通信边界和整体退出边界。
+
+设计可行。三个页面属于同一条业务链，Compose Navigation 支持嵌套图和图作用域 ViewModel；但使用 Flow 通信本身不是必须分组的理由，导航分组也不会自动改变 Hilt 对象作用域或事件交付保证。需要同时明确路由、会话和页面任务各自的生命周期。
+
+本轮只调整 app 的路由注册、入口、跨页请求/回显及清理接线；不修改备份格式、schemaVersion、Room 表、恢复合并规则、WebDAV 客户端、每日 Worker、媒体扫描和写回算法，不迁移 Navigation 3、不新增 Activity 或独立功能模块。
+
+### 实施前代码与复用检查
+
+已按备份 package、app 导航/共享组件、base/general 与 feature、全仓引用的顺序检查：
+
+| 当前能力 | 代码事实与复用决定 |
+| --- | --- |
+| `Routes.kt` / `AppNavigation.kt` | 三个目的地目前平级注册；继续复用类型安全路由和宿主 NavController，仅增加父图路由及独立注册文件。 |
+| `MineEntries.kt` | 实际备份入口位于 `BackupEntry` 的点击回调，当前跳转 `BackupRoute`；改为跳转父图。无需重写我的页。 |
+| `BackupRestoreRequests` | `@Singleton` 的单槽 `StateFlow<BackupRestoreRequest?>`；复用请求模型和按 requestId 清理规则，取消进程级所有权。 |
+| `BackupMediaRelocationEvents` | `@Singleton` 的 `SharedFlow`，`replay = 0`、`extraBufferCapacity = 1`；复用四类事件语义，替换关键回显仅依赖瞬时交付的路径。 |
+| `BackupVm` / `BackupRestoreVm` / `BackupMediaRelocationVm` | 三个页面默认 `hiltViewModel()`，目前各属目的地；保持页面职责和作用域，不合并，也不把三者全部提升到父图。 |
+| 恢复页事件接收 | 在 `BackupRestoreVm.viewModelScope` 中持续接收并按 restoreTaskId 过滤；进入媒体页后恢复 VM 仍在返回栈，因此通常仍能接收，并非页面不可见就必然丢事件。 |
+| `closeBackupRestoreStack(reasonCode)` | 当前 inclusive 弹到 `BackupRoute`，缺失时只弹当前页；复用命名出口与低敏日志，目标改为父图，避免遗漏父图会话。 |
+| `BackupRestoreState.kt`、summary formatter、二级页面骨架 | 复用入口状态、终态语义、结果展示与返回门禁，不复制页面组件或改变广告会话。 |
+| Repository、临时文件管理、`DownloadedMediaRelocator` | 继续承担 IO、恢复和扫描；图会话只传递请求与回显，不接管这些副作用。 |
+
+未找到现成的宿主嵌套导航组会话或图作用域共享 VM，可新增备份领域专用的轻量会话；不引入通用 EventBus 或万能导航管理器。
+
+### 方案对比与推荐
+
+| 方案 | 收益 | 取舍 |
+| --- | --- | --- |
+| A：只增加嵌套导航图 | 改动最小，统一入口和整组弹栈，满足导航结构要求。 | 两个通信对象仍是进程级 Singleton，退出组不会清空其所有权；Flow 接收时序与旧请求问题仍需单独管理。适合作为第一步，不视为通信收敛完成。 |
+| B：嵌套导航图 + 图作用域轻量会话（推荐） | 同一组实例共享恢复请求、任务身份及媒体关联回显，离组释放；保留三个独立业务 VM。 | 需要调整少量请求、绑定和回显接线，并补状态归约测试。 |
+| C：三个页面共享一个业务 VM | 可直接访问全部流程状态。 | 会把配置、导出、恢复、权限和扫描集中到大类，延长临时文件及扫描状态寿命，不采用。 |
+
+建议按 B 完成，分导航接线、会话接线两步实施并验证，最终同一次改造交付，避免长期保留一半新结构、一半旧通信。
+
+### 导航结构与入口契约
+
+新增 `BackupGraphRoute`，用 `navigation<BackupGraphRoute>(startDestination = BackupRoute)` 注册子图；应用根图仍从 `MainRoute()` 开始。组内保留 `BackupRoute`、`BackupRestoreRoute`、`BackupMediaRelocationRoute(restoreTaskId)`，无需重命名三个页面。
+
+```text
+应用根导航图（起点仍为 MainRoute）
+└─ BackupGraphRoute
+   ├─ BackupRoute：组起点，备份主页
+   ├─ BackupRestoreRoute：读取、预检、恢复与结果
+   └─ BackupMediaRelocationRoute(restoreTaskId)：媒体关联
+```
+
+外部入口只跳父图，组内按原路径前进。导航组不是新的可视页面，不显示额外标题或多一层空白页。复用宿主 NavController 和现有转场，不为三个页面新建第二个 NavHost。
+
+`BackupRestoreRoute` 只能在本组存在有效恢复请求时打开；媒体关联入口必须匹配当前已完成、允许关联的恢复任务，部分恢复限制沿用现行规则。嵌套图不是访问控制机制，技术上仍可直接导航到子目的地，因此必须在入口接线中检查请求/任务，不能只依赖父子结构。
+
+组内恢复与媒体页保留防重复打开策略：媒体入口继续 600ms 防抖和 `launchSingleTop`；恢复入口接受一次打开请求后禁止连续覆盖同一消费过程，已有读取/恢复任务时拒绝新请求而不是静默取消并换包。外部快速连点同样不得叠出多个导航组，入口使用 `launchSingleTop` 并核对当前目的地的父图归属；不能宣称 `launchSingleTop` 会自动去重返回栈中所有同名图。
+
+### ViewModel、Hilt 与会话职责
+
+新增 `BackupFlowVm`，通过父图的 `NavBackStackEntry` 作为 `ViewModelStoreOwner` 获取。组内三个目的地从自己的 entry 定位所属父图，并以 `remember(backStackEntry)` 缓存对应 owner；禁止把这个 owner 缓存在 Activity、Singleton 或跨组对象中。
+
+| 对象 | 生命周期与职责 |
+| --- | --- |
+| `BackupFlowVm` | 父图作用域；持有一个 `BackupFlowSession`，只管理通信与会话关闭，不读取备份、不观察全量数据库、不扫描媒体。 |
+| `BackupFlowSession` | 仅属于当前图实例的普通对象；保存待接管请求、活动 restoreTaskId、媒体入口状态及最近终态摘要，提供同步写入/关闭接口和只读 StateFlow。 |
+| `BackupVm` | 备份目的地作用域；配置、备份及列表职责保持，恢复选择通过当前会话提交。密码草稿仍只在原 VM 内存中。 |
+| `BackupRestoreVm` | 恢复目的地作用域；负责预检、事务、报告与临时包，进入媒体页时保留，回备份页时销毁并按既有规则清理。 |
+| `BackupMediaRelocationVm` | 媒体目的地作用域；负责预估、权限、扫描及写回，普通弹出时销毁，再次进入仍重新预估。 |
+
+Hilt 不会因为目的地进入嵌套图就自动生成“导航组 scope”；`@ViewModelScoped` 也只对应单个 VM，不能让三个独立 VM 自动获得同一会话。会话由 `BackupFlowVm` 持有，再由目的地薄接线显式传入各页面 VM；禁止在另一个 VM 构造函数里注入 `BackupFlowVm`，禁止只删除 `@Singleton` 后继续让 Hilt 分别构造通信对象。
+
+三个页面 VM 使用 `bindSession(session: BackupFlowSession): Boolean`：同一 VM 重复绑定同一 session 幂等，不重复订阅或启动任务；错误绑定另一 session 时返回 false 并记录低敏诊断。目的地先绑定，再开放读取/媒体 start 入口；备份文件回调在未绑定时提交失败，不导航。Compose 只做绑定和渲染；回显更新来自 VM/会话，不依赖媒体页可见时才运行的 UI collector。
+
+恢复 VM 的 init 不再直接消费 Singleton 请求。绑定完成并首次进入有效可见目的地后接管请求；`BackupRestoreFlowPage` 的初始 `Hidden` 自动返回逻辑要增加“会话已绑定且请求检查完成”的前提，避免尚未接管请求就弹回备份页。共享会话不提前创建其他页面业务 VM。
+
+### Flow 请求与回显契约
+
+1. 备份页提交 `BackupRestoreRequest` 到当前 session 的单槽 StateFlow；Boolean 返回 true 表示接受，false 表示忙碌、已关闭或未绑定，日志区分拒绝原因。接受后才导航到恢复页。取消文件选择不产生请求。路由不携带 Uri、凭据、备份实体或报告。
+2. 恢复 VM 接管请求、登记 consumedRequestId 并建立 Reading 状态后，按同一 requestId 确认清空；不得先清空再尝试接管。重组、方向切换和重复绑定不能重复读取。导航打开明确失败时仅清除本次尚未接管的请求，不清除其他请求。
+3. 恢复成功形成 Result 后，把 Result.taskId 注册为 session 的活动媒体关联任务；不是复用最早预检任务 id。新恢复流程重置上个任务的入口与摘要，避免跨备份回显。
+4. 媒体 VM 持有同一 session，通过 `publishMediaEvent(event: BackupMediaRelocationEvent): Boolean` 同步归约入口状态和摘要；返回 false 表示组已关闭或任务不匹配。StateFlow 保存当前事实状态，恢复 VM 观察并映射为现有 UI state。
+5. 沿用四类事件规则：Incomplete / Running 只改入口状态，不清除同任务上一轮终态摘要；Terminal 保存摘要，PermissionDenied 保持 Incomplete，其他终态为 Terminal；Interrupted 保存中断摘要并解除 Running。提取 `BackupMediaRelocationStateReducer` 为纯 Kotlin 协作者，输入当前状态与事件，输出新状态，错任务不修改状态。
+6. 事件类型继续表达发生了什么，但关键事实必须先同步落到 session。移除 `BackupMediaRelocationEvents` 的全局 SharedFlow 所有权，保留并迁移其事件模型；本轮不另建第二条通知总线。仍使用 Flow 观察请求和状态，无需把页面通信全部改为回调。
+7. 媒体 VM 清理时的 Interrupted 兜底改为同步写状态，不把解除 Running 的唯一保障交给正在取消的 `viewModelScope.launch` 或 `tryEmit`。整组关闭先把 session 标记为 closed，随后旧 VM 的迟到回调返回 false，不影响之后新建的组。
+8. 返回备份页后，旧恢复目的地被移除；仅在匹配当前任务时清理其会话回显。整组退出丢弃全部请求和摘要，重新进入为新会话；不会清空已提交的备份设置或已写库结果。
+
+改造前 `replay = 0` 的 SharedFlow 没有订阅者时不会保存事件，extraBufferCapacity 不解决这种情况；`emit`/`tryEmit` 成功也不等于业务接收者已应用状态。因此不采用简单改 `replay = 1`：那会增加旧任务重放风险，仍缺少明确的任务/会话边界。
+
+### 返回、完成与任务生命周期
+
+| 当前页面/阶段 | 顶部返回与系统返回 | 底部“完成” |
+| --- | --- | --- |
+| 备份主页 | 退出当前组，回到进入备份前的目的地。 | 沿用原 UI。 |
+| 恢复预览、结果、错误 | 返回备份主页；清理恢复目的地的临时包。 | 恢复结果完成关闭整组；错误和预览按钮沿用原语义。 |
+| 恢复读取/执行中 | 沿用二次确认；确认后取消当前页面任务并清理，不伪造数据库事务回滚。 | 沿用当前阶段限制。 |
+| 媒体预估、权限说明、待确认、失败 | 返回恢复结果页；权限弹窗返回继续停留媒体页。 | 沿用对应状态动作。 |
+| 媒体正式扫描 | 沿用 Running 返回拦截；恢复结果完成同样禁用。 | 不允许关闭流程。 |
+| 媒体成功或无需处理 | 普通返回仅回恢复结果页，显示关联摘要。 | 关闭整个组，回到进入备份前页面。 |
+
+统一整组出口使用 `popBackStack<BackupGraphRoute>(inclusive = true)`，不设置 saveState、不使用 restoreState 恢复已完成组。普通返回、组内打开、无会话降级和整组完成均核对回调来源 entry，旧目的地转场回调不能操作新栈；会话 close 的 Boolean 许可只能领取一次，重复完成不能继续弹出组外页面。父图退出后会话与三个页面 VM 在 Navigation 释放 entry 时清理；转场期间先关闭会话以防迟到写入。异常栈没有父图的降级仅在当前 entry 仍为回调来源时弹当前页，记录 reasonCode，不创建新 MainRoute、不硬跳首页 Tab。媒体页返回及完成同步检查会话 Running，避免扫描刚启动但 UI 尚未重组时退出。
+
+页面显示 Flow 继续 `collectAsStateWithLifecycle`。只有当前可见页面启动新的预检/预估，图 VM 不在 init 启动 IO。已由用户确认的读取/恢复/扫描任务仍按现有页面 VM 边界执行，系统权限弹窗和短暂退后台不重复启动，也不因为父图有缓存就自动新增扫描；本轮不改成后台可恢复任务。轻量跨页状态同步允许在当前组存活期间持续，不能因为恢复页被媒体页覆盖而漏更新，但不持续访问数据库、文件或网络。
+
+配置重建复用原 VM 和会话；进程死亡不恢复内存请求、报告、密码、Uri 或运行标记，不自动重启恢复/扫描。导航可能恢复在子页：先检测会话与任务是否有效，无有效恢复请求/报告时收栈回本组备份页，仅保留一个备份起点，由用户重新选择；媒体页不得只凭旧 taskId 启动扫描。已提交数据库内容保留，临时包仍走既有过期清理，不声称业务操作可跨进程续跑。本轮不增加额外 Snackbar 或字符串资源。
+
+### 文件与职责调整
+
+| 文件（相对仓库根目录） | 计划改动 |
+| --- | --- |
+| `app/src/main/java/com/cla/clip/master/ui/navigation/Routes.kt` | 新增无参数 `BackupGraphRoute`，沿用 `@Serializable` 与 `@Keep`。 |
+| `app/src/main/java/com/cla/clip/master/ui/navigation/BackupNavigation.kt`（新增） | `NavGraphBuilder.backupNavigation(...)` 注册三个子目的地、父图 owner 获取、普通返回与整组退出；AppNavigation 仅调用注册函数。 |
+| `app/src/main/java/com/cla/clip/master/ui/navigation/AppNavigation.kt` | 移出三个平级目的地及备份专属关闭实现，复用全局转场与其他路由。 |
+| `app/src/main/java/com/cla/clip/master/ui/page/mine/MineEntries.kt` | BackupEntry 跳父图，入口内容不变。 |
+| `app/src/main/java/com/cla/clip/master/ui/page/backup/BackupFlowVm.kt`（新增） | 只持有并关闭当前图会话。 |
+| `app/src/main/java/com/cla/clip/master/ui/page/backup/BackupFlowSession.kt`（新增） | 请求、接管确认、活动任务身份、媒体回显 StateFlow、closed 门禁；UI 局部状态，不备份、不序列化。 |
+| `app/src/main/java/com/cla/clip/master/ui/page/backup/BackupMediaRelocationStateReducer.kt`（新增） | 纯状态归约与错任务忽略，不处理 IO 或导航。 |
+| `app/src/main/java/com/cla/clip/master/ui/page/backup/BackupRestoreRequests.kt` | 仅保留请求模型；删除 Singleton 发送器与独立注入，单槽及接管契约直接归 session 所有。 |
+| `app/src/main/java/com/cla/clip/master/ui/page/backup/BackupMediaRelocationEvents.kt` | 保留事件模型，移除全局事件发送器；状态写入归 session，不保留未使用 DI。 |
+| `app/src/main/java/com/cla/clip/master/ui/page/backup/BackupVm.kt`、`BackupRestoreVm.kt`、`BackupMediaRelocationVm.kt` | 显式绑定同一 session，替换原通信依赖；保持业务执行协作者和页面任务边界。 |
+| `app/src/main/java/com/cla/clip/master/ui/page/backup/BackupPage.kt`、`BackupRestoreFlowPage.kt`、`BackupMediaRelocationPage.kt` | 接入会话，绑定前不启动；修正 Hidden 初始返回和无效子页恢复，不新增通用视觉组件。 |
+| `app/src/test/java/com/cla/clip/master/ui/page/backup/BackupFlowSessionTest.kt`、`BackupMediaRelocationStateReducerTest.kt`（新增） | 请求接管、会话隔离、关闭拒写、媒体回显归约测试。 |
+| `docs/webdav_backup_plan.md` / `docs/app_navigation_plan.md` | 本文维护完整业务契约，导航文档只记录父图接入与退出差异。 |
+
+新增/修改的类型、方法、构造函数、变量、字段、回调及关键分支均按仓库规则补简体中文注释。现有纯展示组件保持复用，不顺便重构广告或其他页面。
+
+### 分步实施与验证门禁
+
+- [x] 第一步：新增父图与独立注册文件，替换我的页入口和整组弹栈目标，已通过 Kotlin 编译。未单独交付“新图 + 旧全局通信”的中间状态，导航与会话同步接入；“进入备份 → 恢复 → 媒体 → 普通返回/完成”的设备验证另列第五、六步。
+- [x] 第二步：先写请求与会话隔离失败测试，再实现 session 和轻量图 VM；纯对象测试覆盖会话互不消费、同请求不能二次接管、忙碌不覆盖、旧 requestId 确认不清除新请求、关闭后拒绝请求及事件。父图实际共享同一 VM 的系统证明另列第五步。
+- [x] 第三步：先写媒体归约失败测试，再把四类事件写入 session StateFlow；覆盖错 taskId、不清除同任务旧摘要、权限拒绝、Interrupted 解除 Running、没有 UI 订阅者时终态仍可读取、新任务重置、整组关闭后旧回调拒绝。
+- [x] 第四步：接入三个页面 VM，移除 Singleton 注入与旧接收路径；bind/start 幂等、Hidden 在首次 RESUMED 检查请求后才降级，媒体正式扫描同步拦截退出。独立审查补齐扫描启动后 UI 尚未更新的退出门禁和退出转场重复关闭保护；两项均先写失败回归再修复。真实预检/权限/取消交互仍属于设备待办。
+- [ ] 第五步：验证父图 ViewModelStore 的真实边界。JVM 会话单测不能证明 Navigation 自动清理，需设备或导航集成测试覆盖组内回退共享、退回备份后恢复 VM 清理、整组退出/再次进入新建会话，以及转场结束后旧 owner 被释放。
+- [ ] 第六步：验证配置重建、进程被系统回收后从恢复页/媒体页恢复、快速连点入口、系统文件/权限回调迟到、失败终态再次关联、部分恢复入口限制、广告可见性与滚动锚点。无有效内存会话时回备份页，不自动执行数据写入。
+- [x] 第七步：运行 `./gradlew.bat :app:testDebugUnitTest :app:compileDebugKotlin :app:minifyReleaseWithR8 --console=plain`，276 项 app 测试、编译及 R8 通过。新增导航类型沿用现有 @Keep 最小边界，mapping 文件保留；不对 session/UI state 整包 keep。流程 HTML 一致性与 `git diff --check` 另见验证记录。release 包父图解析、子路由参数与整组弹栈的人工操作仍列设备待办。
+
+`repo-unit-test-gate` 判断：导航注册本身是薄接线，用编译与设备验收；请求门禁、会话隔离、Flow 状态归约与中断兜底属于可测试高风险逻辑，已选择性 TDD。先补 11 项会话/归约测试，API 占位实现下 10 项按预期断言失败，实现后通过；独立审查补充同步退出及关闭重入两项回归，先红后修复。纯 JVM 不证明 Navigation owner 的真实释放或权限系统交互。未新增测试依赖或层级，不需要修改测试策略主文档。
+
+### 日志与诊断计划
+
+沿用 `logD/logI/logW/logE` 与已有 taskId/requestId；仅为图实例生成不含内容的短 sessionId 供本地诊断，不把它变成备份协议。日志正文简体中文，字段保持稳定，禁止输出密码、账号、完整地址/URL、路径、Uri、备份文件名、备份正文、报告实体或目标指纹。
+
+| 日志点 | 级别、触发时机与字段 |
+| --- | --- |
+| 会话创建、关闭与最终释放 | D；sessionId、reasonCode、hasPendingRequest、hasActiveRestore；关闭与实际 onCleared 分开记录，便于判断转场延迟。 |
+| 请求接受、接管确认及清理 | D；sessionId、requestId、sourceType、accepted、reasonCode；忙碌/已关闭拒绝为 W，不输出请求对象。 |
+| 媒体回显变更 | D；sessionId、restoreTaskId、eventType、fromState、toState、summaryType、数量；错任务或迟到拒绝为 W；不输出逐项扫描日志。 |
+| 普通返回与整组完成 | D；当前路由类别、targetType、closedGraph、reasonCode；正式扫描拦截沿用现有 W，不强制跳首页。 |
+| 无效子页/进程重建降级 | W；hasRequest、hasRestoreResult、taskMatched、reasonCode=session_missing 或 restore_task_mismatch；禁止用对象 dump 排障。 |
+| 业务开始/成功/失败 | 继续既有日志与脱敏契约；不因会话增加再打印一次文件/网络/数据库流水。 |
+
+验证：单测断言状态与接管结果；设备待检查上述低敏日志能串起一次普通返回及整组关闭。已接入会话创建/关闭/释放、请求接管、同步媒体归约、迟到拒绝和导航降级日志；进度仍按现有节流，不在每次重组或 Flow 每次收集时刷日志。
+
+### 备份覆盖、取舍与后续待办
+
+会话、请求、taskId、扫描状态和回显摘要均是本次安装的临时流程状态，不纳入 BackupSnapshot、manifest 或系统 Auto Backup，不保存到 SavedStateHandle/rememberSaveable；密码、Uri 的既有隐私边界保持。用户数据与媒体关联写库仍按原恢复/扫描规则执行，备份协议、dirty/每日调度和保留策略无需调整。
+
+本轮采用内存会话，能保证配置重建和组内返回，不能保证进程死亡续跑或跨安装恢复。若未来需要可恢复任务，应单独设计持久化任务、授权复查和事务进度，本轮不暗中增加后台续跑。独立 VM 的原业务体量不在本轮全面拆分；只移走通信和导航接线，其他领域拆分按原待办逐步收敛。
+
+后续待办：完成上列设备验收，确认转场结束 owner 释放、配置/进程重建、日志顺序及临时包清理。外部直达恢复/媒体的深链不在本轮范围，后续如开放必须补有效请求重建和权限安全契约。
+
+### 技术依据
+
+- [Android 嵌套导航图](https://developer.android.com/guide/navigation/design/nested-graphs)：同一子流程可用 navigation 注册父图与起点，Compose 子路由仍可被直接导航，业务入口需自行约束。
+- [Compose 与 Hilt 集成](https://developer.android.com/develop/ui/compose/libraries#hilt)：以父图 backStackEntry 获取共享 ViewModel，页面业务 ViewModel 可以继续使用自身目的地作用域。
+- [Kotlin SharedFlow 契约](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-shared-flow/)：无订阅者时仅保留 replay 值，额外缓冲不提供离线事件保存。
+
 ## 每日备份与分目标结果改造（已完成，2026-10-01）
 
 本轮状态：已完成。本节依据 2026-09-30 最新代码重新分析，分析基线为 `d9952fa`；用户已确认“每日生成一份包、保存本地、满足网络条件后上传同一份包”的流程，2026-10-01 用户确认实施。生产流程、回归测试、两种功能配置的编译/R8及一次独立审查修复已完成，系统和真实服务验收仍需设备。旧保存版本、变更触发和主动退避机制已删除；本文对应章节统一以每日同包流程为准。其他页面正在维护的无关方案不在本次修改范围。
@@ -265,7 +432,7 @@ WebDAV：上次备份失败
 - WebDAV 密码经独立 Android Keystore alias 的 AES-GCM 加密后存入宿主 DataStore；新安装不读取旧介质。密钥失效时要求重新输入密码。
 - 备份生成、写入本地文件、上传 WebDAV、上传后的远端保留清理和列表刷新期间展示不可取消的“正在备份”弹窗，避免用户误以为可以重复点击或离开；WebDAV 手动上传的“上传成功”提示只在远端清理与列表刷新完成后展示，确保提示出现时弹窗即将关闭。
 - 恢复链路使用真正的独立导航页面，用户选择本地文件、本地备份目录条目或 WebDAV 条目后进入恢复页读取状态，页面内部在读取、预览、恢复中、恢复完成和恢复失败之间切换，避免 BottomSheet 下滑误关闭。
-- 备份页和恢复页不共享 `BackupVm`；备份页只把一次性恢复请求写入备份恢复 feature 内部 `BackupRestoreRequests` 单槽请求流，恢复页由独立 `BackupRestoreVm` 接管读取、下载、预览、恢复和临时文件清理。恢复页接管请求后立即按 `requestId` 清空请求流，关闭页面或 ViewModel 销毁时清理临时文件，避免长期持有 URI、WebDAV 条目或备份页状态。
+- 备份页和恢复页不共享 `BackupVm`；三个页面通过父图作用域 `BackupFlowVm` 共用一个 `BackupFlowSession`。备份页把恢复请求写入会话单槽 StateFlow，独立 `BackupRestoreVm` 首次 RESUMED 时接管读取、下载、预览、恢复和临时文件清理。建立 Reading 后按 requestId 确认清空请求，关闭页面或 ViewModel 销毁时按匹配身份清理，避免长期持有 URI、WebDAV 条目或备份页状态。
 - 备份页和恢复流程页已接入 `SecondaryPageScaffold` 二级页面骨架，标题栏、页面背景、Snackbar 和底部操作入口跟随本轮固定品牌主题；备份导出、WebDAV、恢复预检、恢复写库和媒体关联状态机不变。
 - 恢复流程底部操作区的导航栏避让由公共二级骨架统一负责，`BackupRestoreFlowActions` 不再局部添加系统 padding；媒体重新关联页仍使用原生 Scaffold，保留原有处理。共享契约、测试及日志边界以 [UI 主方案](app_ui_refresh_plan.md#页面骨架导航栏-insets-契约2026-09-30) 为准，不改变备份数据或恢复动作。
 - 恢复页导航栏标题固定为“恢复备份”，不随读取、预览、恢复结果变化；正文顶部状态行展示当前状态，并按读取、预览、恢复中、成功和失败使用不同图标与颜色，让用户能快速识别当前阶段。
@@ -276,7 +443,7 @@ WebDAV：上次备份失败
 - 恢复完成页提供“恢复本地媒体关联”手动入口。入口只负责进入独立媒体关联页面，触发当前数据库里所有成功/部分成功下载媒体的本地引用验证和关联恢复，不限定本次恢复包；恢复完成后不自动跳转、不自动预估，App 重新进入、进程重启或回到恢复页后都不会自动触发或自动续跑该任务。若独立媒体关联页进入成功完成或无须处理终态，用户点击底部“完成”时只关闭 `BackupRoute` / `BackupRestoreRoute` / `BackupMediaRelocationRoute` 组成的备份恢复链路，回到进入备份前的页面状态；点击顶部返回或系统返回时只退回恢复结果页，方便查看恢复报告和媒体关联回显。失败、权限不足、预估、权限请求和待确认阶段仍返回恢复页，方便重试或继续处理。
 - 恢复完成页同时展示媒体关联的一行简洁摘要和视频/图片详细分类数字；摘要来自恢复页 ViewModel 中保存的结构化 `MediaRelocationSummary`，不保存已格式化文案，UI 通过字符串资源展示。新一轮预估、待确认或扫描中不清空上一轮终态摘要，直到新的终态或异常中断摘要替换。
 - 媒体关联由独立 `BackupMediaRelocationRoute(restoreTaskId)` 和 `BackupMediaRelocationVm` 承载；恢复页入口点击做防抖，`BackupMediaRelocationRoute` 作为目标页统一使用 `launchSingleTop` 导航，正式扫描中入口禁用。真正防止旧流程串写由恢复页 ViewModel 收到事件后校验 `restoreTaskId` 完成。
-- 媒体关联状态通过 feature 内部不可重放事件流通知恢复页：`BackupMediaRelocationEvents` 只服务备份恢复媒体关联，不作为通用 EventBus；事件包含 `Incomplete(restoreTaskId)`、`Running(restoreTaskId)`、`Terminal(restoreTaskId, summary)` 和 `Interrupted(restoreTaskId, summary)`。事件流 `replay = 0`，只做通知，不保存状态；恢复页 ViewModel 在 `init` 中收集事件，校验 `restoreTaskId` 后落成本地 `mediaRelocationEntryState` 和 `lastTerminalMediaRelocationSummary`。
+- 媒体 VM 通过 `BackupMediaRelocationEvent` 的 Incomplete、Running、Terminal 和 Interrupted 同步归约当前会话的媒体状态；恢复 VM 绑定会话后持续观察轻量 StateFlow，按 restoreTaskId 映射入口与终态摘要。没有 UI 订阅者时关键结果也已保存；不存在全局 SharedFlow 发送器或通用 EventBus。
 - 媒体重新定位启动前在独立页面展示轻量预估，统计待恢复关联视频数、图片批次数和成功图片项数，并用“预计几秒 / 可能几十秒 / 可能 1 分钟以上”这类保守区间提示耗时。预估为 0 时直接展示暂无需要恢复关联，不申请权限，也不进入不可退出流程。
 - 媒体重新定位按“预估 → 验证旧引用和无权限可见候选 → 按需权限请求 → 用户确认 → 正式扫描”执行；预估、权限请求和用户确认阶段允许返回恢复页，再次进入可重新预估，不承诺复用上一次 `MediaRelocationPreparation`。正式扫描开始后媒体关联页不可中断、不可退出，顶部返回、系统返回和离开入口全部拦截；恢复页底部“完成”按钮禁用。成功完成或无须处理终态表示恢复补充流程已闭环，底部“完成”不再回到恢复完成页，而是只收起 `BackupRoute` / `BackupRestoreRoute` / `BackupMediaRelocationRoute` 链路，让导航自然落回进入备份前的页面状态；顶部返回和系统返回仍只回恢复结果页。Android Home 键、进程被杀、系统回收和关机无法阻止，异常中断后不自动续跑，用户可再次手动触发。
 - 媒体重新定位完成、无需扫描、失败、权限不足或异常中断后，独立页面展示简洁摘要和详细分类数字，并通过 `Terminal` 或 `Interrupted` 事件回显到恢复页；恢复页入口按钮文案改为“再次恢复关联”。完成和无需扫描属于正向闭环，`BackupMediaRelocationVm` 在发送对应终态 summary 时同步记录“完成应关闭恢复链路”，底部“完成”进入页面 `requestDone()` 并优先读取该标记，避免 Compose 本地 state 尚未切到 `Result/NoWork` 时落回普通返回；顶部返回和系统返回进入 `requestBack()`，只回恢复页查看回显摘要；`MediaRelocationUiState` 相关派生属性集中放在状态模型文件，导航收栈细节封装为命名函数；失败、权限不足、异常中断或非终态返回恢复页时，入口文案为“继续恢复关联”或“再次恢复关联”，方便用户重试或继续进入该功能流程，不表示复用上一次准备态。
@@ -288,6 +455,32 @@ WebDAV：上次备份失败
 - 本地镜像和 WebDAV 远端可能出现同名备份文件；备份列表 UI 的稳定 key 必须包含来源和真实路径/URI，不能只使用 `fileName`，避免同一 `LazyColumn` 内 key 冲突。
 
 ## 流程图
+
+下图表示已接入的父图、请求及回显边界；会话和归约有 JVM 回归，导航实际返回、owner 释放及进程重建仍待设备验收。后续备份、恢复和媒体关联图同步采用本组会话，不再依赖 Singleton 发送器。
+
+```mermaid
+%% title: 备份恢复导航组
+flowchart TD
+    Entry[进入备份前页面]:::manual --> Group[备份恢复导航组 编译验证]:::compile
+    subgraph BackupGroup[同一导航组实例]
+        Group --> Backup[起点：备份页 人工验证]:::manual
+        Backup --> Restore[独立恢复页 人工验证]:::manual
+        Restore --> Media[独立媒体关联页 人工验证]:::manual
+        Media -->|普通返回| Restore
+        Restore -->|普通返回| Backup
+        Session[图作用域轻量会话：请求与回显 已单测]:::unit
+        Backup -.->|提交恢复请求| Session
+        Session -.->|接管请求及读取回显| Restore
+        Media -.->|同步写入关联状态| Session
+    end
+    Backup -->|返回退出组| Entry
+    Restore -->|结果完成退出组| Close[关闭会话并移除整个父图 人工验证]:::manual
+    Media -->|成功或无需处理：完成| Close
+    Close --> Entry
+    classDef unit fill:#dff5e7,stroke:#26804b,color:#16351f;
+    classDef manual fill:#e8f1ff,stroke:#2b6cb0,color:#17375e;
+    classDef compile fill:#efe8ff,stroke:#6b46c1,color:#2d1f53;
+```
 
 ### 每日生成与本地保存
 
@@ -375,12 +568,12 @@ flowchart TD
 
   subgraph BackupPageRestore["备份页只负责发起恢复请求"]
     ChooseRestore{"用户选择恢复来源<br/>人工验证"}:::manual
-    RestoreRequest["写入 BackupRestoreRequests 单槽请求流<br/>编译验证"]:::compile
+    RestoreRequest["写入当前导航组会话单槽请求<br/>已单测"]:::unit
     NavRestore["导航到 BackupRestoreRoute 独立恢复页<br/>编译验证"]:::compile
   end
 
   subgraph RestorePage["独立恢复页 BackupRestoreRoute / BackupRestoreVm"]
-    ClaimRequest["接管 requestId 并清空请求流<br/>编译验证"]:::compile
+    ClaimRequest["建立 Reading 后确认 requestId 并清空槽位<br/>编译验证"]:::compile
     CopyTemp["复制本地 URI 或下载 WebDAV 备份到私有临时文件<br/>人工验证"]:::manual
     Preview["BackupPackageReader 校验 manifest、checksum、schemaVersion<br/>已单测"]:::unit
     PreviewUi["展示轻量预检摘要<br/>人工验证"]:::manual
@@ -396,7 +589,7 @@ flowchart TD
 
   subgraph MediaBoundary["恢复页与本地媒体关联流程的交互边界"]
     MediaEntry["恢复结果页提供“恢复本地媒体关联”入口<br/>点击后进入本地媒体关联流程<br/>人工验证"]:::manual
-    MediaResult["接收 BackupMediaRelocationEvents 回显<br/>校验 restoreTaskId 后更新入口状态和 summary<br/>编译验证"]:::compile
+    MediaResult["观察会话媒体 StateFlow 回显<br/>校验 restoreTaskId 后映射入口和 summary<br/>编译验证"]:::compile
     EntryState["入口显示：恢复 / 继续 / 扫描中 / 再次恢复关联<br/>人工验证"]:::manual
   end
 
@@ -437,7 +630,7 @@ flowchart TD
 flowchart TD
   subgraph RestoreBoundary["来自恢复流程的交互"]
     FromRestore["恢复结果页入口<br/>恢复流程传入 restoreTaskId<br/>人工验证"]:::manual
-    BackToRestore["BackupMediaRelocationEvents 回显恢复页<br/>Incomplete / Running / Terminal / Interrupted<br/>编译验证"]:::compile
+    BackToRestore["同步保存会话媒体状态后由 StateFlow 回显<br/>Incomplete / Running / Terminal / Interrupted<br/>已单测"]:::unit
   end
 
   subgraph MediaPage["独立媒体关联页 BackupMediaRelocationRoute / BackupMediaRelocationVm"]
@@ -560,9 +753,9 @@ flowchart TD
 ### 恢复后的媒体重新定位
 
 1. 恢复结果页的“恢复本地媒体关联”只作为手动入口；点击后进入 `BackupMediaRelocationRoute(restoreTaskId)`，实际扫描当前数据库内所有成功视频记录、成功/部分成功图片批次和成功图片项，不限定本次恢复包。
-2. 媒体关联页使用独立 `BackupMediaRelocationVm` 承载预估、权限、确认、扫描、进度和写回；`BackupRestoreVm` 只维护恢复页回显状态，不直接执行媒体扫描。备份恢复请求中转由 feature 内部 `BackupRestoreRequests` 承担，媒体关联回显继续由 `BackupMediaRelocationEvents` 承担，两者都不作为通用 EventBus。
-3. `BackupMediaRelocationEvents` 是 feature 内部不可重放事件流，只暴露只读 `SharedFlow` 和具名发送方法，不做通用 EventBus。正常路径发送事件使用 `emit`，`onCleared()` 兜底只能使用 `tryEmit`，失败时记录低敏日志。
-4. 恢复页 ViewModel 在 `init` 中收集 `Incomplete`、`Running`、`Terminal` 和 `Interrupted` 事件，并先校验 `restoreTaskId`；不匹配事件直接忽略。事件流只做通知，恢复页必须把当前事实落到本地 `mediaRelocationEntryState` 和 `lastTerminalMediaRelocationSummary`。
+2. 媒体关联页使用独立 `BackupMediaRelocationVm` 承载预估、权限、确认、扫描、进度和写回；`BackupRestoreVm` 只维护恢复页回显，不直接执行媒体扫描。三个页面共用父图 `BackupFlowVm` 持有的 `BackupFlowSession`，请求和回显仅属于当前导航组实例。
+3. 媒体事件在会话内同步写入事实状态，再由只读 StateFlow 观察，不做通用 EventBus。`onCleared()` 中 Interrupted 也同步写回，不依赖正在取消的协程或 tryEmit；关闭/错任务返回 false 并记录低敏 reasonCode。
+4. 恢复 VM 显式绑定会话后持续观察轻量媒体状态，匹配 restoreTaskId 后投影到本地 `mediaRelocationEntryState` 和 `lastTerminalMediaRelocationSummary`。请求则仅在恢复目的地首次 RESUMED 接管，不在 VM init 启动预检 IO。
 5. `mediaRelocationEntryState` 只表达入口状态：`NotStarted` 显示“恢复本地媒体关联”，`Incomplete` 显示“继续恢复关联”，`Running` 禁用入口并显示扫描中，`Terminal` 显示“再次恢复关联”。`lastTerminalMediaRelocationSummary` 保存结构化结果，用于恢复页一行简洁摘要和视频/图片详细分类数字；新一轮 `Incomplete` 或 `Running` 不清空上一轮结果。
 6. 首次进入媒体关联页时执行一次预估；重组、屏幕方向切换或权限页返回不重复触发。入口双击通过按钮防抖和 `launchSingleTop` 避免重复打开页面；`BackupMediaRelocationVm` 仍需要用当前 job 或状态门禁保证 `estimate()`、权限回调和 `startScan()` 幂等。
 7. 第一阶段只做数据库 COUNT 和轻量分组统计，生成待恢复关联视频数、图片批次数、图片项数和保守耗时区间；这一阶段不访问 MediaStore。进入非终态流程时发送 `Incomplete`，但不发送或清空终态 summary。
@@ -697,7 +890,7 @@ manifest 简化示例：
 - 来源过滤名单恢复裁剪时记录 `reasonCode=backup_blocked_packages_trimmed`、本机数量、备份数量和合并后数量；禁止记录具体包名列表、App 名称或拦截次数。
 - 备份恢复流程页状态切换记录 `restore_flow_state_change`，字段包括 `taskId`、`fromState`、`toState`、`sourceType` 和 `reasonCode`；feature 内部恢复请求流只记录 `requestId`、请求类型和消费/清理时机，不记录本地 URI、WebDAV 地址或远端路径；读取/恢复中二次确认退出记录 `flow_closed` 或用户确认退出日志；恢复结果页底部“完成”记录低敏完成关闭链路日志，字段只包含当前状态、是否存在运行中的媒体关联和 reasonCode；不记录剪贴内容、搜索词、完整 URL 或备份包内容。
 - 媒体重新定位准备阶段记录低敏诊断摘要：API level、缺失图片/视频权限布尔值、旧引用不可读视频数、不可读图片批次数和图片项数、无权限可见唯一候选数、需要授权后继续扫描的数量、缺少搜索线索数量和多候选/元数据不符等授权不可恢复数量；Android 14+ 权限回调后重新执行同一准备探测，用于识别部分媒体访问不足；不输出 URI、路径、文件名、目录名、页面标题或 URL。
-- 媒体关联独立页和恢复页之间的 feature 事件流只记录低敏状态转换：`restoreTaskId`、事件类型、是否匹配当前恢复任务、summary 类型、数量摘要和 reasonCode；不输出文件名、路径、URI、目录名、页面标题或 URL。正常事件发送失败不应静默吞掉；`onCleared()` 中 `tryEmit(Interrupted)` 失败时记录 `reasonCode=event_emit_failed` 和当前入口状态，便于排查恢复页“完成”按钮异常禁用。
+- 当前导航组媒体会话只记录低敏状态转换：sessionId、restoreTaskId、eventType、fromState、toState、summaryType 和 reasonCode；不输出文件名、路径、URI、目录名、页面标题或 URL。同步 publish 返回 false 时记录 session_closed / restore_task_mismatch；`onCleared()` 的 Interrupted 同步解除 Running，不再依赖 tryEmit 或被取消的协程。
 - 媒体关联页导航防抖、`launchSingleTop` 命中、返回请求时的低敏 UI state/返回目标、完成请求时的关闭链路标记、正向终态或恢复完成关闭备份恢复链路、`restoreTaskId` 不匹配忽略事件和 Running 状态拦截返回都按 `logD`/`logW` 输出结构化低敏日志；返回和完成请求日志的关键字段先在普通代码路径计算，再交给 `logD` 惰性输出，避免日志开关关闭时影响断点判断。高频进度继续沿用既有节流策略，只记录阶段、已处理数量和耗时，不按单个媒体项输出日志。
 - 导出职责拆分后，`BackupSnapshotExporter` 继续复用既有 high-water mark、分页兜底和快照生成日志；本轮不新增新的敏感字段，也不记录单条业务 JSONL 内容。
 - 恢复职责拆分后，`BackupSnapshotRestorer` 继续复用既有恢复写库完成日志和解析失败日志；本轮不新增新的敏感字段，也不记录单条恢复内容。
@@ -748,7 +941,7 @@ manifest 简化示例：
 ### 当前阶段：恢复本地媒体关联独立页落地
 
 - 新增 `BackupMediaRelocationRoute(restoreTaskId)`、`BackupMediaRelocationPage` 和 `BackupMediaRelocationVm`，恢复页只负责手动入口、`launchSingleTop` 导航和终态摘要回显，不再直接执行媒体扫描。
-- 新增 feature 内部 `BackupMediaRelocationEvents`，以 `Incomplete`、`Running`、`Terminal` 和 `Interrupted` 四类不可重放事件连接媒体关联页与恢复页；恢复页按 `restoreTaskId` 过滤旧事件，并把匹配事件落到 `mediaRelocationEntryState` 和 `lastTerminalMediaRelocationSummary`。
+- 媒体关联四类事件模型保留，发送器已替换为当前图会话与纯 `BackupMediaRelocationStateReducer`；同步保存 Incomplete、Running、Terminal 和 Interrupted 的入口/摘要事实，恢复页通过 StateFlow 按 restoreTaskId 投影回显。
 - 新增结构化 `MediaRelocationSummary`，恢复页和独立媒体关联页共用同一组 summary/result formatter，通过字符串资源生成一行摘要和视频/图片明细，不保存已格式化文案。
 - 独立媒体关联页复用既有 `DownloadedMediaRelocator`、`MediaRelocationEstimate`、`MediaRelocationPreparation`、`MediaRelocationProgress` 和 `MediaRelocationReport`，不改备份包协议、不新增 Room schema，也不改变下载记录状态。
 - 恢复页入口增加 600ms 防抖，`BackupMediaRelocationRoute` 在统一 `onNavigate` 策略中使用 `launchSingleTop`；正式扫描开始后拦截顶部返回和系统返回，恢复页“完成”按钮按 `Running` 入口状态禁用；媒体关联完成或无须处理后底部“完成”会只收起本地媒体关联页、恢复页和备份页，回到进入备份前的页面状态，顶部返回和系统返回只回恢复结果页。
@@ -807,7 +1000,7 @@ manifest 简化示例：
 - 未来时间归一化只修正剪贴记录的用户可见时间轴字段，不调整搜索历史、下载记录和图片记录时间；这些数据不参与剪贴列表排序，且下载/图片记录的状态时间可能用于任务诊断，默认保留备份原值。
 - 本轮已将恢复事务、chunk 写库、幂等报告和本地较新保护收敛到 `BackupSnapshotRestorer`；暂不再细分到每张表独立 restorer，原因是 v1/v2 分类报告、设置恢复和 Room transaction 仍需要统一编排，过早拆成多类会增加事务边界和报告聚合的维护成本。
 - 媒体重新定位第一版不新增 schema 状态字段，不把“未定位”写成下载失败状态；记录页继续用现有本地文件可读性校验展示不可读状态。
-- 媒体重新定位结果只保存在当前恢复流程的恢复页 ViewModel 回显状态中，不持久化为后台待继续任务；feature 事件流 `replay = 0` 且不保存事实状态，重新进入 App 后必须由用户再次手动触发。
+- 媒体重新定位结果保存在当前父图内存会话中，恢复页 VM 只投影回显；整组退出立即清空，进程死亡不持久化或自动续跑，重新进入后必须由用户手动选择恢复目标。临时会话不进入备份协议或保存状态。
 
 ## 开放问题
 
@@ -815,6 +1008,10 @@ manifest 简化示例：
 - 备份包加密是否作为默认能力，需要在用户愿意管理恢复密码后再开启。
 
 ## 验证记录
+
+- 2026-10-02：导航组实施及独立复审完成。新增 13 项会话/归约测试，首轮 API 占位 11 项中 10 项按预期失败，审查新增两项退出回归也先断言失败后修复。最终执行 `./gradlew.bat :app:testDebugUnitTest :app:compileDebugKotlin :app:minifyReleaseWithR8 --console=plain`，BUILD SUCCESSFUL，app 57 个测试套件、276 项测试，失败/错误/跳过均为 0；release mapping 保留在 `app/build/outputs/mapping/release/mapping.txt`。既有 WebView 废弃 API、Shizuku 恒假类型判断和 OnOpNotedListener R8 警告未修改。流程 HTML 重生成及 `--check`、`git diff --check` 通过。已发现连接设备，但本轮没有安装或操作设备应用；组内转场、owner 释放、配置/进程重建、真实权限/SAF 和广告交互不视为已验收。导航薄接线未新增 instrumentation 测试，不以纯对象测试替代系统边界。
+
+- 2026-10-02：导航组草案已完成代码引用与文档边界核对；运行 `D:/Python/python.exe tools/render_doc_flow_html.py docs/webdav_backup_plan.md`、对应 `--check` 与 `git diff --check` 通过。本轮仅修改方案及生成图，未运行 Android 单测、编译、R8 或设备验收；这些属于尚未实施的改造验收，不复用历史验证结论。
 
 - 2026-10-01：本轮实现及独立审查修复完成。运行 `.\gradlew.bat :app:testDebugUnitTest :base:general:testDebugUnitTest :feature:torrent-search:testDebugUnitTest :app:compileDebugKotlin -PenableMagnetFeature=true --continue --console=plain`，BUILD SUCCESSFUL，app 184、base/general 70、TorrentSearch 656 项，合计 910 项，失败/错误/跳过均为 0；最后一处测试去掉未接入常量的镜像断言后，再运行 `.\gradlew.bat :app:testDebugUnitTest -PenableMagnetFeature=true --console=plain` 通过，app 仍为 184 项。分别使用 `-PenableMagnetFeature=false` 和 `true` 运行 `.\gradlew.bat :app:compileDebugKotlin :app:minifyReleaseWithR8 --console=plain`，两次均 BUILD SUCCESSFUL，最新 true 配置 mapping 保留在 `app/build/outputs/mapping/release/mapping.txt`。既有 Shizuku 恒假判断及 OnOpNotedListener R8 警告未变。流程 HTML 重新生成、一致性检查及 `git -c safe.directory=D:/project/personal/ClipMaster diff --check` 通过；日志及有限例外记录在 `.superpowers/sdd/webdav_backup_plan/`。当前 `adb devices` 无设备，未执行系统周期、SAF、真实 WebDAV、强杀、Preview 渲染及 TalkBack 验收，不将 JVM 测试视为这些系统边界的证明。
 
@@ -878,6 +1075,10 @@ manifest 简化示例：
 - 2026-05-21：将媒体重新定位入口文案从“重新定位媒体”调整为“恢复本地媒体关联”，已运行 `./gradlew :app:compileDebugKotlin`、`./gradlew :app:testDebugUnitTest` 和 `git diff --check`，结果通过；原因是后者更贴近用户语言，也能避免误以为会恢复媒体文件本体。
 
 ## 变更记录
+
+- 2026-10-02：按用户确认实施父图 BackupGraphRoute、BackupNavigation、图作用域 BackupFlowVm 和同步 BackupFlowSession；三个业务 VM 仍独立，取消两个 Singleton 发送器，保留请求/事件模型。同步现行说明与四类流程图，补齐无会话回起点、Running 同步门禁、来源 entry 及一次关闭许可；独立审查两项 P2 经失败回归修复。原因是将导航入口、跨页通信与整组退出统一到当前会话，避免离组后旧请求/迟到事件影响新流程。未修改备份数据范围、schema 或扫描算法，设备验收边界另列待办。
+
+- 2026-10-02：新增备份、恢复及媒体关联导航组改造草案，确定 BackupRoute 为组起点，推荐父图作用域轻量会话、三个页面独立 VM、同步状态归约及整组完成退出；补充 Hilt 注入边界、请求接管、进程重建降级、日志、选择性 TDD 与 release 验收，并新增独立草案流程图。原因是用户要求将相互通信的三个页面组织为导航组；本次仅写方案，未修改生产代码。
 
 - 2026-10-02：来源缓存实施后复核备份边界，保持来源元数据白名单和历史路径 hint；系统备份/迁移增加 app_icons 精确排除，版本文件/孤儿/运行时会话不进入备份，不新增迁移或备份协议。
 

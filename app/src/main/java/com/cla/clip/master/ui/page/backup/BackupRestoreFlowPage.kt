@@ -31,6 +31,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.feature.torrent.search.api.TorrentSearchFeatureEntry
@@ -52,20 +55,38 @@ private const val TAG = "BackupRestoreFlowPage"
  */
 @Composable
 internal fun BackupRestoreFlowPage(
+    flowSession: BackupFlowSession,
     onBack: () -> Unit,
+    onInvalidSession: () -> Unit,
     onCloseRestoreFlow: () -> Unit,
     onNavigate: (Route) -> Unit,
     torrentSearchFeatures: Set<TorrentSearchFeatureEntry> = emptySet(),
     modifier: Modifier = Modifier,
     restoreVm: BackupRestoreVm = hiltViewModel(),
 ) {
+    /** 恢复读取只能在当前目的地真正前台可见后启动，权限覆盖/重组不重复接管。 */
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(restoreVm, flowSession, lifecycleOwner) {
+        if (restoreVm.bindSession(flowSession)) {
+            lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                restoreVm.startPendingRestore()
+            }
+        }
+    }
+    /** 页面状态、恢复阶段及导航防抖时间只服务当前目的地，不放入共享会话。 */
     val state by restoreVm.uiState.collectAsStateWithLifecycle()
+    /** 当前阶段用于渲染和回调适配，最终退出许可仍同步询问会话。 */
     val restoreFlow = state.restoreFlow
+    /** 导航防抖仅保存于当前页面，重新进入不会继承旧时间。 */
     var lastMediaRelocationNavigateAt by remember { mutableLongStateOf(0L) }
 
     if (restoreFlow is BackupRestoreFlowState.Hidden) {
-        LaunchedEffect(restoreFlow) {
-            onBack()
+        // 初始 Hidden 不是请求缺失；必须完成会话绑定和首次可见接管后再降级。
+        LaunchedEffect(state.requestChecked, lifecycleOwner) {
+            // 普通返回或完成会先清理成 Hidden；退出转场的旧 entry 不能再把用户导航回来。
+            lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                if (state.requestChecked) onInvalidSession()
+            }
         }
         return
     }
@@ -75,20 +96,21 @@ internal fun BackupRestoreFlowPage(
         mediaRelocationEntryState = state.mediaRelocationEntryState,
         mediaRelocationSummary = state.lastTerminalMediaRelocationSummary,
         onBack = {
-            restoreVm.dismissRestoreFlow()
-            onBack()
+            // 按 VM 同步会话门禁决定导航，不只依赖当前收集到的 UI 状态。
+            if (restoreVm.dismissRestoreFlow()) onBack()
         },
         onDone = {
-            restoreVm.dismissRestoreFlow()
-            onCloseRestoreFlow()
+            if (restoreVm.dismissRestoreFlow()) onCloseRestoreFlow()
         },
         onForceBack = {
-            restoreVm.forceCloseRestoreFlow()
-            onBack()
+            if (restoreVm.forceCloseRestoreFlow()) onBack()
         },
         onRestore = restoreVm::restoreSelectedBackup,
         onOpenMediaRelocation = {
+            /** 只从当前完整结果打开媒体页，不能使用预检或部分结果身份。 */
             val result = restoreFlow as? BackupRestoreFlowState.Result ?: return@BackupRestoreFlowScaffold
+            if (!flowSession.canOpenMedia(result.taskId)) return@BackupRestoreFlowScaffold
+            /** 点击时刻只决定防抖，不替代任务及会话有效性校验。 */
             val now = System.currentTimeMillis()
             if (now - lastMediaRelocationNavigateAt < MEDIA_RELOCATION_NAV_DEBOUNCE_MS) {
                 logD(TAG) { "媒体关联页导航已防抖 restoreTaskId=${result.taskId} reasonCode=nav_debounced" }

@@ -62,10 +62,6 @@ class BackupRestoreVm @Inject constructor(
     private val localBackupDirectoryWriter: LocalBackupDirectoryWriter,
     /** 备份临时文件目录管理器，恢复流程结束时必须清理。 */
     private val tempFileStore: BackupTempFileStore,
-    /** 备份恢复 feature 内部请求流；恢复页创建后立即消费最近一次打开请求。 */
-    private val restoreRequests: BackupRestoreRequests,
-    /** 媒体关联独立页事件流；恢复页只接收入口状态和结构化终态摘要。 */
-    private val mediaRelocationEvents: BackupMediaRelocationEvents,
     /** 恢复远端文件时读取已提交的设备绑定 WebDAV 配置与密码。 */
     private val backupSettings: BackupSettingsRepository,
 ) : ViewModel() {
@@ -74,6 +70,7 @@ class BackupRestoreVm @Inject constructor(
         private const val TAG = "BackupRestoreVm"
     }
 
+    /** 恢复页独立状态，初始请求检查结束前不执行 Hidden 返回。 */
     private val _uiState = MutableStateFlow(BackupRestoreUiState())
 
     /** 恢复流程页状态。 */
@@ -88,18 +85,54 @@ class BackupRestoreVm @Inject constructor(
     /** 已接管的请求 id，避免页面重组重复启动读取。 */
     private var consumedRequestId: Long? = null
 
-    init {
-        tempFileStore.cleanupExpired()
-        consumeRestoreRequest(restoreRequests.requests.value)
-        collectRestoreRequests()
-        collectMediaRelocationEvents()
+    /** 父图显式交付的会话，不在 init 或构造注入中取得全局通信对象。 */
+    private var flowSession: BackupFlowSession? = null
+
+    /** 绑定只订阅轻量内存回显，恢复页被媒体页覆盖时仍能同步完成门禁。 */
+    internal fun bindSession(session: BackupFlowSession): Boolean {
+        if (flowSession === session) return true
+        if (flowSession != null) {
+            logW(TAG) { "恢复页会话绑定已拒绝 reasonCode=session_mismatch" }
+            return false
+        }
+        flowSession = session
+        viewModelScope.launch {
+            // 跨页同步属于当前图流程，不执行 IO，不受恢复页是否被媒体页覆盖影响。
+            session.mediaState.collect { media ->
+                if (media.restoreTaskId == currentRestoreFlowTaskId()) {
+                    _uiState.update { it.copy(mediaRelocationEntryState = media.entryState, lastTerminalMediaRelocationSummary = media.lastTerminalSummary) }
+                }
+            }
+        }
+        return true
+    }
+
+    /** 首次可见时接管已提交的请求；重建复用 VM 不重复读取，缺失请求交给导航降级。 */
+    internal fun startPendingRestore() {
+        if (_uiState.value.requestChecked) return
+        /** 同步接管只能读取当前图槽位；没有绑定时保留初始等待。 */
+        val session = flowSession ?: return
+        /** 当前唯一待接管目标；接管确认后不再长期保留于槽位。 */
+        val request = session.requests.value
+        if (request != null) {
+            tempFileStore.cleanupExpired()
+            startFromRequest(request)
+            // Reading 状态已建立再确认接管，不能先清空槽位再尝试开始。
+            if (!session.acknowledgeRequest(request.requestId)) {
+                restoreFlowJob?.cancel()
+                clearPreview()
+            }
+        }
+        _uiState.update { it.copy(requestChecked = true) }
     }
 
     /** 接管备份页传来的恢复请求，并立即进入读取状态。 */
     private fun startFromRequest(request: BackupRestoreRequest) {
         if (consumedRequestId == request.requestId) return
         consumedRequestId = request.requestId
+        /** 来源只决定读取阶段，不把真实地址暴露给导航。 */
         val sourceType = request.openSource
+        /** 预检使用请求初始身份，恢复成功后另登记 Result 身份。 */
         val taskId = request.initialTaskId
         startRestoreFlowReading(
             taskId = taskId,
@@ -185,6 +218,10 @@ class BackupRestoreVm @Inject constructor(
                             null -> "restore_success"
                         }
                     )
+                    // 只有完整结果可进入媒体关联，任务身份使用本次恢复的 Result.taskId。
+                    if (partialRestoreStage == null) {
+                        consumedRequestId?.let { requestId -> flowSession?.registerRestoreTask(requestId, taskId) }
+                    }
                     logI(TAG) {
                         "备份恢复结束 taskId=$taskId partialStage=$partialRestoreStage " +
                             "inserted=${report.insertedCount} updated=${report.updatedCount} " +
@@ -195,24 +232,27 @@ class BackupRestoreVm @Inject constructor(
         }
     }
 
-    /** 用户关闭恢复流程页；预览、结果或失败关闭都会清理临时文件，避免临时引用残留。 */
-    fun dismissRestoreFlow() {
-        if (_uiState.value.mediaRelocationEntryState.isRunning) return
+    /** 普通退出返回是否允许导航；会话 Running 是最终门禁，不依赖 UI collector 更新速度。 */
+    fun dismissRestoreFlow(): Boolean {
+        if (flowSession?.mediaState?.value?.entryState?.isRunning == true) return false
         when (uiState.value.restoreFlow) {
             is BackupRestoreFlowState.Reading,
-            is BackupRestoreFlowState.Restoring -> return
+            is BackupRestoreFlowState.Restoring -> return false
             else -> clearPreview()
         }
+        return true
     }
 
-    /** 用户在读取或恢复中二次确认返回时，取消当前任务并清理临时状态。 */
-    fun forceCloseRestoreFlow() {
+    /** 用户二次确认后取消页面任务；返回许可用于防止会话 Running 时仍执行弹栈。 */
+    fun forceCloseRestoreFlow(): Boolean {
+        /** 当前阶段和任务身份仅用于取消及低敏日志。 */
         val state = uiState.value.restoreFlow
-        if (_uiState.value.mediaRelocationEntryState.isRunning) {
+        if (flowSession?.mediaState?.value?.entryState?.isRunning == true) {
             logW(TAG) { "媒体关联运行中，忽略页面内退出请求 state=${state.logCode}" }
-            return
+            return false
         }
-        if (state is BackupRestoreFlowState.Hidden) return
+        if (state is BackupRestoreFlowState.Hidden) return false
+        /** 二次确认的当前任务只用于取消清理诊断。 */
         val taskId = currentRestoreFlowTaskId()
         restoreFlowJob?.cancel()
         logW(TAG) {
@@ -220,6 +260,7 @@ class BackupRestoreVm @Inject constructor(
         }
         clearPreview()
         _uiState.update { it.copy(busyOperation = BackupBusyOperation.None, backupProgress = null) }
+        return true
     }
 
     /** 从用户选择的 URI 读取备份并只做预检，不写入数据库。 */
@@ -283,7 +324,9 @@ class BackupRestoreVm @Inject constructor(
 
     /** 清空当前预览和临时文件。 */
     private fun clearPreview() {
+        /** 保留待清理包及当前请求所有权，先释放会话后再归零 UI。 */
         val oldRef = _uiState.value.selectedBackupRef
+        consumedRequestId?.let { requestId -> flowSession?.finishRestore(requestId) }
         restoreFlowJob = null
         _uiState.update {
             it.copy(
@@ -490,74 +533,6 @@ class BackupRestoreVm @Inject constructor(
         }
     }
 
-    private fun collectRestoreRequests() {
-        viewModelScope.launch {
-            restoreRequests.requests.collect { request ->
-                consumeRestoreRequest(request)
-            }
-        }
-    }
-
-    private fun consumeRestoreRequest(request: BackupRestoreRequest?) {
-        request ?: return
-        startFromRequest(request)
-        restoreRequests.clear(request.requestId)
-    }
-
-    private fun collectMediaRelocationEvents() {
-        viewModelScope.launch {
-            mediaRelocationEvents.events.collect { event ->
-                handleMediaRelocationEvent(event)
-            }
-        }
-    }
-
-    private fun handleMediaRelocationEvent(event: BackupMediaRelocationEvent) {
-        val currentTaskId = currentRestoreFlowTaskId()
-        val matched = currentTaskId == event.restoreTaskId
-        val summary = event.summary
-        if (!matched) {
-            logW(TAG) {
-                "媒体关联事件已忽略 restoreTaskId=${event.restoreTaskId} currentRestoreTaskId=$currentTaskId " +
-                    "eventType=${event.logCode} matched=false summaryType=${summary?.type?.logCode ?: "none"} " +
-                    "relocated=${summary?.totalRelocated ?: 0} reasonCode=restore_task_mismatch"
-            }
-            return
-        }
-        logD(TAG) {
-            "媒体关联事件已接收 restoreTaskId=${event.restoreTaskId} eventType=${event.logCode} matched=true " +
-                "summaryType=${summary?.type?.logCode ?: "none"} relocated=${summary?.totalRelocated ?: 0}"
-        }
-        when (event) {
-            is BackupMediaRelocationEvent.Incomplete -> {
-                _uiState.update { it.copy(mediaRelocationEntryState = MediaRelocationEntryState.Incomplete) }
-            }
-            is BackupMediaRelocationEvent.Running -> {
-                _uiState.update { it.copy(mediaRelocationEntryState = MediaRelocationEntryState.Running) }
-            }
-            is BackupMediaRelocationEvent.Terminal -> {
-                _uiState.update {
-                    it.copy(
-                        mediaRelocationEntryState = if (event.terminalSummary.type == MediaRelocationSummaryType.PermissionDenied) {
-                            MediaRelocationEntryState.Incomplete
-                        } else {
-                            MediaRelocationEntryState.Terminal
-                        },
-                        lastTerminalMediaRelocationSummary = event.terminalSummary
-                    )
-                }
-            }
-            is BackupMediaRelocationEvent.Interrupted -> {
-                _uiState.update {
-                    it.copy(
-                        mediaRelocationEntryState = MediaRelocationEntryState.Terminal,
-                        lastTerminalMediaRelocationSummary = event.interruptedSummary
-                    )
-                }
-            }
-        }
-    }
-
     /** 当前 WebDAV 配置快照；只读取本机配置，不输出 endpoint、账号或密码。 */
     private suspend fun currentWebDavConfig(): WebDavConfig {
         /** 同一次 DataStore 读取同时提供连接字段和对应密文的解密结果。 */
@@ -617,8 +592,11 @@ class BackupRestoreVm @Inject constructor(
         return taskDir
     }
 
+    /** 恢复目的地释放时取消页面任务并释放会话所有权，不清理其他新请求。 */
     override fun onCleared() {
+        /** 当前任务用于低敏清理诊断，包引用仅在本 VM 内使用。 */
         val taskId = currentRestoreFlowTaskId()
+        consumedRequestId?.let { requestId -> flowSession?.finishRestore(requestId) }
         restoreFlowJob?.cancel()
         tempFileStore.cleanupTaskDir(_uiState.value.selectedBackupRef?.taskDir ?: restoreFlowTaskDir, taskId)
         super.onCleared()
@@ -627,6 +605,8 @@ class BackupRestoreVm @Inject constructor(
 
 /** 独立恢复页 UI 状态。 */
 data class BackupRestoreUiState(
+    /** 首次可见时完成请求检查后才允许 Hidden 状态导航退出。 */
+    val requestChecked: Boolean = false,
     /** 当前长任务类型，`None` 表示页面可自由操作。 */
     val busyOperation: BackupBusyOperation = BackupBusyOperation.None,
     /** 当前恢复阶段进度；第一版展示阶段，后续可接入类别和数量节流更新。 */

@@ -2,11 +2,28 @@
 
 # 应用导航交互方案
 
+## 备份恢复导航组接入（2026-10-02）
+
+本轮状态：已完成；导航父图和轻量共享会话已接入，app 单测/编译/R8 与独立复审通过，设备验收另列待办。完整会话、状态、返回门禁与测试设计以 [备份恢复主方案的导航组改造章节](webdav_backup_plan.md#备份恢复与媒体关联导航组改造2026-10-02) 为准，本页只维护宿主接入差异。
+
+- 新增 `BackupGraphRoute`，组内起点为 `BackupRoute`，另包含 `BackupRestoreRoute` 与 `BackupMediaRelocationRoute(restoreTaskId)`；应用根起点仍为 `MainRoute()`。继续同一 NavController，不新增可视容器页面或第二个 NavHost。
+- 三个目的地注册移到 `ui/navigation/BackupNavigation.kt`，AppNavigation 仅接入；我的页实际入口 `MineEntries.kt` 的 BackupEntry 改为导航父图，组外不直接打开恢复/媒体子页。
+- 只有轻量 `BackupFlowVm` 使用父图 backStackEntry 作为 owner，业务 VM 继续属于各自目的地；跨页通信实例由图 VM 持有并显式传入，不依赖 Singleton 或另一个 VM 的构造注入。
+- 普通返回逐层退回；恢复结果完成、媒体成功/无需处理完成 inclusive 弹出 `BackupGraphRoute`，回到进入备份前页面。关闭会话后不保存/恢复该组状态。回调核验当前具体 entry、关闭许可仅一次，避免转场中的旧点击弹出组外页面；父图不存在的 fallback 也仅能弹仍属于回调来源的当前页。
+- 组内恢复打开及媒体打开保留身份检查、防抖/单顶去重；组外快速点击不能叠出重复组。嵌套图不是访问控制，直接子路由和系统恢复都必须验证当前请求/结果；无有效内存会话回本组备份起点。
+- 全局转场、首页 Tab、下载页特殊返回和 TorrentSearch 独立 Activity 不变。新增类型安全父图沿用 @Serializable/@Keep，session/UI state 不作为外部序列化协议。
+
+### 本轮日志与验证
+
+沿用导航低敏日志，增加 sessionId、routeType、targetType、closedGraph、reasonCode 的创建/关闭/降级摘要；不得打印请求对象、密码、账号、URI、地址、路径或用户内容。轻量会话的请求与回显日志细节只在备份主方案维护。
+
+已新增会话/归约纯 JVM 测试，先写失败测试再实现；独立审查的同步 Running 与关闭重入两项回归也经历红绿验证。运行命令及结果集中记录在备份主方案，不复用历史验证作为本次证据。导航薄接线通过编译与 R8，真实普通回退、整组完成、重新进入、重复点击、图 VM 释放和进程死亡降级仍需设备或导航集成验收。
+
 ## 当前状态
 
 应用通过 `AppNavigation` 注册首页、剪贴搜索、详情、下载记录、折叠数据、回收站、视频/图片提取等内建路由，子页面统一通过 `onBack` 调用 `NavHostController.popBackStack()` 返回上一层，通过 `onNavigate` 跳转到目标路由。TorrentSearch 作为编译期可选能力由 `TorrentSearchFeatureEntry` 发现并启动独立 `TorrentSearchActivity`；宿主 `NavHost` 不注册 TorrentSearch 或已废弃的磁力 route，关闭构建时入口和 Activity 均不可达。
 
-本次只增加 Compose Navigation 官方页面级左进右出动画：前进时新页面从右侧进入、当前页向左退出；返回时上一层从左侧进入、当前页向右退出。页面转场只负责视觉效果，不额外处理点击穿透，不关闭退出页动画，也不在具体页面里增加为了动画服务的点击拦截逻辑。
+全局保持 Compose Navigation 官方页面级左进右出动画：前进时新页面从右侧进入、当前页向左退出；返回时上一层从左侧进入、当前页向右退出。备份三页由 `BackupNavigation` 注册为父图，沿用同一宿主 NavController 和转场。导航动作增加来源身份和会话门禁，防止退出页迟到回调操作新的返回栈，不改变动画配置。
 
 当前 release/R8 导航协议约束：`Routes.kt` 中所有类型安全路由、`SearchScope` 和 `MainInitialTab` 都通过 `@Keep` 保留默认完整类名，避免 `composable<T>`、`toRoute<T>` 或返回栈恢复在混淆包中按默认 serialName 找不到路由参数类型。TorrentSearch 不向 `Routes.kt` 暴露 route；`TorrentSearchFeatureEntry.launch(context, initialQuery, launchSource)` 只传递轻量候选查询和稳定启动来源，Activity 自行维护其内部状态，宿主不传递结果、数据库实体或剪贴板内容。`MainRoute(initialTab)` 只保存首页初始底部 Tab，用于需要显式指定首页首帧 Tab 的入口；媒体关联成功闭环不再创建新的首页路由，而是只关闭备份、恢复和媒体关联链路。
 
@@ -20,8 +37,8 @@
 ## 范围
 
 - 调整 `AppNavigation` 的 `NavHost` 过渡配置和动画时长常量。
-- 不改变路由结构、导航栈层级、页面参数和 ViewModel 作用域。
-- 不改变各页面的业务点击逻辑。
+- 增加 `BackupGraphRoute` 嵌套图，组内起点为备份页；仅新增轻量图作用域 VM，三个业务 VM 仍属于各自目的地。
+- 调整备份入口与整组退出、迟到回调门禁，备份及恢复算法和其他页面业务点击逻辑保持。
 - 不改变首页底部 Tab 内部的 `HorizontalPager` 切换动画。
 
 ## 用户体验
@@ -33,15 +50,18 @@
 
 ## 数据流
 
-- `onNavigate` 仍直接调用 `navController.navigate(route)`，但 `BackupMediaRelocationRoute` 继续使用 `launchSingleTop`。
+- 根图 `onNavigate` 普通路由调用 `navController.navigate(route)`；`BackupGraphRoute` 使用单顶并拒绝当前已处于本组时重复进入。组内恢复/媒体通过 `navigateWithinBackup` 检查来源 entry 与请求/任务，并使用 `launchSingleTop`。
 - `onBack` 仍直接调用 `navController.popBackStack()`。
-- 媒体关联页的正向终态“完成”调用 `closeBackupRestoreStackAfterMediaRelocation()`，内部通过 `popBackStack<BackupRoute>(inclusive = true)` 只移除 `BackupRoute`、`BackupRestoreRoute` 和 `BackupMediaRelocationRoute` 组成的备份恢复链路；如果异常栈缺少 `BackupRoute`，兜底只弹出当前媒体关联页，避免硬编码跳到固定首页 Tab。正向终态判断由 `BackupMediaRelocationVm` 在发送 Completed/NoWork summary 时同步记录，页面点击“完成”时优先读取该标记；顶部返回和系统返回只调用普通 `onBack` 回到恢复页，方便用户查看恢复结果和媒体关联 summary。底部“完成”统一进入 `BackupMediaRelocationPage.requestDone()`，避免和返回语义混用；`MediaRelocationUiState` 的完成闭环判断、日志 code 以及 `MediaRelocationSummaryType` 的闭环判断派生属性集中放在 `BackupRestoreState.kt`，与 `isRunning` 保持同一归属。
+- 恢复结果和媒体关联页正向终态“完成”调用 `closeBackupGraph`，核验来源 entry 并领取一次会话关闭许可，再 `popBackStack<BackupGraphRoute>(inclusive = true)`；异常栈 fallback 只弹仍属于来源的当前页。媒体成功判断继续复用既有 VM 终态标记与 `BackupRestoreState.kt` 派生属性；普通返回只回上一层。媒体返回/完成先同步检查会话 Running，恢复完成也不以尚未更新的 UI projection 作为最终许可。退出不硬编码首页 Tab。
 - `NavHost` 只改变视觉转场，不改变 back stack 数据流。
 - 动画时长：进入 260ms，退出 260ms。
 
 ## 涉及文件
 
 - `app/src/main/java/com/cla/clip/master/ui/navigation/AppNavigation.kt`
+- `app/src/main/java/com/cla/clip/master/ui/navigation/BackupNavigation.kt`
+- `app/src/main/java/com/cla/clip/master/ui/page/backup/BackupFlowVm.kt`
+- `app/src/main/java/com/cla/clip/master/ui/page/mine/MineEntries.kt`
 - `app/src/main/java/com/cla/clip/master/ui/navigation/Routes.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/main/MainPage.kt`
 - `app/src/main/java/com/cla/clip/master/ui/page/backup/BackupMediaRelocationPage.kt`
@@ -57,12 +77,12 @@
 3. 返回导航进入与退出都使用 `SlideDirection.Right`。
 4. 保持普通页面业务点击逻辑不变。
 5. 为 `MainRoute` 增加 `initialTab` 参数，首页按该参数设置初始 Pager 页。
-6. 媒体关联页成功完成或无须处理后，底部“完成”只收起备份、恢复和媒体关联链路；顶部返回和系统返回只退回恢复结果页。
+6. 备份三页收敛到父图，成功完成 inclusive 关闭整个父图；顶部返回和系统返回逐层退回；闭环出口同步关闭会话并核验来源。
 7. 更新方案文档并运行 `./gradlew :app:compileDebugKotlin` 验证编译。
 
-## TorrentSearch 接入影响（待实施）
+## TorrentSearch 接入影响（已实施）
 
-TorrentSearch 将替换旧磁力模块，宿主不再注册 `MagnetSearchRoute` 或由 `NavHost` 承载磁力页面；通过 `TorrentSearchFeatureEntry.launch(context, initialQuery, launchSource)` 打开独立 `TorrentSearchActivity`。我的页传空查询、详情页传候选关键词，关闭 `enableMagnetFeature` 时发现集合为空且入口/Activity 不可达。外部 `ACTION_SEARCH`、`SEND` 与 `PROCESS_TEXT` alias 由 Activity 内部统一处理，不新增 launcher。完整 API、输入规范化、安全和生命周期要求以 [TorrentSearch 主方案](magnet_search_plan.md) 为准。
+TorrentSearch 已替换旧磁力模块，宿主不再注册 `MagnetSearchRoute` 或由 `NavHost` 承载磁力页面；通过 `TorrentSearchFeatureEntry.launch(context, initialQuery, launchSource)` 打开独立 `TorrentSearchActivity`。我的页传空查询、详情页传候选关键词，关闭 `enableMagnetFeature` 时发现集合为空且入口/Activity 不可达。外部 `ACTION_SEARCH`、`SEND` 与 `PROCESS_TEXT` alias 由 Activity 内部统一处理，不新增 launcher。完整 API、输入规范化、安全和生命周期要求以 [TorrentSearch 主方案](magnet_search_plan.md) 为准。
 
 ## 测试验证
 
@@ -78,13 +98,17 @@ TorrentSearch 将替换旧磁力模块，宿主不再注册 `MagnetSearchRoute` 
 ## 已知取舍
 
 - 完整页面级退出动画会在动画期间保留退出目的地，这是 Compose Navigation 容器转场的正常机制；本次按最新要求只保留动画效果，不在本方案内处理点击穿透。
-- 如果后续仍要解决快速点击被旧页面拦截的问题，需要另开交互稳定性方案，不与本次“只增加左进右出动画”混在一起。
+- 备份组针对业务导航增加来源 entry 与会话关闭门禁，防止旧回调操作新栈；其他页面若需治理触摸命中仍另行设计，不扩大本轮范围。
 
 ## 开放问题
 
 - 当前动画时长 260ms 是否符合实际观感，后续可只调时长和 easing，不改变页面点击逻辑。
 
 ## 变更记录
+
+- 2026-10-02：按已确认方案接入备份导航父图，入口改跳 BackupGraphRoute，三页注册移到 BackupNavigation；图 VM 只持有通信会话，业务 VM 作用域保持。整组出口核验来源 entry 并领取一次关闭许可，避免退出转场重复弹栈。app 全量单测、Kotlin 编译、R8 与独立复审通过，设备验证边界以备份主方案为准。原因是导航组、跨页通信与关闭边界需要一致。
+
+- 2026-10-02：补充备份恢复导航组接入草案及主方案引用，明确组起点、实际我的页入口、图 VM owner、整组收栈、重复入口和进程重建边界；同时将现行关闭方法名修正为代码中的 closeBackupRestoreStack(reasonCode)，避免旧说明误导。本次仅修改文档，尚未实施导航和通信改造。
 
 - 2026-10-01：同步“快捷操作”标题与下拉菜单验收描述，仍只在我的页内选择、不触发导航转场；原因是旧单选弹窗已改成单行即时选择菜单。本轮不改变路由协议，无新增导航日志或 R8 需求。
 

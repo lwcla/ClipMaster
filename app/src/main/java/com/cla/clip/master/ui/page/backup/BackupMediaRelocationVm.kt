@@ -30,7 +30,7 @@ import javax.inject.Inject
 /**
  * 恢复本地媒体关联独立页 ViewModel。
  *
- * 负责预估、权限复查、正式扫描和结果发送；恢复页只通过 `BackupMediaRelocationEvents` 接收入口回显状态。
+ * 负责预估、权限复查、正式扫描和结果保存；恢复页观察当前图会话的 StateFlow 回显。
  */
 @HiltViewModel
 class BackupMediaRelocationVm @Inject constructor(
@@ -38,8 +38,6 @@ class BackupMediaRelocationVm @Inject constructor(
     @param:ApplicationContext private val appContext: Context,
     /** 下载媒体重新定位协作者，封装 MediaStore、旧系统路径和数据库写回。 */
     private val mediaRelocator: DownloadedMediaRelocator,
-    /** feature 内部不可重放事件流，用于把入口状态和终态摘要回显到恢复页。 */
-    private val events: BackupMediaRelocationEvents,
 ) : ViewModel() {
     companion object {
         private const val TAG = "BackupMediaRelocationVm"
@@ -48,6 +46,20 @@ class BackupMediaRelocationVm @Inject constructor(
     private val _uiState = MutableStateFlow<MediaRelocationUiState>(MediaRelocationUiState.Idle)
 
     val uiState = _uiState.asStateFlow()
+
+    /** 当前父图会话只用于同步结果，不接管媒体扫描或权限副作用。 */
+    private var flowSession: BackupFlowSession? = null
+
+    /** 重组绑定同实例幂等；跨图错误绑定拒绝，不能把旧扫描带入新组。 */
+    internal fun bindSession(session: BackupFlowSession): Boolean {
+        if (flowSession === session) return true
+        if (flowSession != null) {
+            logW(TAG) { "媒体页会话绑定已拒绝 reasonCode=session_mismatch" }
+            return false
+        }
+        flowSession = session
+        return true
+    }
 
     private var restoreTaskId: String? = null
     private var mediaRelocationJob: Job? = null
@@ -66,6 +78,8 @@ class BackupMediaRelocationVm @Inject constructor(
      * 重组、横竖屏重建和权限页返回都会复用同一个 ViewModel，不重复启动准备任务。
      */
     fun start(restoreTaskId: String) {
+        // 系统恢复的旧路由不是有效报告，无当前会话结果时不预估、更不写库。
+        if (flowSession?.matchesRestoreTask(restoreTaskId) != true) return
         if (this.restoreTaskId == null) {
             this.restoreTaskId = restoreTaskId
         }
@@ -83,6 +97,8 @@ class BackupMediaRelocationVm @Inject constructor(
 
     /** 用户手动重新预估；只允许在非运行态触发，避免重复扫描。 */
     fun restart() {
+        // 退出组后迟到的旧页面点击不能重启数据库预估。
+        if (restoreTaskId?.let { flowSession?.matchesRestoreTask(it) } != true) return
         if (_uiState.value.isRunning || mediaRelocationJob?.isActive == true) return
         closeRestoreFlowOnDone = false
         terminalEventSent = false
@@ -93,7 +109,11 @@ class BackupMediaRelocationVm @Inject constructor(
 
     /** 权限请求返回后继续等待用户确认；权限拒绝时不进入正式扫描。 */
     fun onPermissionResult(grants: Map<String, Boolean>) {
+        // 权限弹窗返回可能晚于退出组，只有当前会话仍持有任务才能继续复查。
+        if (restoreTaskId?.let { flowSession?.matchesRestoreTask(it) } != true) return
+        /** 当前权限态及授予摘要只用于完整访问复核，不保存原授权内容。 */
         val state = _uiState.value as? MediaRelocationUiState.PermissionRequired ?: return
+        /** 部分媒体访问不等于全部授权，决定是否继续保留权限说明。 */
         val mediaPermissionDenied = state.preparation.requiredPermissions.any { permission ->
             isRequiredFullMediaPermission(permission) && grants[permission] != true
         }
@@ -107,7 +127,9 @@ class BackupMediaRelocationVm @Inject constructor(
     /** 用户确认预估后正式扫描；开始后页面内不可中断，返回只提示等待。 */
     fun startScan(preparation: MediaRelocationPreparation) {
         if (mediaRelocationJob?.isActive == true || _uiState.value.isRunning) return
+        /** 正式扫描身份必须仍获当前会话授权，不能仅凭旧 preparation 写库。 */
         val taskId = restoreTaskId ?: return
+        if (flowSession?.matchesRestoreTask(taskId) != true) return
         closeRestoreFlowOnDone = false
         terminalEventSent = false
         runningEventSent = false
@@ -275,23 +297,24 @@ class BackupMediaRelocationVm @Inject constructor(
         return permission != android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED
     }
 
-    private suspend fun sendIncomplete(restoreTaskId: String) {
-        events.emitIncomplete(restoreTaskId)
+    /** 同步保存非终态入口，保留同任务上轮结果，不依赖页面订阅。 */
+    private fun sendIncomplete(restoreTaskId: String) {
+        flowSession?.publishMediaEvent(BackupMediaRelocationEvent.Incomplete(restoreTaskId))
     }
 
-    private suspend fun sendRunning(restoreTaskId: String) {
+    /** 正式扫描先保存 Running 门禁，恢复页即使不可见也不能完成退出。 */
+    private fun sendRunning(restoreTaskId: String) {
         if (runningEventSent) return
         runningEventSent = true
-        events.emitRunning(restoreTaskId)
+        flowSession?.publishMediaEvent(BackupMediaRelocationEvent.Running(restoreTaskId))
     }
 
+    /** 终态先同步保存事实，避免正在取消的协程丢失完成/失败摘要。 */
     private fun sendTerminal(restoreTaskId: String, summary: MediaRelocationSummary) {
         if (terminalEventSent) return
         terminalEventSent = true
         closeRestoreFlowOnDone = summary.type.shouldCloseRestoreFlowOnDone
-        viewModelScope.launch {
-            events.emitTerminal(restoreTaskId, summary)
-        }
+        flowSession?.publishMediaEvent(BackupMediaRelocationEvent.Terminal(restoreTaskId, summary))
     }
 
     private fun currentReportOrEmpty(): MediaRelocationReport {
@@ -326,11 +349,14 @@ class BackupMediaRelocationVm @Inject constructor(
         return appContext.getString(resId)
     }
 
+    /** 目的地销毁时同步释放 Running；整组已关闭则由 session 拒绝迟到写入。 */
     override fun onCleared() {
+        /** 任务身份与中断摘要仅用于当前图，不能跨重启继续扫描。 */
         val taskId = restoreTaskId
         if (taskId != null && _uiState.value.isRunning && !terminalEventSent) {
+            /** 保留已处理数量供恢复页解释部分结果，不伪造事务回滚。 */
             val summary = MediaRelocationSummary(MediaRelocationSummaryType.Interrupted, currentReportOrEmpty())
-            events.tryEmitInterrupted(taskId, summary)
+            flowSession?.publishMediaEvent(BackupMediaRelocationEvent.Interrupted(taskId, summary))
         }
         mediaRelocationJob?.cancel()
         super.onCleared()

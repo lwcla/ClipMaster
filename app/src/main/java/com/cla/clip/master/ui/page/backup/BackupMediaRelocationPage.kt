@@ -38,6 +38,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.cla.clip.base.general.R
 import com.cla.clip.master.R as HostR
 import com.cla.clip.base.general.utils.logD
@@ -62,7 +65,9 @@ private const val TAG = "BackupMediaRelocationPage"
 @Composable
 internal fun BackupMediaRelocationPage(
     restoreTaskId: String,
+    flowSession: BackupFlowSession,
     onBack: () -> Unit,
+    onInvalidSession: () -> Unit,
     onCloseRestoreFlow: () -> Unit,
     modifier: Modifier = Modifier,
     relocationVm: BackupMediaRelocationVm = hiltViewModel(),
@@ -96,8 +101,18 @@ internal fun BackupMediaRelocationPage(
         }
     )
 
-    LaunchedEffect(restoreTaskId) {
-        relocationVm.start(restoreTaskId)
+    /** 只在前台验证当前图结果；重组和权限弹窗不会重新预估或扫描。 */
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(relocationVm, flowSession, restoreTaskId, lifecycleOwner) {
+        if (relocationVm.bindSession(flowSession)) {
+            lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                if (flowSession.matchesRestoreTask(restoreTaskId)) {
+                    relocationVm.start(restoreTaskId)
+                } else {
+                    onInvalidSession()
+                }
+            }
+        }
     }
 
     /** 处理顶部返回和系统返回；除运行态拦截外始终只回上一层，方便用户回恢复页查看结果。 */
@@ -108,11 +123,12 @@ internal fun BackupMediaRelocationPage(
         val backRequestLog = "媒体关联返回请求 restoreTaskId=$restoreTaskId uiState=$uiStateLogCode " +
             "backTarget=restore_flow"
         logD(TAG) { backRequestLog }
-        if (state.isRunning) {
-            showRunningNotice = true
-        } else {
-            onBack()
+        // 同步检查会话事实：扫描刚启动但 UI 未重组时也拦截，关闭后的旧回调直接忽略。
+        if (!flowSession.canLeaveMedia(restoreTaskId)) {
+            showRunningNotice = flowSession.matchesRestoreTask(restoreTaskId)
+            return
         }
+        onBack()
     }
 
     /** 处理底部“完成”；正向终态关闭整条备份恢复链路，其他终态仍回恢复页保留重试入口。 */
@@ -125,9 +141,12 @@ internal fun BackupMediaRelocationPage(
         val doneRequestLog = "媒体关联完成请求 restoreTaskId=$restoreTaskId uiState=$uiStateLogCode " +
             "shouldCloseRestoreFlow=$shouldCloseRestoreFlow"
         logD(TAG) { doneRequestLog }
-        if (state.isRunning) {
-            showRunningNotice = true
-        } else if (shouldCloseRestoreFlow) {
+        // 完成与普通返回共用同步门禁，不能以捕获的旧 Ready/Result 状态绕过 Running。
+        if (!flowSession.canLeaveMedia(restoreTaskId)) {
+            showRunningNotice = flowSession.matchesRestoreTask(restoreTaskId)
+            return
+        }
+        if (shouldCloseRestoreFlow) {
             logD(TAG) { "媒体关联成功终态完成并关闭恢复链路 restoreTaskId=$restoreTaskId reasonCode=success_done_close_restore_flow" }
             onCloseRestoreFlow()
         } else {

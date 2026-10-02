@@ -112,7 +112,12 @@ data object FoldedClipsRoute : Route()
 @Serializable
 data object RecycleBinRoute : Route()
 
-/** 备份与恢复页 */
+/** 备份恢复父图；类型安全解析依赖稳定类名，完成按此路由收栈。 */
+@Keep
+@Serializable
+data object BackupGraphRoute : Route()
+
+/** 备份与恢复页，作为父图起始目的地。 */
 @Keep
 @Serializable
 data object BackupRoute : Route()

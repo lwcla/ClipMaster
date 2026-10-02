@@ -75,8 +75,6 @@ class BackupVm @Inject constructor(
     private val localBackupDirectoryWriter: LocalBackupDirectoryWriter,
     /** 备份临时文件目录管理器，用于导入预览和导出完成后的清理。 */
     private val tempFileStore: BackupTempFileStore,
-    /** 备份恢复 feature 内部请求流，用于把用户选择的恢复目标交给恢复页。 */
-    private val restoreRequests: BackupRestoreRequests,
     /** 本机备份配置，所有用户确认的字段均等待 DataStore 提交。 */
     private val backupSettings: BackupSettingsRepository,
     /** 分目标最近结果和连接健康状态，手动与每日共用。 */
@@ -102,6 +100,20 @@ class BackupVm @Inject constructor(
 
     /** 页面可见期间唯一的设置收集任务，读取失败后可由用户明确重试。 */
     private var settingsCollectionJob: Job? = null
+
+    /** 由父图显式绑定的内存会话，禁止提升为进程级 Singleton。 */
+    private var flowSession: BackupFlowSession? = null
+
+    /** 同一页面重组重复绑定幂等；不同图的错误绑定拒绝，不替换用户当前流程。 */
+    internal fun bindSession(session: BackupFlowSession): Boolean {
+        if (flowSession === session) return true
+        if (flowSession != null) {
+            logW(TAG) { "备份页会话绑定已拒绝 reasonCode=session_mismatch" }
+            return false
+        }
+        flowSession = session
+        return true
+    }
 
     /** 页面只读状态流。 */
     val uiState = _uiState.asStateFlow()
@@ -196,18 +208,18 @@ class BackupVm @Inject constructor(
     }
 
     /** 打开系统文件选择器返回的备份文件，真实预检由恢复页 ViewModel 消费请求后执行。 */
-    fun requestRestoreFromUri(uri: Uri) {
-        restoreRequests.set(BackupRestoreRequest.LocalFile(uri))
+    fun requestRestoreFromUri(uri: Uri): Boolean {
+        return flowSession?.submitRequest(BackupRestoreRequest.LocalFile(uri)) == true
     }
 
     /** 打开本地备份文件夹列表中的备份条目。 */
-    fun requestRestoreFromLocalBackup(file: LocalBackupFile) {
-        restoreRequests.set(BackupRestoreRequest.LocalDirectory(file))
+    fun requestRestoreFromLocalBackup(file: LocalBackupFile): Boolean {
+        return flowSession?.submitRequest(BackupRestoreRequest.LocalDirectory(file)) == true
     }
 
     /** 打开 WebDAV 远端备份列表中的备份条目。 */
-    fun requestRestoreFromRemoteBackup(file: RemoteBackupFile) {
-        restoreRequests.set(BackupRestoreRequest.WebDav(file))
+    fun requestRestoreFromRemoteBackup(file: RemoteBackupFile): Boolean {
+        return flowSession?.submitRequest(BackupRestoreRequest.WebDav(file)) == true
     }
 
     /** 更新 WebDAV 服务地址。 */

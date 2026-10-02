@@ -20,7 +20,7 @@ import androidx.compose.ui.res.stringResource
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.config.ClipItemQuickAction
 import com.cla.clip.feature.torrent.search.api.TorrentSearchFeatureEntry
-import com.cla.clip.master.ui.navigation.BackupRoute
+import com.cla.clip.master.ui.navigation.BackupGraphRoute
 import com.cla.clip.master.ui.navigation.DownloadHistoryRoute
 import com.cla.clip.master.ui.navigation.FoldedClipsRoute
 import com.cla.clip.master.ui.navigation.RecycleBinRoute
@@ -250,7 +250,7 @@ internal fun BackupEntry(
         },
         title = stringResource(R.string.base_general_backup_restore),
         descriptionContent = { BackupResultsSummary(state) },
-        onClick = { onNavigate(BackupRoute) }
+        onClick = { onNavigate(BackupGraphRoute) }
     )
 }
 

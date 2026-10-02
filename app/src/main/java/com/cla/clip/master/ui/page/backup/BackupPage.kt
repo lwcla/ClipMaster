@@ -1,5 +1,7 @@
 package com.cla.clip.master.ui.page.backup
 
+import androidx.activity.compose.BackHandler
+
 import com.cla.clip.master.backup.local.LocalBackupFile
 import com.cla.clip.master.ui.widget.BackupResultsSummary
 import com.cla.clip.master.ui.widget.BackupResultDetails
@@ -72,11 +74,17 @@ import com.cla.clip.master.ui.widget.SecondaryPageScaffold
  * 避免 Composable 直接触碰数据库、网络或 ContentResolver 细节。
  */
 @Composable
-fun BackupPage(
+internal fun BackupPage(
+    flowSession: BackupFlowSession,
     onBack: () -> Unit,
     onNavigate: (Route) -> Unit,
     backupVm: BackupVm = hiltViewModel(),
 ) {
+    // 绑定不执行 IO；成功组合后保证恢复请求只交付当前父图。
+    LaunchedEffect(backupVm, flowSession) { backupVm.bindSession(flowSession) }
+    // 系统返回也走整组出口，先拒绝迟到文件选择回调，后等待转场清理 VM。
+    BackHandler { onBack() }
+    /** 页面状态使用生命周期感知订阅，不把表单凭据放入共享会话。 */
     val state by backupVm.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     // 列表只展示会参与保留份数的普通备份；历史 safety 或异常文件隐藏，避免数量超过用户设置造成误解。
@@ -116,8 +124,8 @@ fun BackupPage(
         onResult = { uri ->
             pickerOpen = false
             uri?.let {
-                backupVm.requestRestoreFromUri(it)
-                onNavigate(BackupRestoreRoute)
+                // 重复选择、已接管或旧系统回调不能追加恢复目的地。
+                if (backupVm.requestRestoreFromUri(it)) onNavigate(BackupRestoreRoute)
             }
         }
     )
@@ -229,8 +237,7 @@ fun BackupPage(
                         file = file,
                         isBusy = !pageActionsEnabled,
                         onPreview = {
-                            backupVm.requestRestoreFromLocalBackup(file)
-                            onNavigate(BackupRestoreRoute)
+                            if (backupVm.requestRestoreFromLocalBackup(file)) onNavigate(BackupRestoreRoute)
                         }
                     )
                 }
@@ -267,8 +274,7 @@ fun BackupPage(
                         file = file,
                         isBusy = !pageActionsEnabled,
                         onPreview = {
-                            backupVm.requestRestoreFromRemoteBackup(file)
-                            onNavigate(BackupRestoreRoute)
+                            if (backupVm.requestRestoreFromRemoteBackup(file)) onNavigate(BackupRestoreRoute)
                         }
                     )
                 }
