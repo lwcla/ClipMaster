@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
@@ -39,47 +40,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import javax.inject.Inject
-
-/**
- * 搜索页时间筛选范围。
- *
- * 枚举只描述 UI 可选项，不直接保存时间戳；具体时间窗口由 ViewModel 在查询时按当前时间计算，
- * 这样“今天”和“近 7 天”不会因为页面长时间停留而持久化成过期的固定值。
- */
-enum class SearchTimeFilter {
-    /** 不限制剪贴记录时间。 */
-    ALL,
-
-    /** 只查看当天 00:00 到次日 00:00 之间的记录。 */
-    TODAY,
-
-    /** 查看最近 7 天的记录，按毫秒时间戳从当前时刻回推。 */
-    LAST_7_DAYS,
-
-    /** 查看最近 30 天的记录，按毫秒时间戳从当前时刻回推。 */
-    LAST_30_DAYS
-}
-
-/**
- * 搜索筛选状态。
- *
- * 这个数据类是搜索页和 ViewModel 之间的稳定契约；所有字段都只保存用户选择，
- * 不保存派生出的 Paging 数据，避免筛选条件和结果流互相污染。
- */
-data class SearchFilterState(
-    /** 搜索框中的原始输入，Repository 会负责进一步清洗并转换为数据库查询。 */
-    val query: String = "",
-
-    /** 当前选择的时间范围。 */
-    val timeFilter: SearchTimeFilter = SearchTimeFilter.ALL,
-
-    /**
-     * 当前选择的来源 App 包名集合。
-     *
-     * 空集合表示不过滤来源；使用 Set 是为了天然去重，避免用户反复点选同一个 App 后触发重复 SQL 参数。
-     */
-    val sourceAppPackages: Set<String> = emptySet(),
-)
 
 /**
  * 搜索页 ViewModel。
@@ -111,6 +71,7 @@ class SearchViewModel @Inject constructor(
         private const val HISTORY_QUERY_DEBOUNCE_MS = 180L
     }
 
+    /** 当前页唯一筛选状态；真实勾选与有效来源限制通过派生值区分。 */
     private val _filterState = MutableStateFlow(SearchFilterState())
 
     /**
@@ -146,7 +107,8 @@ class SearchViewModel @Inject constructor(
      *
      * 每次筛选条件变化都会创建新的 Pager，Paging 会丢弃旧查询并加载新条件下的数据。
      */
-    val pagedClips = combine(_filterState, visibilityScope.filterNotNull()) { state, scope -> state to scope }.flatMapLatest { (state, scope) ->
+    val pagedClips = combine(_filterState.distinctSearchQueryConditions(), visibilityScope.filterNotNull()) { state, scope -> state to scope }.flatMapLatest { (state, scope) ->
+        /** 时间窗口仍由现有枚举计算，来源勾选事件不会改写它。 */
         val timeRange = state.timeFilter.toTimeRange()
         Pager(
             config = PagingConfig(
@@ -177,6 +139,7 @@ class SearchViewModel @Inject constructor(
     val searchHistories: StateFlow<List<SearchHistoryData>> = combine(
         _filterState
             .map { it.query }
+            .distinctUntilChanged()
             .debounce(HISTORY_QUERY_DEBOUNCE_MS),
         visibilityScope.filterNotNull()
     ) { query, scope -> query to scope }.flatMapLatest { (query, scope) ->
@@ -189,6 +152,7 @@ class SearchViewModel @Inject constructor(
 
     /** 更新搜索关键词，输入变化后会自动触发新的分页查询。 */
     fun updateQuery(query: String) {
+        /** 输入换行规整沿用现有规则，不因菜单改造改变关键词。 */
         val singleLineQuery = query.toSingleLineSearchQuery()
         _filterState.update { it.copy(query = singleLineQuery) }
     }
@@ -207,20 +171,22 @@ class SearchViewModel @Inject constructor(
         _filterState.update { it.copy(timeFilter = filter) }
     }
 
-    /**
-     * 批量更新来源 App 多选条件。
-     *
-     * 弹窗内部会先维护草稿选择，用户点击确认后才调用这里提交；提交时统一去重和排序，
-     * 让相同选择集合不会因为点击顺序不同而造成无意义的筛选状态变化。
-     *
-     * 注意空字符串包名是合法筛选值，用来匹配历史数据里无法识别来源包名的“未知”来源；
-     * 只有真正的空集合才表示“全部来源”，因此这里不能再把空字符串过滤掉。
-     */
-    fun updateSourceApps(packageNames: Set<String>) {
-        val normalizedPackageNames = packageNames
-            .map { it.trim() }
-            .toSortedSet()
-        _filterState.update { it.copy(sourceAppPackages = normalizedPackageNames) }
+    /** 即时切换全选，仅改变来源状态；候选暂空时忽略，时间和关键词保持不变。 */
+    fun toggleAllSourceApps() {
+        /** 操作时读取当前候选快照，事件基于 update 内最新勾选态归约，避免连续操作覆盖旧选择。 */
+        val candidates = sourceApps.value.map { it.packageName }.toSet()
+        _filterState.update { state ->
+            state.copy(sourceAppSelection = SourceAppSelectionReducer.toggleAll(state.sourceAppSelection, candidates))
+        }
+    }
+
+    /** 即时切换一个候选；空字符串是未知来源合法身份，不做空值过滤。 */
+    fun toggleSourceApp(packageName: String) {
+        /** 当前候选用于拦截已消失行的迟到点击，不丢弃显式选择中的缺失来源。 */
+        val candidates = sourceApps.value.map { it.packageName }.toSet()
+        _filterState.update { state ->
+            state.copy(sourceAppSelection = SourceAppSelectionReducer.toggleItem(state.sourceAppSelection, candidates, packageName))
+        }
     }
 
     /**

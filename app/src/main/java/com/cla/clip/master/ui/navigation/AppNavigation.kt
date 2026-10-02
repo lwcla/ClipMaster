@@ -122,7 +122,9 @@ fun AppNavigation(
             val route = backStackEntry.toRoute<SearchRoute>()
             SearchPage(
                 scope = route.scope,
-                onNavigate = onNavigate
+                onNavigate = onNavigate,
+                // 搜索栏返回只发页面事件，最终复用宿主统一弹栈出口。
+                onBack = onBack,
             )
         }
 

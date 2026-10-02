@@ -42,15 +42,23 @@ import java.util.Locale
  *
  * 面板由 SearchPage 的 History 模式控制显示；它只负责渲染历史列表和回调用户操作，
  * 不直接绑定搜索框焦点，避免键盘、主题切换或滚动状态变化误关闭历史模式。
+ * 顶部不追加留白，标题紧接调用方传入的搜索头避让位置，清空按钮保留原有热区。
  */
 @Composable
 internal fun SearchHistoryPanel(
+    /** 页面持有的历史滚动状态，间距变化不重建列表身份。 */
     listState: LazyListState,
+    /** 页面收集的历史记录，空列表沿用现有空态。 */
     histories: List<SearchHistoryData>,
+    /** 当前关键词仅用于历史项高亮，不在面板内发起查询。 */
     query: String,
-    contentPadding: PaddingValues = PaddingValues(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 24.dp),
+    /** 调用方提供搜索头及键盘避让；独立使用时顶部无额外留白。 */
+    contentPadding: PaddingValues = PaddingValues(start = 12.dp, top = 0.dp, end = 12.dp, bottom = 24.dp),
+    /** 历史点击交给页面恢复关键词并切换结果模式。 */
     onHistoryClick: (SearchHistoryData) -> Unit,
+    /** 删除事件只传稳定历史主键，不改变搜索筛选。 */
     onDeleteHistory: (Long) -> Unit,
+    /** 清空意图由页面控制确认弹窗，面板不直接写数据库。 */
     onClearHistories: () -> Unit,
 ) {
     /** 当前是否有可清理历史；空态下隐藏清空入口，避免用户点击无效动作。 */
@@ -71,7 +79,8 @@ internal fun SearchHistoryPanel(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                        // 标题行顶部不重复留白；清空按钮自身保持原最小交互尺寸。
+                        .padding(horizontal = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(

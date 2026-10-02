@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -39,6 +40,11 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -48,6 +54,9 @@ import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.paging.compose.collectAsLazyPagingItems
 import com.cla.clip.base.general.config.ClipItemQuickAction
 import com.cla.clip.base.general.entity.ClipShowEntity
@@ -59,8 +68,6 @@ import com.cla.clip.master.ui.navigation.DetailRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.navigation.SearchScope
 import com.cla.clip.master.ui.widget.ClipBatchSelectionActionBar
-import com.cla.clip.master.ui.widget.SingleChoiceDialog
-import com.cla.clip.master.ui.widget.SingleChoiceOption
 import com.cla.clip.master.ui.widget.clip.ClipCardTimeMode
 import com.cla.clip.feature.ad.api.AdPlacement
 import com.cla.clip.master.ad.rememberPageAdSession
@@ -81,9 +88,14 @@ import kotlin.math.max
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun SearchPage(
+    /** 搜索业务状态与查询入口，由导航目的地作用域提供。 */
     viewModel: SearchViewModel = hiltViewModel(),
+    /** 普通和折叠搜索共用页面，但保存态与查询范围隔离。 */
     scope: SearchScope = SearchScope.VisibleOnly,
+    /** 详情跳转由宿主管理，页面不持有 NavController。 */
     onNavigate: (Route) -> Unit,
+    /** 顶部显式离页入口，系统返回继续由现有处理链消费。 */
+    onBack: () -> Unit,
 ) {
     /** 保存态隔离 key；普通搜索和折叠搜索共用实现，但不能串滚动位置或顶部状态。 */
     val saveableScopeKey = scope.name
@@ -97,7 +109,7 @@ fun SearchPage(
 
     /** 搜索筛选状态，包含关键词、时间范围和来源 App 集合。 */
     val filterState by viewModel.filterState.collectAsStateWithLifecycle()
-    /** 当前可选来源 App 列表，用于来源筛选底部弹窗和已选展示文案。 */
+    /** 当前可选来源列表供下拉菜单使用，生命周期收集方式保持不变。 */
     val sourceApps by viewModel.sourceApps.collectAsStateWithLifecycle()
     /** 来源包名到展示名的映射，统一复用来源 App 显示名兜底规则。 */
     val sourceAppDisplayNames = sourceApps.associate { sourceApp ->
@@ -153,10 +165,12 @@ fun SearchPage(
     var isBatchActionRunning by remember { mutableStateOf(false) }
     /** 是否显示批量删除选择弹窗；弹窗只展示数量，不展示搜索词或剪贴内容。 */
     var showBatchDeleteDialog by remember { mutableStateOf(false) }
-    /** 来源选择弹窗显示状态，弹窗内部继续维护草稿选择。 */
-    var showSourcePicker by remember { mutableStateOf(false) }
-    /** 时间筛选单选弹窗显示状态；打开和取消都不改变历史/结果模式和列表滚动位置。 */
-    var showTimeFilterDialog by remember { mutableStateOf(false) }
+    /** 两个菜单互斥，只保存瞬时展开项；搜索范围或主题重建时自动关闭。 */
+    var expandedMenu by remember(saveableScopeKey, darkTheme) { mutableStateOf(SearchFilterMenu.None) }
+    /** 浮层被动焦点恢复保护；真实触摸、键盘导航、读屏点击与编辑均可解除，按范围隔离。 */
+    val searchInputFocusGuard = remember(saveableScopeKey) { SearchInputFocusGuard() }
+    /** 页面失去前台时关闭菜单，避免后台恢复旧浮层。 */
+    val menuLifecycleOwner = LocalLifecycleOwner.current
     /** 搜索框当前焦点状态，只用于键盘和进入历史模式，不直接决定历史面板生命周期。 */
     var searchBarFocused by remember { mutableStateOf(false) }
     /** 清空当前搜索范围历史的确认弹窗显示状态。 */
@@ -195,8 +209,28 @@ fun SearchPage(
     // 只在结果页且条件稳定时请求；该本地业务身份不会传给 SDK 或日志。
     val adSession = rememberPageAdSession(searchAdKey, enabled = pageMode == SearchPageMode.Result && searchAdSettled)
     // 所有确认、筛选弹层与批量任务都暂停广告交互及布局变化。
-    val adOverlayBlocked = deleteClip != null || showBatchDeleteDialog || showSourcePicker ||
-        showTimeFilterDialog || showClearHistoryConfirm || isBatchActionRunning
+    val adOverlayBlocked = deleteClip != null || showBatchDeleteDialog || expandedMenu != SearchFilterMenu.None ||
+        showClearHistoryConfirm || isBatchActionRunning
+
+    // 生命周期监听只关闭浮层，不回滚已生效筛选，不启动任何额外数据任务。
+    DisposableEffect(menuLifecycleOwner, saveableScopeKey, darkTheme) {
+        /** 页面暂停即关闭浮层，解除观察器由组合销毁负责。 */
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE) expandedMenu = SearchFilterMenu.None
+        }
+        menuLifecycleOwner.lifecycle.addObserver(observer)
+        // 组合销毁只移除监听，菜单状态由页面实例销毁或重建自然释放。
+        onDispose { menuLifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    /** 菜单开关只改变浮层状态；打开时取消吸附动画并保护搜索框焦点恢复。 */
+    fun updateFilterMenu(menu: SearchFilterMenu) {
+        if (menu != SearchFilterMenu.None) {
+            searchInputFocusGuard.onMenuOpened()
+            headerSnapJob?.cancel()
+        }
+        expandedMenu = menu
+    }
 
     /** 退出多选态并清空选择；返回键、查询条件变化和批量动作完成都复用这个出口。 */
     fun clearSelection() {
@@ -257,7 +291,7 @@ fun SearchPage(
         }
     }
 
-    BackHandler(enabled = clipSelectionMode) {
+    BackHandler(enabled = clipSelectionMode && expandedMenu == SearchFilterMenu.None) {
         clearSelection()
     }
 
@@ -267,7 +301,7 @@ fun SearchPage(
      * 只在 Result 模式执行；History 模式顶部固定展开，不参与吸附。
      */
     fun settleHeader(velocityY: Float = 0f) {
-        if (pageMode != SearchPageMode.Result || headerHeightPx <= 0f) {
+        if (pageMode != SearchPageMode.Result || headerHeightPx <= 0f || expandedMenu != SearchFilterMenu.None) {
             return
         }
         /** 根据当前位置和 fling 方向得到最终稳定状态。 */
@@ -300,6 +334,8 @@ fun SearchPage(
         object : NestedScrollConnection {
             /** 跟手滚动阶段只调整运行时偏移，不提前做两态吸附。 */
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                // 菜单展开时固定锚点，不让结果滚动推动搜索头。
+                if (expandedMenu != SearchFilterMenu.None) return Offset.Zero
                 if (pageMode != SearchPageMode.Result || headerHeightPx <= 0f) {
                     return Offset.Zero
                 }
@@ -331,6 +367,8 @@ fun SearchPage(
 
             /** fling 开始时根据速度方向安排最终吸附，但不抢走列表自己的 fling。 */
             override suspend fun onPreFling(available: Velocity): Velocity {
+                // 菜单列表惯性滚动不驱动搜索头吸附。
+                if (expandedMenu != SearchFilterMenu.None) return Velocity.Zero
                 /** 当前 fling 方向是否仍需要优先移动搜索头；需要时消费速度，避免列表和搜索头同时惯性滚动。 */
                 val shouldConsumeVelocity = when {
                     available.y < 0f -> headerOffsetPx > -headerHeightPx
@@ -390,6 +428,13 @@ fun SearchPage(
             .adInteractionGuard(adSession)
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .onPreviewKeyEvent { keyEvent ->
+                // 菜单关闭后真实键盘输入/导航可解除被动恢复保护，事件继续交给系统或输入框处理。
+                if (expandedMenu == SearchFilterMenu.None && keyEvent.type == KeyEventType.KeyDown) {
+                    searchInputFocusGuard.onUserInputIntent()
+                }
+                false
+            }
             .then(
                 if (pageMode == SearchPageMode.Result) {
                     Modifier.nestedScroll(resultNestedScrollConnection)
@@ -420,7 +465,8 @@ fun SearchPage(
                 query = filterState.query,
                 contentPadding = PaddingValues(
                     start = 12.dp,
-                    top = contentTopPaddingDp + 8.dp,
+                    // 历史标题直接从搜索头实测底边开始，不再额外增加 8dp 空白。
+                    top = contentTopPaddingDp,
                     end = 12.dp,
                     bottom = historyBottomPadding + 24.dp,
                 ),
@@ -486,8 +532,26 @@ fun SearchPage(
             query = filterState.query,
             filterState = filterState,
             selectedSourceAppNames = selectedSourceAppNames,
+            sourceApps = sourceApps,
+            expandedMenu = expandedMenu,
             offsetPx = if (pageMode == SearchPageMode.History) 0f else headerOffsetPx,
-            searchFieldModifier = Modifier.focusRequester(searchFocusRequester),
+            searchFieldModifier = Modifier.focusRequester(searchFocusRequester).pointerInput(saveableScopeKey) {
+                awaitEachGesture {
+                    // 只观察真实输入框按下，不消费事件，不把 Popup 关闭后的焦点恢复当点击。
+                    awaitFirstDown(requireUnconsumed = false)
+                    searchInputFocusGuard.onUserInputIntent()
+                    if (pageMode == SearchPageMode.Result) showHistoryMode()
+                }
+            }.semantics {
+                // 读屏语义点击没有指针事件；显式请求输入焦点与键盘，符合用户主动搜索意图。
+                onClick {
+                    searchInputFocusGuard.onUserInputIntent()
+                    showHistoryMode()
+                    searchFocusRequester.requestFocus()
+                    keyboardController?.show()
+                    true
+                }
+            },
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .onSizeChanged { size ->
@@ -495,25 +559,48 @@ fun SearchPage(
                     headerHeightPx = size.height.toFloat()
                 },
             onQueryChange = { query ->
+                // 真实编辑允许进入历史模式，菜单焦点恢复仍被独立保护。
+                searchInputFocusGuard.onUserInputIntent()
                 viewModel.updateQuery(query)
                 showHistoryMode()
             },
             onFocusChange = { focused ->
+                // 保留真实焦点信息，但被动恢复不能触发历史模式或输入法副作用。
                 searchBarFocused = focused
-                if (focused) {
+                if (searchInputFocusGuard.shouldShowHistory(focused)) {
                     showHistoryMode()
                 }
             },
+            // 显式返回逐层退出局部交互；离页分支一次收键盘并导航，不切换历史/结果模式。
+            onBack = {
+                when (resolveSearchToolbarBackAction(expandedMenu != SearchFilterMenu.None, clipSelectionMode)) {
+                    SearchToolbarBackAction.CloseMenu -> updateFilterMenu(SearchFilterMenu.None)
+                    SearchToolbarBackAction.ExitSelection -> clearSelection()
+                    SearchToolbarBackAction.NavigateBack -> {
+                        searchBarFocused = false
+                        focusManager.clearFocus()
+                        keyboardController?.hide()
+                        onBack()
+                    }
+                }
+            },
+            // 清空是明确编辑意图；保留时间和来源，输入已失焦时也能重新继续输入。
+            onClear = {
+                searchInputFocusGuard.onUserInputIntent()
+                viewModel.updateQuery("")
+                showHistoryMode()
+                searchFocusRequester.requestFocus()
+                keyboardController?.show()
+            },
+            // IME 继续提交剪贴搜索及历史，不能采用过滤页仅收键盘的处理。
             onSubmit = {
                 viewModel.submitCurrentQuery()
                 showResultMode()
             },
-            onTimeClick = {
-                showTimeFilterDialog = true
-            },
-            onSourceClick = {
-                showSourcePicker = true
-            }
+            onMenuChange = ::updateFilterMenu,
+            onTimeSelected = viewModel::updateTimeFilter,
+            onToggleAllSources = viewModel::toggleAllSourceApps,
+            onToggleSource = viewModel::toggleSourceApp,
         )
 
         if (clipSelectionMode) {
@@ -564,40 +651,6 @@ fun SearchPage(
             }
         }
     )
-
-    if (showTimeFilterDialog) {
-        SingleChoiceDialog(
-            title = stringResource(com.cla.clip.base.general.R.string.base_general_time),
-            options = SearchTimeFilter.entries.map { filter ->
-                /** 时间筛选弹窗选项，标题和顶部选择器共用同一份本地化文案。 */
-                SingleChoiceOption(
-                    value = filter,
-                    title = filter.labelText(),
-                )
-            },
-            selectedValue = filterState.timeFilter,
-            onSelect = { selectedFilter ->
-                clearSelection()
-                viewModel.updateTimeFilter(selectedFilter)
-                showTimeFilterDialog = false
-            },
-            onDismiss = { showTimeFilterDialog = false },
-            dismissText = stringResource(com.cla.clip.base.general.R.string.base_general_cancel),
-        )
-    }
-
-    if (showSourcePicker) {
-        SourceAppPickerSheet(
-            sourceApps = sourceApps,
-            selectedPackageNames = filterState.sourceAppPackages,
-            onDismiss = { showSourcePicker = false },
-            onConfirm = { selectedPackageNames ->
-                clearSelection()
-                viewModel.updateSourceApps(selectedPackageNames)
-                showSourcePicker = false
-            }
-        )
-    }
 
     if (showClearHistoryConfirm) {
         ClearSearchHistoryDialog(

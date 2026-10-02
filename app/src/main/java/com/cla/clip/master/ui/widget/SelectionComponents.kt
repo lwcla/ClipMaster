@@ -1,6 +1,7 @@
 package com.cla.clip.master.ui.widget
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,6 +29,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -285,24 +287,55 @@ private fun SelectableListSheetHeader(
     }
 }
 
+/** 复选行勾选标记位置；默认尾部兼容既有弹层，头部用于窄下拉菜单。 */
+internal enum class CheckboxPlacement {
+    /** 勾选标记在文字前方，窄菜单保持清晰的选择列。 */
+    Leading,
+    /** 勾选标记在文字后方，保留既有共享弹层样式。 */
+    Trailing,
+}
+
 /**
- * 通用复选列表行。
+ * 通用复选列表行，支持具名勾选位置，不改变选择与点击契约。
  *
- * 行整体可点击，Checkbox 也触发同一回调；副标题用于包名、说明等辅助识别信息。
+ * 头部紧凑标记由整行承担唯一复选语义，尾部保持原事件契约；可选图标 slot 不承担业务副作用。
  */
 @Composable
 internal fun <Id> SelectableListItem(
+    /** 稳定身份、展示文本与已应用勾选状态，由调用方提供。 */
     state: SelectableListItemState<Id>,
+    /** 整行唯一选择事件，组件不保存草稿。 */
     onClick: () -> Unit,
+    /** 调用方布局接口，最小热区在组件内保持。 */
     modifier: Modifier = Modifier,
+    /** 默认尾部保护既有调用方，位置仅影响布局，不承担业务状态。 */
+    checkboxPlacement: CheckboxPlacement = CheckboxPlacement.Trailing,
+    /** 可选纯展示图标位于勾选后、文本前；默认空，保留既有弹层内容。 */
+    leadingContent: (@Composable () -> Unit)? = null,
 ) {
+    /** 头部窄菜单留白为 12dp，尾部既有弹层保持 20dp，避免新样式影响旧调用方。 */
+    val horizontalPadding = if (checkboxPlacement == CheckboxPlacement.Leading) 12.dp else 20.dp
+    /** 窄菜单减少纵向留白并保留 48dp 热区；默认弹层沿用 12dp。 */
+    val verticalPadding = if (checkboxPlacement == CheckboxPlacement.Leading) 6.dp else 12.dp
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 12.dp),
+            .heightIn(min = 48.dp)
+            .then(if (checkboxPlacement == CheckboxPlacement.Leading) {
+                // 选择框只展示，整行回传一次事件并朗读真实勾选状态。
+                Modifier.toggleable(value = state.selected, role = Role.Checkbox, onValueChange = { onClick() })
+            } else Modifier.clickable(onClick = onClick))
+            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (checkboxPlacement == CheckboxPlacement.Leading) {
+            CompactCheckboxIndicator(checked = state.selected)
+            Spacer(Modifier.width(6.dp))
+        }
+        if (leadingContent != null) {
+            leadingContent()
+            Spacer(Modifier.width(6.dp))
+        }
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = state.title,
@@ -321,10 +354,13 @@ internal fun <Id> SelectableListItem(
             }
         }
 
-        Checkbox(
-            checked = state.selected,
-            onCheckedChange = { onClick() }
-        )
+        if (checkboxPlacement == CheckboxPlacement.Trailing) {
+            Checkbox(
+                checked = state.selected,
+                // 默认尾部保留原选择事件语义，不引入内部草稿。
+                onCheckedChange = { onClick() },
+            )
+        }
     }
 }
 
