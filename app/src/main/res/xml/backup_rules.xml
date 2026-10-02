@@ -18,6 +18,8 @@
         domain="file"
         path="datastore/app_settings.preferences_pb" />
     <!-- Shizuku Provider 图标传输目录只保存 content write 的临时 PNG，不具备跨安装恢复意义。 -->
+    <!-- 正式来源图标也是可重建本机缓存，恢复后按包名重新获取。 -->
+    <exclude domain="file" path="app_icons/" />
     <exclude
         domain="file"
         path="clipboard_bridge_icons/" />

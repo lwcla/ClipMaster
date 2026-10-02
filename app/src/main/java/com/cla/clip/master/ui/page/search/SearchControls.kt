@@ -15,7 +15,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.cla.clip.master.ui.widget.SearchTopBar
 import com.cla.clip.master.R
-import com.cla.clip.base.general.dao.SourceAppData
+import com.cla.clip.base.general.dao.data.SourceAppCandidate
+import com.cla.clip.master.ui.widget.sourceapp.SourceAppPresentationProvider
+import com.cla.clip.master.ui.widget.sourceapp.EmptySourceAppPresentationProvider
 import com.cla.clip.master.ui.widget.FilterDropdown
 import com.cla.clip.master.ui.widget.SingleChoiceDropdownContent
 import com.cla.clip.master.ui.widget.SingleChoiceOption
@@ -46,7 +48,7 @@ internal fun SearchCollapsibleHeader(
     /** 页面映射的来源名称，只用于筛选入口摘要。 */
     selectedSourceAppNames: List<String>,
     /** 生命周期内收集的来源候选，不由搜索头加载。 */
-    sourceApps: List<SourceAppData>,
+    sourceApps: List<SourceAppCandidate>,
     /** 页面统一控制的互斥菜单，不在组件内保存。 */
     expandedMenu: SearchFilterMenu,
     /** 滚动驱动的像素位移，真实高度仍由页面测量。 */
@@ -73,6 +75,8 @@ internal fun SearchCollapsibleHeader(
     onToggleAllSources: () -> Unit,
     /** 稳定包名标识具体来源，包括未知来源空包名。 */
     onToggleSource: (String) -> Unit,
+    /** 页面共享来源展示，Preview 默认无业务副作用。 */
+    sourceAppPresentation: SourceAppPresentationProvider = EmptySourceAppPresentationProvider,
 ) {
     Surface(
         modifier = modifier
@@ -105,6 +109,7 @@ internal fun SearchCollapsibleHeader(
                 filterState = filterState,
                 selectedSourceAppNames = selectedSourceAppNames,
                 sourceApps = sourceApps,
+                sourceAppPresentation = sourceAppPresentation,
                 expandedMenu = expandedMenu,
                 onMenuChange = onMenuChange,
                 onTimeSelected = onTimeSelected,
@@ -166,7 +171,9 @@ internal fun SearchFilters(
     /** 已选来源名称用于入口摘要，多选只显示数量。 */
     selectedSourceAppNames: List<String>,
     /** 页面生命周期内收集的来源候选，仅在菜单展示。 */
-    sourceApps: List<SourceAppData>,
+    sourceApps: List<SourceAppCandidate>,
+    /** 来源展示与候选分离，不在筛选行读取数据库。 */
+    sourceAppPresentation: SourceAppPresentationProvider = EmptySourceAppPresentationProvider,
     /** 页面统一管理互斥菜单及关闭边界。 */
     expandedMenu: SearchFilterMenu,
     /** 只切换浮层，保持当前查询条件。 */
@@ -225,7 +232,7 @@ internal fun SearchFilters(
             onExpandedChange = { onMenuChange(if (it) SearchFilterMenu.Source else SearchFilterMenu.None) },
             modifier = Modifier.weight(3f),
         ) {
-            SourceAppDropdownContent(sourceApps, filterState.sourceAppSelection, onToggleAllSources, onToggleSource)
+            SourceAppDropdownContent(sourceApps, filterState.sourceAppSelection, onToggleAllSources, onToggleSource, sourceAppPresentation)
         }
     }
 }

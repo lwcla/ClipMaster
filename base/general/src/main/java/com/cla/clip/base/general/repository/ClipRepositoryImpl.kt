@@ -10,6 +10,9 @@ import com.cla.clip.base.general.dao.LinkPreviewData
 import com.cla.clip.base.general.dao.SourceAppDao
 import com.cla.clip.base.general.dao.SourceAppData
 import com.cla.clip.base.general.dao.data.ClipDetail
+import com.cla.clip.base.general.dao.data.ClipPageData
+import com.cla.clip.base.general.dao.data.SourceAppCandidate
+import kotlinx.coroutines.flow.distinctUntilChanged
 import com.cla.clip.base.general.entity.ClipCaptureEntity
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.entity.ClipVisibilityScope
@@ -83,7 +86,7 @@ class ClipRepositoryImpl @Inject constructor(
         endTime: Long?,
         sourceAppPackages: Set<String>,
         visibilityScope: ClipVisibilityScope,
-    ): PagingSource<Int, ClipDetail> {
+    ): PagingSource<Int, ClipPageData> {
         val trimmed = userInput.trim()
         val sourcePackagesForQuery = buildSourcePackagesForQuery(sourceAppPackages)
         // 空字符串包名本身代表“未知来源”筛选项，不能按空白过滤；只有数量为 0 才表示跳过来源过滤。
@@ -343,7 +346,7 @@ class ClipRepositoryImpl @Inject constructor(
         restored
     }
 
-    override fun loadRecycleBinClips(): PagingSource<Int, ClipDetail> {
+    override fun loadRecycleBinClips(): PagingSource<Int, ClipPageData> {
         return clipDao.loadRecycleBinClips()
     }
 
@@ -384,7 +387,7 @@ class ClipRepositoryImpl @Inject constructor(
         clipDao.updateTimestamp(clipId, currentTime)
     }
 
-    override fun loadClips(visibilityScope: ClipVisibilityScope): PagingSource<Int, ClipDetail> {
+    override fun loadClips(visibilityScope: ClipVisibilityScope): PagingSource<Int, ClipPageData> {
         return clipDao.loadClipsByFoldState(visibilityScope.toFoldState())
     }
 
@@ -447,15 +450,23 @@ class ClipRepositoryImpl @Inject constructor(
         Unit
     }
 
-    /** 清除单个来源缓存字段，业务提交后直接结束。 */
-    override suspend fun clearSourceAppIconCache(packageName: String) = withContext(Dispatchers.IO) {
-        /** 直接提交已有缓存清理，不产生额外备份副作用。 */
-        sourceAppDao.clearIconCache(packageName)
+    /** 条件清除坏缓存，不抹掉预判后由 Provider/后台修复提交的新图标。 */
+    override suspend fun clearSourceAppIconCache(
+        /** 需要清理的来源身份。 */
+        packageName: String,
+        /** 预判时路径快照。 */
+        expectedPath: String?,
+        /** 预判时版本快照。 */
+        expectedHash: String?,
+    ) = withContext(Dispatchers.IO) {
+        // 只做条件清理，不新增备份副作用。
+        sourceAppDao.clearIconCache(packageName, expectedPath, expectedHash)
         Unit
     }
 
-    override fun loadAllSourceApps(): Flow<List<SourceAppData>> {
-        return sourceAppDao.loadAllSourceApps()
+    /** 名称候选独立于图标元数据；表级通知重查后相同投影不重复发射。 */
+    override fun loadAllSourceApps(): Flow<List<SourceAppCandidate>> {
+        return sourceAppDao.observeCandidates().distinctUntilChanged()
     }
 
     override suspend fun loadLinkPreview(link: String) = withContext(Dispatchers.IO) {

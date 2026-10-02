@@ -4,6 +4,8 @@ import androidx.paging.PagingSource
 import com.cla.clip.base.general.dao.LinkPreviewData
 import com.cla.clip.base.general.dao.SourceAppData
 import com.cla.clip.base.general.dao.data.ClipDetail
+import com.cla.clip.base.general.dao.data.ClipPageData
+import com.cla.clip.base.general.dao.data.SourceAppCandidate
 import com.cla.clip.base.general.dao.data.LastClipData
 import com.cla.clip.base.general.entity.ClipCaptureEntity
 import com.cla.clip.base.general.entity.ClipShowEntity
@@ -33,7 +35,7 @@ interface ClipRepository {
         endTime: Long?,
         sourceAppPackages: Set<String>,
         visibilityScope: ClipVisibilityScope,
-    ): PagingSource<Int, ClipDetail>
+    ): PagingSource<Int, ClipPageData>
 
     /**
      * 保存一个新的剪贴板条目或更新已有条目。
@@ -58,7 +60,7 @@ interface ClipRepository {
     suspend fun restoreClipsFromRecycleBin(ids: Set<Long>): Int
 
     /** 分页加载回收站剪贴记录，排序为删除时间倒序。 */
-    fun loadRecycleBinClips(): PagingSource<Int, ClipDetail>
+    fun loadRecycleBinClips(): PagingSource<Int, ClipPageData>
 
     /** 更新置顶状态 */
     suspend fun updatePinStatus(clipId: Long, isPinned: Boolean)
@@ -76,7 +78,7 @@ interface ClipRepository {
      * 加载所有的剪贴板数据，供分页使用。这个方法会被 PagingSource 调用，返回一个 PagingSource 对象。
      * 排序规则：普通范围置顶在前，其余按剪贴时间倒序；折叠范围也置顶在前，组内按折叠时间倒序。
      */
-    fun loadClips(visibilityScope: ClipVisibilityScope): PagingSource<Int, ClipDetail>
+    fun loadClips(visibilityScope: ClipVisibilityScope): PagingSource<Int, ClipPageData>
 
     /** 观察折叠记录数量，供入口展示；实现层应使用轻量 COUNT 查询。 */
     fun observeFoldedClipCount(): Flow<Int>
@@ -109,11 +111,18 @@ interface ClipRepository {
         iconHash: String,
     )
 
-    /** 清空来源 App 已失效的图标缓存，保留展示名称和主键。 */
-    suspend fun clearSourceAppIconCache(packageName: String)
+    /** 仅清空与旧快照匹配的坏缓存；并发新版本和已删除来源不受影响。 */
+    suspend fun clearSourceAppIconCache(
+        /** 来源稳定身份。 */
+        packageName: String,
+        /** 预判开始时读取的可空路径。 */
+        expectedPath: String?,
+        /** 预判开始时读取的可空图标 hash。 */
+        expectedHash: String?,
+    )
 
     /** 加载所有来源 App，供搜索筛选器展示。 */
-    fun loadAllSourceApps(): Flow<List<SourceAppData>>
+    fun loadAllSourceApps(): Flow<List<SourceAppCandidate>>
 
     /** 根据链接查找历史数据 */
     suspend fun loadLinkPreview(link: String): LinkPreviewData?

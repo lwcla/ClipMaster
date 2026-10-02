@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.cla.clip.base.general.dao.data.ClipDetail
+import com.cla.clip.base.general.dao.data.ClipPageData
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -217,7 +218,7 @@ class ClipDaoPagingOrderTest {
 }
 
 /** 触发 PagingSource 首次刷新并提取返回记录 id，便于排序断言。 */
-private suspend fun PagingSource<Int, ClipDetail>.refreshIds(): List<Long> {
+private suspend fun PagingSource<Int, ClipPageData>.refreshIds(): List<Long> {
     return when (
         val result = load(
             PagingSource.LoadParams.Refresh(

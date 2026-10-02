@@ -61,7 +61,7 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import com.cla.clip.base.general.config.ClipItemQuickAction
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.entity.ClipVisibilityScope
-import com.cla.clip.base.general.utils.displayName
+import com.cla.clip.base.general.utils.toSourceAppDisplayName
 import com.cla.clip.master.ui.dialog.ClipBatchDeleteChoiceDialog
 import com.cla.clip.master.ui.dialog.ClipDeleteChoiceDialog
 import com.cla.clip.master.ui.navigation.DetailRoute
@@ -74,6 +74,8 @@ import com.cla.clip.master.ad.rememberPageAdSession
 import com.cla.clip.master.ad.adInteractionGuard
 import com.cla.clip.master.ui.widget.clip.ClipListAdConfig
 import com.cla.clip.master.ui.widget.clip.ClipResultList
+import com.cla.clip.master.ui.widget.sourceapp.rememberSourceAppPresentationProvider
+import com.cla.clip.master.ui.widget.sourceapp.SourceAppCandidateRepairEffect
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
@@ -111,9 +113,11 @@ fun SearchPage(
     val filterState by viewModel.filterState.collectAsStateWithLifecycle()
     /** 当前可选来源列表供下拉菜单使用，生命周期收集方式保持不变。 */
     val sourceApps by viewModel.sourceApps.collectAsStateWithLifecycle()
+    // 列表先返回，后台统一检查候选图标，菜单关闭仍遵循页面前台生命周期。
+    SourceAppCandidateRepairEffect(sourceApps.map { it.packageName }.toSet())
     /** 来源包名到展示名的映射，统一复用来源 App 显示名兜底规则。 */
     val sourceAppDisplayNames = sourceApps.associate { sourceApp ->
-        sourceApp.packageName to sourceApp.displayName()
+        sourceApp.packageName to sourceApp.appName.toSourceAppDisplayName()
     }
     /** 当前已选择来源 App 的可见名称列表，用于折叠搜索头里的来源选择器文案。 */
     val selectedSourceAppNames = remember(filterState.sourceAppPackages, sourceAppDisplayNames) {
@@ -482,6 +486,8 @@ fun SearchPage(
             val pagedClips = viewModel.pagedClips.collectAsLazyPagingItems()
 
             ClipResultList(
+                // 来源元数据独立于分页，活跃需求由薄适配按生命周期登记。
+                sourceAppPresentation = rememberSourceAppPresentationProvider(),
                 adConfig = ClipListAdConfig(
                     session = adSession,
                     placement = if (isVisibleSearch) AdPlacement.SearchFeedNative else AdPlacement.FoldedSearchNative,
@@ -529,6 +535,7 @@ fun SearchPage(
         }
 
         SearchCollapsibleHeader(
+            sourceAppPresentation = rememberSourceAppPresentationProvider(),
             query = filterState.query,
             filterState = filterState,
             selectedSourceAppNames = selectedSourceAppNames,

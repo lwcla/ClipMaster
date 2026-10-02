@@ -36,6 +36,7 @@ import com.cla.clip.master.ad.rememberPageAdSession
 import com.cla.clip.master.ad.adInteractionGuard
 import com.cla.clip.master.ui.widget.clip.ClipListAdConfig
 import com.cla.clip.master.ui.widget.clip.ClipResultList
+import com.cla.clip.master.ui.widget.sourceapp.rememberSourceAppPresentationProvider
 
 /**
  * 折叠数据列表页。
@@ -81,6 +82,8 @@ fun FoldedClipListPage(
                 .padding(paddingValues)
         ) {
             ClipResultList(
+                // 来源元数据独立于分页，活跃需求由薄适配按生命周期登记。
+                sourceAppPresentation = rememberSourceAppPresentationProvider(),
                 adConfig = ClipListAdConfig(
                     session = adSession,
                     placement = AdPlacement.FoldedFeedNative,

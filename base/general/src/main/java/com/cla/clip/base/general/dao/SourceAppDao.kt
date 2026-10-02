@@ -7,6 +7,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Upsert
+import com.cla.clip.base.general.dao.data.SourceAppCandidate
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -54,6 +55,30 @@ data class SourceAppData(
  */
 interface SourceAppDao {
 
+    /** 只观察候选身份和名称；调用方等值去重以隔离图标字段的表级通知。 */
+    @Query("SELECT package_name, app_name FROM source_apps ORDER BY app_name COLLATE NOCASE ASC, package_name ASC")
+    fun observeCandidates(): Flow<List<SourceAppCandidate>>
+
+    /** 聚合读取当前活跃来源，避免每个卡片开启独立数据库查询。 */
+    @Query("SELECT * FROM source_apps WHERE package_name IN (:packages)")
+    fun observePresentations(packages: List<String>): Flow<List<SourceAppData>>
+
+    /** 所有正式文件引用仅供延迟清理，不能通过已加载的 UI 列表推断文件无人使用。 */
+    @Query("SELECT icon_path FROM source_apps WHERE icon_path IS NOT NULL")
+    suspend fun loadIconReferences(): List<String>
+
+    /** 文件发布后的条件更新：保护并发新版本，不修改名称或复活被删除来源。 */
+    @Query("""UPDATE source_apps SET icon_path = :newPath, icon_hash = :newHash, primary_color = :newColor
+        WHERE package_name = :packageName AND icon_path IS :expectedPath AND icon_hash IS :expectedHash""")
+    suspend fun updateIconIfUnchanged(
+        /** 来源稳定身份，条件只作用于现有行。 */
+        packageName: String,
+        /** 读取开始时的路径和 hash；IS 对 null 同样精确匹配。 */
+        expectedPath: String?, expectedHash: String?,
+        /** 已完整发布的文件和衍生元数据。 */
+        newPath: String, newHash: String, newColor: Int?,
+    ): Int
+
     /**
      * 更新或插入一个SourceApp条目。这是所有数据写入的基础，使用更高效的 @Upsert。
      * @param sourceApp 要更新或插入的SourceApp对象。
@@ -97,7 +122,7 @@ interface SourceAppDao {
     /**
      * 清空指定来源 App 的图标缓存字段。
      *
-     * 仅在发现本地图标文件失效时调用，保留名称和包名，避免来源筛选列表抖动消失。
+     * 仅清理预判时的旧版本，保护读取与清理之间并发提交的新图标，保留名称和包名。
      */
     @Query(
         """
@@ -105,10 +130,17 @@ interface SourceAppDao {
         SET icon_path = NULL,
             primary_color = NULL,
             icon_hash = NULL
-        WHERE package_name = :packageName
+        WHERE package_name = :packageName AND icon_path IS :expectedPath AND icon_hash IS :expectedHash
         """
     )
-    suspend fun clearIconCache(packageName: String): Int
+    suspend fun clearIconCache(
+        /** 需要清理的稳定来源身份。 */
+        packageName: String,
+        /** 预判时的路径快照，null 同样精确匹配。 */
+        expectedPath: String?,
+        /** 预判时的图标版本，避免清空刚提交的新版本。 */
+        expectedHash: String?,
+    ): Int
 
     /**
      * 加载所有已经记录过的来源 App，供搜索页构建来源筛选器。

@@ -13,8 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ReportGmailerrorred
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -25,8 +23,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
@@ -45,19 +41,26 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.cla.clip.base.general.entity.ClipShowEntity
+import com.cla.clip.master.R
+import com.cla.clip.master.ui.widget.sourceapp.SourceAppPresentationState
 import com.cla.clip.base.general.utils.toSourceAppDisplayName
 import com.cla.clip.master.ui.widget.rememberDeletedFormattedTime
 import com.cla.clip.master.ui.widget.rememberFoldedFormattedTime
 import com.cla.clip.master.ui.widget.rememberFormattedTime
 import kotlin.math.max
 
-/** 剪贴数据来源 App 和时间，普通范围展示写入时间，折叠范围展示折叠时间，回收站展示删除时间。 */
+/** 共享来源行统一默认图标；普通范围展示写入时间，折叠/回收站展示各自业务时间。 */
 @Composable
 internal fun SourceAppNameWithTime(
     clip: ClipShowEntity,
     highlightQuery: String?,
     timeMode: ClipCardTimeMode,
+    /** 来自包名共享订阅的展示快照，不从分页实体读取。 */
+    sourceState: SourceAppPresentationState,
+    /** 缓存解码失败反馈给页面适配，组件不执行系统查询。 */
+    onIconDecodeFailure: () -> Unit,
 ) {
+    /** 密度与时间模式沿用内容记录，不受图标版本影响。 */
     val currentDensity = LocalDensity.current
     val timeText = when (timeMode) {
         ClipCardTimeMode.ClipTime -> clip.rememberFormattedTime()
@@ -70,25 +73,26 @@ internal fun SourceAppNameWithTime(
     }
     // 来源 App 与时间区域空间很窄，锁定 fontScale 可以避免系统大字体下挤压到不可读。
     CompositionLocalProvider(LocalDensity provides Density(density = currentDensity.density, fontScale = 1f)) {
-        val sourceAppName = clip.appName.toSourceAppDisplayName()
+        /** 名称有效性不依赖图标是否存在。 */
+        val source = (sourceState as? SourceAppPresentationState.Ready)?.source
+        val sourceAppName = source?.appName.toSourceAppDisplayName()
         // 图标请求模型把 iconHash 带入缓存 key，避免异步补图覆盖同一路径后仍显示旧缓存。
-        val sourceAppIconModel = rememberSourceAppIconModel(clip.appIconPath, clip.appIconHash)
+        val sourceAppIconModel = rememberSourceAppIconModel(source?.iconPath, source?.iconHash)
+        /** 与来源菜单共用原色 Android 图标，覆盖加载中、无图标和解码失败。 */
+        val defaultIcon = painterResource(R.drawable.host_ic_app_icon_default)
         Layout(
             content = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     AsyncImage(
                         model = sourceAppIconModel,
                         contentDescription = null,
-                        placeholder = rememberVectorPainter(Icons.Filled.ReportGmailerrorred),
-                        error = rememberVectorPainter(Icons.Filled.ReportGmailerrorred),
+                        placeholder = defaultIcon,
+                        fallback = defaultIcon,
+                        error = defaultIcon,
+                        onError = { onIconDecodeFailure() },
                         modifier = Modifier.size(15.dp),
-                        contentScale = ContentScale.Crop,
-                        colorFilter = if (clip.appIconPath.isNullOrBlank()) {
-                            // 缺少真实图标时使用错误色提示来源未知，真实图标则保持原始颜色。
-                            ColorFilter.tint(MaterialTheme.colorScheme.error)
-                        } else {
-                            null
-                        }
+                        // 保留默认/真实应用图标原色与比例，避免剪裁 Android 图标边缘。
+                        contentScale = ContentScale.Fit,
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     HighlightableText(

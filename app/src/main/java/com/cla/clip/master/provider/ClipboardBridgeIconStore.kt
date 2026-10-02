@@ -6,7 +6,7 @@ import android.graphics.BitmapFactory
 import android.os.ParcelFileDescriptor
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logW
-import com.cla.clip.base.general.utils.saveIcon
+import com.cla.clip.master.sourceapp.VersionedIconFilePublisher
 import com.cla.clip.base.general.utils.toStableHash
 import com.cla.clip.shizuku.ClipboardBridgeContract
 import java.io.File
@@ -123,7 +123,19 @@ class ClipboardBridgeIconStore @Inject constructor() {
         }
 
         /** 正式保存后的来源图标路径；保存失败时按占位图继续，避免写入错误 hash。 */
-        val iconPath = context.saveIcon(request.packageName, bitmap)
+        val iconPath = try {
+            // Provider 与后台补图共用版本发布，避免覆写已被 UI 缓存的旧路径。
+            VersionedIconFilePublisher(File(context.filesDir, "app_icons"))
+                .publish(request.packageName.orEmpty()) { output ->
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
+                }?.absolutePath
+        } catch (error: IOException) {
+            logW(TAG) { "Provider 图标发布失败 reasonCode=publication_failed type=${error.javaClass.simpleName}" }
+            null
+        } catch (error: IllegalArgumentException) {
+            logW(TAG) { "Provider 图标包名无效 reasonCode=invalid_package" }
+            null
+        }
         if (iconPath.isNullOrBlank()) {
             logW(TAG) { "Provider 图标正式保存失败 eventId=${request.eventId} packageName=${request.packageName}" }
             file.delete()

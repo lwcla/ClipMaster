@@ -6,6 +6,8 @@
 <data-extraction-rules xmlns:tools="http://schemas.android.com/tools"
     tools:ignore="ResourceName">
     <cloud-backup>
+        <!-- 来源图标是可重建本机缓存，不上传系统云备份。 -->
+        <exclude domain="file" path="app_icons/" />
         <!-- 仅排除已由 GMA 1.4.0 / UMP 4.0.0 字节码核实的广告专用偏好；不排除应用默认偏好或其他业务文件。 -->
         <exclude domain="sharedpref" path="__GOOGLE_FUNDING_CHOICE_SDK_INTERNAL__.xml" />
         <exclude domain="sharedpref" path="GoogleMobileAds.xml" />
@@ -50,6 +52,8 @@
         -->
     </cloud-backup>
     <device-transfer>
+        <!-- 新设备按本机安装应用重建图标，不继承旧设备图标文件。 -->
+        <exclude domain="file" path="app_icons/" />
         <!-- 宿主 DataStore 包含本机身份、授权和设备绑定密文，设备迁移后必须重新配置。 -->
         <exclude domain="file" path="datastore/app_settings.preferences_pb" />
         <!-- 仅排除已由 GMA 1.4.0 / UMP 4.0.0 字节码核实的广告专用偏好；不排除应用默认偏好或其他业务文件。 -->

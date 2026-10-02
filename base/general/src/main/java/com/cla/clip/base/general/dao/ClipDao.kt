@@ -11,6 +11,7 @@ import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Upsert
 import com.cla.clip.base.general.dao.data.ClipDetail
+import com.cla.clip.base.general.dao.data.ClipPageData
 import com.cla.clip.base.general.dao.data.LastClipData
 import kotlinx.coroutines.flow.Flow
 
@@ -320,7 +321,7 @@ interface ClipDao {
         sourceAppPackages: List<String>,
         isFolded: Boolean,
         timeFilterUsesFoldedAt: Boolean,
-    ): PagingSource<Int, ClipDetail>
+    ): PagingSource<Int, ClipPageData>
 
     /**
      * 在没有关键词时按筛选条件分页加载剪贴记录。
@@ -365,7 +366,7 @@ interface ClipDao {
         sourceAppPackages: List<String>,
         isFolded: Boolean,
         timeFilterUsesFoldedAt: Boolean,
-    ): PagingSource<Int, ClipDetail>
+    ): PagingSource<Int, ClipPageData>
 
     /**
      * FTS 查询无法构造时的兜底搜索。
@@ -413,7 +414,7 @@ interface ClipDao {
         sourceAppPackages: List<String>,
         isFolded: Boolean,
         timeFilterUsesFoldedAt: Boolean,
-    ): PagingSource<Int, ClipDetail>
+    ): PagingSource<Int, ClipPageData>
 
     /**
      * 永久删除一个具体的剪贴板条目。
@@ -444,7 +445,7 @@ interface ClipDao {
         ORDER BY deleted_at DESC, timestamp DESC, id DESC
     """
     )
-    fun loadRecycleBinClips(): PagingSource<Int, ClipDetail>
+    fun loadRecycleBinClips(): PagingSource<Int, ClipPageData>
 
     /** 轻量统计回收站记录数量，供“我的”入口展示，不通过分页列表统计。 */
     @Query("SELECT COUNT(*) FROM clips WHERE deleted_at > 0")
@@ -497,7 +498,7 @@ interface ClipDao {
           id DESC
     """
     )
-    fun loadClipsByFoldState(isFolded: Boolean): PagingSource<Int, ClipDetail>
+    fun loadClipsByFoldState(isFolded: Boolean): PagingSource<Int, ClipPageData>
 
     /** 轻量统计折叠记录数量，供“我的”入口展示，不通过加载分页列表统计。 */
     @Query("SELECT COUNT(*) FROM clips WHERE is_folded = 1 AND deleted_at = 0")

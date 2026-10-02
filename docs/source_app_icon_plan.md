@@ -1,11 +1,12 @@
-状态：已确认
+状态：已完成
 
 # 来源应用图标与分页解耦方案
 
 ## 当前状态、目标与范围
 
-- 用户于 2026-10-02 确认调整架构：拆分来源图标订阅和分页数据，并在每个包名图标文件完整保存后立即更新对应数据库行，不等待整批完成。总体方案已确认，产品代码尚未实施；本文后面的基线验证不能证明新架构已实现。
-- 当前代码：`ClipDetail` 用 `@Relation` 关联完整 `SourceAppData`，分页通过 `ClipShowEntity` 携带名称、图标路径/hash 与主色。已生成的 `ClipDao_Impl` 将 `source_apps` 注册为分页观察表，逐项图标写入会使相关 PagingSource 失效。搜索菜单目前可见行执行只读“缓存 → 系统 → 默认”兜底，没有回写持久缓存。
+- 2026-10-02 开始实施，任务分支 `codex/source-app-presentation`。执行裁定：沿用当前干净工作区和已配置 Android 环境，仅切换独立任务分支，不创建工作树、不自动提交；先完成数据隔离回归，再迁移订阅/缓存/共享 UI。文件发布与来源条件写入是跨任务共享契约，必须先定义再接线，测试结果逐步记录在本文。
+- 用户于 2026-10-02 确认调整架构：拆分来源图标订阅和分页数据，每个包名文件完整发布后立即条件更新对应数据库行。现已接入共享结果页和来源菜单，下方只读基线仅记录历史实现。
+- 当前代码：五条结果分页查询返回不含来源 Relation 的 `ClipPageData`，`ClipShowEntity` 只保留来源身份；生成 DAO 的分页观察表均排除 `source_apps`。搜索候选投影仅包含包名/名称并等值去重，来源展示单独共享订阅；缺失或坏图标在后台修复、版本化保存，逐项条件更新 Room。
 - 目标：分页只管理剪贴内容、链接预览、记录状态与排序，以及来源包名；来源名称、图标和主色通过包名独立订阅。图标更新不改变 Pager、不使结果 PagingSource 因来源表写入而失效，不重置筛选、滚动、选择或手势状态。
 - 接入普通列表、普通/折叠搜索、折叠列表、回收站共享卡片和搜索来源菜单。详情/复制等非分页调用保留各自查询语义，迁移公共展示模型时一并评估兼容；不为没有图标展示的页面增加图标区域。当前安装应用过滤页保持现有系统列表读取方式。
 - 不新增持久表、不把图片存 DataStore、不增加自定义 Coil ImageLoader/Fetcher、不修改搜索规则或备份协议。来源元数据仍存现有 `source_apps`，本轮是查询/展示/任务边界拆分。
@@ -73,9 +74,9 @@
 
 - 复用现有 Room/Repository/Paging、剪贴内容和链接预览映射、生命周期收集、`ClipResultList`/`ClipCard`、显示名工具、图标文件校验、路径/hash 缓存键、稳定 Bitmap hash、主色提取、默认资源与共享 Coil 实例。
 - 当前完整 `ClipDetail` 不满足分页隔离，新增 `ClipPageData` 是必要职责拆分；当前来源整列表 Flow 与单项读改写不能满足活跃包名共享订阅/条件提交，需要具名来源能力。备份专用 `upsertAllForBackup` 不复用为运行时图标修复。
-- `source_apps` 表及备份白名单保持原字段，来源名称、路径、主色/hash 照旧导出，路径仅为历史提示。PNG、订阅会话、StateFlow、编号、失败冷却和临时文件不新增到本地/WebDAV 备份；恢复后当前设备重新取图，应用不存在允许默认。不新增 dirty/备份版本/额外备份触发。系统 Auto Backup/设备迁移规则实施时复核最终目录精确排除，不声明现有正式图标目录已被排除。备份契约见 [备份主方案](webdav_backup_plan.md)。
+- `source_apps` 表及备份白名单保持原字段，来源名称、路径、主色/hash 照旧导出，路径仅为历史提示。PNG、订阅会话、StateFlow、编号、失败冷却和临时文件不新增到本地/WebDAV 备份；恢复后当前设备重新取图，应用不存在允许默认。不新增 dirty/备份版本/额外备份触发。`backup_rules.xml` 和 `data_extraction_rules.xml` 已精确排除 `file/app_icons/`，覆盖系统云备份和设备迁移；传输目录排除继续保留。备份契约见 [备份主方案](webdav_backup_plan.md)。
 
-## 涉及文件与实施步骤（尚未开始）
+## 涉及文件与实施步骤
 
 按 `writing-plans` 编写，遵循仓库约定更新本主方案，不另建重复方案；未来实施可在当前任务逐项执行，不隐含创建子代理或提交授权。
 
@@ -83,31 +84,46 @@
 | --- | --- |
 | base/general 数据层 | `dao/data/ClipPageData.kt`、`ClipDao.kt`、`SourceAppDao.kt`、来源候选 POJO；分页排除来源依赖，提供活跃集合读取/条件提交 |
 | base/general 仓库与映射 | `ClipRepository.kt`/Impl、`repository/sourceapp/SourceAppPresentationRepository.kt`、`ClipShowEntity.kt` 与具名分页 mapper；返回内容与来源分离模型 |
-| app 来源共享领域 | `sourceapp/SourceAppPresentationStore.kt`、`SourceAppIconCacheCoordinator.kt`、`SourceAppIconCachePublisher.kt`；区分订阅、调度和平台写盘，复用/迁移现有 Reader |
+| app 来源共享领域 | `sourceapp/SourceAppPresentationStore.kt`、`SourceAppDemandRegistry.kt`、`SourceAppIconRepair.kt`、`SourceAppIconCachePublisher.kt`；需求/状态编排、纯去重与修复顺序、平台写盘各自清晰，复用现有 Reader |
 | app 共享 UI | `ui/widget/sourceapp/SourceAppPresentationState.kt` 与薄生命周期适配、`ClipResultList.kt`、`ClipCardContent.kt`、`SourceAppIconModel.kt`；稳定来源接口和图标模型 |
 | app 页面/同步入口 | 列表/折叠/回收站 ViewModel、SearchViewModel/Page/来源菜单、DetailViewModel 的公共模型引用、Provider 图标提交；统一调用方向 |
 
-- [ ] 任务一：先补分页隔离的 Room 回归测试，再新增分页 POJO/mapper、迁移全部共享分页返回类型。证明写 source_apps 不使 PagingSource 失效，写 clips 和相关 link_previews 仍失效；编译与 mapper 测试通过后进入下一步。
-- [ ] 任务二：先补活跃包名聚合、同包名共享、等值分发、删除/失败状态和生命周期测试；实现具名来源读取/Store/候选投影，避免每行独立 DAO Flow。证明更新 A 不发射未变化 B 的展示状态，候选名称投影不随图标变化发出新列表。
-- [ ] 任务三：先补逐项提交、慢项隔离、文件发布失败、条件冲突、取消保留已提交项和孤儿清理测试；实现 Publisher/Coordinator 和条件 UPDATE，统一 Provider 边界。证明第一个成功项无需等待后续项，元数据发射不重启其余任务。
-- [ ] 任务四：迁移共享卡片/菜单接入，去掉分页来源快照，更新 Preview、构造与调用方，保持未知来源、名称高亮、主色、选择、侧滑和滚动。详情只迁移已用公共契约；检查所有引用，不新增重复列表组件。
-- [ ] 任务五：运行对应单测、Room 集成与编译，检查生成 DAO 的分页观察表不含 source_apps，设备测量连续补齐时的首图延迟、查询次数、滚动/选择与页面退出，再同步文档与状态。未通过分页隔离测试前不得宣称完成解耦。
+- [x] 任务一：先补分页隔离的 Room 回归测试，再新增分页 POJO/mapper、迁移全部共享分页返回类型。已证明写 source_apps 不使 PagingSource 失效，写 clips 和 link_previews 仍失效；mapper 与编译通过。
+- [x] 任务二：实现聚合 Store/候选投影，同包名共享、等值分发、删除/失败状态和需求释放由纯 Store/注册表与真实 Room 测试覆盖。UI 生命周期接线经编译，尚未执行真实 Compose 前后台仪器测试。
+- [x] 任务三：完成逐项修复、版本文件发布、条件 UPDATE、Provider 发布与条件清理、总 IO 配额；慢项隔离、缓存命中、发布失败、冲突/删除、取消和孤儿清理都有回归证据。
+- [x] 任务四：共享卡片/菜单接入独立展示，删除分页来源快照；构造/mapper/Preview 与全部调用方编译兼容，复用已有未知名称、高亮、主色、选择、侧滑和滚动接线，不新增重复列表组件。
+- [x] 任务五：自动化单测、真实 Room、最新源码编译及生成 DAO 观察表检查完成，文档同步。设备 UI/性能测量转入下方后续待办，未将功能通过视为性能保证。
+
+## 最终实现与执行记录（2026-10-02）
+
+- 任务一至四已接入：普通/折叠/回收站及搜索分页改用内容 POJO；非分页详情关系保留。搜索获得候选立即展示，并通过页面前台会话提出修复需求；卡片仅收集对应包名 StateFlow，单包名元数据写入不重建 Pager。
+- `SourceAppPresentationStore` 聚合前台需求，16ms 调度窗口合并快速组合，按 100 包名分片查询；同包名在途任务共享，Semaphore 最多同时执行两项读图/压缩。后台暂停释放会话，保留尚在组合中的 Flow 身份；最后一个需求离开取消独占读取和清理。StateFlow 等值过滤未变化来源，查询异常保留已知状态，删除转 Unavailable；相同快照失败在当前需求会话冷却，再进入允许重试。
+- 裁定：调度仍留在具名 Store，纯需求注册/单项修复顺序和文件发布已拆出协作者，不额外建立只有转发职责的 Coordinator；平台构造函数只装配依赖，Flow、修复、时钟和作用域均可替换测试。共享卡片通过展示接口接入，不直接使用 Store 或 Repository。旧只读加载协作者的验证记录不作为新链路证据。
+- 唯一生成编号采用随机 UUID 转十进制，不依赖时钟或 DataStore。临时文件完整编码、非空、sync/关闭后，同目录 rename 发布；Provider 和后台修复共用发布器。条件 UPDATE 只改图标路径/hash/主色，匹配读取开始的 nullable 路径/hash，冲突和删除返回失败，保留已有行/新版本。
+- 孤儿/旧版本仅清理本发布器命名文件，核对全表引用并保留 24 小时宽限；每小时前台最多扫描一次，legacy 稳定文件保留。取消可以留下未提交正式文件，后续按宽限清理；文件与数据库不形成跨资源原子事务。API 24 使用同目录 rename，不能承诺断电后的跨资源持久原子性。
+- 测试先行证据：真实 Room 红测两项中来源隔离断言失败、内容/链接通知正向测试通过；缓存/需求红测 11 项中 5 项预期断言失败，再完成顺序和注册表实现。mapper 等价映射、文件发布和平台/Compose 接线用回归验证而非独立红测；风险是 Android 图像外观/实际包可见性仍需设备 UI 验收。
+- 最终全套验证：使用临时 `build/source-app-isolation.init.gradle` 隔离共享模块输出，执行 `:base:general:testDebugUnitTest :app:testDebugUnitTest :app:compileDebugKotlin :base:general:connectedDebugAndroidTest`（另加 `--no-daemon --no-watch-fs --console=plain`），BUILD SUCCESSFUL（1m54s）。app 263 项、base/general 71 项 JVM 单测，共 334 项，失败/错误/跳过为 0；Android 12 真机 15 项 Room 仪器测试通过。日志 `build/source-app-final-validation.log`，此前 262/71/14 为审查修复前阶段记录。另一 Gradle 进程锁定原共享模块输出，所以临时隔离，未停止其他构建、未修改项目构建配置。
+- Room 测试覆盖所有五条分页入口（折叠/普通共享查询含两个参数分支）、内容/链接正常失效、nullable 条件写入、并发新版本保护、名称保留、删除不复活及候选图标通知隔离。Store 单测覆盖共享聚合、A 更新不发射 B、删除、在途共享、最后释放取消、失败冷却与查询异常保留；文件测试覆盖版本路径、失败半文件、非法身份、引用/宽限清理。
+- 无新增权限、持久表、Room migration、外部序列化或 keep 契约；不扩大备份协议。本轮未做 release/R8，原因是新模型只用于编译期与 Room 查询投影；连续滚动/勾选/侧滑、首图延迟、SQL 次数和不同厂商包可见性尚未做设备 UI/性能测量，不能把功能测试当性能保证。
+- 最终独立代码审查发现三项 Important 并在同一修复轮次处理：Provider 坏缓存清空改为匹配旧路径/hash 的条件 UPDATE；请求模型移除主线程文件属性检查，仅构造文件身份；清理和修复共用两项总 IO 许可。Provider 交错回归在真实 Room 先复现新路径被清空（expected new/actual null），总 IO 上限回归先复现峰值超额，再修复；日志分别为 `build/source-provider-clear-red.log`、`build/source-io-limit-red.log`。复核原三项均解决，无新增已确认问题；全套绿测已确认。
+- 验收裁定：本轮交付代码实现与自动化功能证据，未测的 UI 观感/性能指标集中保留后续待办，不能宣称已测首图延迟或厂商包可见性。薄 Compose 接线以编译、纯 Preview、Store/Room 行为回归验证，不为外观新增镜像单元测试；核心分页/失败顺序/并发缺陷使用先红后绿测试。
+- 最新源码收尾：补充中文注释/深色长名称 Preview 后再次执行 `:base:general:compileDebugKotlin :app:compileDebugKotlin`，BUILD SUCCESSFUL（34s），日志 `build/source-app-final-compile.log`；`git diff --check` 和现有 WebDAV HTML 流程图 `--check` 通过。没有修改 schema、Manifest、Gradle 配置、外部协议或混淆规则；保留任务分支上的未提交改动，不自动集成/提交。
 
 ## 日志与诊断计划
 
-- INFO：补齐任务开始/结束，低敏 taskId、候选/命中/成功/失败/冲突跳过数、耗时；订阅会话激活/释放只在实际需求变化时 DEBUG 记录包名数量/活跃会话数，不记录逐行绘制。
+- DEBUG：实际活跃需求并集变化记录数量；系统图标不可用保留现有低敏 reasonCode/异常类型。缓存命中、逐项成功和重组不新增 INFO 日志，以免滚动或大量来源产生噪声；当前任务没有整批完成门槛，因此不伪造批次结束摘要。
 - WARN：候选/元数据读取、编码、发布、条件提交、清理失败，稳定 reasonCode、阶段、异常类型、数量；保留失败语义，不误触发系统整表读取。系统图标不可用 DEBUG 汇总，失败冷却不反复输出；取消不记失败。
 - 诊断分页隔离使用测试计数与调试聚合：来源写入次数、元数据查询次数、PagingSource 创建/失效次数区分记录，图标-only 写入时分页失效数必须为零。实际业务内容变化另算，不把真实内容写入的正常失效归为缺陷。
 - 日志正文简体中文，禁止包名名单、名称、真实路径、hash、图标字节、剪贴内容、搜索词与凭据；不增加高频系统读取成功、缓存命中或重组日志。
 
 ## 测试与验证门禁
 
-- 按 `$repo-unit-test-gate`，数据契约/DAO 失效、状态分发、并发/取消和文件补偿为高风险逻辑，实施前写可失败测试，不仅测试函数调用次数。当前只修改文档，未新增或执行测试。
+- 按 `$repo-unit-test-gate`，数据契约/DAO 失效、状态分发、并发/取消和文件补偿需要测试；已新增纯逻辑、Store、文件和真实 Room 回归，红测/绿测及边界见上方执行记录。
 - 纯逻辑测试：新 mapper 不携带来源快照，时间/折叠/删除/链接保留；未知/空包名默认规则；活跃包名去重与引用计数；等值状态分发；查询失败和删除区别；逐项成功无需等待慢项；在途合并、冷却、取消、条件冲突与清理保护。
 - Room 集成（真实 Room 数据库，不能用 fake 代替）：对普通/FTS/LIKE/无词筛选/折叠/回收站等每类 PagingSource 先完成首次 load/观察注册，再写来源名称/图标/主色，等待通知并断言不失效；写 clips 或该查询确实依赖的链接预览则失效。同时验证候选投影、活跃集合读取和 nullable 路径/hash 条件更新。静态检查生成观察表只是辅助手段。
 - UI/设备：多个同包名可见行同时更新，其他来源状态无额外发射；逐步显示图标但 refresh load state/结果位置/选择/侧滑不重置；亮暗、大字体、未知来源、坏缓存、应用卸载、恢复后缺图、菜单关闭/页面后台、跨页面需求及持续快速滚动。纯图标/主色更新不改变 item 高度；名称更新引发正常内容测量需保持滚动锚点。
 - 实施验证命令：`.\gradlew.bat :base:general:testDebugUnitTest :app:testDebugUnitTest :base:general:compileDebugKotlin :app:compileDebugKotlin --console=plain`；配置 Room 仪器测试后运行 `.\gradlew.bat :base:general:connectedDebugAndroidTest --console=plain`（需设备/模拟器）；以及 `git diff --check`。若新增外部协议/反射/keep，再追加 release/R8，保存 mapping。
-- 本轮仅运行文档差异、状态与引用检查。既有 248 项测试记录仍只归属于下方已实现的只读图标兜底，不覆盖本次已确认但待实施的架构。
+- 既有 248 项测试记录仅归属于下方历史只读图标兜底；本轮以执行记录中的新单测/设备 Room 结果为准。
 
 ## 已知取舍与后续待办
 
@@ -153,13 +169,17 @@
 - `.\gradlew.bat :app:testDebugUnitTest --tests 'com.cla.clip.master.ui.widget.sourceapp.SourceAppIconResolverTest' --console=plain` 验证红测。
 - `.\gradlew.bat :app:compileDebugKotlin :app:testDebugUnitTest --console=plain` 与 `git diff --check` 验证最终实现。
 
-## 已实现基线：已知取舍与开放问题
+## 历史基线：已知取舍与开放问题（已被本轮替换）
 
-- 当前代码尚不补存数据库或持久化系统图标，重复打开菜单可能重读系统；拟按上方已确认方案收敛，不能把文档修订视为已完成持久化或分页解耦。
-- Provider 现有同步行为暂未修改；实施新方案时需统一文件发布和并发约定，不能让两条链路分别维护不兼容的清理规则。
+- 历史基线不补存数据库或持久化系统图标；本轮已改为逐项版本文件与条件提交，当前行为以上方执行记录为准。
+- Provider 正式文件发布现已与修复链路统一；其正常新内容提交仍影响内容分页。
 - 新类型仅编译期调用，没有序列化、反射、导航或稳定外部协议，无需 keep/R8；平台图标外观、包可见性、Coil 解码与 UI 生命周期仍需设备验收。
 
 ## 变更记录
+
+- 2026-10-02：完成独立审查修复与最终验证：334 项 JVM 单测、15 项真机 Room 测试、最新源码 Kotlin 编译及差异/派生文档检查通过；方案标记已完成，设备 UI/性能与安装更新失效保留为后续验证/增强。
+
+- 2026-10-02：执行已确认的来源订阅与分页解耦方案，新增内容 POJO、独立共享 Store/候选投影、逐项版本文件与条件写库，接入四类结果页/来源菜单，统一 Provider 发布和系统备份精确排除；记录回归证据、验证环境与未测 UI/性能边界。
 
 - 2026-10-02：用户确认拆分来源展示订阅与结果分页，主方案改为分页去除 source_apps 依赖、名称/图标/主色按包名共享订阅、文件保存后逐项条件写库。替换此前批量及未解耦逐项备选，补全 DAO/模型/生命周期/并发边界、实施步骤和 Room 分页隔离验收；总体状态已确认，产品尚未实施。
 

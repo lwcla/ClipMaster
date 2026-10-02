@@ -1,16 +1,12 @@
 package com.cla.clip.base.general.entity
 
-import androidx.compose.ui.graphics.Color
-import androidx.core.graphics.blue
-import androidx.core.graphics.green
-import androidx.core.graphics.red
 import com.cla.clip.base.general.dao.data.ClipDetail
 import com.cla.clip.base.general.utils.toRelativeTimeSpanString
 
 /**
  * 剪贴记录在 UI 层使用的展示实体。
  *
- * 这里把数据库记录、来源应用和链接预览合并成页面所需的扁平结构；时间字段同时保留剪贴时间、折叠时间和删除时间，
+ * 这里只合并数据库记录和链接预览；来源名称、图标和主色由包名独立订阅；时间字段同时保留剪贴时间、折叠时间和删除时间，
  * 由不同页面选择对应展示模式，避免共享列表组件理解 Room 关系结构。
  */
 data class ClipShowEntity(
@@ -26,16 +22,8 @@ data class ClipShowEntity(
     val deletedAt: Long,
     /** 剪贴时间的预格式化文案，用于首次组合时减少 UI 层重复计算。 */
     val formattedTime: String,
-    /** 来源 App 展示名，可能为空；为空时 UI 会回退到未知来源文案。 */
-    val appName: String?,
     /** 来源 App 包名，可能为空；详情页按它执行后续剪贴过滤，不使用展示名做身份。 */
     val sourceAppPackage: String?,
-    /** 来源 App 图标缓存路径，可能为空；为空时 UI 使用兜底图标。 */
-    val appIconPath: String?,
-    /** 来源 App 图标内容 hash，作为同一路径图标覆盖后的 UI 刷新 key。 */
-    val appIconHash: String?,
-    /** 来源 App 主色，可能为空；为空时 UI 使用主题轮廓色。 */
-    val appColor: Color?,
     /** 是否置顶；普通范围和折叠范围都可维护该状态，具体排序优先级由各范围查询决定。 */
     val isPinned: Boolean,
     /** 是否折叠；普通范围和折叠范围用它决定当前记录所在管理空间。 */
@@ -48,7 +36,7 @@ data class ClipShowEntity(
     val linkTitle: String?,
 )
 
-/** 将数据库关系实体转换为 UI 展示实体，集中处理来源 App、链接预览和时间字段的空值边界。 */
+/** 将数据库关系实体转换为 UI 展示实体，集中处理内容、链接预览和时间字段，排除来源展示快照。 */
 fun ClipDetail.toUi(): ClipShowEntity {
     // 普通剪贴时间是默认展示时间；折叠/回收站页面会在共享组件中按 foldedAt/deletedAt 重新格式化。
     val timeStr = clip.timestamp.toRelativeTimeSpanString()
@@ -61,11 +49,10 @@ fun ClipDetail.toUi(): ClipShowEntity {
  * @param formattedTime 剪贴时间的预格式化文案；单元测试用它避开 Android DateUtils 的 JVM stub。
  */
 internal fun ClipDetail.toUiWithFormattedTime(formattedTime: String): ClipShowEntity {
-    // 来源应用和链接预览是可选关系，先取局部变量，避免后续字段拼装时重复解包。
-    val app = this.sourceApp
+    // 链接预览仍是内容的一部分，来源信息只保留稳定包名供独立订阅。
     val linkPreview = this.linkPreview
+    /** 内容行提供状态/时间/来源身份，排除来源展示快照。 */
     val clip = this.clip
-    val appColor = app?.primaryColor?.takeIf { it != -1 }
 
     return ClipShowEntity(
         id = clip.id,
@@ -74,12 +61,7 @@ internal fun ClipDetail.toUiWithFormattedTime(formattedTime: String): ClipShowEn
         foldedAt = clip.foldedAt,
         deletedAt = clip.deletedAt,
         formattedTime = formattedTime,
-        // 来源 App 可能已经无法关联或名称为空，UI 层会用统一未知来源文案兜底。
-        appName = app?.appName?.takeIf { it.isNotBlank() },
         sourceAppPackage = clip.sourceAppPackage?.takeIf { it.isNotBlank() },
-        appIconPath = app?.iconPath,
-        appIconHash = app?.iconHash,
-        appColor = appColor?.let { Color(it.red, it.green, it.blue) },
         isPinned = clip.pinnedTime != 0L,
         isFolded = clip.isFolded,
         link = linkPreview?.link,
@@ -88,5 +70,5 @@ internal fun ClipDetail.toUiWithFormattedTime(formattedTime: String): ClipShowEn
     )
 }
 
-/** 批量转换分页查询结果，保持列表页和搜索页拿到一致的 UI 实体结构。 */
+/** 批量转换非分页详情查询，保持后台/单条调用的内容契约。 */
 fun List<ClipDetail>.toUi() = this.map { it.toUi() }

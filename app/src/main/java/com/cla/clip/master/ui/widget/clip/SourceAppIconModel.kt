@@ -3,7 +3,6 @@ package com.cla.clip.master.ui.widget.clip
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
-import com.cla.clip.base.general.utils.isUsableCachedIconFile
 import coil3.request.ImageRequest
 import java.io.File
 
@@ -18,11 +17,10 @@ internal fun rememberSourceAppIconModel(appIconPath: String?, appIconHash: Strin
     /** 当前 Compose Context，用于构建 Coil ImageRequest。 */
     val context = LocalContext.current
     return remember(appIconPath, appIconHash, context) {
-        /** 来源 App 图标文件；路径为空、文件缺失、空文件或不可读时让 AsyncImage 使用兜底图标。 */
+        /** 仅构造文件身份；校验/解码留给 IO Reader 和 Coil，主线程不访问文件元数据。 */
         val iconFile = appIconPath
             ?.takeIf { path -> path.isNotBlank() }
             ?.let { path -> File(path) }
-            ?.takeIf { file -> file.isUsableCachedIconFile() }
             ?: return@remember null
         /** 同一路径图标被覆盖时用于刷新 Coil 记忆和磁盘缓存的稳定 key。 */
         val cacheKey = buildSourceAppIconCacheKey(iconFile.absolutePath, appIconHash)

@@ -77,8 +77,9 @@ class ClipboardBridgeIconQueryCoordinator @Inject constructor(
             requestIconHash = request.iconHash
         )
 
-        if (decision.clearStaleCache) {
-            clipRepository.get().clearSourceAppIconCache(packageName)
+        if (decision.clearStaleCache && cachedSourceApp != null) {
+            // 只清理本次预判的旧快照，不能抹掉并发补齐刚提交的新图标。
+            clipRepository.get().clearSourceAppIconCache(packageName, cachedSourceApp.iconPath, cachedSourceApp.iconHash)
         }
 
         logI(TAG) {

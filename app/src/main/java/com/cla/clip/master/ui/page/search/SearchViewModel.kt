@@ -11,7 +11,7 @@ import com.cla.clip.base.general.dao.SearchHistoryData
 import com.cla.clip.base.general.config.clip.ClipSettingsRepository
 import com.cla.clip.base.general.config.ClipItemQuickAction
 import com.cla.clip.base.general.utils.logE
-import com.cla.clip.base.general.dao.SourceAppData
+import com.cla.clip.base.general.dao.data.SourceAppCandidate
 import com.cla.clip.base.general.entity.ClipVisibilityScope
 import com.cla.clip.base.general.entity.toUi
 import com.cla.clip.base.general.repository.ClipRepository
@@ -94,7 +94,7 @@ class SearchViewModel @Inject constructor(
      *
      * 使用 stateIn 缓存最近一次列表，避免筛选弹窗每次展开都重新收集数据库 Flow。
      */
-    val sourceApps: StateFlow<List<SourceAppData>> = clipRepository.get()
+    val sourceApps: StateFlow<List<SourceAppCandidate>> = clipRepository.get()
         .loadAllSourceApps()
         .stateIn(
             CoroutineScope(viewModelScope.coroutineContext + Dispatchers.IO),
