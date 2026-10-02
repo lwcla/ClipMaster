@@ -4,7 +4,7 @@
 
 ## 默认来源图标统一（已完成，2026-10-02）
 
-- 用户要求剪贴列表默认图标也与来源菜单统一。复用现有 `host_ic_app_icon_default` 绿色/白色 Android 图标，`SourceAppNameWithTime` 的加载中、空模型和解码失败分别使用同一 placeholder/fallback/error；移除原错误图标与错误色 tint，采用 Fit 保持图标比例。
+- 用户要求剪贴列表默认图标也与来源菜单统一。`SourceAppNameWithTime` 的加载中、空模型和解码失败使用同一 `host_ic_app_icon_default` placeholder/fallback/error；移除原错误图标与错误色 tint，采用 Fit 保持比例。2026-10-02 用户进一步提供新 android.svg，资源已改为黑色轮廓，完整资源转换及验证以 [来源图标主方案](source_app_icon_plan.md) 为准。
 - 在共享来源行修改即可覆盖普通列表、搜索、折叠列表和回收站，不新增组件/资源/数据规则；真实图标读取、修复、分页和来源状态契约继续以 [来源图标主方案](source_app_icon_plan.md) 为准。
 - 日志与诊断计划：仅修改资源及展示样式，无新增副作用，不新增日志。单元测试门禁：不新增单测或走 TDD，因为未抽出业务规则；运行 app Kotlin 编译与差异检查，真实视觉仍需设备验收。无 schema/备份/外部协议变化，不需 release/R8。
 - 验证记录：`.\gradlew.bat -I build\source-app-isolation.init.gradle :app:compileDebugKotlin --no-daemon --no-watch-fs --console=plain` 为 BUILD SUCCESSFUL（1m28s），日志 `build/clip-default-icon-validation.log`；`git diff --check` 通过。继续使用此前临时输出隔离，未修改构建配置或提交代码。
@@ -220,6 +220,8 @@
 - `ClipCard` 已将圆角裁剪从整个 item 外层下沉到侧滑菜单和继续滑动提示层，确保剪贴列表、搜索结果、折叠列表、折叠搜索结果和回收站能显示公共卡片阴影。
 
 ## 变更记录
+
+- 2026-10-02：同步共享默认图标替换为用户最新 SVG 的黑色轮廓样式；剪贴卡片继续复用同一资源，转换/测试以来源图标主方案为准。
 
 - 2026-10-02：按用户要求统一剪贴卡片和来源菜单默认图标，复用 Android 默认资源并补齐加载中/空模型/失败三种展示分支；移除错误色染色，不新增组件或业务规则。
 

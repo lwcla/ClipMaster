@@ -2,6 +2,13 @@
 
 # 来源应用图标与分页解耦方案
 
+## 用户 SVG 默认图标替换（已完成，2026-10-02）
+
+- 按用户提供的 `D:/下载/android.svg` 替换共享 `host_ic_app_icon_default`，新资源为黑色轮廓 Android 图形；保留 SVG 的单条 path、1024×1024 viewBox 与默认黑色填充，转换为 32dp VectorDrawable，不请求外部 DTD、不引入图片加载器。
+- 原资源名保持，来源菜单、剪贴卡片、应用选择列表及预览直接复用；调用方现有尺寸和加载/失败状态继续由各组件控制，图标保留原色。仅替换展示资源，不影响系统图标读取、缓存、分页、权限、备份或外部协议。
+- 日志与测试门禁：纯资源替换无新副作用，不新增日志、JVM 单测或 TDD；核对路径/颜色一致性，运行 `:app:processDebugResources :app:compileDebugKotlin` 和 `git diff --check`。无 keep/反射契约变化，不做 release/R8；浅深色设备视觉仍待验收。
+- 验证记录：原 SVG 与 VectorDrawable 单条路径逐字符相同，黑色填充、1024 视口和 32dp 尺寸核对通过；`.\gradlew.bat -I build\source-app-isolation.init.gradle :app:processDebugResources :app:compileDebugKotlin --no-daemon --no-watch-fs --console=plain` 为 BUILD SUCCESSFUL（39s），日志 `build/default-app-svg-validation.log`；`git diff --check` 通过。未提交改动。
+
 ## 当前状态、目标与范围
 
 - 2026-10-02 开始实施，任务分支 `codex/source-app-presentation`。执行裁定：沿用当前干净工作区和已配置 Android 环境，仅切换独立任务分支，不创建工作树、不自动提交；先完成数据隔离回归，再迁移订阅/缓存/共享 UI。文件发布与来源条件写入是跨任务共享契约，必须先定义再接线，测试结果逐步记录在本文。
@@ -176,6 +183,8 @@
 - 新类型仅编译期调用，没有序列化、反射、导航或稳定外部协议，无需 keep/R8；平台图标外观、包可见性、Coil 解码与 UI 生命周期仍需设备验收。
 
 ## 变更记录
+
+- 2026-10-02：按用户最新 android.svg 将所有复用同一默认资源的应用占位图标改为黑色轮廓样式；复用原资源和调用方，不新增组件/类/方法，矢量旁补中文来源与颜色说明。
 
 - 2026-10-02：完成独立审查修复与最终验证：334 项 JVM 单测、15 项真机 Room 测试、最新源码 Kotlin 编译及差异/派生文档检查通过；方案标记已完成，设备 UI/性能与安装更新失效保留为后续验证/增强。
 

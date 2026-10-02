@@ -464,7 +464,7 @@ on-system-rule-tests.ps1 -OutputName 'non-system-green' -CompileCurrentRules`。
 - 当前状态：已完成。移除与当前展示无关的历史来源合并，减少数据库观察、文件校验和候选状态。
 - 数据流：`InstalledAppReader` 提供规范化、去重和稳定排序后的扫描结果；`buildBlockedSourceAppCandidates` 只为扫描应用标记 `savedBlocked` 并把已保存屏蔽项稳定移到前面。ViewModel 只组合扫描结果和已保存名单，不再注入 `ClipRepository` 或调用 `loadAllSourceApps`。
 - 展示：默认只显示非系统应用；已保存、草稿选中、历史来源和搜索命中都不能绕过系统开关，只有开启“显示系统应用”后才可显示系统应用。搜索仅匹配当前名称或包名；名称缺失保留空串，包名仍作为独立副标题，不再作为主名称兜底。
-- 图标：本节原专用 ImageLoader 和按可见行懒加载已被“扫描时读取应用图标”替代。当前扫描前先过滤系统范围，图标随结果返回；仍不提供加载占位，读取失败或不可用时使用 `drawable/host_ic_app_icon_default.xml` 原路径与绿色/白色，不额外 tint。
+- 图标：本节原专用 ImageLoader 和按可见行懒加载已被“扫描时读取应用图标”替代。当前扫描前先过滤系统范围，图标随结果返回；仍不提供加载占位，读取失败或不可用时使用 `drawable/host_ic_app_icon_default.xml`，不额外 tint。2026-10-02 用户新 SVG 已将共享资源替换为黑色轮廓，资源转换及验证以 [来源图标主方案](source_app_icon_plan.md) 为准。
 - 职责：候选模型与纯构建函数移到同 feature 的 `ClipSourceBlockCandidates.kt`；筛选/完整草稿勾选继续放在 `ClipSourceBlockSelectionRules.kt`。候选只保留包名、名称、系统标记和已保存屏蔽标记，不新增 Repository 或公共 UI 抽象。
 - 保存与备份：完整名单/草稿继续保留未安装和隐藏系统包名，确认保存完整草稿；名单容量、清空确认、手动添加、备份协议及 dirty 契约不变，安装候选仍是内存派生数据，无需修改备份主方案或 schema。
 - 生命周期：沿用页面生命周期感知收集、ViewModel 会话自动加载与手动刷新；去掉历史来源数据库订阅，不新增后台观察或轮询。
@@ -495,6 +495,8 @@ on-system-rule-tests.ps1 -OutputName 'non-system-green' -CompileCurrentRules`。
 - 取舍与待办：仅修改页面会话内存名称契约，无序列化、反射或备份变化，不安排 release/R8；真实设备超长名称的显示观感仍需人工验收。
 
 ## 变更记录
+
+- 2026-10-02：共享默认应用资源改用用户新 android.svg，过滤页读取失败时自动使用黑色轮廓图标；保留扫描、加载空位和选择行为，未新增副作用，资源验证以来源图标主方案为准。
 
 - 2026-10-01：按用户截图反馈，将无规则入口摘要缩为“未设置”，共用标题改为“剪贴过滤”；只修改原资源值，不改入口分支、导航或过滤行为。纯文案通过编译和资源调用检查验证，不新增镜像测试。
 
