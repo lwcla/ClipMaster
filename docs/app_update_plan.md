@@ -174,6 +174,8 @@ public 仓库 README 作为人可读发布页维护，至少包含最新版版�
 
 ## 变更记录
 
+- 2026-10-07（已完成）：按用户要求提交已有 `0.7.2` 版本准备改动，`versionCode` 从 35 增至 36，`versionName` 从 0.7.1 更新为 0.7.2，并修正版本码中文注释。复用现有 BuildConfig、版本比较、备份中的应用版本元数据和 APK 命名，无新增组件、类、方法或协议字段；默认 domestic 及双发布源流程保持现状。仅改变构建元数据，无新的纯逻辑，测试门禁判断不新增单测或走 TDD；执行 `.\gradlew.bat :app:compileDebugKotlin :app:generateReleaseBuildConfig :app:processDebugMainManifest --offline --console=plain --no-parallel --max-workers=1 --no-daemon '-Pkotlin.compiler.execution.strategy=in-process'` 成功，debug/release BuildConfig 和 debug Manifest 均核对为 `36 / 0.7.2`，两种变体渠道标记均为 false，`git diff --check` 通过。不重复运行业务单测或 release/R8。日志与诊断沿用既有计划，不新增运行时日志，无备份 schema/恢复规则或反混淆契约变化。源码版本提交不代表公开 Release 已发布，真机更新与网络验证留待发布验收。
+
 - 2026-10-07：恢复上架前默认 `domestic` 渠道，继续 Gitee 优先、GitHub 兜底；原因是当前尚未真正上架 Google Play，商店更新分支留待正式上架后显式切换。构建参数说明和广告主文档同步渠道差异，不复制更新实现。
 
 - 2026-10-07：按用户提交要求纳入已有版本号改动，`versionCode` 从 34 增至 35，`versionName` 从 0.7.0 更新为 0.7.1；复用现有版本比较、BuildConfig 与 APK 文件命名，无新增组件、方法、数据协议或运行时日志。仅为源码版本准备，不表示公开 Release 已发布。此改动只有版本元数据，无可独立测试的新规则，故不新增单测或走 TDD；通过 Debug Kotlin 编译、Manifest/BuildConfig 生成及版本字段核对验证，不重复运行业务单测或 Release/R8。已提交的前一轮诊断增强仍需实际后台留证。
