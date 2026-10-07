@@ -155,26 +155,41 @@ class WebDavClient @Inject constructor(
         files
     }
 
-    /** 上传完整备份包和 manifest，并更新 latest.json。 */
-    suspend fun uploadBackup(config: WebDavConfig, export: BackupExportResult, taskId: String? = null) = withContext(Dispatchers.IO) {
+    /** 上传完整包并更新 latest；阶段观察只传固定 code，不暴露配置、内容或路径，观察失败不改变上传结论。 */
+    suspend fun uploadBackup(config: WebDavConfig, export: BackupExportResult, taskId: String? = null,
+        onStage: (String) -> Unit = {}) = withContext(Dispatchers.IO) {
+        /** 原有成功日志的墙钟开始时间；Worker 实际运行耗时另用单调时钟记录。 */
         val startedAt = System.currentTimeMillis()
         logD(TAG) {
             "开始上传 WebDAV 备份 ${backupTaskLogField(taskId)}fileName=${export.fileName} " +
                 "backupKind=${export.manifest.backupKind.logCode()} fileSize=${export.fileSize}"
         }
+        notifyUploadStage(onStage, "ensuring_remote_directory")
         ensureDirectory(config)
+        /** 远端临时 ZIP 与 sidecar 名称，仅用于请求，不进入诊断回调。 */
         val tempSnapshot = "${export.fileName}.tmp"
+        /** 与同一临时包配套的 manifest，保留已有协议。 */
         val tempManifest = "${export.manifestFileName}.tmp"
         logD(TAG) { "开始上传 WebDAV 临时备份文件 ${backupTaskLogField(taskId)}fileName=${export.fileName}" }
+        notifyUploadStage(onStage, "uploading_temporary_zip")
         uploadFile(config, tempSnapshot, export.packageFile)
+        notifyUploadStage(onStage, "uploading_temporary_manifest")
         uploadText(config, tempManifest, export.manifestJson)
+        /** 回读文件仍在原任务目录，诊断只记录正在回读，不记录完整路径。 */
         val verifyFile = File(export.taskDir, "${export.fileName}.webdav_verify")
+        notifyUploadStage(onStage, "reading_back_temporary_zip")
         downloadFile(config, tempSnapshot, verifyFile)
+        notifyUploadStage(onStage, "validating_temporary_zip")
         verifyFile.validateBackupPackageFile(export.manifest.applicationId)
         logD(TAG) { "WebDAV 临时备份文件校验通过 ${backupTaskLogField(taskId)}fileName=${export.fileName} tempSize=${verifyFile.length()}" }
+        notifyUploadStage(onStage, "publishing_remote_zip")
         uploadFile(config, export.fileName, verifyFile)
+        notifyUploadStage(onStage, "publishing_remote_manifest")
         uploadText(config, export.manifestFileName, export.manifestJson)
+        notifyUploadStage(onStage, "publishing_latest")
         uploadText(config, "latest.json", export.manifestJson)
+        notifyUploadStage(onStage, "remote_files_published")
+        notifyUploadStage(onStage, "cleaning_remote_temporary_files")
         deleteFile(config, tempSnapshot)
         deleteFile(config, tempManifest)
         verifyFile.delete()
@@ -182,6 +197,12 @@ class WebDavClient @Inject constructor(
             "WebDAV 备份上传成功 ${backupTaskLogField(taskId)}fileName=${export.fileName} " +
                 "durationMs=${System.currentTimeMillis() - startedAt}"
         }
+    }
+
+    /** 固定阶段观察为尽力诊断；回调异常只给出固定警告，不改变网络请求或备份结果。 */
+    private fun notifyUploadStage(observer: (String) -> Unit, stage: String) {
+        try { observer(stage) }
+        catch (_: Exception) { logW(TAG) { "上传阶段诊断失败 reasonCode=diagnostic_callback_failed" } }
     }
 
     /**

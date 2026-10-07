@@ -4,6 +4,72 @@
 
 <!-- flow-title: WebDAV本地自动备份恢复流程 -->
 
+## 自动 WebDAV 失败排查（2026-10-07）
+
+排查状态：已完成静态检查、既有单元测试、三星设备一次真实自动来源备份，以及失败截图设备的白名单只读取证。截图设备的失败原因已确认是 `upload_interrupted`，具体中断触发者仍缺少历史停止日志。本节是检查记录，不表示问题已修复。
+
+用户反馈入口持续显示“上次备份失败”，连接测试和手动操作成功。已检查 app 的 Worker、调度器、执行协调器、待上传存储、结果映射与页面，再检查 base/general 的 WebDAV 客户端、凭据读取及结果持久化，最后全仓检查调用方与请求体实现。
+
+### 持续失败的诊断增强范围（已确认）
+
+本轮状态：已完成。用户确认按此范围实施：持久化低敏阶段、耗时和停止原因，改进错误提示、补回归测试；保持上传和重试策略，先验证安装包，不触发真实备份。用户进一步确认观察到自动 WebDAV 每次都失败，应按固定后台执行路径问题排查，不能继续以偶发网络波动解释。完成的是诊断增强，不表示已经确认或修复该设备持续失败的根因。
+
+- 目标：下一次实际后台执行后，可以区分系统超时、应用任务配额、网络约束变化、明确取消、任务锁等待及具体上传阶段异常；同时区分排队墙钟时间与单次实际耗时。历史 upload_interrupted 只展示已知中断，不能猜测停止原因。
+- 复用与职责：复用两个现有 Worker、BackupExecutionCoordinator、BackupTaskGate、WebDavClient 和 BackupResultDetails。新诊断读写能力位于 app 备份领域的 diagnostics 包，Worker/协调器只发送低敏事件；底层 WebDavClient 通过可选阶段回调提供证据，不能反向依赖 app。目前已按备份 package、app、共享模块和全仓检查，没有可复用的持久化诊断存储；统一 Logcat 在正式包中受开关控制，不能承担历史留证职责。
+- 留证：在 noBackupFilesDir/backup_diagnostics/events.log 中保存有上限的近期事件记录，不依赖 Logcat 开关，不观察全量业务数据。最多 200 条且不超过 64 KiB；超过上限滚动裁剪，不承诺固定保留天数。记录工作 UUID、产物低敏身份、auto/manual 来源、入队/执行/锁等待/生成/本地发布/上传/回读/远端发布/结果落盘/清理阶段、每次执行次数、单调时钟耗时和系统 stopReason。记录失败时的阶段、异常类型和稳定 reasonCode，后者不依赖 R8 后的类名。禁止异常 message、请求/响应体、用户内容、URL、账号、密码及 SAF URI。诊断 IO 失败不得改变备份结果；中断留证在 NonCancellable 下执行有限 IO，不能把原取消吞掉。系统直接杀进程时不承诺能够补写结束事件，保留此前阶段并明确结论未知。
+- 提示：复用现有共享结果组件并使用字符串资源，补充“上传被中断”“任务入队失败”“备份包交接失败”等固定原因；仅在当次停止证据存在且与失败身份对应时，展示超时、配额或网络约束中断，未知停止原因继续明确标为未知。不把任务返回 success 解释为远端发布成功，不让后续成功任务或连接测试覆盖历史失败证据。
+- 业务边界：本轮保持生成/上传分离、网络约束、目标校验、终态清理和现有失败不主动重试策略；不以诊断增强名义改成前台服务或自动补传，不触发真实备份或上传。诊断记录是本安装临时运行态，不纳入自定义备份或系统 Auto Backup，也不引入新的备份数据协议。后续是否调整系统中断恢复由本轮证据决定。
+- 单元测试与验证：停止原因分类、低敏事件格式/大小裁剪、提示映射、异常留证不反转业务结果等纯规则先写失败回归测试，再实现；复用既有调度与终态测试。新增 7 项诊断测试、1 项提示测试，连同既有 8 项调度/结果展示/终态测试共 16 项；首轮 6 项中 5 项按预期失败，再随实现通过。运行受影响的 testDebugUnitTest、compileDebugKotlin 和 assembleRelease/R8；系统 stopReason 获取、AtomicFile 写入中断恢复及 KEEP 真实任务队列仍依赖 Android 验收，普通 JVM 测试不能证明后台限制。未引入反射模型、外部序列化模型或 keep 规则。仅准备可安装产物，未替换手机主包、触发真实备份或上传。
+- 日志与诊断计划：正常关键阶段 INFO，停止/清理及诊断落盘失败 WARN，真实生成/发布失败 ERROR；阶段事件低频且限量，不记录逐字节进度。固定字段使用稳定 code，日志正文使用简体中文；原始错误只保留异常类型。Worker 的 onStopped 在 CoroutineWorker 中为 final，采用 doWork 的取消/结束边界读取 stopReason 并落盘，不能设计成重写该方法。验证需同时检查正式包无 Logcat 开关时仍留证、历史失败记录关联、超限裁剪和诊断文件不进入备份。
+- 最终实现：`BackupDiagnosticRecord/Policy/Journal/Trace/Diagnostics` 分别承载低敏记录、纯裁剪规则、故障隔离、单轮计时和 Android 原子落盘；`BackupStopReasonMapper` 和 `BackupFailureMessageMapper` 负责纯停止分类和提示映射。两个 Worker 和协调器仅编排阶段，WebDavClient 使用可选回调且观察者异常不改变请求结果；既有结果组件读取映射和字符串资源，不新增页面组件或页面 IO。Android 12/API 31 起读取当次 stopReason，旧平台明确 unknown；不从耗时反推超时。协调器取消分支只采样一次停止数值，用同一证据写事件与结果。低频同步写入采用原子替换并限制记录体积，仍存在磁盘延迟取舍，不承诺硬杀进程能够保存结束事件。
+- 覆盖与未完成验收：日志仅为本安装运行态，Android noBackupFilesDir 与现有自定义快照白名单均排除它；没有新增用户设置、备份字段、Room/schema 或迁移。独立代码复核未发现缺陷；真实原设备后台停止留证尚未验收，仍需新安装包经历实际后台任务。远端临时文件清理异常隔离及是否恢复系统中断包继续列为后续待办，不在本轮实施。
+
+### 已确认代码事实与诊断边界
+
+- 自动和手动 WebDAV 共用 `BackupExecutionCoordinator.generate/upload` 和上传 Worker；自动来源继承仅 Wi-Fi 设置（实际为 UNMETERED），手动来源只要求 CONNECTED。生成阶段均不要求网络。连接测试仅验证目录及小型探测文件，不覆盖完整 ZIP 的上传、回读校验和正式发布。
+- 手动按钮返回 `host_backup_upload_queued`，含义为“备份已生成，WebDAV 将在网络可用时上传”，不是远端发布成功。必须核对最近 WebDAV 结果已变成带时间的成功，或刷新远端列表发现本次文件，才能以手动成功排除共享上传链路。
+- 取证时 0.7.0/34 的 `BackupExecutionCoordinator.upload` 捕获协程取消后，在 NonCancellable 中以 `upload_interrupted` 提交失败终态并清理私有包，随后继续抛取消。本轮仅细化有当次停止证据的原因 code，终态与清理策略保持。该包不能在网络恢复或重启后重新上传；平台重新运行原 Worker 时，缺失/终结的身份会直接退出。截图设备只读取证已确认同一失败 code，但 `upload_interrupted` 也能由异常待上传阶段的兜底路径写入；没有历史阶段日志时不能进一步断言唯一调用分支和平台停止原因。
+- 取证时 `BackupResultDetails` 未为 `upload_interrupted`、`schedule_failed`、`handoff_failed` 提供独立文案，均走未知错误兜底；本轮已补固定提示及停止证据细分类。概览行仍只显示上次结论；新包等待期间保留历史失败。连接测试成功只更新健康状态，不清除失败结果。因此概览文字本身仍不足以判断新一轮是否已经失败。
+- `WebDavClient.uploadBackup` 在正式 ZIP、sidecar 和 latest.json 均上传完成后继续删除两份远端临时文件；删除异常仍向外传播，因此存在“正式文件已发布但临时清理失败，最终被登记为失败”的边界。该边界同时影响手动和自动，并不能单独解释已确认的手动远端成功、自动失败差异。
+
+Android 官方说明网络约束不再满足、显式替换/取消或系统执行时限等均可能停止 Worker，见 [停止运行中的 Worker](https://developer.android.com/develop/background-work/background-tasks/persistent/how-to/manage-work#stop-a-running-worker)。这是取消分支的可能触发条件，不是本次设备上已观察到的停止原因。
+
+### 日志与诊断计划
+
+此前只读取证阶段未修改生产代码；临时仪器只输出低敏任务身份、阶段和失败码，已移除。本轮获授权后新增上述安装内诊断记录。下一次复现先读取持久化历史，通过工作 UUID 和产物身份串联入队、每次执行与阶段；辅助核对 `BackupCoordinator`、`BackupAutoWorker`、`BackupWebDavUploadWorker` 和 `WebDavClient` 日志。既有取消日志经 `backupReasonCode()` 可能落为 `unexpected_error`，不能将该兜底 code 当作新的根因，稳定诊断 reasonCode 与当次停止数值优先。
+
+日志只允许 INFO 阶段、WARN 中断/清理和 ERROR 真实失败；持久化白名单字段见上文，既有 WebDAV 日志可辅助 HTTP 状态码，本轮文件不另存响应字段。禁止输出地址、凭据、授权 URI、异常 message、请求/响应体或备份内容。最初检查未连接设备；用户随后连接调试手机，已读取本次真实任务的低敏阶段日志。统一应用 TAG 为 `cla_clip_master`，领域名称位于正文；不能只用 `WebDavClient` 等领域名称作为 logcat TAG 过滤，否则会漏掉应用日志。
+
+### 真机结果（2026-10-07，Asia/Shanghai）
+
+- 截图设备随后连接：型号 23127PN0CC、Android API 36，安装的 0.7.0/34 是非 debuggable 正式包，`run-as` 被系统拒绝，不能将读取失败解释成未配置。备份详情只给出“操作失败，请稍后重试”；JobScheduler 的每日自动任务已注册，当前仅等待 TIMING_DELAY，没有当前上传任务。
+- 18:59 同签名、无网络权限的临时仪器成功读取白名单设置及只读 WorkManager 表：本地成功 `2026-10-07 13:49:07.755`；WebDAV 失败 `2026-10-07 16:32:58.384`、`reasonCode=upload_interrupted`；自动备份启用；最近健康状态 available，检查时间 11:25:16.015；pending 字段已清除。未设置的 onlyWifi 键按现有默认值 false 解释，不作为本次中断原因证据。
+- 同包上传任务 13:49:08 入队，当前 WorkSpec 为 SUCCEEDED、run_attempt_count=2、stop_reason=-256；此前 11:25 的另一上传任务为 SUCCEEDED、attempt=1。WorkSpec 的成功只表示 Worker 当前返回成功，不能覆盖已持久化的 WebDAV 失败；结合无 pending 身份与代码的静默退出契约，平台重新执行已清理身份可以产生此状态，不能把它解释成失败包已经补传成功。任务表没有保留可用的具体停止原因，当前字段也未保留来源，不能据此断言每次历史执行的手动/自动身份。
+- 系统记录 16:53 的 `clean_up_mem` 进程回收，比失败结果晚约 20 分钟，不能用于证明 16:32 的中断。当前 event/system logcat 环形日志已不包含 16:32 的对应停止记录，具体原因无法追溯；后续需在实际中断时保存 Worker.stopReason 和阶段。当前没有再次触发备份、上传、连接测试或配置写入。
+- 临时入口在 `newApplication` 中完成读取后同步提交结果并立即退出，仪器进程没有创建业务 Application/Provider；Android 系统随后因 ShizukuProvider 请求重新启动普通应用进程，这是系统启动记录，不能宣称整个主应用从未重启。诊断后再查 JobScheduler 仍仅有每日备份等待，无上传任务。临时诊断包已卸载，主包未替换，源码、APK 与复制的安装包已删除；只保留低敏取证摘要。该入口独立于生产源码，使用 SDK javac/d8/aapt/apksigner 编译和签名一致性核对、真机 INSTRUMENTATION_CODE=-1 验证；不为一次性系统读取入口新增 JVM 测试或运行应用 R8。禁止读取剪贴数据库、备份 ZIP、凭据和目标地址，禁止输出异常原文。
+
+- 18:46 用户补充“我的”页截图：本地最近成功 13:49，WebDAV 最近结果失败。用户确认截图来自另一台手机，不是当时 USB 连接的三星 SM-G9730。因此三星成功仅验证该设备，不能据此判断截图设备的问题已解决或只是显示缓存。该入口汇总最近一次本地/WebDAV 结果，不区分手动/自动来源；截图本身无法提供失败 code。当前 MineVm 使用同一 DataStore 的设置/运行态 combine，页面生命周期感知收集，静态检查未发现状态刷新根因；后续只读取证已确认截图对应真实失败记录。
+
+- 初始调度日志为 `enabled=false`，已保存配置只含本地备份目录，没有 WebDAV 地址；用户随后自行开启自动备份并保存 WebDAV 配置，连接测试与远端列表读取成功。这是当前设备的前提状态，不能据此反推此前失败原因。
+- 已通过临时仪器入口运行一次既有 `BackupAutoWorker`，taskId 为 `daily-muxz8upv-1`，日志明确 `source=auto`、`hasLocal=true`、`hasRemote=true`、`onlyWifi=false`，不是手动入口；同包网络约束和上传 Worker 均保持。
+- 18:41:04 生成 ZIP 71,394 字节，本地正式发布成功；18:41:05 自动同包上传入队；18:41:07 回读临时 ZIP 并校验通过；18:41:09 WebDAV 正式上传成功，上传耗时 4,299 毫秒。运行态独立确认本地完成时间 18:41:04、远端完成时间 18:41:09，两个 failed 均为 false、reasonCode 均为空，待上传身份已清除。
+- 仪器观测到正式发布与结果落盘后退出，目标进程随之结束，远端保留清理尚未完成；因此不能把这次观测声称为保留清理验收。重新打开主应用后，WorkManager 恢复该上传任务；已清除的身份使其直接成功退出，没有第二次生成或重传。最终生成及上传 WorkSpec 均为 SUCCEEDED，每日任务仍 ENQUEUED，24 小时周期和首次延迟保持。
+- 临时测试 APK 已卸载，临时仪器源码和 Gradle init script 已移除，只保留忽略的构建产物与脱敏日志 `app/build/backup-diagnostics/automatic-backup-20261007.log`。没有改动生产代码、密码、目标地址、网络策略或用户数据。一次真实运行成功不证明设备休眠、省电限制、网络中途变化和长期日周期调度可靠，历史失败仍需下一次真实失败的 code/停止原因。
+
+### 验证、备份覆盖与后续待办
+
+- 执行时限核对：当前 `BackupAutoWorker` 完成本地快照、正式发布及同包交接后返回；网络由独立的 `BackupWebDavUploadWorker` 执行，两个都是普通 CoroutineWorker，均未调用 setForeground。因此不是本地加上传共用一次 Worker 的十分钟倒计时。普通 CoroutineWorker 单次执行存在十分钟限制，超时属于可停止原因，见 [CoroutineWorker 官方契约](https://developer.android.com/reference/androidx/work/CoroutineWorker)。两个独立任务仍可能共同受应用级 JobScheduler 配额影响，截图设备为 Android 16，官方明确该版本调整了后台任务运行配额，影响 WorkManager，见 [Android 16 JobScheduler 配额变化](https://developer.android.com/about/versions/16/behavior-changes-all#job-quota)。不能把独立 Worker 理解成后台执行时长无限制。
+- 本次 13:49 入队与 16:32 失败的时间差是排队、可能多次运行和停止后的总墙钟跨度，不能证明单次上传执行超过十分钟；缺少每次 start/end 和当时 stopReason，超时/配额耗尽只能列为待验证假设。已确认的代码边界是系统停止等中断会落为终态并释放包，后续平台再调度也可能因身份缺失直接成功退出。后续诊断需同时记录每次实际运行开始、耗时、停止原因和阶段，才能区分超时、配额、约束变化与明确取消；当前不修改执行策略或触发任务。
+
+- 2026-10-07 真机诊断准备：已连接 Android 12 调试设备，启动日志显示自动备份原为关闭；用户随后开启。已确认每日 BackupAutoWorker 的 24 小时周期及首次延迟。`cmd jobscheduler run -f` 请求可到达服务，但 WorkManager 因提前于计划时间而重新入队，未执行备份。准备仅位于忽略的 `app/build/backup-diagnostics/` 的临时仪器入口，用一次性 WorkRequest 运行同一 BackupAutoWorker，保留自动来源及现有上传网络约束；不修改每日请求、业务代码或配置，不把仪器测试加入普通 CI。用户明确授权使用手机中已保存的 WebDAV 配置发送包含剪贴内容的真实备份，地址/凭据由用户在手机内核对，不进入日志或测试源码。实际执行前必须检查开关和 WebDAV 地址已保存，不能以仅本地成功替代远端验证。该入口属于真实系统诊断，不新增业务规则，因此不为入口另写 JVM 回归测试或走规则 TDD；使用仪器编译及真机运行验证，完成后移除临时测试 APK。
+
+- 已运行 `.\gradlew.bat :app:testDebugUnitTest --tests '*BackupSchedulingPolicyTest' --tests '*BackupResultPresentationMapperTest' --tests '*BackupUploadCompletionTest' --console=plain`，8 项测试通过，执行图中的 `:app:compileDebugKotlin` 为 UP-TO-DATE。这些测试保护现有等待策略、历史结果展示及终态清理顺序，不证明设备后台调度或真实 WebDAV 可用。
+- 此前仅补排查记录时没有代码和构建变更；获授权的本轮诊断增强已有生产代码、纯规则测试与正式构建验证。未改变 Mermaid 节点语义，不重新生成流程 HTML。
+- 诊断增强最终验证：运行 `.\gradlew.bat :app:testDebugUnitTest --tests '*BackupDiagnosticsTest' --tests '*BackupFailureMessageMapperTest' --tests '*BackupSchedulingPolicyTest' --tests '*BackupResultPresentationMapperTest' --tests '*BackupUploadCompletionTest' :app:compileDebugKotlin :app:assembleRelease --console=plain`，最终 `BUILD SUCCESSFUL`，16 项测试无失败、错误或跳过。Release/R8、lint 与正式签名打包通过；仅有既有 Gradle 废弃选项及 Shizuku 接口相关警告，未新增协议 keep 规则。只读独立代码复核与 `git diff --check` 通过。新增/修改方法、字段、变量及关键分支已补简体中文注释；无未拆分、未补纯规则测试或备份覆盖规则例外。真机后台停止、AtomicFile 中断恢复、真实 KEEP 队列及视觉提示验收尚未完成，不能用 JVM/构建结果替代。
+- 安装包：`app/build/outputs/apk/release/ClipMaster-v0.7.0-admob.apk`，最终生成时间 2026-10-07 19:42:40，applicationId 为 `com.cla.clip.master`，版本仍为 0.7.0/34。apksigner 核验通过且与原失败设备证书一致；APK SHA-256 为 `EF1A19D655A7DF49BBBE0A6F3CA0AB1F41D989DED8F1F15702E8A9BA0301F163`。R8 mapping 保留于 `app/build/outputs/mapping/release/mapping.txt`。本轮未安装主包或触发真实备份，后续安装后应等待实际后台任务，再只读诊断历史。
+- 三星真实自动任务完成远端发布；截图设备的历史失败已确认 upload_interrupted。本轮补齐中断/交接提示和低敏停止原因诊断，不改变失败/重试策略。后续修复仍需区分平台可恢复停止与明确取消/真正失败，保护“不重新导出、不复活明确失败”的现行约定；待办为实际后台留证、依据证据决定恢复策略及发布后临时清理失败隔离。
+- 凭据、待上传身份、停止原因和诊断日志仍属于本安装的敏感或可派生运行态，不纳入自定义备份；既有字段白名单和系统 Auto Backup 排除范围保持。
+
 ## 备份、恢复与媒体关联导航组改造（2026-10-02）
 
 本轮状态：已完成。2026-10-02 用户确认按本方案修改代码；保留现有工作区中尚未提交的方案及用户其他改动，就地实施，不创建提交。导航组、共享轻量会话及三个独立业务 VM 已接入；既有每日备份、恢复及媒体关联算法继续复用，下文同步为当前实现。app 单测、Kotlin 编译、R8 和独立代码复审通过；设备生命周期与真实权限交互验收另列待办。
@@ -1075,6 +1141,22 @@ manifest 简化示例：
 - 2026-05-21：将媒体重新定位入口文案从“重新定位媒体”调整为“恢复本地媒体关联”，已运行 `./gradlew :app:compileDebugKotlin`、`./gradlew :app:testDebugUnitTest` 和 `git diff --check`，结果通过；原因是后者更贴近用户语言，也能避免误以为会恢复媒体文件本体。
 
 ## 变更记录
+
+- 2026-10-07：按用户确认范围完成自动备份诊断增强，独立留存有界低敏阶段、单调耗时、稳定失败 code 和当次系统停止证据；补中断/超时/配额/约束/取消/入队/交接提示及 8 项新测试。最终 16 项相关测试、Debug 编译、Release/R8、签名核验及独立复核通过，安装包已生成，未安装或上传。原因：原设备的 upload_interrupted 历史已失去停止细节，需让下一次实际后台执行可追溯；上传、终态清理及重试策略保持，根因确认仍待真机留证。
+
+- 2026-10-07：用户强调自动 WebDAV 持续每次失败，补充持久化低敏阶段/耗时/停止原因与明确错误提示的待确认范围；复用现有 Worker、协调器和结果组件，保持上传及重试策略，避免只补不可追溯的 Logcat。当前未实施生产代码。
+
+- 2026-10-07：回应后台超时假设，核对本地生成与网络上传为两个独立普通 CoroutineWorker，引用官方单次时限及 Android 16 应用配额约束，说明入队至失败的墙钟时间不能代替单次运行耗时。仅补充诊断边界，无生产代码、测试或配置改动。
+
+- 2026-10-07：正式包设备只读取证确认 WebDAV 于 16:32:58 保存 upload_interrupted，本地 13:49 成功且 pending 已清除；记录 WorkSpec 成功不能替代目标结果、16:53 内存回收不构成失败因果及历史停止日志缺失。临时同签名仪器编译、运行、卸载完成，全程不触发备份或上传，不修改生产代码。
+
+- 2026-10-07：连接真正出现失败提示的正式包设备，记录通用错误、定时任务等待及系统回收证据的边界；准备同签名白名单只读仪器以取得实际失败码，避免再次上传覆盖历史结果。
+
+- 2026-10-07：根据用户确认区分成功诊断的三星设备与另台失败截图设备，明确截图只显示最近目标结果、不能独立识别失败原因或手动/自动来源；原因是两台设备的本地完成时间和 WebDAV 状态不同，前者成功不能排除后者的真实失败。本次只更新排查证据边界，无生产改动。
+
+- 2026-10-07：补充已连接设备的单次真实自动来源备份结果，记录初始自动关闭/WebDAV 未保存、用户补齐配置、JobScheduler 提前触发被 WorkManager 时间检查拦截、仪器运行现有自动 Worker 成功及结果落盘。通过临时 init script 的 `:app:assembleDebugAndroidTest` 编译和单项仪器运行；卸载测试包并移除临时源码，不修改生产逻辑，不把本次成功解释为已确认历史根因。
+
+- 2026-10-07：记录自动 WebDAV 持续失败的静态排查与 8 项既有测试结果，区分手动入队提示、历史结果保留、上传取消终态、缺失原因文案及发布后临时清理异常；原因是用户反馈连接测试和手动操作成功而概览仍失败，本机未连接设备，尚不能确认真实失败原因。本次不修改执行策略或生产代码。
 
 - 2026-10-02：按用户确认实施父图 BackupGraphRoute、BackupNavigation、图作用域 BackupFlowVm 和同步 BackupFlowSession；三个业务 VM 仍独立，取消两个 Singleton 发送器，保留请求/事件模型。同步现行说明与四类流程图，补齐无会话回起点、Running 同步门禁、来源 entry 及一次关闭许可；独立审查两项 P2 经失败回归修复。原因是将导航入口、跨页通信与整组退出统一到当前会话，避免离组后旧请求/迟到事件影响新流程。未修改备份数据范围、schema 或扫描算法，设备验收边界另列待办。
 

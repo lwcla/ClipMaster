@@ -47,4 +47,12 @@
     <string name="host_dropdown_collapsed">已收起</string>
     <string name="host_search_filter_accessibility">%1$s，当前%2$s</string>
     <string name="host_search_source_empty">暂无来源 App</string>
+    <string name="host_backup_error_upload_interrupted">上传被中断，具体停止原因未能确定。本次远端备份未确认成功。</string>
+    <string name="host_backup_error_upload_timeout">上传任务达到系统执行时限，已被中断。本次远端备份未确认成功。</string>
+    <string name="host_backup_error_upload_quota">后台任务运行配额已用尽，上传被中断。本次远端备份未确认成功。</string>
+    <string name="host_backup_error_upload_network_interrupted">上传所需的网络条件不再满足，任务被中断。本次远端备份未确认成功。</string>
+    <string name="host_backup_error_upload_device_interrupted">系统限制了后台执行，上传被中断。本次远端备份未确认成功。</string>
+    <string name="host_backup_error_upload_cancelled">上传任务被取消。本次远端备份未确认成功。</string>
+    <string name="host_backup_error_schedule">备份包已生成，但上传任务未能入队。本次远端备份未完成。</string>
+    <string name="host_backup_error_handoff">备份包交接失败，未能完成远端备份。</string>
 </resources>

@@ -14,6 +14,10 @@ import com.cla.clip.master.backup.upload.BackupPendingHandoff
 import com.cla.clip.master.backup.upload.BackupUploadTargetFingerprint
 import com.cla.clip.master.work.BackupAutoScheduler
 import com.cla.clip.master.work.BackupTaskGate
+import com.cla.clip.master.backup.diagnostics.BackupDiagnostics
+import com.cla.clip.master.backup.diagnostics.BackupDiagnosticTrace
+import com.cla.clip.master.backup.diagnostics.BackupStopReasonMapper
+import com.cla.clip.master.backup.diagnostics.BackupDiagnosticRecord
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -24,7 +28,7 @@ import javax.inject.Singleton
 
 /** 手动与每日共用同包流程；入口只接线，不把网络等待放进本地生成阶段。 */
 @Singleton
-class BackupExecutionCoordinator @Inject constructor(
+class BackupExecutionCoordinator @Inject internal constructor(
     /** 应用上下文，仅操作系统文件与任务队列。 */
     @param:ApplicationContext private val context: Context,
     /** 现有流式导出与协议实现。 */
@@ -41,6 +45,8 @@ class BackupExecutionCoordinator @Inject constructor(
     private val temporaryStore: BackupTempFileStore,
     /** 既有远端校验发布能力。 */
     private val webDavClient: WebDavClient,
+    /** 安装内低敏留证，不改变结果持久化与上传策略。 */
+    private val diagnostics: BackupDiagnostics,
 ) {
     /** 复用可独立验证的终态提交与文件释放规则，调用始终在任务锁内。 */
     private val completion = BackupUploadCompletion(
@@ -56,18 +62,29 @@ class BackupExecutionCoordinator @Inject constructor(
     }
 
     /** 生成一份最新快照，先尝试本地发布，再交接同一包；全程只持有一次任务锁。 */
-    suspend fun generate(automatic: Boolean) = BackupTaskGate.runExclusive {
+    internal suspend fun generate(automatic: Boolean, diagnostic: BackupDiagnosticTrace? = null) = BackupTaskGate.runExclusive {
         withContext(Dispatchers.IO) {
+            /** Worker 复用同轮记录；手动入口创建独立来源，不隐式启动其他任务。 */
+            val trace = diagnostic ?: diagnostics.start(source = if (automatic) "auto" else "manual")
+            trace.stage("reading_generation_settings")
             /** 生成时只读设置，不提前解密凭据，确保本地阶段独立。 */
             val settings = settingsRepository.snapshot()
-            if (automatic && !settings.autoBackupEnabled) return@withContext
+            if (automatic && !settings.autoBackupEnabled) {
+                trace.stage("auto_disabled")
+                return@withContext
+            }
             /** 空目录不计为正式本地目标。 */
             val hasLocal = settings.localBackupDirUri.isNotBlank()
             /** 已配置地址才计划远端上传，认证留给上传阶段。 */
             val hasRemote = settings.webDavEndpoint.isNotBlank()
-            if (!hasLocal && !hasRemote) return@withContext
+            if (!hasLocal && !hasRemote) {
+                trace.stage("no_targets")
+                return@withContext
+            }
             /** 文件身份与诊断关联，不是业务数据版本。 */
             val taskId = newBackupTaskId(if (automatic) "daily" else "manual-webdav")
+            trace.bind(taskId, if (automatic) "auto" else "manual")
+            trace.stage("creating_snapshot")
             logI("BackupCoordinator") { "开始生成 taskId=$taskId source=${if (automatic) "auto" else "manual"} hasLocal=$hasLocal hasRemote=$hasRemote" }
             /** 同一份 ZIP 供本地与远端使用。 */
             val export = try {
@@ -76,6 +93,8 @@ class BackupExecutionCoordinator @Inject constructor(
                         else BackupSource.LocalAuto,
                     backupKind = if (automatic) BackupKind.Auto else BackupKind.Manual, taskId = taskId)
             } catch (failure: Throwable) {
+                trace.event("generation_failed", errorType = failure.javaClass.simpleName,
+                    reasonCode = if (failure is CancellationException) "generation_interrupted" else failure.backupReasonCode())
                 if (failure is CancellationException) throw failure
                 if (hasLocal) runtime.recordTargetResult(BackupResultTarget.Local, System.currentTimeMillis(), failure.backupReasonCode())
                 if (hasRemote) runtime.recordTargetResult(BackupResultTarget.WebDav, System.currentTimeMillis(), failure.backupReasonCode())
@@ -90,8 +109,10 @@ class BackupExecutionCoordinator @Inject constructor(
                     var localPublished = false
                     try {
                         localCompletion.publish {
+                            trace.stage("publishing_local")
                             localWriter.writeExport(Uri.parse(settings.localBackupDirUri), export)
                             localPublished = true
+                            trace.event("local_published")
                             logI("BackupCoordinator") { "本地发布成功 taskId=$taskId fileSize=${export.fileSize}" }
                         }
                     } catch (failure: Throwable) {
@@ -105,6 +126,7 @@ class BackupExecutionCoordinator @Inject constructor(
                     }
                     // 保留清理失败不能反转已经完整发布的成功结果。
                     if (localPublished) {
+                        trace.stage("pruning_local")
                         try { localWriter.pruneBackups(Uri.parse(settings.localBackupDirUri), settings.backupRetentionCount, taskId) }
                         catch (failure: Throwable) {
                             if (failure is CancellationException) throw failure
@@ -116,6 +138,7 @@ class BackupExecutionCoordinator @Inject constructor(
                     try {
                         /** 旧等待包仅在新包完整生成并成功交接后才释放。 */
                         val previous = runtime.snapshot().pendingUpload
+                        trace.stage("preparing_upload_package")
                         pendingStore.prepare(taskId, export)
                         /** 当前指针在单份 DataStore 事务中替换。 */
                         val pending = BackupPendingUpload(taskId, BackupUploadTargetFingerprint.of(settings),
@@ -123,7 +146,12 @@ class BackupExecutionCoordinator @Inject constructor(
                         /** 入队失败回滚仍有效的旧等待身份，旧包只在新登记成功后释放。 */
                         val handoff = BackupPendingHandoff(
                             replace = { replacement -> runtime.replacePending(replacement) },
-                            enqueue = { fresh -> schedule(fresh, settings.autoBackupOnlyWifi) },
+                            enqueue = { fresh ->
+                                // 只记录入队边界，不改变等待约束或原子交接。
+                                trace.stage("enqueueing_upload")
+                                schedule(fresh, settings.autoBackupOnlyWifi)
+                                trace.event("upload_enqueued")
+                            },
                             release = { old ->
                                 try { discard(old.artifactId) } catch (failure: Throwable) {
                                     if (failure is CancellationException) throw failure
@@ -149,6 +177,7 @@ class BackupExecutionCoordinator @Inject constructor(
                     }
                 }
                 logI("BackupCoordinator") { "生成阶段结束 taskId=$taskId hasLocal=$hasLocal hasRemote=$hasRemote fileSize=${export.fileSize}" }
+                trace.event("generation_finished")
                 resultStoreFailure?.let { throw it }
             } finally {
                 // 待上传文件已复制到独立目录，绝不通过生成缓存 finally 删除。
@@ -176,24 +205,39 @@ class BackupExecutionCoordinator @Inject constructor(
         }
     }
 
-    /** 上传指定文件身份，读取执行时匹配目标的凭据；不生成新的快照。 */
-    suspend fun upload(artifactId: String) = BackupTaskGate.runExclusive {
+    /** 上传同包；复用当轮诊断，取消时按当次停止证据细化提示，缺少证据保持通用中断，不改变终态策略。 */
+    internal suspend fun upload(artifactId: String, diagnostic: BackupDiagnosticTrace? = null,
+        interruptedReason: () -> Int = { -256 }) = BackupTaskGate.runExclusive {
         withContext(Dispatchers.IO) {
+            /** 当次记录继承 Worker 时间与身份，不将重新执行误认为重新上传。 */
+            val trace = diagnostic ?: diagnostics.start(source = "unknown", artifactId = artifactId)
+            trace.stage("reading_pending_identity")
             /** 当前唯一包，不匹配的旧任务静默退出。 */
-            val pending = runtime.snapshot().pendingUpload ?: return@withContext
-            if (pending.artifactId != artifactId || pending.terminal) return@withContext
+            val pending = runtime.snapshot().pendingUpload ?: run {
+                trace.stage("identity_missing")
+                return@withContext
+            }
+            if (pending.artifactId != artifactId || pending.terminal) {
+                trace.stage("identity_stale_or_terminal")
+                return@withContext
+            }
+            trace.bind(artifactId, pending.source)
+            trace.stage("pending_${pending.phase}")
             if (!BackupSchedulingPolicy.canSchedule(pending.phase)) {
+                trace.event("pending_not_schedulable")
                 if (pending.phase == "uploading") cancelUncertain(pending)
                 else completion.finish(artifactId, System.currentTimeMillis(), "upload_interrupted")
                 return@withContext
             }
             try {
+                trace.stage("reading_upload_configuration")
                 // 在配置和网络读取前结束等待阶段；配置读取失败也不能留作下次启动重传。
                 runtime.updatePendingPhase(artifactId, "uploading")
                 /** 上传前同份已提交设置；自动关闭或目标变更只取消，不误报备份失败。 */
                 val settings = settingsRepository.snapshot()
                 if ((pending.source == "auto" && !settings.autoBackupEnabled) || settings.webDavEndpoint.isBlank() ||
                     pending.targetFingerprint != BackupUploadTargetFingerprint.of(settings)) {
+                    trace.stage("configuration_changed")
                     cancel(pending)
                     return@withContext
                 }
@@ -201,6 +245,7 @@ class BackupExecutionCoordinator @Inject constructor(
                 val connection = settingsRepository.loadWebDavConnection()
                 if ((pending.source == "auto" && !connection.settings.autoBackupEnabled) ||
                     pending.targetFingerprint != BackupUploadTargetFingerprint.of(connection.settings)) {
+                    trace.stage("configuration_changed")
                     cancel(pending)
                     return@withContext
                 }
@@ -208,18 +253,36 @@ class BackupExecutionCoordinator @Inject constructor(
                 val config = WebDavConfig(connection.settings.webDavEndpoint, connection.settings.webDavUsername,
                     connection.password.orEmpty(), normalizeWebDavRemoteDir(connection.settings.webDavRemoteDir), connection.settings.webDavAllowInsecureHttp)
                 /** 从等待目录取回生成时原始字节，缺失即失败。 */
+                trace.stage("reading_upload_package")
                 val export = pendingStore.read(artifactId)
                 /** 文件清理后 File.length 会归零，因此提前保留成功日志需要的大小。 */
                 val fileSize = export.fileSize
-                webDavClient.uploadBackup(config, export, artifactId)
+                webDavClient.uploadBackup(config, export, artifactId, trace::stage)
+                trace.event("remote_published")
+                trace.stage("committing_result_and_releasing_package")
                 completion.finish(artifactId, System.currentTimeMillis())
+                trace.event("remote_result_saved")
                 logI("BackupCoordinator") { "同包上传成功 taskId=$artifactId fileSize=$fileSize" }
-                try { webDavClient.pruneBackups(config, connection.settings.backupRetentionCount, artifactId) }
+                try {
+                    trace.stage("pruning_remote")
+                    webDavClient.pruneBackups(config, connection.settings.backupRetentionCount, artifactId)
+                }
                 catch (failure: Throwable) {
                     if (failure is CancellationException) throw failure
                     logW("BackupCoordinator") { "远端保留清理失败 taskId=$artifactId reasonCode=${failure.backupReasonCode()}" }
                 }
             } catch (failure: Throwable) {
+                /** 同一轮停止数值只采样一次，历史事件与持久化提示必须使用相同证据。 */
+                val stopReason = interruptedReason()
+                /** 稳定原因不依赖异常类名，结果保存失败保持原来的独立终态。 */
+                val failureCode = when (failure) {
+                    is BackupResultPersistenceFailure -> "result_store_failed"
+                    is CancellationException -> BackupStopReasonMapper.interruptionCode(stopReason)
+                    else -> failure.backupReasonCode()
+                }
+                // 在结果提交和释放包前保留失败时的阶段，后续 Worker 退出不能覆盖它。
+                trace.event(if (failure is CancellationException) "interrupted" else "upload_failed",
+                    stopReason, (failure.cause ?: failure).javaClass.simpleName, failureCode)
                 if (failure is BackupResultPersistenceFailure) {
                     // 不重传、不把已发布成功改写为失败；尽力保存仅清理的终态。
                     withContext(NonCancellable) {
@@ -234,8 +297,7 @@ class BackupExecutionCoordinator @Inject constructor(
                 // 取消与真实失败均先结束身份；网络约束导致的中断不请求 WorkManager 重试。
                 withContext(NonCancellable) {
                     if (runtime.snapshot().pendingUpload?.terminal != true) {
-                        completion.finish(artifactId, System.currentTimeMillis(),
-                            if (failure is CancellationException) "upload_interrupted" else failure.backupReasonCode())
+                        completion.finish(artifactId, System.currentTimeMillis(), failureCode)
                     }
                     cleanupTerminal(artifactId)
                 }
@@ -251,6 +313,9 @@ class BackupExecutionCoordinator @Inject constructor(
             /** 真实文件所有权快照，读取失败不能当作无包。 */
             val pending = runtime.snapshot().pendingUpload
             if (pending == null) { pendingStore.cleanupExcept(null); return@withContext }
+            diagnostics.record(BackupDiagnosticRecord(System.currentTimeMillis(), "reconcile_${pending.phase}",
+                if (refreshConstraints) "reconcile_refresh_constraints" else "reconcile", artifactId = pending.artifactId,
+                source = pending.source))
             /** 当前目标及开关；手动包不受自动开关影响。 */
             val settings = settingsRepository.snapshot()
             when {
@@ -271,7 +336,12 @@ class BackupExecutionCoordinator @Inject constructor(
     private suspend fun schedule(pending: BackupPendingUpload, onlyWifi: Boolean, refreshConstraints: Boolean = false) {
         runtime.updatePendingPhase(pending.artifactId, "enqueuing")
         try {
-            BackupAutoScheduler.enqueueUpload(context, pending, onlyWifi, refreshConstraints)
+            /** 返回的入队身份串联后续 Worker，与产物身份共同核对排队等待时间。 */
+            val workId = BackupAutoScheduler.enqueueUpload(context, pending, onlyWifi, refreshConstraints)
+            diagnostics.record(BackupDiagnosticRecord(System.currentTimeMillis(),
+                if (BackupSchedulingPolicy.uploadRequiresUnmetered(pending.source, onlyWifi)) "waiting_unmetered" else "waiting_connected",
+                if (refreshConstraints) "enqueue_replace_requested" else "enqueue_keep_requested", workId,
+                pending.artifactId, pending.source))
             runtime.updatePendingPhase(pending.artifactId, "queued")
             logI("BackupCoordinator") { "同包上传已入队 taskId=${pending.artifactId} source=${pending.source} onlyWifi=$onlyWifi" }
         } catch (failure: Throwable) {

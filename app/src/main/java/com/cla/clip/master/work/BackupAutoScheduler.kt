@@ -45,8 +45,8 @@ object BackupAutoScheduler {
         logD("BackupAutoScheduler") { "每日任务配置已提交 enabled=${settings.autoBackupEnabled} intervalHours=24" }
     }
 
-    /** 私有包已准备好后入队，网络仅约束同包上传；KEEP 支持未入队中断修复。 */
-    internal suspend fun enqueueUpload(context: Context, pending: BackupPendingUpload, onlyWifi: Boolean, refreshConstraints: Boolean = false) {
+    /** 私有包入队后返回低敏 Work UUID 供留证；等待约束与 KEEP/REPLACE 策略保持。 */
+    internal suspend fun enqueueUpload(context: Context, pending: BackupPendingUpload, onlyWifi: Boolean, refreshConstraints: Boolean = false): String {
         /** 手动采用任意联网，自动按设置要求无计费网络。 */
         val network = if (BackupSchedulingPolicy.uploadRequiresUnmetered(pending.source, onlyWifi)) NetworkType.UNMETERED else NetworkType.CONNECTED
         /** WorkData 只传低敏身份，Worker 执行时读取匹配的当前凭据。 */
@@ -54,7 +54,7 @@ object BackupAutoScheduler {
             .setInputData(workDataOf("artifact_id" to pending.artifactId))
             .setConstraints(Constraints.Builder().setRequiredNetworkType(network).build())
             .build()
-        withContext(Dispatchers.IO) {
+        return withContext(Dispatchers.IO) {
             /** 任务队列的终态证据补充状态落盘失败边界，已结束包不能复活。 */
             val manager = WorkManager.getInstance(context)
             /** 存在未结束任务才允许更新等待约束；明确结束时禁止另开同包上传。 */
@@ -62,6 +62,9 @@ object BackupAutoScheduler {
             check(BackupSchedulingPolicy.canSchedule(pending.phase, existing.isNotEmpty() && existing.all { it.state.isFinished })) { "upload_work_already_finished" }
             manager.enqueueUniqueWork(uploadName(pending.artifactId),
                 if (refreshConstraints) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP, request).result.get()
+            // KEEP 可能保留已有请求，不能把被忽略的新 UUID 冒充真实等待任务。
+            if (!refreshConstraints) existing.firstOrNull { !it.state.isFinished }?.id?.toString() ?: request.id.toString()
+            else request.id.toString()
         }
     }
 

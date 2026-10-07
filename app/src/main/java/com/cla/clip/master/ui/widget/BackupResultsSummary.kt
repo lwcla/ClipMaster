@@ -59,14 +59,22 @@ internal fun BackupResultDetails(state: BackupEntryState, pending: BackupPending
         listOf(R.string.host_backup_target_local to state.local, R.string.host_backup_target_webdav to state.webDav)
             .filter { it.second.kind == BackupResultKind.Failed }.forEach { (target, result) ->
                 // 只映射固定 code，不向用户显示异常原文、地址或实现字段。
-                /** 已有错误文案覆盖存储、认证、空间和远端常见错误，其余明确兜底。 */
-                val message = when (result.reasonCode) {
-                    "storage_not_writable" -> BaseR.string.base_general_backup_error_storage
-                    "auth_failed" -> BaseR.string.base_general_backup_error_auth
-                    "remote_failed" -> BaseR.string.base_general_backup_error_remote
-                    "insufficient_space" -> BaseR.string.base_general_backup_error_insufficient_space
-                    "temp_file_unavailable" -> BaseR.string.base_general_backup_error_temp_file_unavailable
-                    else -> BaseR.string.base_general_backup_error_unknown
+                /** 纯 mapper 决定错误语义，组件只选择资源；旧中断记录也使用明确提示。 */
+                val message = when (BackupFailureMessageMapper.map(result.reasonCode)) {
+                    BackupFailureMessage.Storage -> BaseR.string.base_general_backup_error_storage
+                    BackupFailureMessage.Auth -> BaseR.string.base_general_backup_error_auth
+                    BackupFailureMessage.Remote -> BaseR.string.base_general_backup_error_remote
+                    BackupFailureMessage.Space -> BaseR.string.base_general_backup_error_insufficient_space
+                    BackupFailureMessage.TempFile -> BaseR.string.base_general_backup_error_temp_file_unavailable
+                    BackupFailureMessage.Interrupted -> R.string.host_backup_error_upload_interrupted
+                    BackupFailureMessage.Timeout -> R.string.host_backup_error_upload_timeout
+                    BackupFailureMessage.Quota -> R.string.host_backup_error_upload_quota
+                    BackupFailureMessage.Network -> R.string.host_backup_error_upload_network_interrupted
+                    BackupFailureMessage.DeviceState -> R.string.host_backup_error_upload_device_interrupted
+                    BackupFailureMessage.Cancelled -> R.string.host_backup_error_upload_cancelled
+                    BackupFailureMessage.Schedule -> R.string.host_backup_error_schedule
+                    BackupFailureMessage.Handoff -> R.string.host_backup_error_handoff
+                    BackupFailureMessage.Unknown -> BaseR.string.base_general_backup_error_unknown
                 }
                 Text(stringResource(R.string.host_backup_result_row, stringResource(target), stringResource(message)),
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
