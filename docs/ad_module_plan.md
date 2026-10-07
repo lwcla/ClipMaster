@@ -4,13 +4,17 @@
 
 ## AdMob / Google Play 扩展（2026-09-18，实现中）
 
+### 上架前发行渠道（2026-10-07，已完成）
+
+仓库默认 `appDistribution=domestic`，debug/release 的检查更新恢复 Gitee 优先、GitHub 兜底，真正上架后再显式切换 Play 分发构建。AdMob debug/release 开关和已有 SDK 互斥校验保持现状；渠道与广告开关独立，不因测试 AdMob 提前启用商店更新。完整更新契约、日志与验证以 [自更新主方案](app_update_plan.md) 为准，本轮仅改构建默认值，不新增广告日志、数据或协议。
+
 本节是本轮已确认需求的唯一权威说明；下文 CSJ、uni-ad v1 的“仅详情页”限制保留为对应国内 adapter 的历史/现行范围，不限制 AdMob。
 
 ### 真实广告 ID 接入与测试设备（2026-09-27，接入已完成，投放待验收）
 
 用户已提供同一 AdMob 应用的 App ID 和 17 个互不相同的原生广告单元 ID，并要求后续使用自己的广告 ID 测试；手机已在 AdMob 后台登记为测试设备，应用审核尚未完成。debug 与 release 共用这组真实配置；首页以本轮最新提供的 HomeFeedNative 为准，不使用之前截图中的旧单元。真实值仅保存到 Git 已忽略的 local.properties，公开文档保留占位符。继续沿用 admobReleaseAppId / admobRelease<Placement>AdUnitId 参数名，避免复制第二套配置后映射漂移。
 
-构建继续复用 gradle/admob-ad-config.gradle.kts 的属性读取、广告位表、格式检查、官方示例 ID 拒绝和唯一性检查；任一 AdMob 变体启用时都检查完整真实配置。feature/ad-admob/build.gradle.kts 将相同的 App ID 写入两个变体的 BuildConfig 和 Manifest，并按既有位置表生成单元字段。gradle.properties 默认启用 debug 和 release 的 AdMob；Play 渠道及国内 SDK 互斥规则保持不变。没有真实配置的新电脑或 CI 必须先配置同名属性，也可显式关闭两个 AdMob 开关以构建无广告包。
+构建继续复用 gradle/admob-ad-config.gradle.kts 的属性读取、广告位表、格式检查、官方示例 ID 拒绝和唯一性检查；任一 AdMob 变体启用时都检查完整真实配置。feature/ad-admob/build.gradle.kts 将相同的 App ID 写入两个变体的 BuildConfig 和 Manifest，并按既有位置表生成单元字段。gradle.properties 默认启用 debug 和 release 的 AdMob；上架前默认 domestic 渠道，国内 SDK 互斥规则保持不变。没有真实配置的新电脑或 CI 必须先配置同名属性，也可显式关闭两个 AdMob 开关以构建无广告包。
 
 测试模式由 AdMob 后台登记的设备决定，不因 debug 构建自动获得，也不因真实 ID 自动取消；本次不在源码内写死设备标识。安装验证时确认 Google 原生广告带 Test Ad 标记，不点击未经确认的真实广告。应用审核、账号资格、UMP 消息与 canRequestAds、网络和填充仍由对应流程决定；测试成功不代表正式投放获批。正式 release 用真实签名和 R8 构建验证，不能覆盖安装到签名不同的 debug 包而清除用户数据。
 
@@ -295,6 +299,8 @@ INFO/DEBUG：首次请求、加载、展示、释放，字段仅 source/placemen
 - [ ] 正式 ID、账号审核、Play AAB/R8、真机及小范围发布验收
 
 ### 变更记录
+
+- 2026-10-07：上架前默认渠道恢复 domestic，AdMob 开关保留；原因是测试广告无需提前切换商店更新，真正上架后的 Play 分发构建再显式切换。
 
 - 2026-09-27：按用户提供的完整 17 个单元接入真实 AdMob ID，debug/release 共用本机配置并默认启用 release；用户已登记测试设备，后续通过真实单元的测试设备模式验证。正式值不进入版本库，构建校验同时覆盖两种变体；结果记录在上方接入小节。
 

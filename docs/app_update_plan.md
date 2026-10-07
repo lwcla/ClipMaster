@@ -10,6 +10,17 @@
 
 ## 目标与范围
 
+### 上架前默认渠道恢复（2026-10-07，已完成）
+
+- 当前尚未正式上架 Google Play，仓库默认 `appDistribution=domestic`；debug/release 均生成 `IS_PLAY_DISTRIBUTION=false`，手动检查走 Gitee 优先、GitHub 兜底，自动检查继续受“我的”页可见生命周期和 24 小时限频约束。
+- 仅切换构建渠道，复用 `AppUpdateConfigFactory` 的源排序、`AppUpdateChecker` 的失败回退和 `MineVm` 的已有入口；不新增组件、类、方法或更新状态规则。AdMob debug/release 开关保持现有值，发行渠道与广告开关独立。
+- 真正上架后再将 Play 分发构建切换为 `appDistribution=play`（或显式传入 `-PappDistribution=play`），由已有 Play 分支打开商店并关闭外部自动检查；不根据广告审核状态、语言或设备自动切换。
+- 测试门禁：仅修改 Gradle 默认参数，不新增 JVM 单测、不采用测试先行；已有 parser/checker 测试保护源解析与失败回退，通过宿主单测、Kotlin 编译和 debug/release BuildConfig 核对验证接线。设备点击与真实网络可达性仍需人工验收；显式 `-P` 参数可覆盖仓库默认值，验收应核对实际构建渠道。
+- 不新增日志：现有检查开始、HTTP、解析和源降级日志已覆盖恢复后的链路，沿用下方日志与脱敏契约。没有持久化数据、备份协议或反射/序列化契约变更，本轮不调整备份或 keep 规则，不重复执行 release/R8。
+- 验证结果：执行 `.\gradlew.bat :app:testDebugUnitTest :app:compileDebugKotlin :app:generateReleaseBuildConfig :app:assembleDebug --offline --console=plain --no-parallel --max-workers=1 --no-daemon '-Pkotlin.compiler.execution.strategy=in-process'` 成功，宿主 284 项单测全部通过，无失败、错误或跳过。debug/release 的 `IS_PLAY_DISTRIBUTION=false` 已核对，debug APK 已生成；`git diff --check` 通过。未安装设备或验证真实网络请求，未运行 release/R8；既有 Gradle、WebView 与 Shizuku 警告未在本轮处理。
+
+### 自更新范围
+
 - 新增轻量版本检查能力，优先从 Gitee release API 读取最新 Release 并定位 `update.json` 附件，失败后再从 GitHub public release 仓库读取 `update.json`。
 - 在“我的”页提供“检查更新”入口，展示当前版本、检查状态、可用新版本和下载入口。
 - Gitee 和 GitHub 同步承载 `update.json`、APK 与 `sha256.txt`；App 端按 Gitee 优先、GitHub 兜底的顺序检查，下载入口同时展示两端地址。
@@ -163,6 +174,8 @@ public 仓库 README 作为人可读发布页维护，至少包含最新版版�
 
 ## 变更记录
 
+- 2026-10-07：恢复上架前默认 `domestic` 渠道，继续 Gitee 优先、GitHub 兜底；原因是当前尚未真正上架 Google Play，商店更新分支留待正式上架后显式切换。构建参数说明和广告主文档同步渠道差异，不复制更新实现。
+
 - 2026-10-07：按用户提交要求纳入已有版本号改动，`versionCode` 从 34 增至 35，`versionName` 从 0.7.0 更新为 0.7.1；复用现有版本比较、BuildConfig 与 APK 文件命名，无新增组件、方法、数据协议或运行时日志。仅为源码版本准备，不表示公开 Release 已发布。此改动只有版本元数据，无可独立测试的新规则，故不新增单测或走 TDD；通过 Debug Kotlin 编译、Manifest/BuildConfig 生成及版本字段核对验证，不重复运行业务单测或 Release/R8。已提交的前一轮诊断增强仍需实际后台留证。
 
 - 2026-09-29：自升级上次检查时间改由独立 `AppUpdateCheckStore` 挂起读写，读取失败不当作首次检查；原因是宿主设置改为 DataStore。
@@ -188,7 +201,7 @@ public 仓库 README 作为人可读发布页维护，至少包含最新版版�
 
 ## 2026-09-18 AdMob 接入变更（实现中）
 
-Play 构建关闭自动外部版本检查，手动更新入口跳转当前包名的 Google Play 商店页面；国内发行维持现有更新来源。
+显式 Play 构建关闭自动外部版本检查，手动更新入口跳转当前包名的 Google Play 商店页面；上架前默认使用 `domestic`，维持 Gitee 优先、GitHub 兜底，最终默认渠道以上方 2026-10-07 说明为准。
 
 共享广告的隐私、生命周期、资源、布局及低敏日志契约以 [广告主方案](ad_module_plan.md) 为准；本页验证重点为业务交互不回归及广告异步加载时的内容锚点保护。
 

@@ -8,7 +8,7 @@
 
 ## 模块开关
 
-项目 `gradle.properties` 默认开启 AdMob debug/release 模块并使用 Play 渠道，其余可选实现保持关闭。以下为国内广告开关；需要构建国内广告包时，应同时设置 `appDistribution=domestic`、关闭对应 buildType 的 AdMob，再开启目标国内开关，或在命令行传同名 `-P` 参数：
+项目 `gradle.properties` 默认开启 AdMob debug/release 模块，正式上架 Google Play 前使用 `domestic` 渠道，检查更新走 Gitee 优先、GitHub 兜底，其余可选实现保持关闭。以下为国内广告开关；需要构建国内广告包时，应保持 `appDistribution=domestic`、关闭对应 buildType 的 AdMob，再开启目标国内开关，或在命令行传同名 `-P` 参数：
 
 ```properties
 # debug/internal 穿山甲 adapter 开关。
@@ -65,6 +65,8 @@ csjRequiredPrivacyPolicyVersion=2026-06-csj
 
 ## 变更记录
 
+- 2026-10-07：默认发行渠道恢复 `domestic`，正式上架后再显式使用 `play`；原因是上架前检查更新应继续走双发布源，AdMob 开关独立保留。
+
 - 2026-09-27：用户已提供完整真实 ID 并登记测试设备，debug/release 改为共用本机真实配置，release 默认开启；同步配置说明和测试设备边界。真实值不写入本示例，构建与设备验证结果统一记录于广告主方案。
 
 - 2026-09-27：新增媒体关联页独立广告配置 `admobReleaseBackupMediaRelocationNativeAdUnitId`，正式单元总数增至 17；debug 继续自动生成测试 ID。无新敏感日志，配置验证与测试以广告主方案为准。
@@ -75,10 +77,13 @@ csjRequiredPrivacyPolicyVersion=2026-06-csj
 
 ## Google Play / AdMob 配置（2026-09-18）
 
+当前渠道说明（2026-10-07）：AdMob 开关独立于更新渠道；上架前默认双发布源，真正上架后的 Play 分发构建才使用下方命令中的显式 `-PappDistribution=play`。更新规则以 [自更新主方案](app_update_plan.md) 为准。仅调整构建默认值和说明，复用已有日志，不新增运行时日志；验证核对生成的 BuildConfig、宿主编译和既有单元测试。
+
 主设计以 [广告主方案](ad_module_plan.md) 为准。模块开关与发行渠道使用 Gradle 属性；ID 只保存在本机 `local.properties` 或 CI 属性中。不要提交真实 ID。
 
 ```properties
-appDistribution=play
+# 上架前走双发布源更新；真正上架后的 Play 分发构建再显式改为 play。
+appDistribution=domestic
 enableAdmobDebugAdFeature=true
 enableAdmobReleaseAdFeature=true
 # 国内广告开关全部关闭；同包混合 SDK 会在配置期失败。
