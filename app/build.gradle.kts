@@ -96,8 +96,10 @@ android {
         applicationId = "com.cla.clip.master"
         minSdk = 24
         targetSdk = 36
-        versionCode = 34
-        versionName = "0.7.0"
+        /** 安装升级与更新判断使用单调递增的版本码，当前发行准备值为 35。 */
+        versionCode = 35
+        /** 用户可见的版本名称，复用现有 APK 文件名生成规则。 */
+        versionName = "0.7.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
