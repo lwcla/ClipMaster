@@ -204,7 +204,6 @@ internal fun BackupPage(
                                 }
                             },
                             onRetentionChange = backupVm::updateRetentionCount,
-                            onOnlyWifiChange = backupVm::updateOnlyWifi,
                         )
                     }
                     PageAdSlot(session = adSession, placement = AdPlacement.BackupOverviewNative,
@@ -349,7 +348,6 @@ private fun AutoBackupSection(
     state: BackupUiState,
     onEnabledChange: (Boolean) -> Unit,
     onRetentionChange: (Int) -> Unit,
-    onOnlyWifiChange: (Boolean) -> Unit,
 ) {
     ClipMasterCard(
         modifier = Modifier
@@ -376,12 +374,6 @@ private fun AutoBackupSection(
                 count = state.backupRetentionCount,
                 enabled = state.settingsLoaded && !state.isBusy,
                 onChange = onRetentionChange
-            )
-            ToggleRow(
-                title = androidx.compose.ui.res.stringResource(R.string.base_general_backup_auto_only_wifi),
-                checked = state.autoBackupOnlyWifi,
-                enabled = state.settingsLoaded && !state.isBusy,
-                onCheckedChange = onOnlyWifiChange
             )
 
         }

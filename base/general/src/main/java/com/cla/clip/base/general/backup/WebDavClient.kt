@@ -32,8 +32,10 @@ import javax.xml.parsers.DocumentBuilderFactory
 @Singleton
 class WebDavClient @Inject constructor(
     /** 复用应用已有 OkHttpClient，避免为 WebDAV 再引入额外网络栈。 */
-    private val okHttpClient: OkHttpClient,
+    okHttpClient: OkHttpClient,
 ) {
+    /** 派生客户端复用连接池及超时，关闭连接失败自动重发，正式包只尝试本次请求。 */
+    private val okHttpClient = okHttpClient.newBuilder().retryOnConnectionFailure(false).build()
     companion object {
         /** 日志标签。 */
         private const val TAG = "WebDavClient"
@@ -68,8 +70,9 @@ class WebDavClient @Inject constructor(
 
     /** 上传文本文件。 */
     suspend fun uploadText(config: WebDavConfig, fileName: String, text: String) = withContext(Dispatchers.IO) {
+        /** 一次性正文阻止 503/408 等协议跟进重发；失败由本轮结果记录，不后台补传。 */
         val request = baseRequest(config, buildWebDavUrl(config, fileName))
-            .put(text.toRequestBody(JsonMediaType))
+            .put(text.toRequestBody(JsonMediaType).asSingleAttemptRequestBody())
             .build()
         executeWebDavCall("upload_text") {
             okHttpClient.newCall(request).execute().use { response ->
@@ -155,7 +158,7 @@ class WebDavClient @Inject constructor(
         files
     }
 
-    /** 上传完整包并更新 latest；阶段观察只传固定 code，不暴露配置、内容或路径，观察失败不改变上传结论。 */
+    /** 正式 ZIP 只上传一次，随后发布独立 manifest；不回读、不写共享指针，恢复仍必须预检。 */
     suspend fun uploadBackup(config: WebDavConfig, export: BackupExportResult, taskId: String? = null,
         onStage: (String) -> Unit = {}) = withContext(Dispatchers.IO) {
         /** 原有成功日志的墙钟开始时间；Worker 实际运行耗时另用单调时钟记录。 */
@@ -166,33 +169,11 @@ class WebDavClient @Inject constructor(
         }
         notifyUploadStage(onStage, "ensuring_remote_directory")
         ensureDirectory(config)
-        /** 远端临时 ZIP 与 sidecar 名称，仅用于请求，不进入诊断回调。 */
-        val tempSnapshot = "${export.fileName}.tmp"
-        /** 与同一临时包配套的 manifest，保留已有协议。 */
-        val tempManifest = "${export.manifestFileName}.tmp"
-        logD(TAG) { "开始上传 WebDAV 临时备份文件 ${backupTaskLogField(taskId)}fileName=${export.fileName}" }
-        notifyUploadStage(onStage, "uploading_temporary_zip")
-        uploadFile(config, tempSnapshot, export.packageFile)
-        notifyUploadStage(onStage, "uploading_temporary_manifest")
-        uploadText(config, tempManifest, export.manifestJson)
-        /** 回读文件仍在原任务目录，诊断只记录正在回读，不记录完整路径。 */
-        val verifyFile = File(export.taskDir, "${export.fileName}.webdav_verify")
-        notifyUploadStage(onStage, "reading_back_temporary_zip")
-        downloadFile(config, tempSnapshot, verifyFile)
-        notifyUploadStage(onStage, "validating_temporary_zip")
-        verifyFile.validateBackupPackageFile(export.manifest.applicationId)
-        logD(TAG) { "WebDAV 临时备份文件校验通过 ${backupTaskLogField(taskId)}fileName=${export.fileName} tempSize=${verifyFile.length()}" }
         notifyUploadStage(onStage, "publishing_remote_zip")
-        uploadFile(config, export.fileName, verifyFile)
+        uploadFile(config, export.fileName, export.packageFile)
         notifyUploadStage(onStage, "publishing_remote_manifest")
         uploadText(config, export.manifestFileName, export.manifestJson)
-        notifyUploadStage(onStage, "publishing_latest")
-        uploadText(config, "latest.json", export.manifestJson)
         notifyUploadStage(onStage, "remote_files_published")
-        notifyUploadStage(onStage, "cleaning_remote_temporary_files")
-        deleteFile(config, tempSnapshot)
-        deleteFile(config, tempManifest)
-        verifyFile.delete()
         logD(TAG) {
             "WebDAV 备份上传成功 ${backupTaskLogField(taskId)}fileName=${export.fileName} " +
                 "durationMs=${System.currentTimeMillis() - startedAt}"
@@ -425,10 +406,16 @@ private fun String.parseHttpDateMillis(): Long? {
 /** 文件 RequestBody，显式返回 contentLength，避免 WebDAV 服务端拒绝未知长度 chunked PUT。 */
 private fun File.asRequestBody(mediaType: MediaType): RequestBody {
     return object : RequestBody() {
+        /** ZIP MIME 保持既有服务器协议。 */
         override fun contentType(): MediaType = mediaType
 
+        /** 提前返回实际字节数，避免 chunked 请求被部分服务端拒绝。 */
         override fun contentLength(): Long = length()
 
+        /** 正式 ZIP 不能因 503 Retry-After: 0 或其他跟进响应再次发送。 */
+        override fun isOneShot(): Boolean = true
+
+        /** 流式发送固定文件；旧轮次文件被删除时显式失败，不切换成新包。 */
         override fun writeTo(sink: okio.BufferedSink) {
             inputStream().use { input ->
                 sink.outputStream().use { output ->
@@ -437,4 +424,16 @@ private fun File.asRequestBody(mediaType: MediaType): RequestBody {
             }
         }
     }
+}
+
+/** 文本 PUT 也限定单次尝试，复用原正文的 MIME、长度和字节，不修改 manifest 协议。 */
+private fun RequestBody.asSingleAttemptRequestBody(): RequestBody = object : RequestBody() {
+    /** MIME 与原正文一致。 */
+    override fun contentType(): MediaType? = this@asSingleAttemptRequestBody.contentType()
+    /** 保留显式正文长度，禁止改为未知长度请求。 */
+    override fun contentLength(): Long = this@asSingleAttemptRequestBody.contentLength()
+    /** OkHttp 跟进层不能再次发送此正文。 */
+    override fun isOneShot(): Boolean = true
+    /** 直接委托原正文写入，不复制或重编码外部字段。 */
+    override fun writeTo(sink: okio.BufferedSink) = this@asSingleAttemptRequestBody.writeTo(sink)
 }

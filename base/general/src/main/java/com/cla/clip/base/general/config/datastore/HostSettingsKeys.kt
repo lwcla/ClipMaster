@@ -50,8 +50,12 @@ internal object HostSettingsKeys {
     val BACKUP_PLAINTEXT_DISCLOSURE_ACCEPTED = booleanPreferencesKey("backup_plaintext_disclosure_accepted")
     /** 普通备份目标的保留份数。 */
     val BACKUP_RETENTION_COUNT = intPreferencesKey("backup_retention_count")
-    /** WebDAV 自动备份仅 Wi-Fi 约束。 */
-    val AUTO_BACKUP_ONLY_WIFI = booleanPreferencesKey("auto_backup_only_wifi")
+    /** 安装内最新轮次，旧消费请求不能覆盖新结果。 */
+    val CURRENT_BACKUP_ROUND_ID = stringPreferencesKey("backup_current_round_id")
+    /** 本地目标身份摘要，不持久化 SAF 授权原文。 */
+    val PENDING_LOCAL_TARGET = stringPreferencesKey("backup_pending_local_target")
+    /** 本地独立阶段，未选择目标使用 unselected。 */
+    val PENDING_LOCAL_PHASE = stringPreferencesKey("backup_pending_local_phase")
     /** WebDAV 目标最近健康状态的稳定 code。 */
     val WEBDAV_HEALTH = stringPreferencesKey("webdav_health")
     /** WebDAV 最近健康检查时间，单位毫秒。 */

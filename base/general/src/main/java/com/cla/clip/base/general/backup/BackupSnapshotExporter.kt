@@ -58,7 +58,8 @@ class BackupSnapshotExporter @Inject constructor(
         val deviceLabel = buildBackupDeviceLabel(installationIdentityRepository.getOrCreateInstallId())
         /** 导出开始时读取一次已提交设置，避免 ZIP 内字段跨不同写入时刻。 */
         val backupSettings = clipSettingsRepository.snapshot().toBackupSettings()
-        val fileName = buildBackupFileName(deviceLabel, now, backupKind)
+        // 文件名前缀包含任务身份；即使两轮在同一秒生成，也不会覆盖对方的正式 ZIP/manifest。
+        val fileName = buildBackupFileName("${deviceLabel}_$taskId", now, backupKind)
         val session = packageWriter.begin(taskDir, taskId, fileName)
         val highWater = readHighWaterMarks()
         logD(TAG) {

@@ -37,8 +37,6 @@ data class BackupSettingsSnapshot(
     val backupPlaintextDisclosureAccepted: Boolean = false,
     /** 普通备份每个目标保留的份数，范围 1 至 20。 */
     val backupRetentionCount: Int = 5,
-    /** 自动 WebDAV 备份是否只在 Wi-Fi 下运行。 */
-    val autoBackupOnlyWifi: Boolean = false,
 )
 
 /** 同一次 DataStore 读取取得的目标配置与密码，供网络动作或页面内存回填使用，避免旧地址配新密码。 */
@@ -220,10 +218,6 @@ class BackupSettingsRepository @Inject internal constructor(
         store.edit { preferences -> preferences[HostSettingsKeys.BACKUP_RETENTION_COUNT] = count.coerceIn(1, 20) }
     }
 
-    /** 保存只约束 WebDAV 自动任务的 Wi-Fi 开关。 */
-    suspend fun setOnlyWifi(enabled: Boolean) {
-        store.edit { preferences -> preferences[HostSettingsKeys.AUTO_BACKUP_ONLY_WIFI] = enabled }
-    }
 
     /** 从单次磁盘快照映射全部备份配置，密码只暴露存在性。 */
     private fun decode(preferences: Preferences): BackupSettingsSnapshot = BackupSettingsSnapshot(
@@ -237,6 +231,5 @@ class BackupSettingsRepository @Inject internal constructor(
         autoBackupEnabled = preferences[HostSettingsKeys.AUTO_BACKUP_ENABLED] ?: false,
         backupPlaintextDisclosureAccepted = preferences[HostSettingsKeys.BACKUP_PLAINTEXT_DISCLOSURE_ACCEPTED] ?: false,
         backupRetentionCount = (preferences[HostSettingsKeys.BACKUP_RETENTION_COUNT] ?: 5).coerceIn(1, 20),
-        autoBackupOnlyWifi = preferences[HostSettingsKeys.AUTO_BACKUP_ONLY_WIFI] ?: false,
     )
 }

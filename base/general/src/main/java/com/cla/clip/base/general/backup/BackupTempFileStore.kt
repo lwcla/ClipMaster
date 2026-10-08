@@ -16,10 +16,12 @@ import javax.inject.Singleton
  * 必须集中放在应用私有缓存目录并按 taskId 标记，避免失败或取消后长期占用空间。
  */
 @Singleton
-class BackupTempFileStore @Inject constructor(
-    /** 应用级 Context，用于访问私有 cacheDir，不持有页面或 Worker 生命周期。 */
-    @param:ApplicationContext private val context: Context,
+class BackupTempFileStore internal constructor(
+    /** 私有缓存备份根目录；测试只注入合成目录，不持有页面上下文。 */
+    private val cacheRoot: File,
 ) {
+    /** Android 装配仍只选择既有 backup_tmp 域。 */
+    @Inject constructor(@ApplicationContext context: Context) : this(File(context.cacheDir, ROOT_DIR))
     companion object {
         /** 日志标签，只记录任务 id、目录类型和数量，不输出绝对路径。 */
         private const val TAG = "BackupTempFileStore"
@@ -36,6 +38,19 @@ class BackupTempFileStore @Inject constructor(
 
     /** 创建外部导入或 WebDAV 下载临时目录。 */
     fun createImportDir(taskId: String): File = createTaskDir("import", taskId)
+
+    /** 下一轮开始清理后台生成半包，不能触碰手动文件导出或恢复预览。 */
+    fun cleanupBackgroundExports() {
+        /** 仅允许 backup_tmp/export 直属范围，拒绝指向范围外的软链接。 */
+        val exportRoot = File(rootDir(), "export").canonicalFile
+        require(exportRoot.parentFile == rootDir().canonicalFile) { "export_outside_root" }
+        /** 后台 UUID 和旧 daily/manual-webdav 身份；manual-local 与 import 明确排除。 */
+        val backgroundIdentity = Regex("(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|(?:daily|manual-webdav)-[A-Za-z0-9_-]+)")
+        exportRoot.listFiles().orEmpty().filter { backgroundIdentity.matches(it.name) }.forEach { child ->
+            require(child.canonicalFile.parentFile == exportRoot) { "export_outside_root" }
+            check(child.deleteRecursively()) { "export_cleanup_failed" }
+        }
+    }
 
     /** 检查私有缓存目录剩余空间；不足时提前失败，避免写出半截备份。 */
     fun ensureAvailableSpace(requiredBytes: Long) {
@@ -86,7 +101,7 @@ class BackupTempFileStore @Inject constructor(
 
     /** 返回备份临时根目录。 */
     private fun rootDir(): File {
-        return File(context.cacheDir, ROOT_DIR).apply {
+        return cacheRoot.apply {
             if (!exists()) mkdirs()
         }
     }

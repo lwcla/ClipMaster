@@ -442,7 +442,6 @@
     <string name="base_general_backup_auto_no_target">请先设置本地备份文件夹，或测试通过 WebDAV 连接</string>
     <string name="base_general_backup_auto_enabled_hint">自动备份已开启，每 24 小时备份一次，首次将在约 24 小时后执行</string>
     <string name="base_general_backup_retention_count">备份保留：%1$d 份</string>
-    <string name="base_general_backup_auto_only_wifi">WebDAV 仅 Wi-Fi 备份</string>
     <string name="base_general_webdav_health_unknown">WebDAV 状态：未检查</string>
     <string name="base_general_webdav_health_available">WebDAV 状态：可用（%1$s）</string>
     <string name="base_general_webdav_health_unavailable">WebDAV 状态：不可用（%1$s）</string>

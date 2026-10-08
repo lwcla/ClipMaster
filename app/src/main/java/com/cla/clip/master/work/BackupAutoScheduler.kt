@@ -2,7 +2,7 @@ package com.cla.clip.master.work
 
 import android.content.Context
 import androidx.work.*
-import com.cla.clip.base.general.backup.settings.BackupPendingUpload
+import com.cla.clip.base.general.backup.settings.BackupResultTarget
 import com.cla.clip.base.general.backup.settings.BackupSettingsRepository
 import com.cla.clip.master.backup.BackupExecutionCoordinator
 import com.cla.clip.master.backup.BackupSchedulingPolicy
@@ -15,75 +15,79 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 
-/** 仅启动、启动广播和备份配置变更接入；业务保存不再调用调度。 */
+/** 启动和配置变化仅维护周期及旧任务兼容，不提前生成或补传。 */
 object BackupAutoScheduler {
-    /** 保留周期任务名称，升级更新其约束而不创建重复任务。 */
+    /** 保留已有日周期名称，UPDATE 不重置已有等待时间。 */
     private const val PERIODIC_NAME = "backup_auto_periodic"
+    /** 手动请求提交后独立于页面生命周期。 */
+    private const val MANUAL_NAME = "backup_manual_generation"
+    /** 本地目标的唯一队列名，不建立跨目标任务依赖边。 */
+    private const val LOCAL_NAME = "backup_local_publish"
+    /** 云端目标独立替换自己的旧请求。 */
+    private const val UPLOAD_NAME = "backup_webdav_upload"
 
-    /** 更新日周期并清除旧数据变化任务；不会提前生成快照。 */
+    /** 每日 24 小时且首次等待 24 小时，自动关闭只取消周期。 */
     suspend fun reschedule(context: Context) {
-        /** 读取 Hilt 已装配依赖，不创建第二份设置存储。 */
+        /** 复用已有 Hilt 装配，不新建设置实例。 */
         val entry = EntryPointAccessors.fromApplication(context.applicationContext, BackupSchedulingEntryPoint::class.java)
-        /** 同一份已提交策略。 */
+        /** 同一份持久化开关。 */
         val settings = entry.backupSettingsRepository().snapshot()
-        /** 应用级调度器。 */
+        /** 系统任务队列，只有备份精确名称会被取消。 */
         val manager = WorkManager.getInstance(context)
         withContext(Dispatchers.IO) {
-            // 升级清理旧延迟触发任务，取消本身不生成备份。
             manager.cancelUniqueWork("backup_auto_dirty").result.get()
             if (settings.autoBackupEnabled) {
-                /** 无网络约束，首次开启等待完整 24 小时。UPDATE 不重置已有周期。 */
+                /** 不设置网络约束，保留历史每日请求的执行入口。 */
                 val request = PeriodicWorkRequestBuilder<BackupAutoWorker>(BackupSchedulingPolicy.intervalHours, TimeUnit.HOURS)
-                    .setInitialDelay(BackupSchedulingPolicy.intervalHours, TimeUnit.HOURS)
-                    .build()
+                    .setInitialDelay(BackupSchedulingPolicy.intervalHours, TimeUnit.HOURS).build()
                 manager.enqueueUniquePeriodicWork(PERIODIC_NAME, ExistingPeriodicWorkPolicy.UPDATE, request).result.get()
-            } else {
-                manager.cancelUniqueWork(PERIODIC_NAME).result.get()
-            }
+            } else manager.cancelUniqueWork(PERIODIC_NAME).result.get()
         }
-        entry.backupExecutionCoordinator().reconcile(refreshConstraints = true)
+        entry.backupExecutionCoordinator().reconcile()
         logD("BackupAutoScheduler") { "每日任务配置已提交 enabled=${settings.autoBackupEnabled} intervalHours=24" }
     }
 
-    /** 私有包入队后返回低敏 Work UUID 供留证；等待约束与 KEEP/REPLACE 策略保持。 */
-    internal suspend fun enqueueUpload(context: Context, pending: BackupPendingUpload, onlyWifi: Boolean, refreshConstraints: Boolean = false): String {
-        /** 手动采用任意联网，自动按设置要求无计费网络。 */
-        val network = if (BackupSchedulingPolicy.uploadRequiresUnmetered(pending.source, onlyWifi)) NetworkType.UNMETERED else NetworkType.CONNECTED
-        /** WorkData 只传低敏身份，Worker 执行时读取匹配的当前凭据。 */
-        val request = OneTimeWorkRequestBuilder<BackupWebDavUploadWorker>()
-            .setInputData(workDataOf("artifact_id" to pending.artifactId))
-            .setConstraints(Constraints.Builder().setRequiredNetworkType(network).build())
-            .build()
-        return withContext(Dispatchers.IO) {
-            /** 任务队列的终态证据补充状态落盘失败边界，已结束包不能复活。 */
-            val manager = WorkManager.getInstance(context)
-            /** 存在未结束任务才允许更新等待约束；明确结束时禁止另开同包上传。 */
-            val existing = manager.getWorkInfosForUniqueWork(uploadName(pending.artifactId)).get()
-            check(BackupSchedulingPolicy.canSchedule(pending.phase, existing.isNotEmpty() && existing.all { it.state.isFinished })) { "upload_work_already_finished" }
-            manager.enqueueUniqueWork(uploadName(pending.artifactId),
-                if (refreshConstraints) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP, request).result.get()
-            // KEEP 可能保留已有请求，不能把被忽略的新 UUID 冒充真实等待任务。
-            if (!refreshConstraints) existing.firstOrNull { !it.state.isFinished }?.id?.toString() ?: request.id.toString()
-            else request.id.toString()
-        }
-    }
-
-    /** 取消指定包，调用方持有任务锁，旧 Worker 无法继续持有文件。 */
-    internal suspend fun cancelUpload(context: Context, artifactId: String) = withContext(Dispatchers.IO) {
-        WorkManager.getInstance(context).cancelUniqueWork(uploadName(artifactId)).result.get()
+    /** 手动只安排生成，返回入队不代表 ZIP 或远端已经完成。 */
+    internal suspend fun enqueueManual(context: Context) = withContext(Dispatchers.IO) {
+        /** 固定来源 code，兼容没有输入的旧日周期。 */
+        val request = OneTimeWorkRequestBuilder<BackupAutoWorker>().setInputData(workDataOf("source" to "manual")).build()
+        WorkManager.getInstance(context).enqueueUniqueWork(MANUAL_NAME, ExistingWorkPolicy.REPLACE, request).result.get()
         Unit
     }
 
-    /** 唯一名按文件身份分开，旧请求不能冒领新包。 */
-    private fun uploadName(artifactId: String): String = "backup_webdav_upload_$artifactId"
+    /** 完整包就绪后分目标入队，双方均无网络约束，替换本目标旧请求。 */
+    internal suspend fun enqueueTarget(context: Context, roundId: String, target: BackupResultTarget): String = withContext(Dispatchers.IO) {
+        /** WorkData 只包含轮次 ID，不含路径、目标或密码。 */
+        val request = if (target == BackupResultTarget.Local)
+            OneTimeWorkRequestBuilder<BackupLocalPublishWorker>().setInputData(workDataOf("round_id" to roundId)).build()
+        else OneTimeWorkRequestBuilder<BackupWebDavUploadWorker>().setInputData(workDataOf("round_id" to roundId)).build()
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            if (target == BackupResultTarget.Local) LOCAL_NAME else UPLOAD_NAME, ExistingWorkPolicy.REPLACE, request).result.get()
+        request.id.toString()
+    }
+
+    /** 尽力取消旧目标，仅等待取消登记，不等待旧 Worker 或 IO 退出。 */
+    internal suspend fun cancelTargets(context: Context) = withContext(Dispatchers.IO) {
+        /** 同一个应用队列，不影响其他后台工作。 */
+        val manager = WorkManager.getInstance(context)
+        manager.cancelUniqueWork(LOCAL_NAME).result.get()
+        manager.cancelUniqueWork(UPLOAD_NAME).result.get()
+        Unit
+    }
+
+    /** 升级只取消旧身份唯一名，不触发任何网络请求。 */
+    internal suspend fun cancelLegacyUpload(context: Context, artifactId: String) = withContext(Dispatchers.IO) {
+        WorkManager.getInstance(context).cancelUniqueWork("backup_webdav_upload_$artifactId").result.get()
+        Unit
+    }
 }
 
-/** 调度装配边界，不暴露任何业务数据版本入口。 */
+/** 调度只接入既有设置和协调器，不暴露业务数据版本。 */
 @EntryPoint
 @InstallIn(SingletonComponent::class)
 interface BackupSchedulingEntryPoint {
-    /** 本机策略。 */
+    /** 已提交开关。 */
     fun backupSettingsRepository(): BackupSettingsRepository
-    /** 文件状态修复与取消流程。 */
+    /** 仅升级清理，不补入队。 */
     fun backupExecutionCoordinator(): BackupExecutionCoordinator
 }

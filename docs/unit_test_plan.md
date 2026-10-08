@@ -4,6 +4,8 @@
 
 ## 当前状态
 
+2026-10-08：备份领域增加最新轮次条件结果、两目标独立分派/取消、后台中间目录清理、直接 ZIP/manifest 发布与 503 跟进不重发回归。短队列/状态/文件使用 JVM 合成替身；503 测试使用有界本机 ServerSocket、临时端口和合成字节，不连接真实 WebDAV、不读取用户配置。既有旧包交接回滚/消费结束删除测试随退役契约删除；真实 WorkManager、SAF、离线和进程重建验收仍归设备层，完整约定见 [备份主方案](webdav_backup_plan.md)。
+
 当前仓库已经具备基础单元测试入口：`app`、`base:general`、`base:hidden-api` 和 `shizuku` 模块都有 `src/test` 目录，并统一接入 JUnit4。`base:general` 已有 `BackupPackageIoTest` 和 `BackupRestoreTimeNormalizerTest`，覆盖备份包协议、zip entry 安全边界和恢复时间归一化，是后续测试命名、断言粒度和临时文件清理方式的主要参考。
 
 现有测试能力仍偏少，业务规则大多依赖编译验证和人工验证。项目中已经拆出不少适合 JVM 单元测试的纯逻辑能力，例如磁力链接规范化、备份协议、图片格式识别、图片下载校验、文件名生成、搜索高亮、时间排序规则和 UI 背后的状态派生判断。后续应优先补齐这些低依赖、高回归风险的纯逻辑测试，再逐步扩展到 ViewModel 状态流、DAO 查询和 Worker 协作者。
@@ -417,6 +419,8 @@ TorrentSearch 进入 P0/P1 测试清单：先以失败测试固定“恰好 43 �
 - 是否需要在 CI 或本地提交前固定运行 `:base:general:testDebugUnitTest` 和 `:app:testDebugUnitTest`。
 
 ## 变更记录
+
+- 2026-10-08：同步最新轮次备份的回归边界与测试债，新增本机合成 HTTP 503 协议跟进测试、不增加测试依赖；删除已退役交接/终态删包测试，保留分目标条件提交、路径安全和恢复协议回归。原因：测试需保护已确认的新流程，不能继续固化网络等待和旧包回退。
 
 - 2026-08-30：补充 TorrentSearch 固定快照、43 Provider、输入安全、协议、备份恢复和双构建路径测试矩阵；原因是旧 Academic Torrents 磁力测试将随替换方案废弃。
 - 2026-05-24：补充“可从 UI/导航问题中抽出的纯规则、状态机、mapper、formatter、predicate 或派生状态判断必须先写失败测试”的选择性 TDD 细则，并同步更新 `AGENTS.md` 与 `$repo-unit-test-gate`；原因是避免把可单测的状态派生规则误归类为薄导航接线。

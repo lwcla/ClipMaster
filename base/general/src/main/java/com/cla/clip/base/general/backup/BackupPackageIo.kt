@@ -73,7 +73,7 @@ class BackupPackageWriter @Inject constructor() {
         // actualPackageSize 是 zip 完成后的真实大小，只写入 sidecar/latest manifest 和导出摘要，不再回写包内 manifest。
         val actualPackageSize = packageFile.length()
         if (actualPackageSize > MAX_BACKUP_PACKAGE_BYTES) throw BackupFailure.FileTooLarge()
-        // finalManifest 是本地目录、WebDAV sidecar 和 latest.json 使用的最终 manifest，必须带真实 fileSize 方便列表展示。
+        // finalManifest 是本地目录和 WebDAV 独立 sidecar 使用的摘要，真实 fileSize 用于列表展示。
         val finalManifest = packageManifest.copy(fileSize = actualPackageSize)
         // manifestJson 是本地目录和 WebDAV sidecar 使用的最终摘要，必须带真实 fileSize。
         val manifestJson = BackupJson.encodeManifest(finalManifest)

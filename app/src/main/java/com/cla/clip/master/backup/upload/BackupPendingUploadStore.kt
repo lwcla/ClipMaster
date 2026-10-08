@@ -9,7 +9,7 @@ import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** 待上传文件只受身份所有权清理，不受导出缓存的 24 小时过期规则影响。 */
+/** 本地与云端共用只读完整包，消费方不清理，下一轮开始统一删除。 */
 @Singleton
 class BackupPendingUploadStore internal constructor(
     /** 唯一私有根目录；测试可注入合成目录。 */
@@ -18,7 +18,7 @@ class BackupPendingUploadStore internal constructor(
     /** Android 装配选择系统自动备份排除目录，不含凭据或跨安装运行态。 */
     @Inject constructor(@ApplicationContext context: Context) : this(File(context.noBackupFilesDir, "backup_pending_upload"))
 
-    /** 完整复制 ZIP 和 sidecar 后再返回；调用方随后原子交接指针，复制失败保留旧包。 */
+    /** 完整复制 ZIP 和 sidecar 后返回；调用方再发布 ready，失败只清理本轮半包，不恢复旧包。 */
     fun prepare(artifactId: String, export: BackupExportResult): BackupExportResult {
         /** 新包独占目录；失败只能删除此目录。 */
         val directory = directory(artifactId)
@@ -53,14 +53,14 @@ class BackupPendingUploadStore internal constructor(
         return BackupExportResult(payload, BackupJson.decodeManifest(json), json, filename, "$filename.manifest.json", directory)
     }
 
-    /** 删除已结束或被替换的包；根路径校验保证不触及正式本地备份。 */
+    /** 生成失败或下一轮淘汰时删除指定包；根路径校验保证不触及用户正式备份。 */
     fun remove(artifactId: String) {
         /** 经规范化和身份校验的唯一目录。 */
         val directory = directory(artifactId)
         check(!directory.exists() || directory.deleteRecursively()) { "pending_cleanup_failed" }
     }
 
-    /** 清除孤儿文件，当前等待包不检查年龄；调用方必须持有备份任务锁。 */
+    /** 下一轮/旧版本迁移清理内部目录，消费者结束不调用；当前完整包不按年龄淘汰。 */
     fun cleanupExcept(artifactId: String?) {
         root.listFiles()?.filter { it.name != artifactId }?.forEach { child ->
             // 子目录只能由本存储生成；安全身份规则排除根和上级目录。

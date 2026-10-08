@@ -8,8 +8,8 @@ class BackupSchedulingPolicyTest {
     /** 验证 Scheduler 实际使用的滚动周期及自动/手动上传策略，真实生成约束留给平台验收。 */
     @Test fun dailyIntervalAndUploadPolicyAreIndependent() {
         assertEquals(24L, BackupSchedulingPolicy.intervalHours)
-        assertTrue(BackupSchedulingPolicy.uploadRequiresUnmetered("auto", true))
-        assertFalse(BackupSchedulingPolicy.uploadRequiresUnmetered("manual", true))
+        assertFalse(BackupSchedulingPolicy.uploadRequiresNetwork)
+        assertFalse(BackupSchedulingPolicy.generationRequiresNetwork)
     }
     /** 已失败和运行中断的包不能被启动恢复自动重试。 */
     @Test fun onlyUnfinishedWaitingPhasesCanBeScheduled() {

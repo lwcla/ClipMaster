@@ -117,36 +117,36 @@
     </div>
   </header>
   <main>
-<h2>已确认待实施：新轮次生成与并行分派</h2>
+<h2>当前实现：新轮次生成与并行分派</h2>
 <section class="diagram-card"><pre class="mermaid">flowchart TD
-    Trigger[&quot;每日周期或手动生成请求&lt;br/&gt;待补测&quot;] --&gt; Target{&quot;本轮开关和目标有效？&lt;br/&gt;待补测&quot;}
-    Target --&gt;|否| Skip[&quot;跳过，不删除包、不改历史结果&lt;br/&gt;待补测&quot;]
-    Target --&gt;|是| New[&quot;串行生成入口：登记新轮次&lt;br/&gt;旧轮次立即失效，待补测&quot;]
-    New --&gt; Delete[&quot;尽力取消旧请求并删除旧内部包&lt;br/&gt;不等待退出、不保留三份，待补测&quot;]
-    Delete --&gt; Export[&quot;生成完整 ZIP、manifest 和 checksum&lt;br/&gt;只保护生成与恢复一致性，待补测&quot;]
-    Export --&gt;|失败| Failed[&quot;选中目标分别记失败&lt;br/&gt;不恢复旧包，待补测&quot;]
-    Export --&gt;|成功| Ready[&quot;发布本轮完整只读包&lt;br/&gt;待补测&quot;]
-    Ready --&gt;|已配置本地| Local[&quot;登记本地一次性 Worker&lt;br/&gt;独立执行，待补测&quot;]
-    Ready --&gt;|已配置 WebDAV| Remote[&quot;登记云端一次性 Worker&lt;br/&gt;无网络约束，待补测&quot;]
-    Local -.-&gt; Retain[&quot;两目标不负责删除共享包&lt;br/&gt;下一轮开始时清理，待补测&quot;]
+    Trigger[&quot;每日周期或手动生成请求&lt;br/&gt;编译验证&quot;] --&gt; Target{&quot;本轮开关和目标有效？&lt;br/&gt;编译验证&quot;}
+    Target --&gt;|否| Skip[&quot;跳过，不删除包、不改历史结果&lt;br/&gt;编译验证&quot;]
+    Target --&gt;|是| New[&quot;串行生成入口：登记新轮次&lt;br/&gt;旧轮次立即失效，编译验证&quot;]
+    New --&gt; Delete[&quot;尽力取消旧请求并删除旧内部包&lt;br/&gt;不等待退出、不保留三份，编译验证&quot;]
+    Delete --&gt; Export[&quot;生成完整 ZIP、manifest 和 checksum&lt;br/&gt;只保护生成与恢复一致性，编译验证&quot;]
+    Export --&gt;|失败| Failed[&quot;选中目标分别记失败&lt;br/&gt;不恢复旧包，编译验证&quot;]
+    Export --&gt;|成功| Ready[&quot;发布本轮完整只读包&lt;br/&gt;编译验证&quot;]
+    Ready --&gt;|已配置本地| Local[&quot;登记本地一次性 Worker&lt;br/&gt;独立执行，编译验证&quot;]
+    Ready --&gt;|已配置 WebDAV| Remote[&quot;登记云端一次性 Worker&lt;br/&gt;无网络约束，编译验证&quot;]
+    Local -.-&gt; Retain[&quot;两目标不负责删除共享包&lt;br/&gt;下一轮开始时清理，编译验证&quot;]
     Remote -.-&gt; Retain</pre></section>
-<h2>已确认待实施：本地独立保存</h2>
+<h2>当前实现：本地独立保存</h2>
 <section class="diagram-card"><pre class="mermaid">flowchart TD
-    Start[&quot;本地 Worker 获得执行机会&lt;br/&gt;待补测&quot;] --&gt; Check{&quot;开始保存前检查任务 ID 与目标&lt;br/&gt;仍有效且未结束？待补测&quot;}
-    Check --&gt;|否| Skip[&quot;旧请求或重复请求跳过&lt;br/&gt;不覆盖新结果，待补测&quot;]
-    Check --&gt;|是| Read[&quot;固定本轮完整 ZIP&lt;br/&gt;不重查数据库，待补测&quot;]
-    Read --&gt; Write[&quot;复用本地临时文件与正式发布&lt;br/&gt;不等待 WebDAV，待补测&quot;]
-    Write --&gt;|成功| Success[&quot;事务内比较本任务 ID 与最新任务 ID&lt;br/&gt;相等才保存本地结果&lt;br/&gt;保存成功再清理历史备份，待补测&quot;]
-    Read --&gt;|失败| Failure[&quot;同一事务比较任务 ID&lt;br/&gt;相等才保存失败，否则跳过，待补测&quot;]
+    Start[&quot;本地 Worker 获得执行机会&lt;br/&gt;人工验证&quot;] --&gt; Check{&quot;开始保存前检查任务 ID 与目标&lt;br/&gt;仍有效且未结束？编译验证&quot;}
+    Check --&gt;|否| Skip[&quot;旧请求或重复请求跳过&lt;br/&gt;不覆盖新结果，编译验证&quot;]
+    Check --&gt;|是| Read[&quot;固定本轮完整 ZIP&lt;br/&gt;不重查数据库，编译验证&quot;]
+    Read --&gt; Write[&quot;复用本地临时文件与正式发布&lt;br/&gt;真实 SAF 人工验证&quot;]
+    Write --&gt;|成功| Success[&quot;事务内比较本任务 ID 与最新任务 ID&lt;br/&gt;相等才保存本地结果，已单测&lt;br/&gt;保存成功再清理历史备份，编译验证&quot;]
+    Read --&gt;|失败| Failure[&quot;同一事务比较任务 ID，已单测&lt;br/&gt;相等才保存失败，否则跳过，编译验证&quot;]
     Write --&gt;|失败| Failure</pre></section>
-<h2>已确认待实施：WebDAV 直接上传</h2>
+<h2>当前实现：WebDAV 直接上传</h2>
 <section class="diagram-card"><pre class="mermaid">flowchart TD
-    Start[&quot;云端 Worker 获得执行机会&lt;br/&gt;不等待 Wi-Fi 或任意网络，待补测&quot;] --&gt; Check{&quot;上传前检查任务 ID 与目标&lt;br/&gt;仍有效且未结束？待补测&quot;}
-    Check --&gt;|否| Skip[&quot;旧请求或重复请求跳过&lt;br/&gt;待补测&quot;]
-    Check --&gt;|是| Zip[&quot;读取本轮包并直接 PUT 正式 ZIP&lt;br/&gt;只传一次、不回读，待补测&quot;]
-    Zip --&gt; Manifest[&quot;直接 PUT 本轮正式 manifest&lt;br/&gt;待补测&quot;]
-    Manifest --&gt;|请求成功| Success[&quot;事务内比较本任务 ID 与最新任务 ID&lt;br/&gt;相等才保存 WebDAV 结果&lt;br/&gt;保存成功再清理历史备份，待补测&quot;]
-    Zip --&gt;|无网或上传失败| Failure[&quot;同一事务比较任务 ID&lt;br/&gt;相等才保存失败，否则跳过&lt;br/&gt;不主动重试，待补测&quot;]
+    Start[&quot;云端 Worker 获得执行机会&lt;br/&gt;无网络约束，接线编译验证&quot;] --&gt; Check{&quot;上传前检查任务 ID 与目标&lt;br/&gt;仍有效且未结束？编译验证&quot;}
+    Check --&gt;|否| Skip[&quot;旧请求或重复请求跳过&lt;br/&gt;编译验证&quot;]
+    Check --&gt;|是| Zip[&quot;读取本轮包并直接 PUT 正式 ZIP&lt;br/&gt;只传一次、不回读，已单测&quot;]
+    Zip --&gt; Manifest[&quot;直接 PUT 本轮正式 manifest&lt;br/&gt;编译验证&quot;]
+    Manifest --&gt;|请求成功| Success[&quot;事务内比较本任务 ID 与最新任务 ID&lt;br/&gt;相等才保存 WebDAV 结果，已单测&lt;br/&gt;保存成功再清理历史备份，编译验证&quot;]
+    Zip --&gt;|无网或上传失败| Failure[&quot;同一事务比较任务 ID，已单测&lt;br/&gt;相等才保存失败，否则跳过&lt;br/&gt;不主动重试，编译验证&quot;]
     Manifest --&gt;|失败| Failure</pre></section>
 <h2>备份恢复导航组</h2>
 <section class="diagram-card"><pre class="mermaid">flowchart TD
@@ -169,65 +169,6 @@
     classDef unit fill:#dff5e7,stroke:#26804b,color:#16351f;
     classDef manual fill:#e8f1ff,stroke:#2b6cb0,color:#17375e;
     classDef compile fill:#efe8ff,stroke:#6b46c1,color:#2d1f53;</pre></section>
-<h2>当前实现：每日生成与本地保存</h2>
-<section class="diagram-card"><pre class="mermaid">flowchart TD
-  Daily[&quot;唯一每日生成任务&lt;br/&gt;无网络约束 / 每 24 小时&lt;br/&gt;编译验证&quot;]:::compiled
-  Manual[&quot;用户手动备份&lt;br/&gt;选择实际执行目标&lt;br/&gt;人工验证&quot;]:::manual
-  Available{&quot;自动开启且存在目标？&lt;br/&gt;待补测&quot;}:::todo
-  Skip[&quot;跳过未开启或无目标&lt;br/&gt;保留原结果&lt;br/&gt;待补测&quot;]:::todo
-  Lock[&quot;生成协作者&lt;br/&gt;任务互斥 + 配置快照&lt;br/&gt;编译验证&quot;]:::compiled
-  Snapshot[&quot;只生成一次完整 ZIP&lt;br/&gt;保留分页 / checksum&lt;br/&gt;待补测&quot;]:::todo
-  SnapshotFailed[&quot;公共快照失败&lt;br/&gt;所选目标分别记失败&lt;br/&gt;待补测&quot;]:::todo
-  LocalChosen{&quot;本次包含本地目标？&lt;br/&gt;待补测&quot;}:::todo
-  LocalPublish[&quot;本地完整发布&lt;br/&gt;立即保存本地结果&lt;br/&gt;待补测&quot;]:::todo
-  RemoteChosen{&quot;本次包含 WebDAV？&lt;br/&gt;待补测&quot;}:::todo
-  Handoff[&quot;接管同一 ZIP 与 manifest&lt;br/&gt;字节与文件所有权已单测&lt;br/&gt;交接编译验证&quot;]:::compiled
-  UploadRequest[&quot;登记网络约束上传任务&lt;br/&gt;自动 Wi-Fi / 手动任意网络规则已单测&lt;br/&gt;入队编译验证&quot;]:::compiled
-  Finish[&quot;清理未接管的导出临时文件&lt;br/&gt;等待包不按年龄清理已单测&lt;br/&gt;生成流程编译验证&quot;]:::compiled
-  Daily --&gt; Available
-  Available --&gt;|&quot;否&quot;| Skip
-  Available --&gt;|&quot;是&quot;| Lock
-  Manual --&gt; Lock
-  Lock --&gt; Snapshot
-  Snapshot --&gt;|&quot;失败&quot;| SnapshotFailed
-  Snapshot --&gt;|&quot;成功&quot;| LocalChosen
-  LocalChosen --&gt;|&quot;是&quot;| LocalPublish
-  LocalChosen --&gt;|&quot;否&quot;| RemoteChosen
-  LocalPublish --&gt;|&quot;无论单目标成功或失败&quot;| RemoteChosen
-  RemoteChosen --&gt;|&quot;是&quot;| Handoff
-  RemoteChosen --&gt;|&quot;否&quot;| Finish
-  Handoff --&gt; UploadRequest
-  UploadRequest --&gt; Finish
-  SnapshotFailed --&gt; Finish
-  classDef todo fill:#fff1cc,stroke:#b7791f,color:#3d2a05;
-  classDef manual fill:#e8f1ff,stroke:#2b6cb0,color:#17375e;
-  classDef compiled fill:#edf2f7,stroke:#4a5568,color:#1a202c;</pre></section>
-<h2>当前实现：WebDAV 同包延迟上传</h2>
-<section class="diagram-card"><pre class="mermaid">flowchart TD
-  Queued[&quot;已登记的待上传 ZIP&lt;br/&gt;不重读数据库&lt;br/&gt;编译验证&quot;]:::compiled
-  Network[&quot;WorkManager 等待网络 / Wi-Fi&lt;br/&gt;不持有任务锁 / 不记失败&lt;br/&gt;待补测&quot;]:::todo
-  Lock[&quot;网络满足后获取任务锁&lt;br/&gt;待补测&quot;]:::todo
-  Current{&quot;artifactId 与当前引用匹配？&lt;br/&gt;持久化比较已单测&lt;br/&gt;Worker 入口编译验证&quot;}:::compiled
-  Obsolete[&quot;旧包已替换或取消&lt;br/&gt;不覆盖结果 / 不删除新包规则已单测&lt;br/&gt;取消编译验证&quot;]:::compiled
-  Check[&quot;校验现有 ZIP / manifest&lt;br/&gt;按目标读取当前凭据&lt;br/&gt;待补测&quot;]:::todo
-  Publish[&quot;上传同一 ZIP 并校验发布&lt;br/&gt;待补测&quot;]:::todo
-  Success[&quot;记录 WebDAV 成功时间&lt;br/&gt;先提交终态再释放私有包规则已单测&lt;br/&gt;上传编译验证&quot;]:::compiled
-  Failed[&quot;记录 WebDAV 失败并终结&lt;br/&gt;终态禁止推进及重入队规则已单测&lt;br/&gt;失败分支编译验证&quot;]:::compiled
-  Entry[&quot;入口保留本地结果&lt;br/&gt;只更新 WebDAV 结果&lt;br/&gt;人工验证&quot;]:::manual
-  Queued --&gt; Network
-  Network --&gt; Lock
-  Lock --&gt; Current
-  Current --&gt;|&quot;否&quot;| Obsolete
-  Current --&gt;|&quot;是&quot;| Check
-  Check --&gt;|&quot;通过&quot;| Publish
-  Check --&gt;|&quot;失败&quot;| Failed
-  Publish --&gt;|&quot;成功&quot;| Success
-  Publish --&gt;|&quot;失败&quot;| Failed
-  Success --&gt; Entry
-  Failed --&gt; Entry
-  classDef todo fill:#fff1cc,stroke:#b7791f,color:#3d2a05;
-  classDef manual fill:#e8f1ff,stroke:#2b6cb0,color:#17375e;
-  classDef compiled fill:#edf2f7,stroke:#4a5568,color:#1a202c;</pre></section>
 <h2>恢复流程</h2>
 <section class="diagram-card"><pre class="mermaid">flowchart TD
   subgraph RestoreSources[&quot;恢复来源来自备份流程输出&quot;]

@@ -2,61 +2,66 @@ package com.cla.clip.master.backup
 
 import com.cla.clip.base.general.backup.settings.*
 
-/** 纯展示分类，不参与序列化或备份协议。 */
-enum class BackupResultKind { Loading, ReadFailed, Success, Failed, Never, LocalUnconfigured, WebDavUnconfigured, WaitingWifi, WaitingNetwork, Uploading }
+/** 纯展示分类，无外部序列化或反射依赖。 */
+enum class BackupResultKind { Loading, ReadFailed, Success, Failed, Never, LocalUnconfigured, WebDavUnconfigured, WaitingExecution, Generating, SavingLocal, Uploading }
 
-/** 一个结果区域的展示数据。 */
+/** 一个目标的历史结果或当前阶段。 */
 data class BackupResultPresentation(
-    /** 完成结果优先，等待和配置状态仅用于没有历史结果时。 */
+    /** 历史结论优先于当前阶段。 */
     val kind: BackupResultKind = BackupResultKind.Loading,
-    /** 成功时间戳；失败区域不把此时间显示为成功。 */
+    /** 已完成时间，不能用轮次开始时间替代。 */
     val completedAt: Long = 0L,
-    /** 仅供备份页映射可行动提示，入口只显示最近结论。 */
+    /** 稳定错误 code，不展示异常原文。 */
     val reasonCode: String = "",
 )
 
-/** 等待包详情与历史结果分开，入口无需显示此区域。 */
+/** 非终态详情，两目标独立展示，不覆盖历史结果。 */
 data class BackupPendingPresentation(
-    /** 当前等待网络策略或上传阶段。 */
+    /** 当前真实排队或运行阶段。 */
     val kind: BackupResultKind,
-    /** 生成时快照时间，不冒充远端完成时间。 */
+    /** 本轮开始时间，生成阶段不声称 ZIP 已完成。 */
     val createdAt: Long,
+    /** 明确归属，不将本地状态显示成云端状态。 */
+    val target: BackupResultTarget = BackupResultTarget.WebDav,
 )
 
-/** 两条区域独立换行，窄屏不截断第二类结果。 */
+/** 两条目标结果在窄屏独立换行。 */
 data class BackupEntryState(
-    /** 本地正式发布及手动文件导出结果。 */
+    /** 本地发布及系统文件导出的结果。 */
     val local: BackupResultPresentation = BackupResultPresentation(),
-    /** 同包远端上传结果。 */
+    /** 实际云端上传结果。 */
     val webDav: BackupResultPresentation = BackupResultPresentation(),
 )
 
-/** 配置与运行态到轻量展示模型的纯映射；不触发 IO。 */
+/** 配置和运行态的纯映射，订阅生命周期继续由页面管理。 */
 internal object BackupResultPresentationMapper {
-    /** 仅非终态包展示详情；自动和手动使用各自真实网络策略。 */
-    fun pending(settings: BackupSettingsSnapshot, pending: BackupPendingUpload?): BackupPendingPresentation? {
-        if (pending == null || pending.terminal) return null
-        return BackupPendingPresentation(
-            when {
-                pending.phase == "uploading" -> BackupResultKind.Uploading
-                BackupSchedulingPolicy.uploadRequiresUnmetered(pending.source, settings.autoBackupOnlyWifi) -> BackupResultKind.WaitingWifi
-                else -> BackupResultKind.WaitingNetwork
-            }, pending.createdAt)
+    /** 已结束及未选择目标不展示待执行详情；两目标分别映射真实阶段。 */
+    fun pending(pending: BackupPendingUpload?): List<BackupPendingPresentation> = buildList {
+        if (pending == null) return@buildList
+        stage(pending.localPhase)?.let { add(BackupPendingPresentation(it, pending.createdAt, BackupResultTarget.Local)) }
+        stage(pending.phase)?.let { add(BackupPendingPresentation(it, pending.createdAt, BackupResultTarget.WebDav)) }
     }
 
-    /** 历史结论在等待新包时保留；私有包不算本地正式备份。 */
+    /** 保留历史成功/失败；私有生成文件不能冒充已发布的本地备份。 */
     fun map(settings: BackupSettingsSnapshot, runtime: BackupRuntimeSnapshot): BackupEntryState = BackupEntryState(
         local = completed(runtime.localResult) ?: BackupResultPresentation(
-            if (settings.localBackupDirUri.isBlank()) BackupResultKind.LocalUnconfigured else BackupResultKind.Never),
-        webDav = completed(runtime.webDavResult) ?: BackupResultPresentation(when {
-            settings.webDavEndpoint.isBlank() -> BackupResultKind.WebDavUnconfigured
-            runtime.pendingUpload?.terminal == false -> if (BackupSchedulingPolicy.uploadRequiresUnmetered(runtime.pendingUpload?.source.orEmpty(), settings.autoBackupOnlyWifi))
-                BackupResultKind.WaitingWifi else BackupResultKind.WaitingNetwork
-            else -> BackupResultKind.Never
-        }),
+            if (settings.localBackupDirUri.isBlank()) BackupResultKind.LocalUnconfigured
+            else stage(runtime.pendingUpload?.localPhase) ?: BackupResultKind.Never),
+        webDav = completed(runtime.webDavResult) ?: BackupResultPresentation(
+            if (settings.webDavEndpoint.isBlank()) BackupResultKind.WebDavUnconfigured
+            else stage(runtime.pendingUpload?.phase) ?: BackupResultKind.Never),
     )
 
-    /** 未完成历史返回空，由配置和等待状态补充；不使用全局自动任务结论猜测。 */
+    /** 固定 code 映射只反映已知阶段，未知历史状态不猜测网络条件。 */
+    private fun stage(phase: String?): BackupResultKind? = when (phase) {
+        "generating" -> BackupResultKind.Generating
+        "ready", "enqueuing", "queued" -> BackupResultKind.WaitingExecution
+        "publishing" -> BackupResultKind.SavingLocal
+        "uploading" -> BackupResultKind.Uploading
+        else -> null
+    }
+
+    /** 没有已完成历史时由配置/当前阶段兜底。 */
     private fun completed(result: BackupTargetResult): BackupResultPresentation? = result.takeIf { it.completedAt > 0L }?.let {
         BackupResultPresentation(if (it.failed) BackupResultKind.Failed else BackupResultKind.Success, it.completedAt, it.reasonCode)
     }

@@ -11,7 +11,8 @@ internal object BackupLegacyRuntimeMigration {
     private val oldStatus = stringPreferencesKey("last_auto_backup_status")
     /** 不涉及业务设置、凭据或数据库的固定清理白名单。 */
     private val obsoleteNames = setOf("backup_change_revision", "backup_backed_up_revision", "last_auto_backup_status",
-        "last_auto_backup_success_at", "last_auto_backup_failure_reason", "last_auto_backup_skip_reason", "last_backup_success_summary")
+        "last_auto_backup_success_at", "last_auto_backup_failure_reason", "last_auto_backup_skip_reason", "last_backup_success_summary",
+        "auto_backup_only_wifi")
 
     /** 旧摘要回填与旧键释放在同一事务；失败状态不猜测最近结果，新结果永远优先。 */
     fun apply(preferences: MutablePreferences) {

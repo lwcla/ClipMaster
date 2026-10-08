@@ -28,8 +28,8 @@ class BackupPendingUploadStoreTest {
         assertEquals(export.manifest, waiting.manifest)
     }
 
-    /** 新包复制失败只释放新目录，旧等待包的内容完整保留。 */
-    @Test fun failedPreparationKeepsPreviousPackage() {
+    /** 新轮次开始已删除旧包；新包生成失败不复活旧字节。 */
+    @Test fun failedPreparationDoesNotRestoreDeletedPreviousPackage() {
         /** 两个身份共用的私有根目录。 */
         val root = folder.newFolder("private")
         /** 被测文件存储。 */
@@ -37,9 +37,10 @@ class BackupPendingUploadStoreTest {
         /** 同一合成来源先准备旧包，再制造新包的源文件缺失。 */
         val export = syntheticExport(folder.newFolder("export"))
         store.prepare("old", export)
+        store.cleanupExcept(null)
         export.packageFile.delete()
         assertThrows(java.io.IOException::class.java) { store.prepare("new", export) }
-        assertTrue(store.read("old").packageFile.exists())
+        assertFalse(File(root, "old").exists())
         assertFalse(File(root, "new").exists())
     }
 

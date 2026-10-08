@@ -35,8 +35,9 @@ private fun BackupResultRow(target: String, result: BackupResultPresentation) {
         BackupResultKind.Never -> stringResource(R.string.host_backup_result_never)
         BackupResultKind.LocalUnconfigured -> stringResource(R.string.host_backup_result_local_unconfigured)
         BackupResultKind.WebDavUnconfigured -> stringResource(R.string.host_backup_result_unconfigured)
-        BackupResultKind.WaitingWifi -> stringResource(R.string.host_backup_result_waiting_wifi)
-        BackupResultKind.WaitingNetwork -> stringResource(R.string.host_backup_result_waiting_network)
+        BackupResultKind.WaitingExecution -> stringResource(R.string.host_backup_result_waiting_execution)
+        BackupResultKind.Generating -> stringResource(R.string.host_backup_result_generating)
+        BackupResultKind.SavingLocal -> stringResource(R.string.host_backup_result_saving_local)
         BackupResultKind.ReadFailed -> stringResource(R.string.host_backup_result_read_failed)
         BackupResultKind.Loading -> stringResource(R.string.host_backup_result_loading)
         BackupResultKind.Uploading -> stringResource(R.string.host_backup_result_uploading)
@@ -48,13 +49,14 @@ private fun BackupResultRow(target: String, result: BackupResultPresentation) {
 
 /** 备份页详情展示生成时间、等待阶段和可行动失败提示，不影响入口历史结论。 */
 @Composable
-internal fun BackupResultDetails(state: BackupEntryState, pending: BackupPendingPresentation?, modifier: Modifier = Modifier) {
+internal fun BackupResultDetails(state: BackupEntryState, pending: List<BackupPendingPresentation>, modifier: Modifier = Modifier) {
     Column(modifier) {
-        if (pending != null) {
+        pending.forEach { current ->
             /** 展示快照生成时间，使用现有成功时间格式策略。 */
-            val createdAt = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(pending.createdAt))
+            val createdAt = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(current.createdAt))
             Text(stringResource(R.string.host_backup_pending_created_at, createdAt), style = MaterialTheme.typography.bodyMedium)
-            BackupResultRow(stringResource(R.string.host_backup_target_webdav), BackupResultPresentation(pending.kind))
+            BackupResultRow(stringResource(if (current.target == com.cla.clip.base.general.backup.settings.BackupResultTarget.Local)
+                R.string.host_backup_target_local else R.string.host_backup_target_webdav), BackupResultPresentation(current.kind))
         }
         listOf(R.string.host_backup_target_local to state.local, R.string.host_backup_target_webdav to state.webDav)
             .filter { it.second.kind == BackupResultKind.Failed }.forEach { (target, result) ->
@@ -88,7 +90,7 @@ internal fun BackupResultDetails(state: BackupEntryState, pending: BackupPending
 private fun BackupResultsWaitingPreview() {
     MaterialTheme(colorScheme = darkColorScheme()) {
         BackupResultsSummary(BackupEntryState(BackupResultPresentation(BackupResultKind.ReadFailed),
-            BackupResultPresentation(BackupResultKind.WaitingWifi)))
+            BackupResultPresentation(BackupResultKind.WaitingExecution)))
     }
 }
 

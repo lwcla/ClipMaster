@@ -23,6 +23,8 @@ data class BackupRuntimeSnapshot(
     val webDavHealth: BackupTargetHealth = BackupTargetHealth.Unknown,
     /** 最近连接测试时间。 */
     val webDavHealthCheckedAt: Long = 0L,
+    /** 最新轮次身份，空值代表仍需释放旧上传状态。 */
+    val currentRoundId: String = "",
 )
 
 /** 只保存备份结果和文件身份；业务保存不再依赖备份运行态。 */
@@ -55,42 +57,67 @@ class BackupRuntimeRepository @Inject internal constructor(
         store.edit { preferences -> preferences.writeResult(target, completedAt, reasonCode) }
     }
 
-    /** 完整包准备好后才切换指针，失败不会遗失旧包身份。 */
+    /** 新轮次开始先切换身份；此事务成功后才允许删除旧内部包。 */
     suspend fun replacePending(pending: BackupPendingUpload) {
+        migrateLegacy()
         store.edit { preferences ->
+            preferences[Keys.CURRENT_BACKUP_ROUND_ID] = pending.artifactId
             preferences[Keys.PENDING_ARTIFACT_ID] = pending.artifactId
             preferences[Keys.PENDING_TARGET] = pending.targetFingerprint
             preferences[Keys.PENDING_SOURCE] = pending.source
             preferences[Keys.PENDING_PHASE] = pending.phase
             preferences[Keys.PENDING_CREATED_AT] = pending.createdAt
+            preferences[Keys.PENDING_LOCAL_TARGET] = pending.localTargetFingerprint
+            preferences[Keys.PENDING_LOCAL_PHASE] = pending.localPhase
         }
     }
 
-    /** 比较身份后推进阶段，旧 Worker 不能改变新任务。 */
-    suspend fun updatePendingPhase(artifactId: String, phase: String): Boolean {
-        /** 事务内是否仍拥有当前文件。 */
+    /** 两消费者开始前读取任务身份，不让旧请求借用新包。 */
+    suspend fun isCurrentRound(roundId: String): Boolean = snapshot().currentRoundId == roundId
+
+    /** 两目标终态独立，事务内比较最新 ID 后才保存结果；迟到或重复提交返回 false。 */
+    suspend fun recordTargetResultIfCurrentRound(roundId: String, target: BackupResultTarget,
+        completedAt: Long, reasonCode: String = ""): Boolean {
+        /** 只有结果实际保存后，调用方才允许保留清理。 */
+        var recorded = false
+        store.edit { preferences ->
+            /** 目标决定独立阶段键，不通过枚举名称持久化。 */
+            val phaseKey = if (target == BackupResultTarget.Local) Keys.PENDING_LOCAL_PHASE else Keys.PENDING_PHASE
+            if (preferences[Keys.CURRENT_BACKUP_ROUND_ID] == roundId &&
+                !BackupPendingUpload.isTerminalPhase(preferences[phaseKey])) {
+                preferences.writeResult(target, completedAt, reasonCode)
+                preferences[phaseKey] = if (reasonCode.isBlank()) "succeeded" else "failed"
+                recorded = true
+            }
+        }
+        return recorded
+    }
+
+    /** 推进本地阶段或取消目标；已结束和过期请求不能重新运行。 */
+    suspend fun updateTargetPhase(roundId: String, target: BackupResultTarget, phase: String): Boolean {
+        /** 是否仍拥有未结束的当前目标。 */
         var updated = false
         store.edit { preferences ->
-            if (preferences[Keys.PENDING_ARTIFACT_ID] == artifactId && !BackupPendingUpload.isTerminalPhase(preferences[Keys.PENDING_PHASE])) {
-                preferences[Keys.PENDING_PHASE] = phase
+            /** 每个目标独立的稳定阶段键。 */
+            val key = if (target == BackupResultTarget.Local) Keys.PENDING_LOCAL_PHASE else Keys.PENDING_PHASE
+            if (preferences[Keys.CURRENT_BACKUP_ROUND_ID] == roundId && !BackupPendingUpload.isTerminalPhase(preferences[key])) {
+                preferences[key] = phase
                 updated = true
             }
         }
         return updated
     }
 
-    /** 上传结果与终态一次提交；先持久化终态，再清理私有 ZIP。 */
-    suspend fun finishPending(artifactId: String, completedAt: Long, reasonCode: String = ""): Boolean {
-        /** 身份匹配才能提交远端结果。 */
-        var finished = false
+    /** 完整包发布后在同一事务推进两个选中目标，不暴露半包或未选择目标。 */
+    suspend fun markRoundReady(roundId: String) {
         store.edit { preferences ->
-            if (preferences[Keys.PENDING_ARTIFACT_ID] == artifactId && !BackupPendingUpload.isTerminalPhase(preferences[Keys.PENDING_PHASE])) {
-                preferences.writeResult(BackupResultTarget.WebDav, completedAt, reasonCode)
-                preferences[Keys.PENDING_PHASE] = if (reasonCode.isBlank()) "succeeded" else "failed"
-                finished = true
+            if (preferences[Keys.CURRENT_BACKUP_ROUND_ID] == roundId) {
+                // key 分别定位两目标阶段，只将已选择的生成中目标推进为可消费。
+                for (key in listOf(Keys.PENDING_LOCAL_PHASE, Keys.PENDING_PHASE)) {
+                    if (preferences[key] == "generating") preferences[key] = "ready"
+                }
             }
         }
-        return finished
     }
 
     /** 文件清理后移除对应指针，不会删除随后替换的新包。 */
@@ -102,6 +129,8 @@ class BackupRuntimeRepository @Inject internal constructor(
                 preferences.remove(Keys.PENDING_SOURCE)
                 preferences.remove(Keys.PENDING_PHASE)
                 preferences.remove(Keys.PENDING_CREATED_AT)
+                preferences.remove(Keys.PENDING_LOCAL_TARGET)
+                preferences.remove(Keys.PENDING_LOCAL_PHASE)
             }
         }
     }
@@ -140,7 +169,8 @@ class BackupRuntimeRepository @Inject internal constructor(
                 preferences[Keys.WEBDAV_RESULT_FAILED] ?: false, preferences[Keys.WEBDAV_RESULT_REASON].orEmpty()),
             pendingUpload = artifactId.takeIf(String::isNotBlank)?.let {
                 BackupPendingUpload(it, preferences[Keys.PENDING_TARGET].orEmpty(), preferences[Keys.PENDING_SOURCE].orEmpty(),
-                    preferences[Keys.PENDING_PHASE].orEmpty(), preferences[Keys.PENDING_CREATED_AT] ?: 0L)
+                    preferences[Keys.PENDING_PHASE].orEmpty(), preferences[Keys.PENDING_CREATED_AT] ?: 0L,
+                    preferences[Keys.PENDING_LOCAL_TARGET].orEmpty(), preferences[Keys.PENDING_LOCAL_PHASE] ?: "unselected")
             },
             webDavHealth = when (preferences[Keys.WEBDAV_HEALTH]) {
                 "available" -> BackupTargetHealth.Available
@@ -148,6 +178,7 @@ class BackupRuntimeRepository @Inject internal constructor(
                 else -> BackupTargetHealth.Unknown
             },
             webDavHealthCheckedAt = preferences[Keys.WEBDAV_HEALTH_CHECKED_AT] ?: 0L,
+            currentRoundId = preferences[Keys.CURRENT_BACKUP_ROUND_ID].orEmpty(),
         )
     }
 }

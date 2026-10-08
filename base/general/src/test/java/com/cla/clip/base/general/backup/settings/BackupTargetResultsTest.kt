@@ -2,6 +2,7 @@ package com.cla.clip.base.general.backup.settings
 
 import com.cla.clip.base.general.config.datastore.createTestHostSettingsStore
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import com.cla.clip.base.general.backup.*
 import com.cla.clip.base.general.config.datastore.HostSettingsKeys
 import kotlinx.coroutines.CoroutineScope
@@ -17,6 +18,63 @@ import java.io.File
 
 /** 分目标结果与待上传身份回归测试；只使用合成配置。 */
 class BackupTargetResultsTest {
+    /** 旧 Wi-Fi 键只退役策略，不能抹掉两目标历史结果或已登记的新轮次。 */
+    @Test fun retiredWifiPreferenceDoesNotEraseResultsOrRound() = runBlocking {
+        /** 合成持久化生命周期。 */
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            /** 不含真实目标或凭据的安装内文件。 */
+            val store = createTestHostSettingsStore(scope, File(folder.root, "wifi-migration.preferences_pb"))
+            store.edit { preferences ->
+                preferences[booleanPreferencesKey("auto_backup_only_wifi")] = true
+                preferences[HostSettingsKeys.LOCAL_RESULT_AT] = 100L
+                preferences[HostSettingsKeys.CURRENT_BACKUP_ROUND_ID] = "new"
+            }
+            /** 兼容事务只删除已退役键。 */
+            val saved = BackupRuntimeRepository(store).snapshot()
+            assertFalse(store.snapshot().contains(booleanPreferencesKey("auto_backup_only_wifi")))
+            assertEquals(100L, saved.localResult.completedAt)
+            assertEquals("new", saved.currentRoundId)
+        } finally { scope.cancel() }
+    }
+
+    /** 半包生成阶段不能发布目标，ready 事务只推进所选目标并拒绝旧 ID。 */
+    @Test fun completePackageReadinessKeepsUnselectedTargetInactive() = runBlocking {
+        /** 独占事务生命周期。 */
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            /** 被测运行态，不需要 Android 或网络。 */
+            val repository = BackupRuntimeRepository(createTestHostSettingsStore(scope, File(folder.root, "ready.preferences_pb")))
+            repository.replacePending(BackupPendingUpload("new", "", "auto", "unselected", 100L, "local", "generating"))
+            repository.markRoundReady("old")
+            assertEquals("generating", repository.snapshot().pendingUpload?.localPhase)
+            repository.markRoundReady("new")
+            assertEquals("ready", repository.snapshot().pendingUpload?.localPhase)
+            assertEquals("unselected", repository.snapshot().pendingUpload?.phase)
+            assertFalse(repository.recordTargetResultIfCurrentRound("new", BackupResultTarget.WebDav, 200L))
+        } finally { scope.cancel() }
+    }
+    /** A 已开始，B 在 A 完成前替换；A 的成功或失败都不得覆盖两个新结果。 */
+    @Test fun lateResultsCannotOverwriteNewRoundAndTargetsFinishIndependently() = runBlocking {
+        /** 合成 DataStore 独占生命周期。 */
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            /** 被测事务仓库，不使用真实运行态。 */
+            val repository = BackupRuntimeRepository(createTestHostSettingsStore(scope, File(folder.root, "round.preferences_pb")))
+            repository.replacePending(BackupPendingUpload("A", "hash", "auto", "ready", 100L, "local", "ready"))
+            assertTrue(repository.isCurrentRound("A"))
+            repository.replacePending(BackupPendingUpload("B", "hash", "auto", "generating", 200L, "local", "generating"))
+            for (target in BackupResultTarget.entries) {
+                assertFalse(repository.recordTargetResultIfCurrentRound("A", target, 300L))
+                assertFalse(repository.recordTargetResultIfCurrentRound("A", target, 300L, "remote_failed"))
+            }
+            assertTrue(repository.recordTargetResultIfCurrentRound("B", BackupResultTarget.Local, 400L))
+            assertTrue(repository.recordTargetResultIfCurrentRound("B", BackupResultTarget.WebDav, 500L, "remote_failed"))
+            assertFalse(repository.recordTargetResultIfCurrentRound("B", BackupResultTarget.Local, 600L, "late_failure"))
+            assertEquals(400L, repository.snapshot().localResult.completedAt)
+            assertEquals("remote_failed", repository.snapshot().webDavResult.reasonCode)
+        } finally { scope.cancel() }
+    }
     /** 独占文件目录，避免真实设置和并发 DataStore 冲突。 */
     @get:Rule val folder = TemporaryFolder(File("build"))
 
@@ -94,14 +152,14 @@ class BackupTargetResultsTest {
             /** 被测持久化状态。 */
             val repository = BackupRuntimeRepository(createTestHostSettingsStore(scope, File(folder.root, "pending.preferences_pb")))
             repository.replacePending(BackupPendingUpload("new", "hash", "auto", "ready", 100L))
-            assertFalse(repository.finishPending("old", 200L, "remote_failed"))
+            assertFalse(repository.recordTargetResultIfCurrentRound("old", BackupResultTarget.WebDav, 200L, "remote_failed"))
             assertEquals("new", repository.snapshot().pendingUpload?.artifactId)
             assertEquals(0L, repository.snapshot().webDavResult.completedAt)
-            assertTrue(repository.finishPending("new", 300L, "remote_failed"))
+            assertTrue(repository.recordTargetResultIfCurrentRound("new", BackupResultTarget.WebDav, 300L, "remote_failed"))
             assertEquals("failed", repository.snapshot().pendingUpload?.phase)
             assertTrue(repository.snapshot().webDavResult.failed)
-            assertFalse(repository.updatePendingPhase("new", "queued"))
-            assertFalse(repository.finishPending("new", 400L))
+            assertFalse(repository.updateTargetPhase("new", BackupResultTarget.WebDav, "queued"))
+            assertFalse(repository.recordTargetResultIfCurrentRound("new", BackupResultTarget.WebDav, 400L))
             assertEquals(300L, repository.snapshot().webDavResult.completedAt)
         } finally { scope.cancel() }
     }

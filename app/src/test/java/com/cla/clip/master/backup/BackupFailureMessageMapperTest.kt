@@ -8,6 +8,8 @@ class BackupFailureMessageMapperTest {
     /** 旧中断与明确超时/配额各有独立分类。 */
     @Test fun interruptionAndInfrastructureErrorsAreActionable() {
         assertEquals(BackupFailureMessage.Interrupted, BackupFailureMessageMapper.map("upload_interrupted"))
+        assertEquals(BackupFailureMessage.Interrupted, BackupFailureMessageMapper.map("generation_interrupted"))
+        assertEquals(BackupFailureMessage.Interrupted, BackupFailureMessageMapper.map("local_interrupted"))
         assertEquals(BackupFailureMessage.Timeout, BackupFailureMessageMapper.map("upload_interrupted_timeout"))
         assertEquals(BackupFailureMessage.Quota, BackupFailureMessageMapper.map("upload_interrupted_quota"))
         assertEquals(BackupFailureMessage.Network, BackupFailureMessageMapper.map("upload_interrupted_network"))

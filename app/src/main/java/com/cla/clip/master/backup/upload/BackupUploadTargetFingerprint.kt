@@ -8,6 +8,9 @@ import java.util.Locale
 
 /** 目标绑定只保存摘要，不保存凭据、端点原文或目录授权。 */
 internal object BackupUploadTargetFingerprint {
+    /** 本地只保存授权摘要，避免持久化包描述包含 SAF URI 原文。 */
+    fun local(settings: BackupSettingsSnapshot): String = MessageDigest.getInstance("SHA-256")
+        .digest(settings.localBackupDirUri.toByteArray(Charsets.UTF_8)).joinToString("") { byte -> "%02x".format(byte) }
     /** 配置已规范化；长度前缀排除字段分隔歧义，密码更新不使同目标等待包失效。 */
     fun of(settings: BackupSettingsSnapshot): String {
         /** 影响实际上传目的地的固定字段；不包含密码。 */

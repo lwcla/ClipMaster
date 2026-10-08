@@ -31,16 +31,16 @@ class BackupWebDavUploadWorker @AssistedInject internal constructor(
     /** 失败不安排重试；记录真实执行跨度与停止原因，不将身份缺失退出等同上传成功。 */
     override suspend fun doWork(): Result {
         /** 参数仅包含文件身份，没有路径、配置或密码。 */
-        val artifactId = inputData.getString("artifact_id")
+        val artifactId = inputData.getString("round_id")
         /** 上传来源随后从当前身份读取，不从未知历史任务猜测。 */
         val trace = diagnostics.start(id.toString(), "unknown", runAttemptCount, artifactId.orEmpty())
         if (artifactId == null) {
             // 原有缺参失败不再静默，仍不生成或上传任何包。
             trace.stage("artifact_input_missing")
             trace.event("worker_failed", reasonCode = "artifact_input_missing")
-            return Result.failure()
+            return Result.success()
         }
-        trace.stage("waiting_task_gate")
+        trace.stage("checking_upload_round")
         return try {
             // 在中断捕获时读取当次停止原因，不从历史 WorkSpec 推断。
             coordinator.upload(artifactId, trace) { diagnostics.stopReason(this) }

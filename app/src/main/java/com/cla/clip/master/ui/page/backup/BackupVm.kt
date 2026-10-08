@@ -165,11 +165,10 @@ class BackupVm @Inject constructor(
                                 autoBackupEnabled = settings.autoBackupEnabled,
                                 backupPlaintextDisclosureAccepted = settings.backupPlaintextDisclosureAccepted,
                                 backupRetentionCount = settings.backupRetentionCount,
-                                autoBackupOnlyWifi = settings.autoBackupOnlyWifi,
                                 webDavHealth = if (webDavDraftDirty) BackupTargetHealth.Unknown else runtime.webDavHealth,
                                 webDavHealthCheckedAt = runtime.webDavHealthCheckedAt,
                                 backupResults = BackupResultPresentationMapper.map(settings, runtime),
-                                pendingBackup = BackupResultPresentationMapper.pending(settings, runtime.pendingUpload),
+                                pendingBackup = BackupResultPresentationMapper.pending(runtime.pendingUpload),
                             )
                         }
                     }
@@ -177,7 +176,7 @@ class BackupVm @Inject constructor(
                 if (throwable is CancellationException) throw throwable
                 _uiState.update { it.copy(settingsLoaded = false, settingsLoadFailed = true,
                     backupResults = BackupEntryState(BackupResultPresentation(BackupResultKind.ReadFailed),
-                        BackupResultPresentation(BackupResultKind.ReadFailed)), pendingBackup = null) }
+                        BackupResultPresentation(BackupResultKind.ReadFailed)), pendingBackup = emptyList()) }
                 logE(TAG) { "备份设置加载失败 reasonCode=${throwable.backupReasonCode()} type=${throwable::class.simpleName}" }
                 emitMessage(mapErrorMessage(throwable))
             }
@@ -295,15 +294,6 @@ class BackupVm @Inject constructor(
         }
     }
 
-    /** 更新仅 Wi-Fi 约束。 */
-    fun updateOnlyWifi(value: Boolean) {
-        viewModelScope.launch {
-            runOperation(BackupBusyOperation.SavingSettings) {
-                backupSettings.setOnlyWifi(value)
-                BackupAutoScheduler.reschedule(appContext)
-            }
-        }
-    }
 
     /** 保存用户选择的本地备份目录授权，并把 URI 同步到页面状态；授权失败时不保存，避免后续重启后写入失败。 */
     fun updateLocalBackupDir(uri: Uri) {
@@ -389,7 +379,8 @@ class BackupVm @Inject constructor(
                 /** 已提交端点在发起备份前确认，未配置时不伪装成成功。 */
                 val settings = backupSettings.snapshot()
                 validateWebDavEndpoint(settings.webDavEndpoint, settings.webDavAllowInsecureHttp)
-                executionCoordinator.generate(automatic = false)
+                // 仅提交后台生成请求，页面退出不取消已安排的备份。
+                BackupAutoScheduler.enqueueManual(appContext)
                 emitMessage(HostR.string.host_backup_upload_queued)
             }
         }
@@ -666,12 +657,10 @@ data class BackupUiState(
     val backupPlaintextDisclosureAccepted: Boolean = false,
     /** 普通备份保留份数。 */
     val backupRetentionCount: Int = 5,
-    /** WebDAV 自动备份仅 Wi-Fi。 */
-    val autoBackupOnlyWifi: Boolean = false,
     /** 与我的页共用的两类历史结果。 */
     val backupResults: BackupEntryState = BackupEntryState(),
     /** 当前私有等待包的快照时间与上传阶段，与最近完成结论分开。 */
-    val pendingBackup: BackupPendingPresentation? = null,
+    val pendingBackup: List<BackupPendingPresentation> = emptyList(),
     /** WebDAV 健康状态缓存。 */
     val webDavHealth: BackupTargetHealth = BackupTargetHealth.Unknown,
     /** WebDAV 最近健康检查时间。 */

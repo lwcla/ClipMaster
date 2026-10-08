@@ -21,16 +21,20 @@ data class BackupPendingUpload(
     val targetFingerprint: String,
     /** 稳定来源 code：auto 或 manual。 */
     val source: String,
-    /** 阶段 code：ready、enqueuing、queued、uploading、succeeded、failed、cancelled、result_store_failed。 */
+    /** 云端稳定阶段：generating、ready、queued、uploading、succeeded、failed、cancelled、result_store_failed、unselected。 */
     val phase: String,
     /** 快照创建时间，只用于诊断。 */
     val createdAt: Long,
+    /** 生成时本地目录的摘要，消费时与当前目标比较。 */
+    val localTargetFingerprint: String = "",
+    /** 本地独立阶段，与云端阶段互不覆盖。 */
+    val localPhase: String = "unselected",
 ) {
-    /** 已结束的包只允许清理，不能重新入队。 */
+    /** 云端已结束时不再请求；共享包仍由下一轮清理。 */
     val terminal: Boolean get() = isTerminalPhase(phase)
 
     companion object {
         /** 终态不得再次推进或覆盖完成结果，集中维护固定阶段白名单。 */
-        internal fun isTerminalPhase(phase: String?): Boolean = phase in setOf("succeeded", "failed", "cancelled", "result_store_failed")
+        internal fun isTerminalPhase(phase: String?): Boolean = phase in setOf("succeeded", "failed", "cancelled", "result_store_failed", "unselected")
     }
 }

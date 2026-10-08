@@ -12,7 +12,7 @@ internal object BackupFailureMessageMapper {
         "remote_failed" -> BackupFailureMessage.Remote
         "insufficient_space" -> BackupFailureMessage.Space
         "temp_file_unavailable" -> BackupFailureMessage.TempFile
-        "upload_interrupted" -> BackupFailureMessage.Interrupted
+        "upload_interrupted", "generation_interrupted", "local_interrupted" -> BackupFailureMessage.Interrupted
         "upload_interrupted_timeout" -> BackupFailureMessage.Timeout
         "upload_interrupted_quota" -> BackupFailureMessage.Quota
         "upload_interrupted_network" -> BackupFailureMessage.Network
