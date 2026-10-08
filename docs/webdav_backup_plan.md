@@ -1,8 +1,204 @@
-状态：已完成
+状态：已确认
 
 # WebDAV + 本地自动备份恢复方案
 
 <!-- flow-title: WebDAV本地自动备份恢复流程 -->
+
+## 最新轮次并行备份与 WebDAV 直接上传（2026-10-08）
+
+本轮状态：已确认。需求已经确认，尚未修改生产代码或测试。本节是下一轮实施依据；下方此前标记“已完成”的章节、验证记录和现有流程图描述旧实现，不能作为本轮已经落地的证据。涉及生成、目标执行、网络等待、内部包清理及上传发布的差异，以本节的目标设计为准；恢复、备份数据白名单等未改契约继续沿用原章节。
+
+### 目标与已确认决策
+
+将“生成完整 ZIP”与“保存到各目标”分离。本地保存和 WebDAV 上传只依赖完整 ZIP，不互相等待，不要求另一目标成功。
+
+1. 自动备份继续采用 24 小时周期，首次启用仍等待 24 小时；系统调度可能延后，不承诺固定钟点或严格间隔。普通业务保存不触发备份，不恢复 dirty 或业务变化版本。
+2. 共用一个 WorkManager，分为生成、本地保存、WebDAV 上传三种 Worker。完整包准备好后，按已配置目标分别创建一次性任务，允许并行执行。
+3. WebDAV 不设置 CONNECTED 或 UNMETERED 网络约束，不等待 Wi-Fi，也不等待任意网络；Worker 实际获得执行机会后直接请求。无网、超时、认证或上传失败结束本轮，不调用 Result.retry()，不因网络恢复自动补传。
+4. 新一轮开始先使旧轮次失效，尽力取消旧请求，然后删除旧内部 ZIP 和相关中间文件，再生成新包。无需等待旧任务确认退出；接受旧任务因文件消失而失败。
+5. 不采用“内部 ZIP 保留最近三份”，不等待两个消费任务结束后清理，不保留交接失败时回退旧包的能力。当前完整包可以保留到下一轮开始；新包生成失败时不恢复已经删除的旧包。
+6. 保留“只执行最新一轮”：任务开始读取/上传前检查 roundId，结束时在同一次 DataStore 事务内检查 roundId 并写结果；旧任务重调度直接跳过，迟到结果不覆盖新轮次。复用既有终态保护，轮次 ID 只是安装内任务身份，不是备份数据版本。
+7. WebDAV 直接上传正式 ZIP、正式 manifest，最后更新 latest.json；删除远端临时上传、临时 ZIP 下载回读、上传阶段回读校验和第二次 ZIP 上传。
+8. 保留 ZIP 内 manifest、checksum、分页导出和恢复预检校验。取消上传后的回读不等于取消备份格式完整性和恢复前校验。
+
+### 最小实现约束
+
+本节用于防止实施时重新引入本轮明确要删除的复杂度：
+
+- 主路径只做两处轮次判断：开始保存/上传前检查，以及结束提交结果时原子检查并写入。成功、失败、取消和入队失败统一使用条件结果提交，不能散落无条件写状态。
+- 保留 ZIP/manifest 格式校验、目标配置校验和现有终态保护；它们各自保护现有契约，不扩展成新的任务领取协议、执行者探测或通用恢复状态机。
+- 唯一的额外发布检查是写 latest.json 前再次核对 roundId；复用一个应用进程内 Mutex 串行这一小段 HTTP 发布，不按目标创建锁池，不把 ZIP 上传、正式 manifest 上传或本地保存包进该锁。
+- 不引入文件占用计数、引用计数、租约、取消后等待退出、三份内部包保留、旧包回滚、网络恢复补传或启动补入队。
+- 优先调整已有类和方法；只为独立本地任务新增必要 Worker。小型纯判断直接放在现有 BackupSchedulingPolicy 或运行态仓库中，不为两处 ID 比较新增策略类或框架。
+- 简单实现仍保留必要的生成/恢复一致性保护、目录范围校验和事务提交；不能为了少一把锁而把“比较 ID → 写结果”拆成两个有竞争窗口的操作。
+
+### 当前实现与调整原因
+
+本次按备份 package、app 调度/UI、base/general 共享备份能力及全仓调用方顺序核对：
+
+| 当前实现 | 目标行为 | 调整原因 |
+| --- | --- | --- |
+| BackupExecutionCoordinator.generate 先完成本地发布/清理，再接管并登记上传包 | 生成结束后独立提交两个目标任务 | 本地 IO 不应阻塞云端入队或执行 |
+| generate、upload、恢复均可能经过 BackupTaskGate 的长任务锁 | 保留生成与恢复的数据一致性边界；本地和网络消费不共用长任务锁 | 防止拆成 Worker 后仍然串行 |
+| 自动上传可等待 UNMETERED，手动上传等待 CONNECTED | 两种来源均直接尝试，无网络约束 | 无网即失败，不积累等网络的旧上传 |
+| 新包接管、登记成功后释放旧包，登记失败可回退旧等待身份 | 新一轮开始作废、清除旧包，不回退 | 用户只需要最新一轮，不要求旧任务继续可用 |
+| 临时 ZIP/manifest 上传、下载 ZIP 校验、正式 ZIP 再上传 | 正式 ZIP 上传一次，然后发布元数据 | 减少往返、带宽和上传阶段复杂度 |
+| 成功或失败后终结并立即释放待上传包 | 包由下一轮启动统一清理，结果按目标保存 | 去掉消费方计数、包交接与完成清理的耦合 |
+
+现有可复用能力：BackupRepository.createSnapshot、BackupSnapshotExporter、BackupPackageWriter/Reader、LocalBackupDirectoryWriter、WebDavClient 的目录/文件请求与保留清理、BackupRuntimeRepository 的事务更新、BackupUploadTargetFingerprint、分目标结果展示和低敏诊断。没有必要重建 ZIP 协议、导出数据库查询或恢复实现。
+
+### 范围、入口与用户体验
+
+- 自动入口覆盖已配置的本地目录及 WebDAV；无目标或自动已关闭时跳过，不清理现有包、不改历史结果。
+- 手动 WebDAV 入口继续先提交配置并校验地址，再提交一次性生成任务；沿用当前已配置本地目录的同包保存能力，但两目标独立执行。手动触发同样产生新轮次并淘汰旧轮次。
+- 本次不把“通过系统文件创建器导出一个本地文件”扩大为云端备份入口。该入口继续只导出用户选择的文件，复用快照导出能力；它的临时目录独立，不删除后台轮次产物，也不触发 WebDAV。
+- 页面去掉“WebDAV 仅 Wi-Fi 备份”开关、等待 Wi-Fi/等待网络提示及对应状态分支。任务尚未获得系统调度时显示“等待执行”，不能显示“等待网络”。
+- 手动入队提示改为表达“已安排备份，可在备份入口查看结果”；入队不表示 ZIP 已生成或远端成功。生成、保存和上传各自展示真实阶段，页面关闭不取消已提交的后台任务。
+- 本地与 WebDAV 的最近结果分别保存；未配置的目标不显示虚假的成功或失败。连接测试只更新连接健康状态，不触发实际备份或抹掉最近备份失败。
+- 本地/远端已发布历史备份继续按现有保留份数管理。“开始时删除旧包”只指应用私有中间目录，不包括用户授权目录、远端正式历史备份或恢复预览文件。
+- 地址、账号、远端目录或本地目录改变后，旧任务不得把旧轮次内容发给新目标。复用目标身份校验；密码只在实际上传时读取，不写入 WorkData 或包描述。
+
+### 三种 Worker 与调度边界
+
+| 入口/协作者 | 单一职责与输入输出 |
+| --- | --- |
+| BackupAutoWorker（调整，保留类名便于兼容既有请求） | 承担完整包生成；从入口参数区分自动/手动来源。自动使用周期请求，手动使用一次性请求。输出私有完整包及本轮描述，不执行目标发布 |
+| BackupLocalPublishWorker（新增） | 输入 roundId；校验当前轮次及本地目标，读取完整包，复用 LocalBackupDirectoryWriter 发布和保留清理，只提交本地结果 |
+| BackupWebDavUploadWorker（调整） | 输入 roundId；校验当前轮次及目标，直接上传已有 ZIP，只提交云端结果；不再次查询业务数据生成包 |
+| BackupAutoScheduler（调整） | 维护每日请求、手动生成请求和两个目标的唯一一次性请求；本地和云端之间没有依赖边 |
+| BackupExecutionCoordinator（缩减） | 将现有流程分为 generate、publishLocal、upload 三个具名方法，编排既有导出器、存储器和发布器；删除旧包交接/回滚，不扩展通用任务框架 |
+
+周期 WorkRequest 不能直接接在 beginWith/then 链中，见 [PeriodicWorkRequest 官方说明](https://developer.android.com/reference/androidx/work/PeriodicWorkRequest)。本方案由周期生成 Worker 在完整包发布后分别登记本地与云端一次性任务；手动生成复用同一分派能力。只给本轮选中的目标入队，一个目标入队失败不能阻止另一个目标登记。
+
+只保留每种目标的最新唯一请求，新轮次用替换策略淘汰旧请求；这不等于强制停止旧 IO，见 [WorkManager 取消语义](https://developer.android.com/reference/androidx/work/WorkManager#cancelUniqueWork(java.lang.String))。生成入口仍串行化，避免手动与自动同时创建两个“最新包”。生成与恢复对数据库的原有一致性保护必须保留；对完整只读包的本地复制和网络上传移出该长任务锁。
+
+实现优先复用 BackupExecutionCoordinator、BackupPendingUploadStore、BackupRuntimeRepository、LocalBackupDirectoryWriter 和 WebDavClient。包存储扩展为本地/云端都能读取，可按职责更名，但不另写一套存储。运行态仓库提供 isCurrentRound(roundId) 与 recordTargetResultIfCurrentRound(roundId, target, ...) 这样的窄接口；后者返回是否成功提交，事务内完成检查和更新。三个 Worker 只连接这些方法。取消预设必须新增 BackupGenerationCoordinator、BackupLocalPublisher、BackupWebDavPublisher、BackupRoundPolicy 等类的要求；只有删除旧逻辑后仍有明确职责过载时才按证据拆分，不因“有三个 Worker”机械增加三层协调器。
+
+### 新一轮启动、完整包发布与清理
+
+1. 在生成锁内确认触发来源、自动开关及本轮目标；无目标直接结束。
+2. 原子保存新的 currentRoundId 和 generating 状态，使此前所有消费者失效；持久化失败则本轮不开始，也不删除旧文件。
+3. 尽力取消旧本地/上传请求，清理受控私有根目录中的旧轮次文件，不等待旧任务释放文件，不维护使用计数或三份保留队列。
+4. 删除只允许落在经过 canonical 路径及身份验证的内部产物目录；不能枚举整个 noBackupFilesDir 或 cacheDir 后批量删除。删除失败记录 WARN，旧包继续保持失效；空间不足则本轮生成失败，不通过复活旧包降级。
+5. 在本轮独立目录生成 JSONL、manifest 和 ZIP。准备完成前不对消费者暴露 ready；半包不能成为“最新完整包”。
+6. 成功后原子登记 ready 及只读包描述，再分别登记两目标任务。生成失败只写本轮选中目标的失败，不运行目标 Worker；本轮临时半包尽力清理，旧包不恢复。
+7. 目标 Worker 不删除共享完整包。完整包保留到下一轮启动；没有下一轮时可以继续占用一份包的空间，卸载时由系统清除。
+
+每轮目录和对外文件名必须能区分不同产物，禁止复用固定 payload.zip 让旧任务误读到新字节。旧任务只能操作自己的轮次目录，不能根据“当前目录”删除新包。文件名变更如有必要，应保持既有列表/保留解析兼容并增加测试，不因此升级备份数据 schema。
+
+### 最新轮次、系统重调度与结果隔离
+
+复用当前 source、createdAt、包描述、目标身份摘要和分目标结果；只增加或调整最新轮次识别所必需的字段。queued/running 等阶段用于现有展示与终态保护，不扩展成独立的任务领取/租约系统。字段经现有 HostSettingsStore/DataStore 保存，使用稳定 code，不存密码、完整 URI 或整个配置对象。
+
+执行契约收敛为以下两处检查：
+
+1. **开始检查**：在打开本轮 ZIP、执行本地保存或发起上传之前，比较输入 roundId 与 currentRoundId。过期即以 superseded 结束，不找旧包、不重生成、不借用新包冒领新轮次。检查通过后固定本轮包，传输中不切换文件；期间旧包被删而失败是允许的。
+2. **结束检查并提交**：成功、失败或取消都通过 recordTargetResultIfCurrentRound。该方法在同一次 DataStore.edit 中比较 roundId、沿用终态保护，再写对应目标结果。过期返回 false，只留诊断，不改新轮次状态；不能用“先 snapshot 判断，再无条件写入”替代事务。只有本轮成功结果实际提交后才继续其保留清理。
+
+本地和 WebDAV 分别记录结果，不互相等待。最新包读取指上述“当前轮次请求读取自己的完整包”，不是让每个历史请求都去上传当前包。并发新旧回调由事务比较解决，不在网络阶段持有状态锁。
+
+复用既有唯一 WorkRequest 和终态保护：已明确结束的不重传；系统超过 24 小时再调度旧 roundId 时由开始检查跳过。当前轮次被中断的处理沿用既有“中断/未确认后结束、不主动重传”契约，不新建探测原执行者是否存活的恢复器，也不凭运行阶段猜测服务器未收到文件。
+
+不新增启动后补传、网络监听补传或旧包恢复队列；启动只做旧任务兼容。ready 到入队之间进程死亡可能导致该轮未执行，接受等待下次每日/手动触发。无网络约束不等于绕过系统后台调度，实际请求仍需有限连接/读写超时。
+
+### 直接上传、失败与远端发布边界
+
+正常顺序：确保远端目录可用 → PUT 正式 ZIP 一次 → PUT 正式 manifest → PUT latest.json → 条件提交 WebDAV 成功 → 清理远端旧备份。
+
+删除 uploadBackup 内临时 ZIP、临时 manifest、回读下载、上传校验文件和清理临时远端文件的分支。保留 HTTP 状态检查、凭据读取、HTTPS/显式 HTTP 配置、流式请求体与 Content-Length；不额外用“测试连接”请求作为每次上传的前置流程。
+
+| 边界 | 处理与展示 |
+| --- | --- |
+| 无网、超时、401/403、ZIP/manifest/latest 请求失败 | 当前轮次记录云端失败或未确认，结束，不主动重试；本地任务不受影响 |
+| ZIP 已发出但 manifest 或 latest 失败 | 不显示整体上传成功；可能留有完整 ZIP 或半成品，不声称远端事务回滚 |
+| 上传过程中旧包被下一轮删除 | 若任务已过期，以 superseded 结束；不污染新轮次结果 |
+| 远端发布完成后本机结果落盘失败 | 沿用“结果未保存”的独立错误，不能假称文件未上传，也不自动重传 |
+| 成功后保留清理失败 | WARN 留证，不反转已确认成功 |
+
+直接上传正式文件可能让远端列表短暂看到未完成 ZIP。保留既有“列表条目不等于可恢复备份”的边界：恢复必须经过完整预检/checksum，不能依据文件后缀或 sidecar 就写库；不通过恢复校验的文件必须明确失败。应用不把删除旧包或取消 WorkManager 视为撤回已经发出的 HTTP 请求。
+
+latest.json 单独处理，因为它是远端共享文件，不受本机 DataStore 事务保护。采用一个应用进程内的轻量发布 Mutex：取得锁 → 再检查 roundId → 有效才 PUT latest.json → 请求结束后释放。该锁只覆盖这一份小 JSON 的请求；不覆盖 ZIP、正式 manifest、本地复制或生成，不引入目标锁池和远端发布状态机。正式 ZIP 与 manifest 使用本轮独立文件名，迟到旧文件不会覆盖新一轮同名产物。
+
+若取得 latest 发布锁时已过期，直接跳过该写入；结束时仍通过统一条件结果提交，不另写一套状态。不能把“上传前检查”和“上传后检查”描述成已经撤回中间发出的 latest 请求。网络调用应有有限超时并遵守取消，测试只验证同进程的写入顺序及过期跳过，不伪造服务器端原子性保证。
+
+本机结果由事务保证旧轮次不能覆盖新轮次。latest 已经发出的 HTTP 请求、响应丢失和多设备写入不承诺强一致；保留这个技术限制，不追加分布式锁、回读修正、重传或旧包回退。普通调用范围之外的服务器延迟提交仍可能产生不确定结果，不能以有限超时或本地 Mutex 声称彻底消除。
+
+### 涉及文件与复用/删除清单
+
+下表路径均相对于仓库根目录；包前缀 A 为 app/src/main/java/com/cla/clip/master，B 为 base/general/src/main/java/com/cla/clip/base/general。
+
+| 文件/目录 | 预计调整 |
+| --- | --- |
+| A/work/BackupAutoWorker.kt、BackupAutoScheduler.kt | 生成与两目标分派、无网络约束、唯一请求及旧任务兼容 |
+| A/work/BackupLocalPublishWorker.kt（新增）、BackupWebDavUploadWorker.kt | 独立消费完整包、按轮次执行和提交结果 |
+| A/work/BackupTaskGate.kt、A/ui/page/backup/BackupRestoreVm.kt | 缩小消费阶段锁范围，复核并保留生成/恢复一致性 |
+| A/backup/BackupExecutionCoordinator.kt | 分开三个具名入口，复用现有协作者，删除先本地后云端的编排，不预设新增一组协调器 |
+| A/backup/upload/BackupPendingUploadStore.kt、BackupPendingHandoff.kt、BackupUploadCompletion.kt | 复用受控目录与失败契约；去掉旧包回退、消费结束释放共享包的耦合 |
+| A/backup/local/LocalBackupDirectoryWriter.kt | 复用正式本地发布和保留清理，不复制 SAF 实现 |
+| A/backup/BackupSchedulingPolicy.kt、BackupResultPresentationMapper.kt、BackupFailureMessageMapper.kt | 删除 Wi-Fi/网络等待策略，增加过期跳过及真实排队/运行映射 |
+| B/backup/settings/BackupRuntimeRepository.kt、BackupTargetResult.kt、BackupLegacyRuntimeMigration.kt | 当前轮次查询、分目标原子条件提交、现有终态保护及升级清理 |
+| B/backup/settings/BackupSettingsRepository.kt、B/config/datastore/HostSettingsKeys.kt | 移除 autoBackupOnlyWifi 读写和旧偏好键，不影响其他设置 |
+| B/backup/WebDavClient.kt | 改为正式文件直接上传；将 latest 发布动作交给窄回调，由 app 在单个 Mutex 内检查并执行实际 HTTP 请求，锁覆盖请求完成而非只包住前置判断；不反向依赖 app 类型 |
+| A/ui/page/backup/BackupPage.kt、BackupVm.kt，app 与 base/general 的 res/values*/strings.xml | 移除 Wi-Fi UI/状态，更新入队与失败文案；复用现有结果组件 |
+| A/backup/diagnostics/ 与既有启动/开机调度调用点 | 更新阶段名，保留稳定历史原因解释；启动不复活旧上传 |
+| docs/webdav_backup_plan.md、docs/flows/WebDAV本地自动备份恢复流程.html | 本轮唯一主方案及生成流程图，实施后同步状态和实际验证 |
+
+### 升级、备份覆盖与安全边界
+
+- 升级后幂等取消旧 backup_auto_dirty 及旧 artifactId 上传请求，清除旧 pending/网络等待状态和内部旧包；不能调用 cancelAllWork 影响下载等无关任务。保留最近本地/云端结果和 24 小时每日请求，不因启动或配置变更立即生成新包。
+- 旧 Worker 类可能仍被 WorkManager 引用，迁移期需保留可安全退出的入口，或先清理对应旧任务；旧上传/消费请求缺少新轮次字段时直接跳过，不能冒领当前包。生成 Worker 自己创建轮次，不要求周期请求预先携带 roundId，不能因此跳过保留下来的每日生成任务。
+- auto_backup_only_wifi 退役只影响安装内策略；备份端点、凭据、目录授权、目标身份摘要、roundId、运行阶段及内部 ZIP 都不进入自定义备份。内部产物放在 noBackupFilesDir，并复核系统云备份/设备迁移排除。
+- 不修改 schemaVersion = 4、JSONL/ZIP 格式、业务字段白名单、Room schema、合并恢复、恢复前预检或媒体重新关联。保留来源过滤包名备份规则。
+- 运行态使用固定 DataStore 键和明确稳定 code，不为普通内部模型新增整包 keep。Worker 类名/构造入口变化仍需 Release/R8 与旧请求兼容验证。
+- HTTP 显式允许策略、明文备份披露和凭据加密保持既有边界。去掉回读会降低传输后完整性确认能力，这是已确认的取舍；恢复前校验仍为硬边界。
+
+### 日志与诊断计划
+
+复用现有 BackupDiagnostics 和统一日志，不建立新的日志系统；本次只写方案，暂不新增运行时日志。
+
+| 级别 | 触发点 | 允许字段与原因 |
+| --- | --- | --- |
+| INFO | 轮次创建、包生成完成、目标入队/开始、正式 ZIP/manifest/latest 阶段、结果提交 | roundId、Work UUID、source、target、固定 phase、字节数、耗时、runAttemptCount |
+| INFO | 旧轮次或已结束任务跳过 | roundId、target、superseded / already_finished；不覆盖目标结果 |
+| WARN | 旧包删除失败、系统中断、结果未确认、保留清理失败 | 固定 reasonCode、异常类型、stopReason、是否仍为当前轮次 |
+| ERROR | 当前轮次生成/入队/上传/本地发布/结果持久化失败 | target、阶段、固定 reasonCode、HTTP 状态码（存在时）；禁止异常原文 |
+
+禁止地址、账号、密码、Cookie、Token、目标指纹、完整文件路径、SAF URI、请求/响应体、剪贴正文及 ZIP 内容。删除已废弃的临时上传/回读阶段，保留历史诊断 code 的可读映射；不开逐字节进度日志。日志写入失败不改变业务结果。验证通过合成网络响应和日志字段断言，设备验收只取低敏阶段证据。
+
+### 实施步骤与测试门禁
+
+以下为未执行清单；实施时使用 superpowers:executing-plans 按步骤推进。此次任务只产出文档，不创建提交、不安装应用、不上传真实数据。
+
+1. **轮次与产物边界**
+   - [ ] 在 base/general 的 BackupTargetResultsTest 中先加入旧 roundId 的成功/失败均不能提交、新轮次恰好在旧任务结束前切换仍拒绝旧结果、两个目标结果独立及既有终态防重传的失败测试；在现有 BackupSchedulingPolicyTest、BackupPendingUploadStoreTest 中扩展入口跳过、完整包才可用、删除范围隔离及新包失败不回退。不为镜像实现新增策略测试类。
+   - [ ] 实现运行态事务和私有产物存储，保留生成/恢复保护；测试通过后再接入 Worker。
+2. **三 Worker 与独立分派**
+   - [ ] 更新 BackupSchedulingPolicyTest，并针对现有 BackupExecutionCoordinator 添加必要协作者测试：验证无 CONNECTED/UNMETERED、24 小时及首次延迟、一个目标入队/执行失败不影响另一个、本地故意挂起时云端仍可开始；不以新增测试名倒逼新增生产协调器。
+   - [ ] 拆分生成和两目标发布，删除旧交接回滚及完成时删除共享包；更新/移除 BackupPendingHandoffTest、BackupUploadCompletionTest 中被明确退役的契约，不删除仍有效的条件提交和路径安全回归。
+3. **直接上传与旧发布隔离**
+   - [ ] 在 base/general 新增 WebDavDirectUploadTest：断言 ZIP 只 PUT 一次、没有临时 .tmp PUT/回读 GET、顺序为 ZIP/manifest/latest；各阶段失败不报成功、无业务重试。使用合成包与本地可控 HTTP，不用真实账号。
+   - [ ] 对实际承载上传的方法添加回归：上传前已过期不发请求；上传中变旧后，成功/失败回调都不改新结果；latest 取得单个发布锁后再次检查，过期不发送。用可控请求验证 latest 写入顺序，不把测试扩展为完整上传的串行锁，不声称能撤回服务器已收到的请求。
+   - [ ] 调整 WebDavClient 与云端协作者，保留恢复校验、HTTP 失败和成功后保留清理隔离。
+4. **设置/UI/升级与验收**
+   - [ ] 更新 BackupSettingsRepositoryTest、BackupResultPresentationMapperTest，覆盖旧 Wi-Fi 键退役、queued 显示等待执行、入队不是成功及旧原因仍可读；更新相关资源与 UI 接线。
+   - [ ] 覆盖旧 Worker 输入、旧 pending 状态、自动关闭、目标变更、24 小时以上的旧请求重调度；配置变化不自动生成，旧包不发给新端点。
+   - [ ] 运行受影响模块测试、Debug 编译及 Release/R8；补设备上的离线失败、进程重建、SAF 授权失效和本地/云端独立完成验收。真实备份或安装设备应用需另有用户授权。
+
+实施验证命令（本次不运行）：
+
+```powershell
+.\gradlew.bat :app:testDebugUnitTest :base:general:testDebugUnitTest :app:compileDebugKotlin --console=plain
+.\gradlew.bat :app:minifyReleaseWithR8 --console=plain
+```
+
+采用 repo-unit-test-gate 的选择性 TDD：轮次判断、条件提交、失败契约、并发和直接上传顺序先有失败回归再改生产代码；系统调度和真实存储边界不以 JVM 通过替代设备验证。此次只改文档及生成 HTML，无 Kotlin/Compose/Android 改动，不新增测试、不运行 Gradle；只验证文档与生成产物一致性。
+
+### 已知取舍与开放问题
+
+- 已确认的业务选择没有待定项：直接尝试、无网即失败；新轮次开始删除旧内部包；仅最新轮次；两个目标独立；正式文件直接上传。三份保留、网络等待、旧包回退均不进入实施范围。
+- 接受新包失败后没有旧内部包可补传、直接上传中断可能留远端半成品、系统调度/进程死亡可能让本轮没有完成，以及结果丢失时不能确定服务器是否已收到数据。
+- 实施复杂度以本节“最小实现约束”为上限：两个主要轮次检查、事务条件写结果、仅 latest 的单个发布 Mutex，复用已有终态和生成/恢复保护。不扩展领取协议、执行者探测、锁池或恢复管理器；多设备 latest 强一致、上传断点续传、自动失败补传、上传后完整性回读不在本轮实现。
+- 本地手动文件导出保持独立入口；如未来要让它参与淘汰后台轮次，需要另行确认，不随本轮三 Worker 改造扩大行为。
 
 ## 自动 WebDAV 失败排查（2026-10-07）
 
@@ -440,6 +636,8 @@ WebDAV：上次备份失败
 
 ## 当前状态
 
+2026-10-08：当前源码仍采用先本地发布、后 WebDAV 入队、网络约束等待及临时上传回读。顶部“最新轮次并行备份与 WebDAV 直接上传”是已确认的下一轮方案，尚未实施；历史测试成功不表示新方案已通过验证。
+
 2026-09-30 提交前最终复核：app Kotlin 编译、app 150 项单测及 base/general 64 项单测全部通过，失败、错误和跳过均为 0；`git diff --check` 通过。密码表单映射回归已包含在 app 单测中；真实 WebDAV 连接、显隐与布局交互仍需设备验收。
 
 项目当前数据主要存放在 Room 数据库和宿主 Preferences DataStore 中：剪贴数据、来源 App、链接预览、搜索历史、视频下载记录、图片下载记录由 base 主库承载；剪贴快捷动作、回收站保留天数、剪贴来源 App 过滤名单等轻量设置由 `ClipSettingsRepository` 承载。TorrentSearch 已通过 feature-local `BackupFeatureContributor` 以字段白名单参与 `schemaVersion = 4` 的备份预检、计数和恢复报告，书签、搜索历史、已查看和非敏感排序设置可恢复，旧磁力 entry 一律视为不兼容并跳过。06D 的 Provider 开关、Torznab 配置及密钥、安全模式、DoH 和披露确认均属于本机网络/隐私状态，不进入备份或 dirty；仅默认排序条件与方向属于非敏感设置白名单。统一备份恢复支持本地手动导出/导入预检恢复，以及 WebDAV 手动测试、上传、列表、预览和恢复；旧 v1/v2 备份按既有兼容策略只读处理。
@@ -496,9 +694,9 @@ WebDAV：上次备份失败
 - WebDAV 密码框最右侧提供查看/隐藏按钮：初始隐藏，点击眼睛显示当前完整输入，再次点击恢复掩码；图标与无障碍文案同步表达下一步操作。复用 Material3 输入框与图标，在 `ui/widget/OutlinedPasswordTextField.kt` 封装通用单行密码输入组件，页面继续传入密码值、修改回调和标签。
 - 密码可见性仅通过组件内 `remember` 保存，不进入 ViewModel、设置、dirty 或备份；组件移出组合、页面重新创建后恢复隐藏。切换可见性不触发密码修改回调，保持已有加密存储与 WebDAV 操作不变；长密码由单行输入框水平滚动，按钮保持在框内尾部。
 - WebDAV 测试连接会校验 HTTPS、目录规范化、目录存在性和可写性；测试成功后自动刷新远端备份列表，页面同时保留显式“刷新列表”按钮和提示文案，避免用户误以为列表会自动常驻更新。
-- 如果已设置本地备份文件夹，WebDAV 手动备份会使用同一份 zip 快照先写入本地文件夹，再上传 WebDAV；本地写入失败时停止上传，避免用户误以为本地已有备份。
+- 当前实现：已配置本地目录时，手动 WebDAV 备份先尝试本地发布，再登记同包上传；普通本地写入失败仍继续云端交接。本轮待实施方案将两目标改为独立 Worker 并行消费完整包，见顶部 2026-10-08 章节。
 - WebDAV 密码经独立 Android Keystore alias 的 AES-GCM 加密后存入宿主 DataStore；新安装不读取旧介质。密钥失效时要求重新输入密码。
-- 备份生成、写入本地文件、上传 WebDAV、上传后的远端保留清理和列表刷新期间展示不可取消的“正在备份”弹窗，避免用户误以为可以重复点击或离开；WebDAV 手动上传的“上传成功”提示只在远端清理与列表刷新完成后展示，确保提示出现时弹窗即将关闭。
+- 当前实现：手动 WebDAV 页面操作在生成与入队后提示等待上传，真正远端结果由后台 Worker 更新，不应把页面操作返回当作上传成功。本轮待实施方案进一步将生成也交由 Worker，并移除等待网络文案；独立系统文件导出仍按该入口的实际完成结果提示。
 - 恢复链路使用真正的独立导航页面，用户选择本地文件、本地备份目录条目或 WebDAV 条目后进入恢复页读取状态，页面内部在读取、预览、恢复中、恢复完成和恢复失败之间切换，避免 BottomSheet 下滑误关闭。
 - 备份页和恢复页不共享 `BackupVm`；三个页面通过父图作用域 `BackupFlowVm` 共用一个 `BackupFlowSession`。备份页把恢复请求写入会话单槽 StateFlow，独立 `BackupRestoreVm` 首次 RESUMED 时接管读取、下载、预览、恢复和临时文件清理。建立 Reading 后按 requestId 确认清空请求，关闭页面或 ViewModel 销毁时按匹配身份清理，避免长期持有 URI、WebDAV 条目或备份页状态。
 - 备份页和恢复流程页已接入 `SecondaryPageScaffold` 二级页面骨架，标题栏、页面背景、Snackbar 和底部操作入口跟随本轮固定品牌主题；备份导出、WebDAV、恢复预检、恢复写库和媒体关联状态机不变。
@@ -523,6 +721,57 @@ WebDAV：上次备份失败
 - 本地镜像和 WebDAV 远端可能出现同名备份文件；备份列表 UI 的稳定 key 必须包含来源和真实路径/URI，不能只使用 `fileName`，避免同一 `LazyColumn` 内 key 冲突。
 
 ## 流程图
+
+前三张为 2026-10-08 已确认但尚未实施的目标流程，统一标记“待补测”。其后保留并标注当前实现的导航、串行生成与延迟上传流程，便于实施核对；实施完成后再收敛为最终实际流程，不能将旧图的测试状态继承给新方案。
+
+### 已确认方案：新轮次生成与并行分派
+
+```mermaid
+%% title: 已确认待实施：新轮次生成与并行分派
+flowchart TD
+    Trigger["每日周期或手动生成请求<br/>待补测"] --> Target{"本轮开关和目标有效？<br/>待补测"}
+    Target -->|否| Skip["跳过，不删除包、不改历史结果<br/>待补测"]
+    Target -->|是| New["串行生成入口：登记新轮次<br/>旧轮次立即失效，待补测"]
+    New --> Delete["尽力取消旧请求并删除旧内部包<br/>不等待退出、不保留三份，待补测"]
+    Delete --> Export["生成完整 ZIP、manifest 和 checksum<br/>只保护生成与恢复一致性，待补测"]
+    Export -->|失败| Failed["选中目标分别记失败<br/>不恢复旧包，待补测"]
+    Export -->|成功| Ready["发布本轮完整只读包<br/>待补测"]
+    Ready -->|已配置本地| Local["登记本地一次性 Worker<br/>独立执行，待补测"]
+    Ready -->|已配置 WebDAV| Remote["登记云端一次性 Worker<br/>无网络约束，待补测"]
+    Local -.-> Retain["两目标不负责删除共享包<br/>下一轮开始时清理，待补测"]
+    Remote -.-> Retain
+```
+
+### 已确认方案：本地保存
+
+```mermaid
+%% title: 已确认待实施：本地独立保存
+flowchart TD
+    Start["本地 Worker 获得执行机会<br/>待补测"] --> Check{"开始保存前检查任务 ID 与目标<br/>仍有效且未结束？待补测"}
+    Check -->|否| Skip["旧请求或重复请求跳过<br/>不覆盖新结果，待补测"]
+    Check -->|是| Read["固定本轮完整 ZIP<br/>不重查数据库，待补测"]
+    Read --> Write["复用本地临时文件与正式发布<br/>不等待 WebDAV，待补测"]
+    Write -->|成功| Success["事务内检查 ID 并写本地结果<br/>提交成功再清理历史备份，待补测"]
+    Read -->|失败| Failure["事务内检查 ID 再写失败<br/>旧任务只记跳过，待补测"]
+    Write -->|失败| Failure
+```
+
+### 已确认方案：WebDAV 直接上传
+
+```mermaid
+%% title: 已确认待实施：WebDAV 直接上传
+flowchart TD
+    Start["云端 Worker 获得执行机会<br/>不等待 Wi-Fi 或任意网络，待补测"] --> Check{"上传前检查任务 ID 与目标<br/>仍有效且未结束？待补测"}
+    Check -->|否| Skip["旧请求或重复请求跳过<br/>待补测"]
+    Check -->|是| Zip["读取本轮包并直接 PUT 正式 ZIP<br/>只传一次、不回读，待补测"]
+    Zip --> Manifest["直接 PUT 本轮正式 manifest<br/>待补测"]
+    Manifest --> Latest["仅 latest 写入使用一个 Mutex<br/>锁内检查 ID 后发送请求，待补测"]
+    Latest -->|已过期| Skip
+    Latest -->|请求成功| Success["事务内检查 ID 并写云端结果<br/>提交成功再清理历史备份，待补测"]
+    Zip -->|无网或上传失败| Failure["当前轮次失败、不主动重试<br/>旧轮次不覆盖新结果，待补测"]
+    Manifest -->|失败| Failure
+    Latest -->|失败或结果未确认| Failure
+```
 
 下图表示已接入的父图、请求及回显边界；会话和归约有 JVM 回归，导航实际返回、owner 释放及进程重建仍待设备验收。后续备份、恢复和媒体关联图同步采用本组会话，不再依赖 Singleton 发送器。
 
@@ -550,12 +799,12 @@ flowchart TD
     classDef compile fill:#efe8ff,stroke:#6b46c1,color:#2d1f53;
 ```
 
-### 每日生成与本地保存
+### 当前实现：每日生成与本地保存
 
 本图描述已接入的每日流程。持久化、展示与文件清理规则由 JVM 回归保护；系统周期、SAF 和真实网络仍待设备验收。
 
 ```mermaid
-%% title: 每日生成与本地保存
+%% title: 当前实现：每日生成与本地保存
 flowchart TD
   Daily["唯一每日生成任务<br/>无网络约束 / 每 24 小时<br/>编译验证"]:::compiled
   Manual["用户手动备份<br/>选择实际执行目标<br/>人工验证"]:::manual
@@ -590,12 +839,12 @@ flowchart TD
   classDef compiled fill:#edf2f7,stroke:#4a5568,color:#1a202c;
 ```
 
-### WebDAV 同包延迟上传
+### 当前实现：WebDAV 同包延迟上传
 
 本图只消费上一阶段的完整待上传 ZIP，等待与失败分开。身份及结果持久化、终态清理顺序、目标绑定与历史展示已单测；真实 WorkManager、SAF、WebDAV、强杀及视觉仍需设备验收，图中编译验证不表示这些边界已验收。
 
 ```mermaid
-%% title: WebDAV 同包延迟上传
+%% title: 当前实现：WebDAV 同包延迟上传
 flowchart TD
   Queued["已登记的待上传 ZIP<br/>不重读数据库<br/>编译验证"]:::compiled
   Network["WorkManager 等待网络 / Wi-Fi<br/>不持有任务锁 / 不记失败<br/>待补测"]:::todo
@@ -1077,6 +1326,10 @@ manifest 简化示例：
 
 ## 验证记录
 
+- 2026-10-08：按用户要求精简本轮待实施方案，核对两处主要任务 ID 检查、原子结果提交、仅 latest 写入的单个 Mutex 和既有终态保护；取消预设多层协调器、任务领取协议及按目标锁池。运行 `python -X utf8 tools/render_doc_flow_html.py docs/webdav_backup_plan.md`、对应 `--check` 及 `git diff --check` 通过。仅修改主文档和配套图，未修改生产代码/测试或运行 Gradle、R8，未作浏览器视觉验收；新行为仍未实施。
+
+- 2026-10-08：本轮只形成“最新轮次并行备份与 WebDAV 直接上传”的已确认方案；已核对调度器、两个现有 Worker、执行协调器、共享锁、包存储、分目标状态、WebDavClient 及 UI/设置调用方。运行 `python tools/render_doc_flow_html.py docs/webdav_backup_plan.md`、对应 `--check` 及 `git diff --check` 通过，修改范围仅主文档和配套生成 HTML。未修改 Kotlin/资源/测试，未运行 Gradle、R8、设备操作或真实上传；新流程全部待实施、待补测。HTML 同步检查不代替浏览器视觉验收。
+
 - 2026-10-02：导航组实施及独立复审完成。新增 13 项会话/归约测试，首轮 API 占位 11 项中 10 项按预期失败，审查新增两项退出回归也先断言失败后修复。最终执行 `./gradlew.bat :app:testDebugUnitTest :app:compileDebugKotlin :app:minifyReleaseWithR8 --console=plain`，BUILD SUCCESSFUL，app 57 个测试套件、276 项测试，失败/错误/跳过均为 0；release mapping 保留在 `app/build/outputs/mapping/release/mapping.txt`。既有 WebView 废弃 API、Shizuku 恒假类型判断和 OnOpNotedListener R8 警告未修改。流程 HTML 重生成及 `--check`、`git diff --check` 通过。已发现连接设备，但本轮没有安装或操作设备应用；组内转场、owner 释放、配置/进程重建、真实权限/SAF 和广告交互不视为已验收。导航薄接线未新增 instrumentation 测试，不以纯对象测试替代系统边界。
 
 - 2026-10-02：导航组草案已完成代码引用与文档边界核对；运行 `D:/Python/python.exe tools/render_doc_flow_html.py docs/webdav_backup_plan.md`、对应 `--check` 与 `git diff --check` 通过。本轮仅修改方案及生成图，未运行 Android 单测、编译、R8 或设备验收；这些属于尚未实施的改造验收，不复用历史验证结论。
@@ -1143,6 +1396,10 @@ manifest 简化示例：
 - 2026-05-21：将媒体重新定位入口文案从“重新定位媒体”调整为“恢复本地媒体关联”，已运行 `./gradlew :app:compileDebugKotlin`、`./gradlew :app:testDebugUnitTest` 和 `git diff --check`，结果通过；原因是后者更贴近用户语言，也能避免误以为会恢复媒体文件本体。
 
 ## 变更记录
+
+- 2026-10-08：精简最新轮次方案的实施约束，明确上传/保存前检查 ID、结束时事务内检查并写结果；latest.json 只用单个发布 Mutex 加一次检查，取消整段元数据发布门、按目标锁池和必须新增一组协调器的设计。同步简化测试清单及流程图，保留服务器在途请求无法撤回的边界。原因：用户要求避免实施复杂化，以既有能力和必要检查满足最新轮次隔离，不构建额外任务管理框架。
+
+- 2026-10-08：按用户讨论结论新增已确认、未实施的最新轮次并行备份方案：拆分生成/本地/云端三个 Worker，无网络等待、无网即失败，新一轮开始删除旧内部包，保留轮次隔离，正式 ZIP 直接上传并去掉临时上传和回读校验；补充文件影响、升级兼容、日志、选择性 TDD、失败取舍及三张独立目标流程图。原因：用户只需要最新备份，希望去掉本地/云端串行、等待网络及旧包回退复杂度；复用既有主文档并区分当前实现与未来方案，同时修正旧“本地失败停止云端”和页面返回即上传成功的过期描述。
 
 - 2026-10-08：接入开发阶段公共 Download 应用日志方案引用，方便无 root 设备取得各级日志及备份停止证据；不修改备份协议、上传或重试。
 
