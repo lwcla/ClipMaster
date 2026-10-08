@@ -136,8 +136,8 @@
     Check --&gt;|否| Skip[&quot;旧请求或重复请求跳过&lt;br/&gt;不覆盖新结果，待补测&quot;]
     Check --&gt;|是| Read[&quot;固定本轮完整 ZIP&lt;br/&gt;不重查数据库，待补测&quot;]
     Read --&gt; Write[&quot;复用本地临时文件与正式发布&lt;br/&gt;不等待 WebDAV，待补测&quot;]
-    Write --&gt;|成功| Success[&quot;事务内检查 ID 并写本地结果&lt;br/&gt;提交成功再清理历史备份，待补测&quot;]
-    Read --&gt;|失败| Failure[&quot;事务内检查 ID 再写失败&lt;br/&gt;旧任务只记跳过，待补测&quot;]
+    Write --&gt;|成功| Success[&quot;事务内比较本任务 ID 与最新任务 ID&lt;br/&gt;相等才保存本地结果&lt;br/&gt;保存成功再清理历史备份，待补测&quot;]
+    Read --&gt;|失败| Failure[&quot;同一事务比较任务 ID&lt;br/&gt;相等才保存失败，否则跳过，待补测&quot;]
     Write --&gt;|失败| Failure</pre></section>
 <h2>已确认待实施：WebDAV 直接上传</h2>
 <section class="diagram-card"><pre class="mermaid">flowchart TD
@@ -145,12 +145,9 @@
     Check --&gt;|否| Skip[&quot;旧请求或重复请求跳过&lt;br/&gt;待补测&quot;]
     Check --&gt;|是| Zip[&quot;读取本轮包并直接 PUT 正式 ZIP&lt;br/&gt;只传一次、不回读，待补测&quot;]
     Zip --&gt; Manifest[&quot;直接 PUT 本轮正式 manifest&lt;br/&gt;待补测&quot;]
-    Manifest --&gt; Latest[&quot;仅 latest 写入使用一个 Mutex&lt;br/&gt;锁内检查 ID 后发送请求，待补测&quot;]
-    Latest --&gt;|已过期| Skip
-    Latest --&gt;|请求成功| Success[&quot;事务内检查 ID 并写云端结果&lt;br/&gt;提交成功再清理历史备份，待补测&quot;]
-    Zip --&gt;|无网或上传失败| Failure[&quot;当前轮次失败、不主动重试&lt;br/&gt;旧轮次不覆盖新结果，待补测&quot;]
-    Manifest --&gt;|失败| Failure
-    Latest --&gt;|失败或结果未确认| Failure</pre></section>
+    Manifest --&gt;|请求成功| Success[&quot;事务内比较本任务 ID 与最新任务 ID&lt;br/&gt;相等才保存 WebDAV 结果&lt;br/&gt;保存成功再清理历史备份，待补测&quot;]
+    Zip --&gt;|无网或上传失败| Failure[&quot;同一事务比较任务 ID&lt;br/&gt;相等才保存失败，否则跳过&lt;br/&gt;不主动重试，待补测&quot;]
+    Manifest --&gt;|失败| Failure</pre></section>
 <h2>备份恢复导航组</h2>
 <section class="diagram-card"><pre class="mermaid">flowchart TD
     Entry[进入备份前页面]:::manual --&gt; Group[备份恢复导航组 编译验证]:::compile
