@@ -13,10 +13,16 @@ private const val LOG_TAG = "cla_clip_master" // 定义自己的日志TAG
  * # 关闭日志输出，这里 INFO > DEBUG，会导致isLoggable返回false
  * adb shell setprop log.tag.cla_clip_master INFO
  *
- * 后续还是应该在release包就移除所有的日志打印
+ * 开发阶段自动录制开启时所有级别都会输出，正式公开发布前另评估关闭策略。
  */
-/** 判断指定日志级别是否允许输出；Debug 包默认开启，Release 包可通过系统属性临时打开。 */
-private fun loggable(level: Int) = BuildConfig.DEBUG || Log.isLoggable(LOG_TAG, level)
+/** 开发录制是进程内状态，不持久化为设置或进入备份。 */
+@Volatile private var developmentRecording = false
+
+/** Application 开启开发录制，使正式包也有 V/D 阶段证据，不需要 ADB setprop。 */
+fun enableDevelopmentLogRecording() { developmentRecording = true }
+
+/** 开发录制覆盖全部级别，其他调用场景保留原有 Debug/系统属性规则。 */
+private fun loggable(level: Int) = developmentRecording || BuildConfig.DEBUG || Log.isLoggable(LOG_TAG, level)
 
 /** 输出 VERBOSE 级别日志，info 使用 lambda 避免关闭日志时仍拼接字符串。 */
 fun logV(tag: String, info: () -> String) {
