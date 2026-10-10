@@ -25,7 +25,7 @@ class BackupWebDavUploadWorker @AssistedInject internal constructor(
     @Assisted params: WorkerParameters,
     /** 上传流程协作者，负责身份验证和终态清理。 */
     private val coordinator: BackupExecutionCoordinator,
-    /** 低敏历史留证，正式包没有 Logcat 开关时仍能定位。 */
+    /** 低敏即时诊断遵循统一 Logcat 门控，不再持久化历史事件。 */
     private val diagnostics: BackupDiagnostics,
 ) : CoroutineWorker(appContext, params) {
     /** 失败不安排重试；记录真实执行跨度与停止原因，不将身份缺失退出等同上传成功。 */
@@ -47,7 +47,7 @@ class BackupWebDavUploadWorker @AssistedInject internal constructor(
             trace.event("worker_succeeded")
             Result.success()
         } catch (failure: Throwable) {
-            // 取消后只执行有界留证，原取消继续传播，绝不安排新的上传。
+            // 取消后保留既有边界即时输出停止事件，不写日志文件；原取消继续传播，绝不安排新的上传。
             withContext(NonCancellable + Dispatchers.IO) {
                 /** 本条结束记录只读取一次系统停止证据，兼顾尚未进入协调器的任务锁等待中断。 */
                 val stopReason = diagnostics.stopReason(this@BackupWebDavUploadWorker)

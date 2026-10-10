@@ -1,9 +1,5 @@
 package com.cla.clip.master
 
-import android.content.Context
-import com.cla.clip.master.logging.RuntimeLogcatRecorder
-import com.cla.clip.base.general.utils.enableDevelopmentLogRecording
-
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import androidx.work.WorkManager
@@ -32,14 +28,6 @@ import javax.inject.Inject
  * 这里避免在非主进程重复初始化后台任务，防止多进程场景下重复调度 Worker 或重复连接 Shizuku。
  */
 class App : BaseApplication(), Configuration.Provider {
-
-    /** 早于 Provider/Hilt/任务初始化开启开发日志；实际 IO 全部由独立线程承担。 */
-    override fun attachBaseContext(base: Context) {
-        super.attachBaseContext(base)
-        enableDevelopmentLogRecording()
-        RuntimeLogcatRecorder.start(base)
-    }
-
 
     companion object {
         /** Application 日志标签，仅用于启动和后台调度诊断。 */

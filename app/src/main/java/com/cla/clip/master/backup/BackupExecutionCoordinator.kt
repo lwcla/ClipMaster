@@ -37,7 +37,7 @@ class BackupExecutionCoordinator @Inject internal constructor(
     private val temporaryStore: BackupTempFileStore,
     /** 只直接发布正式 ZIP 与独立 manifest。 */
     private val webDavClient: WebDavClient,
-    /** 低敏阶段留证，不影响业务结果。 */
+    /** 低敏阶段即时输出 Logcat，不保存诊断文件，也不影响业务结果。 */
     private val diagnostics: BackupDiagnostics,
 ) {
     companion object {

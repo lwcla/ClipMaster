@@ -2,7 +2,7 @@ package com.cla.clip.master.backup.diagnostics
 
 /** 一轮 Worker/手动请求的低敏上下文；同一事件可串联执行、任务锁等待和产物身份。 */
 internal class BackupDiagnosticTrace(
-    /** 只提交白名单事件，平台读写在独立协作者中。 */
+    /** 只提交白名单事件，由适配器即时输出 Logcat，不持久化阶段历史。 */
     private val record: (BackupDiagnosticRecord) -> Unit,
     /** 可注入单调时钟，避免用排队墙钟时间误判执行超时。 */
     private val elapsedClock: () -> Long,
@@ -29,7 +29,7 @@ internal class BackupDiagnosticTrace(
         event("identity_bound")
     }
 
-    /** 在副作用开始前留证，硬杀进程也尽量保留最后进入的阶段。 */
+    /** 在副作用开始前即时输出阶段；不承诺硬杀或重启后仍能从日志缓冲追溯。 */
     fun stage(phase: String) {
         this.phase = phase
         event("phase")

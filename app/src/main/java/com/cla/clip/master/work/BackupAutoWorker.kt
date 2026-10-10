@@ -24,14 +24,14 @@ class BackupAutoWorker @AssistedInject internal constructor(
     @Assisted params: WorkerParameters,
     /** 共用的生成和文件交接流程。 */
     private val coordinator: BackupExecutionCoordinator,
-    /** 独立的低敏留证，不参与调度或备份结果。 */
+    /** 即时输出低敏阶段诊断，不保存日志文件，也不参与调度或备份结果。 */
     private val diagnostics: BackupDiagnostics,
 ) : CoroutineWorker(appContext, params) {
-    /** 每次实际执行单独计时，中断在有限 IO 下留证后继续传播，不修改重试策略。 */
+    /** 每次实际执行单独计时，中断即时输出 Logcat 后继续传播，不修改重试策略。 */
     override suspend fun doWork(): Result {
-        /** 当前 Worker 身份与运行次数，排队时间不计入本轮实际耗时。 */
         /** 旧日周期无输入仍按自动处理，手动请求复用同一生成入口。 */
         val automatic = inputData.getString("source") != "manual"
+        /** 当前 Worker 的独立诊断上下文，携带身份与运行次数，排队时间不计入本轮实际耗时。 */
         val trace = diagnostics.start(id.toString(), if (automatic) "auto" else "manual", runAttemptCount)
         trace.stage("waiting_task_gate")
         return try {
@@ -39,7 +39,7 @@ class BackupAutoWorker @AssistedInject internal constructor(
             trace.event("worker_succeeded")
             Result.success()
         } catch (failure: Throwable) {
-            // 系统停止时的留证不能随原协程取消丢失，完成后仍传播同一取消。
+            // 保留原有取消处理边界，即时输出当次停止事件后仍传播同一取消；不再执行日志文件 IO。
             withContext(NonCancellable + Dispatchers.IO) {
                 trace.event(if (failure is CancellationException) "stopped" else "worker_failed",
                     diagnostics.stopReason(this@BackupAutoWorker), failure.javaClass.simpleName,
