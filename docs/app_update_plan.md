@@ -174,6 +174,8 @@ public 仓库 README 作为人可读发布页维护，至少包含最新版版�
 
 ## 变更记录
 
+- 2026-10-11：按用户要求提交并推送已有版本准备改动，`versionCode` 从 37 增至 38，`versionName` 从 0.7.3 更新为 0.8.3，并同步版本码中文注释。复用现有 BuildConfig、版本比较、备份应用版本元数据和 APK 命名规则，无新增组件、类、方法或协议字段。仅改变构建元数据，无新的独立业务规则，不新增单测或采用 TDD。执行 `.\gradlew.bat :app:generateDebugBuildConfig :app:generateReleaseBuildConfig :app:processDebugMainManifest --offline --console=plain --no-parallel --max-workers=1 --no-daemon '-Pkotlin.compiler.execution.strategy=in-process'` 成功，Release BuildConfig 核对为 `38 / 0.8.3`，`git diff --check` 通过；Debug BuildConfig 与 Manifest 产物在收尾核对时缺失，不能确认其最终产物。完整 Debug Kotlin 编译未通过：首次因 `shizuku` 的 `R.jar` 缺失失败，重跑 `shizuku` 与 `base:hidden-api` 的资源生成后，AAPT 又因无法写入资源输出目录中的 `R.txt` 失败；没有扩大源码修改范围，发布前需要补验完整编译及生成产物。沿用既有日志与诊断计划，不新增运行时日志；没有备份 schema、恢复规则或反射/序列化契约变化，不重复运行业务单测或 release/R8。源码版本提交不代表公开 Release 已发布，设备升级与真实网络验证留待发布验收。
+
 - 2026-10-07（已完成）：按用户要求提交已有 `0.7.2` 版本准备改动，`versionCode` 从 35 增至 36，`versionName` 从 0.7.1 更新为 0.7.2，并修正版本码中文注释。复用现有 BuildConfig、版本比较、备份中的应用版本元数据和 APK 命名，无新增组件、类、方法或协议字段；默认 domestic 及双发布源流程保持现状。仅改变构建元数据，无新的纯逻辑，测试门禁判断不新增单测或走 TDD；执行 `.\gradlew.bat :app:compileDebugKotlin :app:generateReleaseBuildConfig :app:processDebugMainManifest --offline --console=plain --no-parallel --max-workers=1 --no-daemon '-Pkotlin.compiler.execution.strategy=in-process'` 成功，debug/release BuildConfig 和 debug Manifest 均核对为 `36 / 0.7.2`，两种变体渠道标记均为 false，`git diff --check` 通过。不重复运行业务单测或 release/R8。日志与诊断沿用既有计划，不新增运行时日志，无备份 schema/恢复规则或反混淆契约变化。源码版本提交不代表公开 Release 已发布，真机更新与网络验证留待发布验收。
 
 - 2026-10-07：恢复上架前默认 `domestic` 渠道，继续 Gitee 优先、GitHub 兜底；原因是当前尚未真正上架 Google Play，商店更新分支留待正式上架后显式切换。构建参数说明和广告主文档同步渠道差异，不复制更新实现。
