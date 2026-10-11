@@ -4,7 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.Pager
-import androidx.paging.PagingConfig
+import com.cla.clip.master.paging.clipPagingConfig
 import androidx.paging.cachedIn
 import androidx.paging.map
 import com.cla.clip.base.general.dao.SearchHistoryData
@@ -12,6 +12,8 @@ import com.cla.clip.base.general.config.clip.ClipSettingsRepository
 import com.cla.clip.base.general.config.ClipItemQuickAction
 import com.cla.clip.base.general.utils.logE
 import com.cla.clip.base.general.dao.data.SourceAppCandidate
+import com.cla.clip.master.sourceapp.ClipSourceNameAssembler
+import com.cla.clip.master.sourceapp.SourceAppLoadGate
 import com.cla.clip.base.general.entity.ClipVisibilityScope
 import com.cla.clip.base.general.entity.toUi
 import com.cla.clip.base.general.repository.ClipRepository
@@ -55,7 +57,12 @@ class SearchViewModel @Inject constructor(
     /** 普通搜索快捷动作来自已提交配置，折叠搜索仍由页面禁用。 */
     private val clipSettingsRepository: ClipSettingsRepository,
     private val clipboardDataProcessor: DefaultClipboardDataProcessor,
+    /** 普通/折叠搜索结果共用历史名称装配。 */
+    private val sourceNames: ClipSourceNameAssembler,
 ) : ViewModel(), ClipboardDataProcessor by clipboardDataProcessor {
+    /** 页面不可见时取消未完成名称查询，保留轻量结果等待复用。 */
+    internal val sourceLoadGate = SourceAppLoadGate()
+
 
     /** 搜索页可见时才收集的快捷动作领域流，不在 ViewModel 初始化期启动 IO。 */
     val quickAction = clipSettingsRepository.quickAction
@@ -96,6 +103,7 @@ class SearchViewModel @Inject constructor(
      */
     val sourceApps: StateFlow<List<SourceAppCandidate>> = clipRepository.get()
         .loadAllSourceApps()
+        // 候选只含包名与历史名称，菜单可见行负责按需取图。
         .stateIn(
             CoroutineScope(viewModelScope.coroutineContext + Dispatchers.IO),
             SharingStarted.WhileSubscribed(5_000),
@@ -111,11 +119,7 @@ class SearchViewModel @Inject constructor(
         /** 时间窗口仍由现有枚举计算，来源勾选事件不会改写它。 */
         val timeRange = state.timeFilter.toTimeRange()
         Pager(
-            config = PagingConfig(
-                pageSize = 20,
-                prefetchDistance = 5,
-                enablePlaceholders = false
-            )
+            config = clipPagingConfig()
         ) {
             clipRepository.get().searchClips(
                 userInput = state.query,
@@ -125,7 +129,9 @@ class SearchViewModel @Inject constructor(
                 visibilityScope = scope
             )
         }.flow.map { pagingData ->
-            pagingData.map { clipDetail -> clipDetail.toUi() }
+            /** 搜索条件改变后创建新名称会话。 */
+            val session = sourceNames.newSession()
+            pagingData.map { clipDetail -> sourceLoadGate.run { session.attach(clipDetail.toUi()) } }
         }
     }.cachedIn(
         CoroutineScope(viewModelScope.coroutineContext + Dispatchers.IO)

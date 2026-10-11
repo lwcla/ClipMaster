@@ -1,27 +1,12 @@
 package com.cla.clip.master.ui.page.mine
 
 import com.cla.clip.master.installedapps.InstalledAppInfo
-import android.graphics.drawable.ColorDrawable
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** 当前扫描候选规则测试，保护候选范围、已保存优先和名称缺失边界。 */
 class ClipSourceBlockSettingStateTest {
-
-    @Test
-    /** 页面候选直接传递扫描图标，不按包名再次发起系统读取。 */
-    fun buildCandidatesPreservesScannedIcon() {
-        /** 合成图标只检查对象身份，避免测试依赖真实 Android 资源。 */
-        val icon = ColorDrawable()
-        /** 已读取图标应沿候选映射原样传到页面。 */
-        val candidate = buildBlockedSourceAppCandidates(
-            blockedPackages = emptySet(),
-            installedApps = listOf(InstalledAppInfo("com.example.a", "Alpha", false, icon)),
-        ).single()
-        assertSame(icon, candidate.icon)
-    }
 
     @Test
     /** 未扫描到的保存规则不得生成候选，防止设置名单变成占位行。 */

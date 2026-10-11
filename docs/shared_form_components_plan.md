@@ -105,7 +105,7 @@
 ### 来源过滤共享展示组件（已完成，2026-09-30）
 
 - `ToolbarSwitchAction` 接收短标签、完整无障碍描述、checked、callback 和 modifier，宽度控制在标题栏已预留的 112dp 保护区以内；标签可省略，开关保持可见且全区域有 Switch 语义。组件不扫描应用、不持久化设置。
-- `SelectableAppRow` 接收具名 UI state：标题、副标题、内存图标、已提交勾选及 `Available/Disabled/Submitting` 交互状态。整行和 Checkbox 只触发一个明确目标状态 callback；提交中展示局部进度并禁用，Drawable 失败使用现有默认 App 图标。
+- `SelectableAppRow` 接收具名 UI state：标题、副标题、已提交勾选及 `Available/Disabled/Submitting` 交互状态。整行和 Checkbox 只触发一个明确目标状态 callback；提交中展示局部进度并禁用，图标通过独立 `icon` Composable slot 提供，默认 slot 使用项目默认图标，行状态不持图像。按包名加载和取消由调用入口的 `AppIcon` adapter 负责，契约见 [来源图标主方案](source_app_icon_plan.md)。
 - 页面负责将候选与提交状态转换为共享 UI state，并执行保存、错误提示和导航。组件不持有页面 ViewModel/Repository，不读取安装列表；包名稳定 key 由列表调用方设置。
 - 文案由调用方字符串资源传入，颜色/字体来自 MaterialTheme；无新增业务日志、数据库或备份数据。提供窄屏长标题、提交中和深色 Preview，单测保护提交/筛选规则，布局已编译，Preview 已定义但未渲染；设备未连接，真实触控、读屏和视觉留待设备验收，不写镜像样式测试。
 
@@ -184,6 +184,8 @@
 - `ClipResultList`、`ClipCardContent` 和 `ClipCardGestures` 已从 `ui/page/list` 迁入 `ui/widget/clip`，列表页、搜索页、折叠页和回收站统一从共享包引用。
 
 ## 变更记录
+
+- 2026-10-11：SelectableAppRow 移除 state 中的 Drawable，新增图标 slot；原因是图标仅应在可见 UI 绑定持有。复用原行交互、默认资源与亮暗/大字体 Preview，不新增行级日志；状态/释放回归与编译见来源图标主方案。
 
 - 2026-10-02：搜索来源图标 slot 接入独立异步图标读取能力，缓存失败后先查询系统再显示默认图标，共享选择行不承担 IO。
 

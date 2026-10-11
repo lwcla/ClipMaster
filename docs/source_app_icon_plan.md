@@ -2,187 +2,134 @@
 
 # 来源应用图标与分页解耦方案
 
-## 用户 SVG 默认图标替换（已完成，2026-10-02）
-
-- 按用户提供的 `D:/下载/android.svg` 替换共享 `host_ic_app_icon_default`，新资源为黑色轮廓 Android 图形；保留 SVG 的单条 path、1024×1024 viewBox 与默认黑色填充，转换为 32dp VectorDrawable，不请求外部 DTD、不引入图片加载器。
-- 原资源名保持，来源菜单、剪贴卡片、应用选择列表及预览直接复用；调用方现有尺寸和加载/失败状态继续由各组件控制，图标保留原色。仅替换展示资源，不影响系统图标读取、缓存、分页、权限、备份或外部协议。
-- 日志与测试门禁：纯资源替换无新副作用，不新增日志、JVM 单测或 TDD；核对路径/颜色一致性，运行 `:app:processDebugResources :app:compileDebugKotlin` 和 `git diff --check`。无 keep/反射契约变化，不做 release/R8；浅深色设备视觉仍待验收。
-- 验证记录：原 SVG 与 VectorDrawable 单条路径逐字符相同，黑色填充、1024 视口和 32dp 尺寸核对通过；`.\gradlew.bat -I build\source-app-isolation.init.gradle :app:processDebugResources :app:compileDebugKotlin --no-daemon --no-watch-fs --console=plain` 为 BUILD SUCCESSFUL（39s），日志 `build/default-app-svg-validation.log`；`git diff --check` 通过。未提交改动。
-
 ## 当前状态、目标与范围
 
-- 2026-10-02 开始实施，任务分支 `codex/source-app-presentation`。执行裁定：沿用当前干净工作区和已配置 Android 环境，仅切换独立任务分支，不创建工作树、不自动提交；先完成数据隔离回归，再迁移订阅/缓存/共享 UI。文件发布与来源条件写入是跨任务共享契约，必须先定义再接线，测试结果逐步记录在本文。
-- 用户于 2026-10-02 确认调整架构：拆分来源图标订阅和分页数据，每个包名文件完整发布后立即条件更新对应数据库行。现已接入共享结果页和来源菜单，下方只读基线仅记录历史实现。
-- 当前代码：五条结果分页查询返回不含来源 Relation 的 `ClipPageData`，`ClipShowEntity` 只保留来源身份；生成 DAO 的分页观察表均排除 `source_apps`。搜索候选投影仅包含包名/名称并等值去重，来源展示单独共享订阅；缺失或坏图标在后台修复、版本化保存，逐项条件更新 Room。
-- 目标：分页只管理剪贴内容、链接预览、记录状态与排序，以及来源包名；来源名称、图标和主色通过包名独立订阅。图标更新不改变 Pager、不使结果 PagingSource 因来源表写入而失效，不重置筛选、滚动、选择或手势状态。
-- 接入普通列表、普通/折叠搜索、折叠列表、回收站共享卡片和搜索来源菜单。详情/复制等非分页调用保留各自查询语义，迁移公共展示模型时一并评估兼容；不为没有图标展示的页面增加图标区域。当前安装应用过滤页保持现有系统列表读取方式。
-- 不新增持久表、不把图片存 DataStore、不增加自定义 Coil ImageLoader/Fetcher、不修改搜索规则或备份协议。来源元数据仍存现有 `source_apps`，本轮是查询/展示/任务边界拆分。
+2026-10-11 用户确认按包名由 UI 加载图标。替换本轮先装配 Bitmap/主色再交付列表的实现；继续复用纯内存 Manager，不恢复旧 Store、PNG 发布或后台补图。正文、历史来源名称和安装候选先交付，冷缓存显示默认图标与主题色，图标和主色加载后同时更新。
 
-## 方案决策与替代方案
-
-| 方案 | 决策与原因 |
-| --- | --- |
-| 所有文件补齐后批量写库 | 不再作为主方案：显示等待慢项，页面离开前成果可能还未提交；此前讨论保留在变更记录 |
-| 保持原分页关联，逐项写库 | 不采用：虽只改一个包名行，分页仍观察来源表 |
-| 仅给图标 Flow 加防抖或字段投影 | 不足以解耦：Room 仍按表通知，分页中的来源 Relation 即使只投影名称也会保留对来源表的观察 |
-| 分页去掉来源表依赖，来源展示单独订阅，逐项提交 | 本轮主方案：较早展示和持久化每项成果，同时隔离图标写入与分页失效 |
-| 分拆来源信息表/图标表 | 暂不新增 schema：先用现有表完成查询解耦；若来源候选重查成为瓶颈，再根据测量评估表拆分 |
-
-## 三条独立数据流
-
-| 数据流 | 输入与输出 | 更新范围 |
+| 入口 | 轻量数据来源 | 图标加载边界 |
 | --- | --- | --- |
-| 结果分页 | clips、现有 link_previews、筛选条件 → 内容展示记录，保留来源包名 | 内容、置顶、折叠、删除、时间、链接预览等原有变化可以刷新分页；来源表写入不触发它 |
-| 来源候选 | `SELECT package_name, app_name` 的轻量投影 → 搜索来源候选 | 包名/名称真实变化才发出新的候选状态；图标变化后的 SQL 重查允许发生，但相同投影通过相等去重，不重置菜单/筛选 |
-| 来源展示 | 页面所需包名集合 → 独立名称、图标路径/hash、主色状态 | 共享分发到对应包名的可见卡片/菜单项；无关包名状态相同，不重复发射其 UI 状态 |
+| 首页、折叠、搜索、回收站 | 名称装配后的 `ClipShowEntity` | 共享卡片的局部 UI 会话 |
+| 搜索来源菜单 | 原有 `SourceAppCandidate` 包名/名称投影 | 菜单可见行 `AppIcon` |
+| 安装应用过滤 | `InstalledAppInfo` 包名/名称/系统标记 | 共享选择行的图标 slot |
+| 单条详情 | 相同名称装配契约 | 当前无图标区域，不取图 |
 
-不能把来源元数据 Flow `combine` 回 Pager 或反复构造新的 `PagingData`。不能只在 Compose 去掉旧图标字段、却让 DAO 返回仍关联 `source_apps` 的关系模型；数据库失效边界必须实际改变。
+范围不包含清理用户文件、Room schema 或备份格式迁移、跨工作资料读取、实时安装更新、图标包或快捷方式支持。用户已明确要求提交代码并推送主分支，本轮只提交来源图标相关代码、测试及文档；保留工作区原有 WebDAV 恢复流程文档及流程图改动。
 
-## 分页查询与模型边界
+## 用户体验与数据流
 
-- 在 `base/general/.../dao/data/ClipPageData.kt` 新增专用于分页的 Room POJO：嵌入 `ClipData`，保留现有链接预览关系，完全不含来源 App Relation/JOIN/子查询。`ClipDetail` 留给确实需要来源关系的非分页接口，不整体删除或破坏后台调用。
-- `ClipDao` 的普通、搜索（FTS/LIKE/无关键词筛选）、折叠、回收站及其他共享分页查询全部改为 `PagingSource<Int, ClipPageData>`；`ClipRepository` 对应签名同步。内容 SQL、最终 id 稳定排序、分页大小、来源包名过滤语义保持原规则。按包名筛选只读取 clips 的 `source_app_package`，不为筛选重新 JOIN 来源表。
-- `ClipShowEntity` 收敛为内容展示模型，保留 `sourceAppPackage`；名称、路径/hash、主色四类来源字段迁往 app 共享 `SourceAppPresentationState`，不在分页结果里保留会过期的展示快照。新增具名分页 mapper，现有详情 mapper 继续处理内容/时间/链接字段；迁移所有构造、Preview、操作回调和测试引用，不同时维护新旧来源展示真相。
-- 主色也是图标衍生数据，卡片边框、快捷动作底色、图标与名称从同一个包名展示状态读取。名称晚到/变化可以更新来源标题及该标题高亮，但不能重做剪贴内容分页；未知来源按现有共享显示名和默认图标规则展示，不查询空包名系统图标。
-- 新模型只参与编译期 Room 映射和 UI，不是表、JSON、导航或反射协议，无需仅因 data class 添加 keep；不应为本次查询拆分升级 Room schema 或备份 schemaVersion。若实施时发现新的外部契约，需重新评估 keep/R8 并同步文档。
+1. 分页只装配历史来源名称；搜索候选和安装扫描只返回轻量文本与身份。
+2. 页面提供可替换的 `AppIconLoader`；共享 UI 不直接获得 Manager、Repository 或 ViewModel。
+3. `rememberAppIconEntry` 按包名和 loader 创建一份局部 `AppIconUiSession`。页面 STARTED 且实际可见时加载，离开前台取消未完成读取；首页保留组合的非当前 Pager 页用 `visibleToUser` 暂停。
+4. Manager 返回同一 `AppIconEntry` 的图标与主色，卡片使用该结果绘图和边框取色，避免两份请求产生不同状态。菜单和安装行复用 `AppIcon`，纯绘制复用 `AppIconImage` 和统一默认资源。
+5. 重组不重复取图；暂时后台保留已完成局部状态；条目离开组合立即关闭会话、释放引用，晚到结果不得回填。懒布局保留的少量预取/复用条目仍可能持有图片，不承诺仅可见像素数量。
 
-## 独立来源订阅与组件契约
+未知/空包名不查询系统。失败直接使用默认，不阻断正文。失败冷却结束不自动刷新现有会话，重新组合可重试；暂停时取消的未完成会话在重新可见后重试。成功图标不实时更新，进程重启或缓存淘汰后的新会话按正常规则读取。
 
-- `SourceAppDao` 增加轻量候选 Flow 及按包名集合查询来源展示的 Flow，`base/general/.../repository/sourceapp/SourceAppPresentationRepository.kt` 只封装来源读取/条件写入，不依赖 app Compose、ViewModel、平台图标或全局页面状态。沿用 `SourceAppData` 作为持久实体，不额外建图标表。
-- app `sourceapp/SourceAppPresentationStore.kt` 管理跨页面订阅会话：聚合当前可见页面请求的包名、按包名共享最新状态与在途任务，统一读取元数据后分发等值去重的单包名 StateFlow。同包名多条记录共享一次来源读取和缓存，不让每个 item 各起一个数据库查询。
-- 元数据查询只覆盖活跃包名集合，必要时按 SQL 参数/集合上限分片，不默认每次读取全部历史来源；卡片按可见/已组合的有限预取项提出需求，搜索候选只为页面自己的列表用途读取轻量名称投影。需求变化按集合相等去重；仅需求集合变化可以切换元数据查询，不因图标值更新反复取消读取任务。
-- Room 的表级通知仍可能使活跃元数据查询与候选投影重查，独立订阅解决的是分页失效和 UI 状态传递范围，不承诺每次数据库写入只查询一行或只绘制一次。按包名 `distinctUntilChanged` 阻止未变化来源重复发射；候选 Flow 不再携带图标字段，避免整份菜单候选随图标变更被替换。
-- 页面前台创建/激活会话，离开前台释放需求并暂停收集；最后一个活跃消费者离开后停止来源数据库观察和重型补齐。会话缓存只保留有界元数据，空闲项可淘汰，不永久持有所有历史来源或 Drawable。单一页面离开不取消其他可见页面仍需要的同包名任务。
-- 共享 `ClipResultList`/`ClipCard` 接收来源展示状态或稳定的按包名展示提供接口；页面薄适配层负责会话、生命周期收集和依赖连接。展示提供接口只连接已声明需求的 StateFlow，不在读取状态时同步查库或扫描系统。公共组件不直接持有 Repository、具体 ViewModel 或导航。
-- 卡片边框/主色可影响整张同来源卡片的重组，图标区域单独加载；目标是限制状态传递与查询失效，不能保证只有图标一个 Composable 重绘。同包名可见记录一起更新，剪贴 id 稳定 key、行高度/滚动状态、选择/侧滑状态继续沿用共享列表契约。
-- `SourceAppPresentationState` 明确 Loading、Ready、Unavailable；Ready 分开表示名称与可空图标信息，不能因没有图标把有效名称丢掉。查询失败保留最近有效展示或默认图标，不能把数据库异常误判为缓存缺失后扫描所有应用；真实来源删除清除旧状态，重新出现按新数据加载。
+## Manager、缓存与失败契约
 
-## 非阻塞补齐与逐项提交时序
+- 复用 Hilt 单例 `AppIconManager`、74 像素缩图、取色、Launcher Activity 优先与 Application 图标降级。图标为空使用项目默认资源，颜色为空使用当前主题；不复制默认 Bitmap、不主动 recycle UI 尚引用的图片。
+- 复用纯 Kotlin `AppIconCache`：LRU 最多 256 个包名，失败冷却 30 秒，单调时钟；固定 32 分片锁同包去重，最多两次重型读取。容量是数量限制而非严格字节预算。
+- 取消向上传播，不写负缓存；普通失败降级默认。系统内存回调清理与代次防回填保留；没有包变化广播、每包永续 StateFlow、文件或数据库图标写入。
+- Manager 淘汰只移除缓存引用，不通知已完成 UI 会话，也不清除当前显示的小图；数据列表不再持有图片，离屏组合释放后引用可以被回收。
+- 局部会话只持有一个可空结果：未完成为 null，失败为全空结果。序列化并发加载，关闭不可逆；取消/关闭后不可中断读取的晚到结果不发布。
 
-1. 来源候选或内容列表立即交 UI，不等待文件存在检查、解码、系统查询或压缩写盘。未取得元数据时显示原有未知/默认/主题色；不在 ViewModel 初始化阶段执行扫描。
-2. 搜索页取得候选后，将需要检查的包名交给共享协调器；其他结果页按活跃包名请求读取与缺失修复，不为了修复扫描全部剪贴或安装列表。候选列表已经返回，文件检查在 IO 线程进行，按包名/路径/hash/文件状态去重；路径为空、非普通可读文件、长度为零或解码失败均不可用，不能只看 `exists()`。
-3. 按包名共享在途任务，小规模有界并发（初始建议 2 个，待设备测量调整）。缓存有效则直接复用，不调用系统、不生成新路径、不写库；不可用才调用 PackageManager。UI 的逐行系统兜底统一委托协调器，不与后台任务重复取图。未知空包名不查询；合法系统默认图标仍按当前契约保留。
-4. 读取 Drawable 后转有限尺寸 Bitmap，沿用 `Bitmap.toStableHash()` 和主色提取约定，及时释放临时对象；不把整批 Bitmap 集合放入内存或 DataStore。系统 Binder 调用不能强制中断，返回后检查取消，不再发起后续重型副作用。
-5. 在受控正式图标目录内先写唯一临时文件，核对编码成功、非空后同目录转正为 `<包名>_<唯一生成编号>.png`。发布器保证生成唯一性，具体原子性/错误契约需实现与设备验证；现有覆盖同名文件的 `saveIcon` 不能直接作为完整安全发布方案。
-6. 每项文件转正后立即执行该包名的短条件 UPDATE：来源行仍存在，路径/hash 与读取开始的快照一致才改图标路径/hash/主色；不改名称、不拿旧实体全行 upsert、不复活被删除的来源，不把系统读取或文件写入放进数据库事务。更新冲突返回 Skipped，写盘/查询/数据库异常返回明确失败，任务继续处理其他项。
-7. 数据库提交成功后，由 Room 来源元数据订阅驱动对应包名 StateFlow 更新，图标请求 key 使用新路径/hash；同来源卡片和菜单项逐步显示新图标，分页不重载。不等待其他应用完成，也不靠主动重查分页、菜单关闭重开或一次性内存事件作为唯一更新来源。
-8. 来源候选投影不变时，不重建候选状态；自己的元数据写入不能重复启动原任务，也不能用整列表 `collectLatest` 每次发射都取消剩余工作。原任务按包名/版本继续处理，名称变化等真实候选变化按既有规则更新。
-9. 页面离开前台取消它独占的未完成工作；仅关闭菜单但搜索页仍前台时可以继续候选修复。已提交项保留；当前项已发布但未提交的文件成为孤儿，下一次按清理契约处理。失败项显示默认，短期会话冷却防止每次来源表通知重试，重新进入/明确刷新可允许重试。
+## 模型、分页与生命周期边界
 
-## 文件缓存、并发与清理边界
+- `ClipShowEntity` 仅保留本次历史来源名称，删除 Bitmap/主色字段；`InstalledAppInfo`、安装原始条目和过滤候选同样删除图片/主色。Room、JSON、导航和备份协议不变，不新增 keep。
+- `ClipSourceNameAssembler` 只协调名称；每代次会话保留含 null 的有界名称缓存 256 项，查询失败仍交正文。名称查询继续用既有 `SourceAppLoadGate` 和 `SourceAppNameLoadingEffect` 门控，防止隐藏页面的 cachedIn 子任务继续查库。
+- 搜索来源候选直接使用既有轻量投影，不扫描全部来源图标；安装扫描只查询当前范围的标签与系统标记，图标读取由行的生命周期约束。
+- 统一 `clipPagingConfig()` 保持 pageSize=20、prefetchDistance=5、关闭占位，恢复默认不丢弃已加载页；移除本轮新增的 maxSize=200。真实 Paging 已复现有限窗口丢弃前页后 `scrollToItem(0)` 只到中段；恢复默认使现有回顶语义成立。正文仍按需分页，但已加载文本可增长，后续容量优化须连同全局回顶设计及设备测量评估。
+- `AppIconUiSession` 为可测试纯逻辑，Compose adapter 负责 DI 与生命周期，`AppIconImage` 纯绘制，三者职责分开；共享选择行通过 icon slot 接入，不把平台图片塞回 UI state。
 
-- 现有 Coil key 是 `路径:iconHash`。新版本路径解决“文件丢失后重建同样内容、hash 不变”的 UI 重新加载；不能把确定性的“包名 + 内容 hash”当作生成版本。有效缓存命中不改版本，也不为编号新增 DataStore 状态。
-- 文件与 Room 无法形成跨资源原子事务：先完整发布，再条件提交。提交失败/冲突/取消产生孤儿文件，旧数据库引用保留；提交后旧文件延迟清理，核对所有来源行引用及宽限边界，避免 UI 还在读时删除，不逐项全目录扫描。
-- Reader 只读、Publisher 只发布文件、Coordinator 负责候选去重/并发/冷却、Repository/DAO 负责条件写入、Store 负责独立展示订阅。新增平台任务不继续堆进搜索 ViewModel、ClipRepositoryImpl 或 FileUtils。
-- Provider 的新内容写入仍应正常影响 clips 分页，Provider 的纯图标更新走来源展示流；其名称更新允许刷新候选名称/排序。条件写入保护新提交，不让两条图标链路覆盖对方结果，统一正式路径发布与清理约定，检查所有写入和删除调用方。
-- 有效文件存在时不会主动发现应用图标变化，保留现有 Provider 内容 hash 更新链路。安装更新/卸载事件驱动失效列为后续增强，不在每次页面进入时无条件重取所有系统图标。
+## 实施任务、测试与诊断
+
+- [x] 任务一：先验证模型不持有图像的回归失败；新增局部会话的等待/取消恢复/关闭晚到/同包共享测试，再实现状态边界。
+- [x] 任务二：移除模型图片和扫描/分页取图；保留名称缓存与门控回归；共享分页配置用真实 Paging 浏览超过 200 项验证回顶索引。
+- [x] 任务三：接入共享图标 adapter、卡片同源颜色、菜单和安装行；页面提供 loader，首页明确可见边界，Preview 不访问系统。
+- [x] 任务四：受影响 app/general/shizuku 完整单测与 Debug 编译、静态全入口扫描、独立只读审查、同步文档。
+
+选择性 TDD 覆盖纯状态、资源释放和回顶规则；Compose 绘制、Hilt 接线和系统外观通过编译及待验真机覆盖，不新增镜像单测。日志沿用 Manager 失败、取色与名称失败及扫描汇总；不新增每行加载/取消/重组日志，避免安装名单和剪贴内容泄漏与噪声。备份继续只保存既有元数据白名单，UI 会话、Bitmap、色值与缓存不入备份、不触发 dirty。
+
+## Shizuku 与旧接口兼容
+
+- Shizuku 来源解析只读采集时名称；不读取 Drawable/Bitmap、不计算图标 hash、不编码 PNG、不执行 `query_icon_state → content write → commit_icon`。正文 Provider 命令保留稳定字段，`iconHash` 传空。
+- `ShizukuConnector.VERSION` 从 28 升到 29，使覆盖安装后的绑定使用新的 UserService 行为，替换仍会生成图标的旧服务。进程身份和剪贴 payload 验证、过滤、去重、通知沿用原逻辑。
+- app Provider 不初始化图标写盘依赖。旧 `query_icon_state` 和 `commit_icon` 保留调用方/线程/参数验证，合法调用统一返回 `ok`、`shouldSyncIcon=false`、`memory_icons_only`、placeholder，不误报正文已保存。旧 `/icon` 写入明确拒绝；剪贴 `/clip` 写入正常。
+- `ClipboardBridgeClipCommitCoordinator` 不再读取旧图标路径或检查磁盘文件，入库签名中的图标元数据固定为空。删除已退役的图标 Store、Publisher、Resolver、逐行 Provider 和专属测试，改用内存缓存/快照/兼容契约回归。
 
 ## 复用与备份决策
 
-- 复用现有 Room/Repository/Paging、剪贴内容和链接预览映射、生命周期收集、`ClipResultList`/`ClipCard`、显示名工具、图标文件校验、路径/hash 缓存键、稳定 Bitmap hash、主色提取、默认资源与共享 Coil 实例。
-- 当前完整 `ClipDetail` 不满足分页隔离，新增 `ClipPageData` 是必要职责拆分；当前来源整列表 Flow 与单项读改写不能满足活跃包名共享订阅/条件提交，需要具名来源能力。备份专用 `upsertAllForBackup` 不复用为运行时图标修复。
-- `source_apps` 表及备份白名单保持原字段，来源名称、路径、主色/hash 照旧导出，路径仅为历史提示。PNG、订阅会话、StateFlow、编号、失败冷却和临时文件不新增到本地/WebDAV 备份；恢复后当前设备重新取图，应用不存在允许默认。不新增 dirty/备份版本/额外备份触发。`backup_rules.xml` 和 `data_extraction_rules.xml` 已精确排除 `file/app_icons/`，覆盖系统云备份和设备迁移；传输目录排除继续保留。备份契约见 [备份主方案](webdav_backup_plan.md)。
+复用图标缩放/取色扩展、来源显示名兜底、历史名称查询、纯内容 mapper、共享卡片/菜单/安装选择行与默认资源。旧 Store/文件工具的输出契约为独立 StateFlow、文件路径和 Room 条件写入，与纯内存按需 UI 加载目标冲突，因此替换而不再扩展它们。职责拆为缓存、平台 Manager、名称会话、图标 UI 会话、生命周期 adapter、纯绘制与旧接口兼容结果，各自单一职责。
 
-## 涉及文件与实施步骤
-
-按 `writing-plans` 编写，遵循仓库约定更新本主方案，不另建重复方案；未来实施可在当前任务逐项执行，不隐含创建子代理或提交授权。
-
-| 层级 | 新增/调整文件与职责 |
-| --- | --- |
-| base/general 数据层 | `dao/data/ClipPageData.kt`、`ClipDao.kt`、`SourceAppDao.kt`、来源候选 POJO；分页排除来源依赖，提供活跃集合读取/条件提交 |
-| base/general 仓库与映射 | `ClipRepository.kt`/Impl、`repository/sourceapp/SourceAppPresentationRepository.kt`、`ClipShowEntity.kt` 与具名分页 mapper；返回内容与来源分离模型 |
-| app 来源共享领域 | `sourceapp/SourceAppPresentationStore.kt`、`SourceAppDemandRegistry.kt`、`SourceAppIconRepair.kt`、`SourceAppIconCachePublisher.kt`；需求/状态编排、纯去重与修复顺序、平台写盘各自清晰，复用现有 Reader |
-| app 共享 UI | `ui/widget/sourceapp/SourceAppPresentationState.kt` 与薄生命周期适配、`ClipResultList.kt`、`ClipCardContent.kt`、`SourceAppIconModel.kt`；稳定来源接口和图标模型 |
-| app 页面/同步入口 | 列表/折叠/回收站 ViewModel、SearchViewModel/Page/来源菜单、DetailViewModel 的公共模型引用、Provider 图标提交；统一调用方向 |
-
-- [x] 任务一：先补分页隔离的 Room 回归测试，再新增分页 POJO/mapper、迁移全部共享分页返回类型。已证明写 source_apps 不使 PagingSource 失效，写 clips 和 link_previews 仍失效；mapper 与编译通过。
-- [x] 任务二：实现聚合 Store/候选投影，同包名共享、等值分发、删除/失败状态和需求释放由纯 Store/注册表与真实 Room 测试覆盖。UI 生命周期接线经编译，尚未执行真实 Compose 前后台仪器测试。
-- [x] 任务三：完成逐项修复、版本文件发布、条件 UPDATE、Provider 发布与条件清理、总 IO 配额；慢项隔离、缓存命中、发布失败、冲突/删除、取消和孤儿清理都有回归证据。
-- [x] 任务四：共享卡片/菜单接入独立展示，删除分页来源快照；构造/mapper/Preview 与全部调用方编译兼容，复用已有未知名称、高亮、主色、选择、侧滑和滚动接线，不新增重复列表组件。
-- [x] 任务五：自动化单测、真实 Room、最新源码编译及生成 DAO 观察表检查完成，文档同步。设备 UI/性能测量转入下方后续待办，未将功能通过视为性能保证。
-
-## 最终实现与执行记录（2026-10-02）
-
-- 任务一至四已接入：普通/折叠/回收站及搜索分页改用内容 POJO；非分页详情关系保留。搜索获得候选立即展示，并通过页面前台会话提出修复需求；卡片仅收集对应包名 StateFlow，单包名元数据写入不重建 Pager。
-- `SourceAppPresentationStore` 聚合前台需求，16ms 调度窗口合并快速组合，按 100 包名分片查询；同包名在途任务共享，Semaphore 最多同时执行两项读图/压缩。后台暂停释放会话，保留尚在组合中的 Flow 身份；最后一个需求离开取消独占读取和清理。StateFlow 等值过滤未变化来源，查询异常保留已知状态，删除转 Unavailable；相同快照失败在当前需求会话冷却，再进入允许重试。
-- 裁定：调度仍留在具名 Store，纯需求注册/单项修复顺序和文件发布已拆出协作者，不额外建立只有转发职责的 Coordinator；平台构造函数只装配依赖，Flow、修复、时钟和作用域均可替换测试。共享卡片通过展示接口接入，不直接使用 Store 或 Repository。旧只读加载协作者的验证记录不作为新链路证据。
-- 唯一生成编号采用随机 UUID 转十进制，不依赖时钟或 DataStore。临时文件完整编码、非空、sync/关闭后，同目录 rename 发布；Provider 和后台修复共用发布器。条件 UPDATE 只改图标路径/hash/主色，匹配读取开始的 nullable 路径/hash，冲突和删除返回失败，保留已有行/新版本。
-- 孤儿/旧版本仅清理本发布器命名文件，核对全表引用并保留 24 小时宽限；每小时前台最多扫描一次，legacy 稳定文件保留。取消可以留下未提交正式文件，后续按宽限清理；文件与数据库不形成跨资源原子事务。API 24 使用同目录 rename，不能承诺断电后的跨资源持久原子性。
-- 测试先行证据：真实 Room 红测两项中来源隔离断言失败、内容/链接通知正向测试通过；缓存/需求红测 11 项中 5 项预期断言失败，再完成顺序和注册表实现。mapper 等价映射、文件发布和平台/Compose 接线用回归验证而非独立红测；风险是 Android 图像外观/实际包可见性仍需设备 UI 验收。
-- 最终全套验证：使用临时 `build/source-app-isolation.init.gradle` 隔离共享模块输出，执行 `:base:general:testDebugUnitTest :app:testDebugUnitTest :app:compileDebugKotlin :base:general:connectedDebugAndroidTest`（另加 `--no-daemon --no-watch-fs --console=plain`），BUILD SUCCESSFUL（1m54s）。app 263 项、base/general 71 项 JVM 单测，共 334 项，失败/错误/跳过为 0；Android 12 真机 15 项 Room 仪器测试通过。日志 `build/source-app-final-validation.log`，此前 262/71/14 为审查修复前阶段记录。另一 Gradle 进程锁定原共享模块输出，所以临时隔离，未停止其他构建、未修改项目构建配置。
-- Room 测试覆盖所有五条分页入口（折叠/普通共享查询含两个参数分支）、内容/链接正常失效、nullable 条件写入、并发新版本保护、名称保留、删除不复活及候选图标通知隔离。Store 单测覆盖共享聚合、A 更新不发射 B、删除、在途共享、最后释放取消、失败冷却与查询异常保留；文件测试覆盖版本路径、失败半文件、非法身份、引用/宽限清理。
-- 无新增权限、持久表、Room migration、外部序列化或 keep 契约；不扩大备份协议。本轮未做 release/R8，原因是新模型只用于编译期与 Room 查询投影；连续滚动/勾选/侧滑、首图延迟、SQL 次数和不同厂商包可见性尚未做设备 UI/性能测量，不能把功能测试当性能保证。
-- 最终独立代码审查发现三项 Important 并在同一修复轮次处理：Provider 坏缓存清空改为匹配旧路径/hash 的条件 UPDATE；请求模型移除主线程文件属性检查，仅构造文件身份；清理和修复共用两项总 IO 许可。Provider 交错回归在真实 Room 先复现新路径被清空（expected new/actual null），总 IO 上限回归先复现峰值超额，再修复；日志分别为 `build/source-provider-clear-red.log`、`build/source-io-limit-red.log`。复核原三项均解决，无新增已确认问题；全套绿测已确认。
-- 验收裁定：本轮交付代码实现与自动化功能证据，未测的 UI 观感/性能指标集中保留后续待办，不能宣称已测首图延迟或厂商包可见性。薄 Compose 接线以编译、纯 Preview、Store/Room 行为回归验证，不为外观新增镜像单元测试；核心分页/失败顺序/并发缺陷使用先红后绿测试。
-- 最新源码收尾：补充中文注释/深色长名称 Preview 后再次执行 `:base:general:compileDebugKotlin :app:compileDebugKotlin`，BUILD SUCCESSFUL（34s），日志 `build/source-app-final-compile.log`；`git diff --check` 和现有 WebDAV HTML 流程图 `--check` 通过。没有修改 schema、Manifest、Gradle 配置、外部协议或混淆规则；保留任务分支上的未提交改动，不自动集成/提交。
+`source_apps.iconPath/iconHash/primaryColor` 以及旧 JSONL 白名单保留历史读写兼容，本轮不迁移 schema 或删除用户文件。新图标、主色与安装展示快照不进入自定义备份，不增加 dirty 或后台备份任务。系统 Auto Backup/云备份/迁移继续排除旧 `app_icons/` 和传输目录。恢复旧包后字段可以保留，但 UI 不读取它们作为图标/颜色真相。详细备份约定引用 `webdav_backup_plan.md`，不复制备份流程。
 
 ## 日志与诊断计划
 
-- DEBUG：实际活跃需求并集变化记录数量；系统图标不可用保留现有低敏 reasonCode/异常类型。缓存命中、逐项成功和重组不新增 INFO 日志，以免滚动或大量来源产生噪声；当前任务没有整批完成门槛，因此不伪造批次结束摘要。
-- WARN：候选/元数据读取、编码、发布、条件提交、清理失败，稳定 reasonCode、阶段、异常类型、数量；保留失败语义，不误触发系统整表读取。系统图标不可用 DEBUG 汇总，失败冷却不反复输出；取消不记失败。
-- 诊断分页隔离使用测试计数与调试聚合：来源写入次数、元数据查询次数、PagingSource 创建/失效次数区分记录，图标-only 写入时分页失效数必须为零。实际业务内容变化另算，不把真实内容写入的正常失效归为缺陷。
-- 日志正文简体中文，禁止包名名单、名称、真实路径、hash、图标字节、剪贴内容、搜索词与凭据；不增加高频系统读取成功、缓存命中或重组日志。
+| 场景 | 级别/触发时机 | 字段与约束 |
+| --- | --- | --- |
+| 系统取图异常/系统默认 | DEBUG，单次未命中读取失败时 | reasonCode、异常类型；不输出包名、路径或像素 |
+| 真实图标无法取色 | WARN，本次取色为空时 | `color_unavailable`；不输出图片 |
+| 来源名称读取失败 | WARN，单会话首次失败 | reasonCode、异常类型；正文照常交付 |
+| 安装扫描 | 沿用既有 INFO/WARN 汇总 | 数量、耗时、范围；不输出安装名单 |
+| 旧图标命令 | DEBUG，合法兼容命令 | `memory_icons_only`；无 IO/数据库副作用 |
 
-## 测试与验证门禁
+命中、UI 绘制、取消、内存清理及每行默认状态不增加日志；包广播监听已删除，不新增诊断链路。禁止输出剪贴正文、完整搜索词、安装名单、Token/Cookie、完整用户路径、图标编码内容。验证方式是 JVM 合成数据回归、静态检查日志字段，设备通过 Logcat 验收；不创建本地诊断文件。
 
-- 按 `$repo-unit-test-gate`，数据契约/DAO 失效、状态分发、并发/取消和文件补偿需要测试；已新增纯逻辑、Store、文件和真实 Room 回归，红测/绿测及边界见上方执行记录。
-- 纯逻辑测试：新 mapper 不携带来源快照，时间/折叠/删除/链接保留；未知/空包名默认规则；活跃包名去重与引用计数；等值状态分发；查询失败和删除区别；逐项成功无需等待慢项；在途合并、冷却、取消、条件冲突与清理保护。
-- Room 集成（真实 Room 数据库，不能用 fake 代替）：对普通/FTS/LIKE/无词筛选/折叠/回收站等每类 PagingSource 先完成首次 load/观察注册，再写来源名称/图标/主色，等待通知并断言不失效；写 clips 或该查询确实依赖的链接预览则失效。同时验证候选投影、活跃集合读取和 nullable 路径/hash 条件更新。静态检查生成观察表只是辅助手段。
-- UI/设备：多个同包名可见行同时更新，其他来源状态无额外发射；逐步显示图标但 refresh load state/结果位置/选择/侧滑不重置；亮暗、大字体、未知来源、坏缓存、应用卸载、恢复后缺图、菜单关闭/页面后台、跨页面需求及持续快速滚动。纯图标/主色更新不改变 item 高度；名称更新引发正常内容测量需保持滚动锚点。
-- 实施验证命令：`.\gradlew.bat :base:general:testDebugUnitTest :app:testDebugUnitTest :base:general:compileDebugKotlin :app:compileDebugKotlin --console=plain`；配置 Room 仪器测试后运行 `.\gradlew.bat :base:general:connectedDebugAndroidTest --console=plain`（需设备/模拟器）；以及 `git diff --check`。若新增外部协议/反射/keep，再追加 release/R8，保存 mapping。
-- 既有 248 项测试记录仅归属于下方历史只读图标兜底；本轮以执行记录中的新单测/设备 Room 结果为准。
+## 本轮 UI 加载验证（2026-10-11）
 
-## 已知取舍与后续待办
+- 模型契约测试先失败，确认 `ClipShowEntity` 仍持图；迁移后模型契约、6 项局部图标会话与 4 项名称会话回归通过。旧安装 mapper 主色/Drawable 传递及候选传图共 3 项测试随契约退役，改由无图像模型契约及 UI 会话共享/释放回归覆盖，名称/排序/名单/取消测试保留。
+- 真实生产分页配置回归先复现 `expected 0 but was 200`，恢复默认容量后浏览超过 200 项回顶测试通过。不是只断言配置常量，也不改变既有 `scrollToItem(0)` 动作。
+- `.\gradlew.bat -I build\source-app-isolation.init.gradle :app:testDebugUnitTest :shizuku:testDebugUnitTest :base:general:testDebugUnitTest :app:compileDebugKotlin --no-daemon --no-watch-fs --console=plain`：BUILD SUCCESSFUL（45s）；app 266、shizuku 47、general 82，共 395 项，失败/错误均为 0，日志 `build/review-paging/ui-full-validation.log`。
+- 原 general `classes.jar` 被其他进程占用，使用既有临时输出隔离脚本；不终止进程或修改构建配置。进度记录在 `build/review-paging/ui-progress.md`；实施验证阶段未自动提交，后续按用户明确提交与推送指令执行。
+- `python -X utf8 tools/render_doc_flow_html.py --check docs/webdav_backup_plan.md`、`git diff --check` 及暂存区差异检查通过；本轮无 Mermaid 变化，既有 HTML 改动保留。静态扫描确认系统取图仅在 Manager，分页/候选不持图像，四类 Pager 统一使用新配置。独立只读审查无 Critical/Important/Minor；此次审查聚焦 UI 持图迁移，旧 Provider/Shizuku 兼容安全性沿用既有审查与回归，WebDAV 既有改动保留，图标主动刷新仍不在用户要求内。
 
-- 独立订阅引入包名需求聚合、缓存/会话清理和更多边界测试；以不失效分页的可验证行为换取架构复杂度，不能为“局部刷新”引入永久整表观察。
-- 保留现有单表，Room 表级通知仍有活跃元数据和候选 SQL 重查成本；先记录实际次数/耗时，只有证据表明瓶颈才考虑物理拆表。逐项事务比批量事务更多，读取并发和写入队列必须有界。
-- 新图标系统默认结果、安装更新失效、文件发布平台原子性、延迟清理宽限/容量与空闲元数据淘汰阈值需在实现和设备测量时确定；不把未测数值当成性能保证。
+## 上一轮快照实现验证（历史记录）
 
-## 已实现基线：范围与用户体验
+- [x] 任务一：缓存未定义红测后实现缓存/平台 Manager；覆盖同包共享、并发去重、失败冷却、空包名、取消、淘汰与失效中不回填。
+- [x] 任务二：装配会话未定义红测后实现一次交付；迁移所有分页和单条入口，验证名称缺失与取消不阻断正文。
+- [x] 任务三：迁移全部 UI、候选与安装读取；删除旧订阅/文件输出链路，旧桥接返回禁用响应。
+- [x] 任务四：停止 Shizuku 取图/传图并升级服务行为版本；保留历史字段兼容。
+- [x] 任务五：受影响 app/shizuku/general 完整单测、`:app:compileDebugKotlin`、差异与全入口扫描、独立只读审查及文档同步。
 
-- 缓存可读且 Coil 解码成功时直接使用缓存，保留 iconHash 缓存键，不查询系统。
-- 路径空、文件缺失/不可读/空文件或解码失败时，按非空包名调用 PackageManager 读取 Application 图标；不扫描所有安装应用，不借用 Shizuku 进程内部能力。
-- 未知来源空包名不查询系统；应用卸载、包不可见、系统读取失败时返回 null，由现有 UI 显示默认应用图标。Application 图标若由系统返回默认图标，则保留系统结果。
-- 单行名称、图标尺寸、即时选择和 2:3 入口布局继续以搜索页方案为准。
+单元测试门禁：缓存、装配、兼容结果及安装 mapper 属于纯规则/失败契约，使用选择性 TDD；直接 Bitmap 绘制和 Android 系统接线不写镜像测试，由编译与设备验收覆盖。旧文件/补图测试随退役功能移除，基础数据/备份协议测试保留。新增 14 项回归，包括真实 cachedIn 隐藏/恢复/完成快照回放与不可中断取消。删除广播接线及无调用方的按包失效方法属于收缩入口，不新增纯规则；调整现有缓存测试，覆盖系统图标变化后缓存命中仍保持原结果、新缓存读取最新结果及内存清理中的回填保护，不另造广播注册镜像测试。
 
-## 已实现基线：数据流与职责
+- `.\gradlew.bat :app:testDebugUnitTest :shizuku:testDebugUnitTest :base:general:testDebugUnitTest :app:compileDebugKotlin --no-daemon --no-watch-fs --console=plain`：BUILD SUCCESSFUL（1m27s）；app 260、shizuku 47、general 82，共 389 项，失败/错误均为 0，日志 `build/source-app-snapshot/full-validation.log`。
+- 安装 mapper 漏主色和取消后负缓存分别由断言红测复现，修复后完整回归通过；缓存/装配/兼容/门控不存在时的红测编译错误也已确认。独立审查两项 P2 已补回归并修复，复核未发现新必修。
+- 全入口扫描仅剩 Manager 访问系统图标，旧 Store、文件 Publisher、图标 Provider 同步与 UI 文件模型无残留运行引用；`git diff --check` 通过。补充完成快照回放断言后，`.\gradlew.bat :app:testDebugUnitTest --tests 'com.cla.clip.master.sourceapp.*' --no-daemon --no-watch-fs --console=plain` 再次 BUILD SUCCESSFUL（39s），12 项来源快照测试通过，日志 `build/source-app-snapshot/snapshot-final.log`。
+- 移除包变更监听后，`.\gradlew.bat :app:testDebugUnitTest --tests 'com.cla.clip.master.sourceapp.*' :app:compileDebugKotlin --no-daemon --no-watch-fs --console=plain`：BUILD SUCCESSFUL（3m4s），12 项来源快照测试通过，失败/错误均为 0，日志 `build/source-app-snapshot/receiver-validation.log`；全仓引用扫描确认按包失效方法无残留。
+- `python tools/render_doc_flow_html.py --check docs/webdav_backup_plan.md`：通过；本轮仅补来源图标兼容边界，不修改 Mermaid，既有 HTML 已同步，无需重新生成，原有 WebDAV 文档及 HTML 改动保留。
 
-- `SourceAppIconResolver<Icon>` 为可测试的加载顺序协作者，构造注入缓存和系统读取函数，失败返回 null；协程取消向上传递。
-- `SourceAppIconReader` 持有应用 Context 与共享 Coil ImageLoader，负责文件校验、缓存解码、单包名系统读取和失败日志，读取返回 Drawable?，不写数据库、文件或缓存元数据。
-- `rememberSourceAppIcon` 仅连接 Compose 与协作者：在 IO 调度器异步读取，以包名、路径、hash 为重启 key；菜单可见行才加载，离开组合时取消。系统 Binder 调用不能强制中断，返回后检查取消；不将读取放进 ViewModel 初始化或重组同步路径。
-- 复用 `isUsableCachedIconFile`、`buildSourceAppIconCacheKey`、项目 Coil 实例及默认图标资源；应用列表读取器面向整表扫描、Shizuku 读取器为另一进程 internal API，不能直接复用为菜单单项加载。
+在 `codex/source-app-memory-snapshots` 分支内联执行；Windows 使用 PowerShell 与 `gradlew.bat`，Gradle 外部缓存目录按批准权限运行。进度写在忽略的 `build/source-app-snapshot/progress.md`；无需重复方案文档或 POSIX 脚本。
 
-## 已实现基线：涉及文件与实现步骤
+## 开放问题、待验与规则例外
 
-1. 在 `app/src/test/java/com/cla/clip/master/ui/widget/sourceapp/SourceAppIconResolverTest.kt` 补加载顺序与取消回归测试，先验证失败。
-2. 在 `app/src/main/java/com/cla/clip/master/ui/widget/sourceapp/` 实现 Resolver、Reader 与 Compose 异步适配。
-3. 搜索来源项接入共享图标能力，保留稳定包名身份、默认图标和事件契约。
-4. 运行 app 单测、Kotlin 编译与差异检查，同步最终结果。
-
-## 已实现基线：日志与诊断计划
-
-- 本地文件检查/解码异常或解码 ErrorResult：WARN，字段仅 reasonCode=cached_icon_read_failed/cached_icon_decode_failed 与异常类型，不输出路径、包名、名称、hash 或搜索内容。
-- 系统图标读取失败：DEBUG，reasonCode=system_icon_unavailable 与异常类型；不记录包名。合法未知来源不记录日志，缓存命中、绘制和重组不记录日志。
-- 读取失败只记录当前可见行一次加载的结果，不进行循环重试；相同参数重组不重读。取消不记失败日志，按任务取消传播。
-- 编译与回归测试验证顺序/取消；设备验收检查存在缓存、缓存缺失、坏图标、未知来源、卸载应用、大列表滚动与关闭菜单。
-
-## 已实现基线：测试验证
-
-- 红测：保留只读缓存的占位行为运行定向测试，7 项中 3 项预期 AssertionError 失败（缓存缺失、缓存不可用、系统读取必须被尝试），证明测试可复现旧问题；日志 `build/source-app-icon-red.log`。
-- 最终执行 `.\gradlew.bat :app:compileDebugKotlin :app:testDebugUnitTest --console=plain`，`BUILD SUCCESSFUL`（33 秒），51 个测试类共 248 项全部通过，失败/错误/跳过均为 0，新增 7 项全部通过；日志 `build/source-app-icon-validation.log`。`git diff --check` 通过。
-- 首次沙箱无法写入既有 `E:\Android\.gradle` 锁文件，经权限复核使用现有缓存完成验证，未更改 Gradle 配置。设备上的 PackageManager 可见性、缓存文件真实解码、图标外观与菜单取消仍待设备验收，JVM 单测只覆盖加载顺序和取消契约。
-
-- JVM 合成数据覆盖缓存命中不访问系统、路径缺失/缓存不可用时返回系统图标、系统失败返回 null、未知包名不访问系统、hash 参数透传、取消不中途降级。
-- `.\gradlew.bat :app:testDebugUnitTest --tests 'com.cla.clip.master.ui.widget.sourceapp.SourceAppIconResolverTest' --console=plain` 验证红测。
-- `.\gradlew.bat :app:compileDebugKotlin :app:testDebugUnitTest --console=plain` 与 `git diff --check` 验证最终实现。
-
-## 历史基线：已知取舍与开放问题（已被本轮替换）
-
-- 历史基线不补存数据库或持久化系统图标；本轮已改为逐项版本文件与条件提交，当前行为以上方执行记录为准。
-- Provider 正式文件发布现已与修复链路统一；其正常新内容提交仍影响内容分页。
-- 新类型仅编译期调用，没有序列化、反射、导航或稳定外部协议，无需 keep/R8；平台图标外观、包可见性、Coil 解码与 UI 生命周期仍需设备验收。
+- 真机冷首屏、分页 append、搜索多来源、菜单候选、更新图标后进程重启/权限拒绝和长列表内存尚需验收；此实现不承诺性能已优于旧方案。
+- Android 系统资源、进程重启及 Compose 视觉没有真实设备测试；JVM 测试覆盖缓存/规则，不替代系统行为测量。
+- 旧 schema/备份字段和旧文件清理作为独立迁移待办，本轮不自动删除。`SourceAppPresentationRepository` 的历史持久元数据接口仍保留兼容基础数据测试，UI 仅使用名称查询。
+- 没有新外部字段、反射/序列化模型或混淆边界；本轮未运行 release/R8，已有外部协议字段/keep 规则未改，正式包仍需按发布流程验证，不能由 Debug 结果推断。
+- 图标缓存容量、冷却、可见 UI 按需加载是当前保守取舍；若设备数据需要预取，再单独设计有界任务，避免扫描全部包。文本分页默认保留已加载页，未来若需限制窗口，必须连同全局回顶与反向浏览一起设计。
 
 ## 变更记录
+
+- 2026-10-11：用户要求提交并推送主分支，核对提交范围并保留无关 WebDAV 恢复文档/HTML 改动；同一完整验证命令再次 BUILD SUCCESSFUL（2m49s），395 项单测失败/错误均为 0，日志 `build/review-paging/precommit-validation.log`。原因是提交前需确认当前源码与验证结果一致；仅补验证和提交边界记录，不改变生产代码、备份协议或运行日志。
+
+- 2026-10-11：完成所有入口的 UI 按包名加载迁移，列表对象不持图片；395 项 JVM 单测、Debug/Hilt 编译、真实 Paging 回顶回归和差异/流程图检查通过，独立只读审查无必修项。原因是用户要求按已讨论方案实施；真机视觉/实际生命周期/内存效果与 release/R8 保留待验，备份及运行日志沿用既有边界。
+
+- 2026-10-11：用户确认按包名 UI 加载方案，开始全入口迁移；移除列表模型图像/主色与 maxSize=200，保留名称门控，补局部会话释放和真实 Paging 回顶回归。原因是长期数据对象持图导致缓存淘汰无法释放离屏图片，有限分页窗口还改变已有回顶语义。
+
+- 2026-10-11：根据用户关于按包名显示图标的提议，补充 UI 加载适配与纯绘制分层的草案评估，明确图标/主色同源、局部引用释放、冷缓存占位和分页容量独立决策；记录真实 Paging 复现的首页回顶回归。原因是分页对象持有 Bitmap 使缓存淘汰不能单独控制长期图像引用。本次只维护备选说明，未确认替换现行实现或修改产品代码，不新增日志/单测/备份字段。
+
+- 2026-10-11：按用户要求移除 `AppIconManager.receiver` 和按包失效接口，资源配置变化也不清空缓存；保留有界容量与内存回调清理。图标更新不主动触发读取，进程重启后按需取得最新系统图标；调整缓存回归，12 项来源快照测试与 Debug 编译通过。原因是用户接受更新图标延后显示，包变化监听不再有业务必要。
+
+- 2026-10-11：完成全入口纯内存快照迁移；完整 389 项 JVM 单测和 app/Hilt Debug 编译通过，独立审查发现的生命周期/取消问题均经红测修复，保留真机视觉、广播、性能及 release/R8 待验项。原因是用户已确认全入口范围且不需要发布后的图标更新。
+
+- 2026-10-11：用户接受快照刷新边界并要求覆盖全部入口，实施统一主进程 Manager、一次装配和直接绘制；移除旧订阅/文件/传图链路，服务行为版本升到 29，保留历史字段兼容。缓存/装配/兼容红测及安装 mapper 漏色回归已确认；独立审查指出后台 cachedIn 装配及取消后负缓存问题，补页面加载门控与真实 Paging 回归后继续验证。原因是全入口一致性与页面生命周期要求。
+
+- 2026-10-11：继续评估用户提出的“读取列表时装配图标/主色、发布后直接显示”，将草案的独立图标订阅改为分页加载阶段的不可变 UI 快照；补充冷缓存等待、逐项 map 并发限制、cachedIn 刷新语义、共享 Bitmap 引用与分页内存边界。原因是用户希望进一步删除逐行订阅和二次图标更新；本次仍只维护方案，不修改代码。
+
+- 2026-10-11：按用户最新讨论收敛为统一 AppIconManager 管理图标/主色的纯内存方案，失败直接默认展示，不再把磁盘兜底列为推荐备选；补充单一缓存快照、可观察状态、无来源行取图、主题色兜底、现有 UI/Provider/备份兼容的迁移边界与测试。本次仅评估并更新方案，未实施代码或删除旧缓存。
+
+- 2026-10-10：按用户建议评估取消 Shizuku 图标传输、由主进程系统取图并缓存图标/主色；记录现有可复用能力、Application/Launcher 差异、并发/生命周期/失效与容量规则、纯内存历史图标取舍及后续测试。新增方案标为草案，已有实现基线仍已完成，本次不修改产品代码或备份契约。
 
 - 2026-10-02：按用户最新 android.svg 将所有复用同一默认资源的应用占位图标改为黑色轮廓样式；复用原资源和调用方，不新增组件/类/方法，矢量旁补中文来源与颜色说明。
 

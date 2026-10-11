@@ -3,7 +3,7 @@ package com.cla.clip.master.ui.page.list
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.Pager
-import androidx.paging.PagingConfig
+import com.cla.clip.master.paging.clipPagingConfig
 import androidx.paging.cachedIn
 import androidx.paging.map
 import com.cla.clip.base.general.entity.ClipVisibilityScope
@@ -11,6 +11,8 @@ import com.cla.clip.base.general.entity.toUi
 import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.master.processor.ClipboardDataProcessor
 import com.cla.clip.master.processor.DefaultClipboardDataProcessor
+import com.cla.clip.master.sourceapp.ClipSourceNameAssembler
+import com.cla.clip.master.sourceapp.SourceAppLoadGate
 import dagger.Lazy
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineScope
@@ -31,7 +33,12 @@ class FoldedClipListModel @Inject constructor(
 
     /** 剪贴数据仓库使用 Lazy，避免 ViewModel 创建时立即初始化数据库依赖。 */
     private val clipRepository: Lazy<ClipRepository>,
+    /** 折叠分页仅补历史来源名称，不查询系统图标。 */
+    private val sourceNames: ClipSourceNameAssembler,
 ) : ViewModel(), ClipboardDataProcessor by clipboardDataProcessor {
+    /** 页面不可见时取消未完成名称查询，保留轻量结果等待复用。 */
+    internal val sourceLoadGate = SourceAppLoadGate()
+
 
     /**
      * 折叠剪贴记录分页数据。
@@ -39,17 +46,14 @@ class FoldedClipListModel @Inject constructor(
      * 查询范围固定为 `FoldedOnly`，排序规则由 DAO 维护为置顶优先、组内折叠时间倒序，不受剪贴更新时间影响。
      */
     val pagedClips = Pager(
-        config = PagingConfig(
-            // 折叠页和普通列表保持同样分页大小，避免同一共享 item 在不同页面出现加载节奏差异。
-            pageSize = 20,
-            // 距离底部 5 个 item 时预加载，快速浏览折叠数据时减少空白等待。
-            prefetchDistance = 5,
-            // 折叠列表没有占位统计需求，关闭占位减少测量和侧滑状态复杂度。
-            enablePlaceholders = false
-        )
+        config = clipPagingConfig()
     ) {
         clipRepository.get().loadClips(ClipVisibilityScope.FoldedOnly)
-    }.flow.map { pagingData -> pagingData.map { clipDetail -> clipDetail.toUi() } }.cachedIn(
+    }.flow.map { pagingData ->
+        /** 当前代次复用名称查询，不观察来源表刷新卡片。 */
+        val session = sourceNames.newSession()
+        pagingData.map { clipDetail -> sourceLoadGate.run { session.attach(clipDetail.toUi()) } }
+    }.cachedIn(
         CoroutineScope(viewModelScope.coroutineContext + Dispatchers.IO)
     )
 }

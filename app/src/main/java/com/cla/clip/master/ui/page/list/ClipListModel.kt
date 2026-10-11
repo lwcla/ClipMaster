@@ -3,7 +3,7 @@ package com.cla.clip.master.ui.page.list
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.Pager
-import androidx.paging.PagingConfig
+import com.cla.clip.master.paging.clipPagingConfig
 import androidx.paging.cachedIn
 import androidx.paging.map
 import com.cla.clip.base.general.entity.ClipVisibilityScope
@@ -15,6 +15,8 @@ import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.master.utils.ShizukuConnector
 import com.cla.clip.master.processor.ClipboardDataProcessor
 import com.cla.clip.master.processor.DefaultClipboardDataProcessor
+import com.cla.clip.master.sourceapp.ClipSourceNameAssembler
+import com.cla.clip.master.sourceapp.SourceAppLoadGate
 import dagger.Lazy
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineScope
@@ -43,7 +45,12 @@ class ClipListModel @Inject constructor(
 
     /** 列表可见时提供已提交快捷动作，首次读取前关闭快捷动作区。 */
     private val clipSettingsRepository: ClipSettingsRepository,
+    /** 分页交付前装好历史来源名称，图标由可见 UI 按包名加载。 */
+    private val sourceNames: ClipSourceNameAssembler,
 ) : ViewModel() , ClipboardDataProcessor by clipboardDataProcessor {
+    /** 页面不可见时取消未完成名称查询，保留轻量结果等待复用。 */
+    internal val sourceLoadGate = SourceAppLoadGate()
+
 
     /** 快捷动作领域流由页面生命周期控制收集，空初值只由页面用于暂时关闭快捷操作。 */
     val quickAction = clipSettingsRepository.quickAction
@@ -60,17 +67,14 @@ class ClipListModel @Inject constructor(
      * 查询结果在 IO 调度器上缓存到 ViewModel 生命周期内，避免 Compose 重组或生命周期恢复时重复创建分页查询。
      */
     val pagedClips = Pager(
-        config = PagingConfig(
-            // 每页 20 条兼顾数据库读取开销和竖向列表首屏填充速度，后续如卡片内容变重再评估。
-            pageSize = 20,
-            // 距离底部 5 个 item 时预加载，减少快速滑动时的空白感。
-            prefetchDistance = 5,
-            // 剪贴记录没有稳定总数展示需求，关闭占位能减少列表测量和占位渲染复杂度。
-            enablePlaceholders = false
-        )
+        config = clipPagingConfig()
     ) {
         clipRepository.get().loadClips(ClipVisibilityScope.VisibleOnly)
-    }.flow.map { it.map { data -> data.toUi() } }.cachedIn(
+    }.flow.map { pagingData ->
+        /** 每代分页共享名称缓存，不读取图标。 */
+        val session = sourceNames.newSession()
+        pagingData.map { data -> sourceLoadGate.run { session.attach(data.toUi()) } }
+    }.cachedIn(
         CoroutineScope(viewModelScope.coroutineContext + Dispatchers.IO)
     )
 

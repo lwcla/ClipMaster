@@ -19,7 +19,7 @@ import java.io.FileNotFoundException
 /**
  * Shizuku 命令行访问的剪贴板桥接 Provider。
  *
- * 该 Provider 只接收 Shizuku 进程直读后的 payload、来源图标和身份查询，不再读取系统剪贴板。
+ * 接收 Shizuku 直读后的 payload 与身份查询；旧图标命令只返回禁用兼容响应。
  */
 class ClipboardBridgeProvider : ContentProvider() {
     companion object {
@@ -35,9 +35,6 @@ class ClipboardBridgeProvider : ContentProvider() {
         )
     }
 
-    /** Provider 图标临时文件管理器。 */
-    private val iconStore: ClipboardBridgeIconStore by lazy { entryPoint.clipboardBridgeIconStore() }
-
     /** Provider 剪贴 payload 临时文件管理器。 */
     private val clipPayloadStore: ClipboardBridgeClipPayloadStore by lazy { entryPoint.clipboardBridgeClipPayloadStore() }
 
@@ -45,12 +42,6 @@ class ClipboardBridgeProvider : ContentProvider() {
     private val clipCommitCoordinator: ClipboardBridgeClipCommitCoordinator by lazy {
         entryPoint.clipboardBridgeClipCommitCoordinator()
     }
-
-    /** Provider 图标预判协调器。 */
-    private val iconQueryCoordinator: ClipboardBridgeIconQueryCoordinator by lazy { entryPoint.clipboardBridgeIconQueryCoordinator() }
-
-    /** Provider 图标提交协调器。 */
-    private val iconCommitter: ClipboardBridgeIconCommitter by lazy { entryPoint.clipboardBridgeIconCommitter() }
 
     /** Provider Shizuku 进程身份查询协调器。 */
     private val shizukuProcessCoordinator: ClipboardBridgeShizukuProcessCoordinator by lazy {
@@ -106,7 +97,6 @@ class ClipboardBridgeProvider : ContentProvider() {
                     ?: return ClipboardBridgeResult.of(ClipboardBridgeContract.CODE_INVALID_ARGS).toBundle()
                 /** 应用 Context；提交剪贴 payload 前清理过期临时文件。 */
                 val appContext = requireNotNull(context).applicationContext
-                iconStore.cleanupExpired(appContext)
                 clipPayloadStore.cleanupExpired(appContext)
                 logD(TAG) {
                     "Provider 收到 commit_clip eventId=${request.eventId} packageName=${request.packageName} " +
@@ -116,37 +106,14 @@ class ClipboardBridgeProvider : ContentProvider() {
                     clipCommitCoordinator.commit(request).toBundle()
                 }
             }
-            ClipboardBridgeContract.METHOD_QUERY_ICON_STATE -> {
-                /** 解析后的剪贴/来源图标请求参数；无效时不进入桥接方法。 */
-                val request = ClipboardBridgeRequest.fromExtras(extras)
-                    ?: return ClipboardBridgeResult.of(ClipboardBridgeContract.CODE_INVALID_ARGS).toBundle()
-                /** 应用 Context；图标预判前清理过期图标半文件，避免旧 eventId 干扰。 */
-                val appContext = requireNotNull(context).applicationContext
-                iconStore.cleanupExpired(appContext)
-                clipPayloadStore.cleanupExpired(appContext)
-                logD(TAG) {
-                    "Provider 收到 query_icon_state eventId=${request.eventId} packageName=${request.packageName} " +
-                        "appName=${request.appName} hasIconHash=${!request.iconHash.isNullOrBlank()}"
-                }
-                runBlocking {
-                    iconQueryCoordinator.query(request).toBundle()
-                }
-            }
+            ClipboardBridgeContract.METHOD_QUERY_ICON_STATE,
             ClipboardBridgeContract.METHOD_COMMIT_ICON -> {
-                /** 解析后的剪贴/来源图标请求参数；无效时不进入桥接方法。 */
-                val request = ClipboardBridgeRequest.fromExtras(extras)
-                    ?: return ClipboardBridgeResult.of(ClipboardBridgeContract.CODE_INVALID_ARGS).toBundle()
-                /** 应用 Context；提交图标前清理过期图标半文件。 */
-                val appContext = requireNotNull(context).applicationContext
-                iconStore.cleanupExpired(appContext)
-                clipPayloadStore.cleanupExpired(appContext)
-                logD(TAG) {
-                    "Provider 收到 commit_icon eventId=${request.eventId} packageName=${request.packageName} " +
-                        "appName=${request.appName} hasIconHash=${!request.iconHash.isNullOrBlank()}"
+                // 保留旧小字段验证，但不初始化图标依赖或创建任何图标文件。
+                if (ClipboardBridgeRequest.fromExtras(extras) == null) {
+                    return ClipboardBridgeResult.of(ClipboardBridgeContract.CODE_INVALID_ARGS).toBundle()
                 }
-                runBlocking {
-                    iconCommitter.commit(request).toBundle()
-                }
+                logD(TAG) { "旧图标桥接已停用 reasonCode=memory_icons_only" }
+                ClipboardBridgeIconCompatibility.result().toBundle()
             }
             ClipboardBridgeContract.METHOD_QUERY_SHIZUKU_PROCESS -> {
                 /** 解析后的身份查询请求参数；只需要 eventId 串联日志。 */
@@ -173,7 +140,7 @@ class ClipboardBridgeProvider : ContentProvider() {
     /**
      * Provider 二进制/敏感 payload 写入入口。
      *
-     * `content write` 会调用该方法并把 stdin 字节写入返回的文件描述符；图标和剪贴 payload 使用不同路径与临时目录。
+     * 仅允许剪贴 payload 写入；旧图标路径明确拒绝，防止旧服务继续生成本地图标。
      */
     override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {
         /** Binder 调用方 UID；图标写入同样只允许 shell/root。 */
@@ -193,10 +160,7 @@ class ClipboardBridgeProvider : ContentProvider() {
         val pathType = uri.pathSegments.firstOrNull()
         return when (pathType) {
             ClipboardBridgeContract.PATH_ICON -> {
-                /** 从图标 URI 路径中解析出的事件 ID。 */
-                val eventId = iconStore.parseEventId(uri.pathSegments)
-                logD(TAG) { "Provider 打开图标写入 eventId=$eventId" }
-                iconStore.openIconForWrite(appContext, eventId)
+                throw FileNotFoundException("icon bridge disabled")
             }
             ClipboardBridgeContract.PATH_CLIP -> {
                 /** 从剪贴 payload URI 路径中解析出的事件 ID。 */

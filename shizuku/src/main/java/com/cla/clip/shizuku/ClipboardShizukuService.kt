@@ -14,11 +14,9 @@ import dev.rikka.tools.refine.Refine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.supervisorScope
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -77,14 +75,6 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
             clockMillis = {
                 SystemClock.elapsedRealtime()
             }
-        )
-    }
-
-    /** Provider 图标同步协调器，图标失败不影响剪贴内容入库。 */
-    private val iconSyncCoordinator by lazy {
-        ClipboardBridgeIconSyncCoordinator(
-            serviceScope = serviceScope,
-            providerCommandClient = providerCommandClient
         )
     }
 
@@ -389,33 +379,20 @@ class ClipboardShizukuService @Keep constructor(private val context: Context) : 
         sourceAppInfo: ShizukuSourceAppInfo,
         eventId: String,
         clipPayload: ClipboardBridgeClipPayload?,
-    ): Boolean = supervisorScope {
-        /** clipPayloadJob 只负责剪贴 payload 写入和提交，不能等待图标链路完成。 */
-        val clipPayloadJob = async {
-            runProviderClipPayload(
-                eventId = eventId,
-                clipPackageName = sourceAppInfo.packageName,
-                appName = sourceAppInfo.appName,
-                iconHash = sourceAppInfo.iconHash,
-                clipPayload = clipPayload
-            )
-        }
-
-        iconSyncCoordinator.launch(
+    ): Boolean {
+        /** 唯一提交任务只传剪贴内容与来源名称，图标协议字段固定为空。 */
+        val providerOk = runProviderClipPayload(
             eventId = eventId,
             clipPackageName = sourceAppInfo.packageName,
             appName = sourceAppInfo.appName,
-            bitmap = sourceAppInfo.bitmap,
-            iconHash = sourceAppInfo.iconHash
+            iconHash = null,
+            clipPayload = clipPayload,
         )
-
-        /** Provider 直读链路处理结果；返回 false 表示 payload 未被确认处理。 */
-        val providerOk = clipPayloadJob.await()
         logD(TAG) {
             "Provider 通道发送完成 ok=$providerOk packageName=${sourceAppInfo.packageName} " +
                 "appName=${sourceAppInfo.appName} iconHash=${sourceAppInfo.iconHash}"
         }
-        providerOk
+        return providerOk
     }
 
     /**

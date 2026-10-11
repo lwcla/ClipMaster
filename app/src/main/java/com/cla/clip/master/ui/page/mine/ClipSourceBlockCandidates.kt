@@ -1,6 +1,5 @@
 package com.cla.clip.master.ui.page.mine
 
-import android.graphics.drawable.Drawable
 import com.cla.clip.master.installedapps.InstalledAppInfo
 
 /**
@@ -30,7 +29,6 @@ internal fun buildBlockedSourceAppCandidates(
         appName = app.appName,
         systemApp = app.isSystemApp,
         savedBlocked = app.packageName in blockedPackages,
-        icon = app.icon,
     )
     // candidate 以已保存状态分组，稳定排序保留各组原有扫描顺序，避免重复名称排序。
 }.sortedByDescending { candidate ->
@@ -47,6 +45,4 @@ data class BlockedSourceAppCandidate(
     val systemApp: Boolean,
     /** 已提交名单中的屏蔽状态，仅用于候选排序，当前勾选以完整已提交名单为准。 */
     val savedBlocked: Boolean,
-    /** 扫描时读取的 Application 图标；仅页面内存持有，null 显示默认图标。 */
-    val icon: Drawable? = null,
 )

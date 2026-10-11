@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -52,6 +53,8 @@ import com.cla.clip.master.ui.widget.InlineLoadingState
 import com.cla.clip.master.ui.widget.SearchTopBar
 import com.cla.clip.master.ui.widget.SecondaryPageScaffold
 import com.cla.clip.master.ui.widget.SelectableAppRow
+import com.cla.clip.master.ui.widget.sourceapp.AppIcon
+import com.cla.clip.master.ui.widget.sourceapp.rememberAppIconLoader
 import com.cla.clip.master.ui.widget.SelectableAppRowInteraction
 import com.cla.clip.master.ui.widget.SelectableAppRowState
 import com.cla.clip.master.ui.widget.ToggleFilterChip
@@ -73,6 +76,8 @@ fun ClipSourceBlockSettingPage(
     viewModel: ClipSourceBlockSettingVm = hiltViewModel(),
     onBack: () -> Unit,
 ) {
+    /** 安装候选不携带图像，当前可见行按包名加载。 */
+    val iconLoader = rememberAppIconLoader()
     /** 首次有效设置快照到达前禁用提交，完整集合包含未安装及隐藏应用。 */
     val blockedPackages by viewModel.blockedClipSourcePackages.collectAsStateWithLifecycle()
     /** 设置读取失败独立于安装扫描失败，失败快照不能用于修改名单。 */
@@ -262,10 +267,11 @@ fun ClipSourceBlockSettingPage(
                         items(visibleCandidates, key = { candidate -> candidate.packageName }) { candidate ->
                             // candidate 只适配共享行；优先展示当前行提交状态，其余行可独立操作。
                             SelectableAppRow(
+                                // 图像只属于当前组合项，离场取消加载并释放局部结果。
+                                icon = { AppIcon(candidate.packageName, iconLoader, Modifier.size(40.dp)) },
                                 state = SelectableAppRowState(
                                     title = candidate.appName,
                                     subtitle = candidate.packageName,
-                                    icon = candidate.icon,
                                     selected = candidate.packageName in blockedPackages.orEmpty(),
                                     interaction = when {
                                         candidate.packageName in writeState.pendingPackages -> SelectableAppRowInteraction.Submitting

@@ -13,7 +13,7 @@
 - Provider 对外只保留 `commit_clip`、`query_icon_state`、`commit_icon`、`query_shizuku_process`。旧 `read_clip` 和旧安装应用缓存同步 methods 均已删除，外部继续调用时进入默认不支持分支，返回 `invalid_args` 并只记录 method 名、callingUid 等低敏信息。
 - 来源 App 过滤命中时，`ClipHelper.processClipText(...)` 返回 `FilteredBySourceApp`，Provider 对外返回 `clipStatus=source_app_blocked` 且 `clipCommitted=false`；该状态表示已按用户规则处理完成，不触发通知、链接解析或备份调度。
 - Shizuku 不再为过滤页提供安装应用列表或图标；过滤页已改为主进程 `QUERY_ALL_PACKAGES` + `PackageManager` 直读，完整规则以 `docs/clip_source_app_filter_plan.md` 为准。
-- `ShizukuConnector.VERSION = 28`，UserService tag 继续携带协议版本，用于覆盖安装后重建残留 Shizuku UserService，避免旧进程继续暴露已删除的安装列表缓存 AIDL 或旧 Provider 协议。
+- `ShizukuConnector.VERSION = 29`，UserService tag 继续携带行为版本；本轮覆盖安装后重建仍会生成/传输图标的旧服务，正文和进程身份协议字段保持。
 
 ## 目标
 
@@ -21,13 +21,13 @@
 - 删除主进程透明悬浮窗、剪贴读取前台服务、旧 Provider `read_clip` 和旧 AIDL 保存回调，避免维护双链路和双写风险。
 - 保持剪贴去重语义可解释：空内容不新增记录；同内容同明确来源更新原记录；同内容不同明确来源新增记录；已有来源为空、`Unknown` 或“未知”时允许后续明确来源覆盖升级。
 - 保持剪贴保存通知、下载通知、下载 Worker 前台服务、Shizuku 状态通知等通知能力。
-- 保持来源图标异步补齐、`source_apps` 缓存、Room schema 和备份协议不变；图标 Drawable 读取统一为 Launcher Activity 优先。
+- 来源名称继续持久化，Room schema 和历史备份协议保持；图标/主色由主进程统一 Manager 在展示加载时装配，不再异步传图或写 PNG。完整取图和生命周期契约以 [来源图标主方案](source_app_icon_plan.md) 为准。
 
 ## 范围
 
 - `ClipboardShizukuService`、`ClipboardListener`、`ShizukuClipboardReader`、`SystemClipboardHiddenReader`。
 - `ShizukuAppProcessReadiness`、`ShizukuAppWakeCommandRunner`、`ShizukuProcessIdentity`。
-- `ClipboardBridgeContract`、`ClipboardBridgeProviderCommandClient`、`ClipboardBridgeIconSyncCoordinator`。
+- `ClipboardBridgeContract`、`ClipboardBridgeProviderCommandClient`；旧图标同步协调器已移除。
 - app Provider 的 `commit_clip`、`query_icon_state`、`commit_icon`、`query_shizuku_process`。
 - `ShizukuConnector` 的进程名刷新、带版本 tag、互斥 bind 和 callback 注册。
 
@@ -49,7 +49,7 @@
 7. callback 缺失、超时或异常时，`ShizukuAppWakeCommandRunner` 只执行 NoDisplay Activity 唤醒。
 8. Shizuku 调用 Provider `query_shizuku_process`，刷新 app 当前期望的完整 Shizuku 进程名，并 best-effort 请求最新 UserService 绑定。
 9. `ShizukuProcessIdentity` 只比较完整进程名字符串：明确匹配才继续提交，明确不匹配时旧进程 `destroy()`，不确定时跳过本次提交。
-10. 身份匹配后，Shizuku 并行启动剪贴 payload 提交与来源图标同步。剪贴链路写入 `/clip/<eventId>` 后调用 `commit_clip`；图标链路继续使用 `query_icon_state`、`/icon/<eventId>` 和 `commit_icon`。
+10. 身份匹配后，Shizuku 仅读取来源名称并提交剪贴 payload，写入 `/clip/<eventId>` 后调用 `commit_clip`；图标版本字段传空，不读取/编码/传输图标。
 11. `ClipboardBridgeClipCommitCoordinator` 读取 payload、校验版本和 eventId、解析文本或 HTML fallback，再委托 `ClipHelper.processClipText(...)`。
 12. `ClipHelper.processClipText(...)` 在文本 trim 并更新 `lastClipContent` 后读取来源过滤名单快照；命中时直接返回 `FilteredBySourceApp`，不进入数据库查询、链接解析、通知或自动备份调度。
 13. `commit_clip` 无论成功、失败或异常都会清理自己的 payload 临时文件；过期清理只删除超时 `.tmp`。
@@ -59,8 +59,7 @@
 保留接口：
 
 - `commit_clip`：消费 `/clip/<eventId>` payload，解析并入库。
-- `query_icon_state`：判断来源图标是否需要继续同步。
-- `commit_icon`：消费 `/icon/<eventId>` PNG，保存来源图标并更新 `source_apps`。
+- `query_icon_state`/`commit_icon`：仅兼容旧服务，合法参数返回 `ok`、`shouldSyncIcon=false` 和 `memory_icons_only`，不操作文件或来源表；旧 `/icon` 写入明确拒绝。
 - `query_shizuku_process`：返回 app 当前期望的完整 Shizuku 进程名并触发 best-effort 连接请求。
 
 已移除接口：
@@ -69,6 +68,8 @@
 - 过滤页安装应用同步相关 AIDL、Provider method 和临时文件 path；过滤页不再依赖 Shizuku 读取安装应用或同步图标，历史接口名称只在变更记录中保留。
 
 ## 日志与诊断计划
+
+- 2026-10-11 图标链路退役后不再记录 PNG/hash/文件发布事件；合法旧命令只记录 DEBUG `memory_icons_only`。名称读取失败只记录 reasonCode/异常类型，不输出来源名称或包名；正文与身份通道沿用既有日志。测试与设备待验项引用来源图标主方案。
 
 - Shizuku 侧记录 AppOps 回调、隐藏 API 注册/注销错误、`IClipboard` 读取摘要、Provider `content write/call` 的 exitCode、resultCode、clipStatus、iconStatus、reasonCode 和耗时。
 - 剪贴链路只允许记录 `eventId`、`clipNull`、payload 是否为空、item 数量、MIME 类型、text/html 长度、是否含 URI/Intent、写入字节数、exitCode、resultCode、clipStatus、异常类型和耗时。
@@ -92,6 +93,8 @@
 - `InstallationIdentityRepository` 保存已提交的期望 Shizuku 进程名，属于本机运行态，不纳入备份；Provider 只返回持久化成功的身份。
 
 ## 变更记录
+
+- 2026-10-11：按全入口图标规则停止 Shizuku 图标生成/hash/PNG 同步，旧图标 Provider 命令只禁用应答，服务行为版本升为 29；正文与历史来源字段兼容保持，验证以来源图标主方案为准。
 
 - 2026-09-29：安装身份改由 DataStore 原子提交，Provider 非主线程限时查询已提交进程名，连接前先等待身份就绪；剪贴来源名单读取失败时不入库也不把内容标记为已处理。原因是移除旧初始化与同步读取，同时避免过滤失败时放行。
 

@@ -1,5 +1,7 @@
 package com.cla.clip.master.ui.page.recycle
 
+import com.cla.clip.master.ui.widget.sourceapp.rememberAppIconLoader
+import com.cla.clip.master.ui.widget.sourceapp.SourceAppNameLoadingEffect
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -56,7 +58,6 @@ import com.cla.clip.master.ad.rememberPageAdSession
 import com.cla.clip.master.ad.adInteractionGuard
 import com.cla.clip.master.ui.widget.clip.ClipListAdConfig
 import com.cla.clip.master.ui.widget.clip.ClipResultList
-import com.cla.clip.master.ui.widget.sourceapp.rememberSourceAppPresentationProvider
 
 /**
  * 回收站页面。
@@ -69,6 +70,10 @@ fun RecycleBinPage(
     viewModel: RecycleBinVm = hiltViewModel(),
     onBack: () -> Unit,
 ) {
+    // 页面级引用只控制历史名称查询；图标在卡片内按可见生命周期加载。
+    /** 页面只创建一次加载边界，实际系统读取由每个可见卡片负责。 */
+    val iconLoader = rememberAppIconLoader()
+    SourceAppNameLoadingEffect(viewModel.sourceLoadGate)
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val pagedClips = remember(viewModel.pagedClips, lifecycle) {
         viewModel.pagedClips.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
@@ -139,8 +144,7 @@ fun RecycleBinPage(
                 .padding(paddingValues)
         ) {
             ClipResultList(
-                // 来源元数据独立于分页，活跃需求由薄适配按生命周期登记。
-                sourceAppPresentation = rememberSourceAppPresentationProvider(),
+                iconLoader = iconLoader,
                 adConfig = ClipListAdConfig(
                     session = adSession,
                     placement = AdPlacement.RecycleFeedNative,

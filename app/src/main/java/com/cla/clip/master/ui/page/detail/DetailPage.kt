@@ -1,5 +1,6 @@
 package com.cla.clip.master.ui.page.detail
 
+import com.cla.clip.master.ui.widget.sourceapp.SourceAppNameLoadingEffect
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -141,6 +142,9 @@ fun DetailPage(
     detailAdSensitivityPolicy: DetailAdSensitivityPolicy = remember { DetailAdSensitivityPolicy() },
     onDisableAdSource: (String) -> Unit = {},
 ) {
+    // 单条详情的图标装配同样受页面可见性约束。
+    SourceAppNameLoadingEffect(detailVm.sourceLoadGate)
+
     /** 当前等待删除确认的剪贴记录；为 null 时不显示删除选择弹窗。 */
     var deleteClip by remember { mutableStateOf<ClipShowEntity?>(null) }
 

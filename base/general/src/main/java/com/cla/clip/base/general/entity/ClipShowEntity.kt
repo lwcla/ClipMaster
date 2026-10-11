@@ -6,7 +6,7 @@ import com.cla.clip.base.general.utils.toRelativeTimeSpanString
 /**
  * 剪贴记录在 UI 层使用的展示实体。
  *
- * 这里只合并数据库记录和链接预览；来源名称、图标和主色由包名独立订阅；时间字段同时保留剪贴时间、折叠时间和删除时间，
+ * 基础 mapper 合并内容和链接预览，app 装配阶段仅补历史来源名称；图标和主色由可见 UI 按包名加载，实体不持图片。时间字段同时保留剪贴时间、折叠时间和删除时间，
  * 由不同页面选择对应展示模式，避免共享列表组件理解 Room 关系结构。
  */
 data class ClipShowEntity(
@@ -34,6 +34,8 @@ data class ClipShowEntity(
     val link: String?,
     /** 链接预览标题，可能为空；搜索页会对可见标题做关键词高亮。 */
     val linkTitle: String?,
+    /** 本次加载时取得的来源名称，缺失由共享显示名规则兜底。 */
+    val sourceAppName: String? = null,
 )
 
 /** 将数据库关系实体转换为 UI 展示实体，集中处理内容、链接预览和时间字段，排除来源展示快照。 */

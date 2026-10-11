@@ -1,9 +1,7 @@
 package com.cla.clip.shizuku
 
 import android.graphics.Bitmap
-import com.cla.clip.base.general.utils.iconBitmap
 import com.cla.clip.base.general.utils.logW
-import com.cla.clip.base.general.utils.toStableHash
 
 /**
  * Shizuku 侧来源应用展示信息解析器。
@@ -38,14 +36,11 @@ internal class ShizukuSourceAppResolver(
             val readResult = sourceAppReader.read(clipPackageName)
             /** 来源应用展示名；为空时使用 Unknown，保持旧链路展示语义。 */
             val appName = readResult.appName.takeUnless { it.isNullOrBlank() } ?: UNKNOWN_APP_NAME
-            /** 来源应用图标 Bitmap；为空表示本次没有可同步图标。 */
-            val bitmap = readResult.bitmap
-            /** 来源图标稳定 hash；为空表示图标解析失败或不可用。 */
-            val iconHash = bitmap?.toStableHash()
-            ShizukuSourceAppInfo(packageName = clipPackageName, appName = appName, bitmap = bitmap, iconHash = iconHash)
+            // 图标统一由主进程装载；保留内部字段但绝不计算或传输图片。
+            ShizukuSourceAppInfo(packageName = clipPackageName, appName = appName, bitmap = null, iconHash = null)
         }.getOrElse { throwable ->
             logW(ClipboardShizukuService.TAG) {
-                "来源应用解析失败 packageName=$clipPackageName reason=${throwable::class.java.simpleName.ifBlank { "Throwable" }}"
+                "来源应用解析失败 reasonCode=source_name_unavailable type=${throwable::class.java.simpleName.ifBlank { "Throwable" }}"
             }
             ShizukuSourceAppInfo(packageName = clipPackageName, appName = UNKNOWN_APP_NAME, bitmap = null, iconHash = null)
         }
@@ -82,16 +77,13 @@ private class AndroidShizukuSourceAppReader(
     /** Shizuku 进程可用的 PackageManager。 */
     private val packageManager: android.content.pm.PackageManager,
 ) : ShizukuSourceAppReader {
+    /** 仅读取采集时名称，不加载 Drawable、Bitmap 或图标 hash。 */
     override fun read(clipPackageName: String): ShizukuSourceAppReadResult {
         /** 来源应用包信息；读取失败说明来源包已不可见或卸载。 */
         val packageInfo = packageManager.getPackageInfo(clipPackageName, 0)
         /** 来源应用展示名；为空时由上层 resolver 回退 Unknown。 */
         val appName = packageInfo.applicationInfo?.loadLabel(packageManager)?.toString()
-        /** 来源应用图标 Drawable；优先读取桌面入口图标，避免历史来源回退继续保存系统默认图标。 */
-        val bitmap = ShizukuAppIconLoader
-            .loadBestIcon(packageManager, clipPackageName)
-            .iconBitmap()
-        return ShizukuSourceAppReadResult(appName = appName, bitmap = bitmap)
+        return ShizukuSourceAppReadResult(appName = appName, bitmap = null)
     }
 }
 

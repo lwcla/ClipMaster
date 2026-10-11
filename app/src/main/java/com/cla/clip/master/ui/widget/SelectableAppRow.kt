@@ -1,6 +1,5 @@
 package com.cla.clip.master.ui.widget
 
-import android.graphics.drawable.Drawable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,14 +14,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import coil3.compose.AsyncImage
+import com.cla.clip.master.ui.widget.sourceapp.AppIconImage
 import com.cla.clip.master.R
 import com.cla.clip.master.ui.theme.ClipMasterTheme
 
@@ -35,8 +32,6 @@ internal data class SelectableAppRowState(
     val title: String,
     /** 副标题用于明确应用身份，组件不会解析或保存它。 */
     val subtitle: String,
-    /** 扫描后的内存图标，null 或显示失败使用默认图标。 */
-    val icon: Drawable?,
     /** 已提交选择状态，提交中不伪造成功勾选。 */
     val selected: Boolean,
     /** 当前允许交互、暂时禁用或正在提交。 */
@@ -52,9 +47,9 @@ internal fun SelectableAppRow(
     state: SelectableAppRowState,
     onSelectedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    /** 图标展示由调用方提供，行状态只保留轻量文本和选择契约。 */
+    icon: @Composable () -> Unit = { AppIconImage(null, Modifier.size(40.dp)) },
 ) {
-    /** 复用原默认 App 图标，保持读取失败时的原色兜底。 */
-    val defaultIcon = painterResource(R.drawable.host_ic_app_icon_default)
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -67,14 +62,7 @@ internal fun SelectableAppRow(
             .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AsyncImage(
-            model = state.icon,
-            contentDescription = null,
-            error = defaultIcon,
-            fallback = defaultIcon,
-            modifier = Modifier.size(40.dp),
-            contentScale = ContentScale.Crop,
-        )
+        icon()
         Spacer(Modifier.size(12.dp))
         Column(Modifier.weight(1f)) {
             Text(state.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -108,7 +96,6 @@ private fun SelectableAppRowPreview() {
             SelectableAppRowState(
                 title = stringResource(R.string.host_preview_app_title),
                 subtitle = stringResource(R.string.host_preview_app_package),
-                icon = null,
                 selected = true,
                 interaction = SelectableAppRowInteraction.Submitting,
             ),

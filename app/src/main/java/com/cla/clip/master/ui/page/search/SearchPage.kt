@@ -1,5 +1,7 @@
 package com.cla.clip.master.ui.page.search
 
+import com.cla.clip.master.ui.widget.sourceapp.rememberAppIconLoader
+import com.cla.clip.master.ui.widget.sourceapp.SourceAppNameLoadingEffect
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -74,8 +76,6 @@ import com.cla.clip.master.ad.rememberPageAdSession
 import com.cla.clip.master.ad.adInteractionGuard
 import com.cla.clip.master.ui.widget.clip.ClipListAdConfig
 import com.cla.clip.master.ui.widget.clip.ClipResultList
-import com.cla.clip.master.ui.widget.sourceapp.rememberSourceAppPresentationProvider
-import com.cla.clip.master.ui.widget.sourceapp.SourceAppCandidateRepairEffect
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
@@ -109,12 +109,12 @@ fun SearchPage(
         viewModel.updateVisibilityScope(visibilityScope)
     }
 
+    /** 结果卡片和菜单共用稳定加载边界，仅可见组合发起读取。 */
+    val iconLoader = rememberAppIconLoader()
     /** 搜索筛选状态，包含关键词、时间范围和来源 App 集合。 */
     val filterState by viewModel.filterState.collectAsStateWithLifecycle()
     /** 当前可选来源列表供下拉菜单使用，生命周期收集方式保持不变。 */
     val sourceApps by viewModel.sourceApps.collectAsStateWithLifecycle()
-    // 列表先返回，后台统一检查候选图标，菜单关闭仍遵循页面前台生命周期。
-    SourceAppCandidateRepairEffect(sourceApps.map { it.packageName }.toSet())
     /** 来源包名到展示名的映射，统一复用来源 App 显示名兜底规则。 */
     val sourceAppDisplayNames = sourceApps.associate { sourceApp ->
         sourceApp.packageName to sourceApp.appName.toSourceAppDisplayName()
@@ -483,11 +483,12 @@ fun SearchPage(
             )
         } else {
             /** 结果模式才收集分页数据，避免搜索页初始历史态提前加载剪贴数据列表。 */
+            // 结果区离开组合就暂停名称装配；菜单行自己控制图标加载。
+            SourceAppNameLoadingEffect(viewModel.sourceLoadGate)
             val pagedClips = viewModel.pagedClips.collectAsLazyPagingItems()
 
             ClipResultList(
-                // 来源元数据独立于分页，活跃需求由薄适配按生命周期登记。
-                sourceAppPresentation = rememberSourceAppPresentationProvider(),
+                iconLoader = iconLoader,
                 adConfig = ClipListAdConfig(
                     session = adSession,
                     placement = if (isVisibleSearch) AdPlacement.SearchFeedNative else AdPlacement.FoldedSearchNative,
@@ -535,7 +536,7 @@ fun SearchPage(
         }
 
         SearchCollapsibleHeader(
-            sourceAppPresentation = rememberSourceAppPresentationProvider(),
+            iconLoader = iconLoader,
             query = filterState.query,
             filterState = filterState,
             selectedSourceAppNames = selectedSourceAppNames,

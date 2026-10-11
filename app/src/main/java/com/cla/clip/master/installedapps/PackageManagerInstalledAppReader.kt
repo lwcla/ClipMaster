@@ -37,7 +37,9 @@ class PackageManagerInstalledAppReader : InstalledAppReader {
     private val dispatcher: CoroutineDispatcher
 
     @Inject
+    /** 生产入口只读取名称与安装状态，图标交给统一 Manager。 */
     constructor(
+        /** 应用上下文只供安装查询，不读取图标。 */
         @ApplicationContext appContext: Context,
     ) : this(
         packageReader = AndroidInstalledAppPackageReader(appContext.packageManager),
@@ -46,6 +48,7 @@ class PackageManagerInstalledAppReader : InstalledAppReader {
         dispatcher = Dispatchers.IO,
     )
 
+    /** 单测入口替换安装查询、时钟和调度器，不依赖 Android 系统读取。 */
     internal constructor(
         packageReader: InstalledAppPackageReader,
         selfPackageName: String,
@@ -62,12 +65,12 @@ class PackageManagerInstalledAppReader : InstalledAppReader {
         this.dispatcher = dispatcher
     }
 
-    /** 在 IO 调度器按范围读取名称和图标；正常空列表也返回成功，取消传播，异常才返回失败。 */
+    /** 在 IO 调度器按范围读取名称与系统标记；正常空列表也返回成功，取消传播，异常才返回失败。 */
     override suspend fun loadInstalledApps(showSystemApps: Boolean): InstalledAppLoadResult = withContext(dispatcher) {
         /** 本次读取开始时间；只用于低敏耗时日志。 */
         val startedAtMillis = clock()
         try {
-            /** 已过滤并携带内存图标的应用列表；扫描范围不影响完整过滤名单。 */
+            /** 已过滤且只含轻量身份/标签的应用列表；扫描范围不影响完整过滤名单。 */
             val apps = normalizeInstalledAppEntries(
                 entries = packageReader.loadInstalledApplications(showSystemApps, selfPackageName),
                 selfPackageName = selfPackageName,
@@ -133,7 +136,7 @@ class PackageManagerInstalledAppReader : InstalledAppReader {
 /**
  * 规范化 PackageManager 原始安装应用条目。
  *
- * 只负责纯规则：校验扫描范围、缺失标签转为空名并稳定排序，原样传递完整名称和已读取图标。
+ * 只负责纯规则：校验扫描范围、缺失标签转为空名并稳定排序，原样传递完整名称和系统标记。
  */
 internal fun normalizeInstalledAppEntries(
     entries: List<InstalledAppPackageEntry>,
@@ -148,7 +151,7 @@ internal fun normalizeInstalledAppEntries(
     return entries.mapNotNull { entry ->
         /** 原始包名 trim 后作为稳定身份；空包名直接丢弃。 */
         val packageName = entry.packageName.trim().takeIf { value -> value.isNotEmpty() } ?: return@mapNotNull null
-        // 防御性复核读取范围；Android 适配器已在加载名称和图标前应用同一规则。
+        // 防御性复核读取范围；Android 适配器已在加载名称与系统标记前应用同一规则。
         if (!shouldReadInstalledApp(packageName, normalizedSelfPackageName, entry.isSystemApp, showSystemApps)) {
             return@mapNotNull null
         }
@@ -157,7 +160,6 @@ internal fun normalizeInstalledAppEntries(
             // 原样保留扫描标签；仅缺失时转为空名，显示宽度和省略号由页面负责。
             appName = entry.label.orEmpty(),
             isSystemApp = entry.isSystemApp,
-            icon = entry.icon,
         )
     }.distinctBy { app ->
         app.packageName
@@ -174,9 +176,9 @@ private class AndroidInstalledAppPackageReader(
     private val packageManager: PackageManager,
 ) : InstalledAppPackageReader {
 
-    /** 在 IO 线程先过滤扫描范围，再读取名称和 Application 图标；单项图标失败仅回退默认图标。 */
+    /** 在 IO 线程先过滤扫描范围，再读取名称与系统标记；图标完全由行级 UI 加载。 */
     override suspend fun loadInstalledApplications(showSystemApps: Boolean, selfPackageName: String): List<InstalledAppPackageEntry> {
-        /** 本轮读取协程；系统调用返回后及每项资源加载之前检查取消，减少旧范围的无效图标读取。 */
+        /** 本轮读取协程；系统调用返回后及每项资源加载之前检查取消，减少旧范围的无效标签读取。 */
         val scanContext = currentCoroutineContext()
         /** 当前用户可见安装应用；不使用 MATCH_DISABLED_COMPONENTS 强行展示禁用或冻结 App。 */
         val applications = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -185,43 +187,22 @@ private class AndroidInstalledAppPackageReader(
             @Suppress("DEPRECATION")
             packageManager.getInstalledApplications(0)
         }
-        /** 本轮图标不可用数量；每次扫描只汇总一次日志，不记录应用身份。 */
-        var iconFailureCount = 0
-        /** 当前范围内的应用条目；被排除的应用不读取名称和图标。 */
+        /** 当前范围内的应用条目；被排除的应用不读取名称与系统标记。 */
         val entries = applications.mapNotNull { applicationInfo ->
             // 单次系统调用不能强制中断；返回后停止已取消任务，不继续读取后续应用资源。
             scanContext.ensureActive()
-            /** 系统应用分类在读取资源之前确定，默认不加载系统应用的名称和图标。 */
+            /** 系统应用分类在读取资源之前确定，默认不加载系统应用的名称与系统标记。 */
             val isSystemApp = applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM != 0
             if (!shouldReadInstalledApp(applicationInfo.packageName, selfPackageName, isSystemApp, showSystemApps)) {
                 return@mapNotNull null
             }
             /** 当前应用标签；标签缺失时后续保留空名，不补充旧来源名称。 */
             val label = applicationInfo.loadLabel(packageManager).toString()
-            /** Application 图标读取失败仅影响本行；不再查询 Launcher Activity。 */
-            val icon = try {
-                applicationInfo.loadIcon(packageManager)
-            } catch (error: CancellationException) {
-                // 协程取消仍应终止扫描，不记为图标读取失败。
-                throw error
-            } catch (error: Exception) {
-                null
-            }
-            if (icon == null) {
-                iconFailureCount++
-            }
             InstalledAppPackageEntry(
                 packageName = applicationInfo.packageName,
                 label = label,
                 isSystemApp = isSystemApp,
-                icon = icon,
             )
-        }
-        if (iconFailureCount > 0) {
-            logW("InstalledAppReader") {
-                "安装应用图标读取失败 reasonCode=installed_app_icon_unavailable failureCount=$iconFailureCount " +
-                    "showSystemApps=$showSystemApps"
-            }
         }
         return entries
     }

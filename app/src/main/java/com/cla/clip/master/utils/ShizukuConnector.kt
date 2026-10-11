@@ -55,11 +55,12 @@ class ShizukuConnector @Inject constructor(
         private const val TAG = "ShizukuConnector"
 
         /**
-         * Shizuku UserService 协议版本；本轮删除安装应用缓存 AIDL 后升级，确保残留旧进程不会复用旧接口。
+         * Shizuku UserService 行为版本；停用传图后升级，确保覆盖安装不复用仍生成图标的旧进程。
          *
          * 这个版本号不跟随 app 版本，只在跨进程协议或服务行为需要强制替换时递增。
          */
-        const val VERSION = 28
+        // 覆盖安装后重建旧传图服务，使来源图标生成与上传实际停止。
+        const val VERSION = 29
 
         /** UserService bind 等待超时；只用于连接器内部确认本次主动 bind 是否有回调。 */
         private const val USER_SERVICE_BIND_TIMEOUT_MS = 3_000L

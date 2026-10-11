@@ -4,7 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.Pager
-import androidx.paging.PagingConfig
+import com.cla.clip.master.paging.clipPagingConfig
 import androidx.paging.cachedIn
 import androidx.paging.map
 import com.cla.clip.base.general.config.clip.ClipSettingsRepository
@@ -13,6 +13,8 @@ import com.cla.clip.base.general.entity.toUi
 import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.base.general.utils.toast
 import com.cla.clip.base.general.utils.logE
+import com.cla.clip.master.sourceapp.ClipSourceNameAssembler
+import com.cla.clip.master.sourceapp.SourceAppLoadGate
 import dagger.Lazy
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -48,7 +50,12 @@ class RecycleBinVm @Inject constructor(
 
     /** 保留天数由统一剪贴设置仓库持久化，清理前须等待提交。 */
     private val clipSettingsRepository: ClipSettingsRepository,
+    /** 回收站复用名称装配，图标交可见卡片按包名读取。 */
+    private val sourceNames: ClipSourceNameAssembler,
 ) : ViewModel() {
+    /** 页面不可见时取消未完成名称查询，保留轻量结果等待复用。 */
+    internal val sourceLoadGate = SourceAppLoadGate()
+
 
     /**
      * 回收站分页数据。
@@ -56,14 +63,14 @@ class RecycleBinVm @Inject constructor(
      * 页面可见时才收集，排序由 DAO 保证为删除时间倒序；在 ViewModel 生命周期内缓存，减少重组时重复创建查询。
      */
     val pagedClips = Pager(
-        config = PagingConfig(
-            pageSize = 20,
-            prefetchDistance = 5,
-            enablePlaceholders = false
-        )
+        config = clipPagingConfig()
     ) {
         clipRepository.get().loadRecycleBinClips()
-    }.flow.map { pagingData -> pagingData.map { clipDetail -> clipDetail.toUi() } }.cachedIn(
+    }.flow.map { pagingData ->
+        /** 当前分页代次的轻量名称缓存。 */
+        val session = sourceNames.newSession()
+        pagingData.map { clipDetail -> sourceLoadGate.run { session.attach(clipDetail.toUi()) } }
+    }.cachedIn(
         CoroutineScope(viewModelScope.coroutineContext + Dispatchers.IO)
     )
 

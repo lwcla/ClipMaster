@@ -1,5 +1,8 @@
 package com.cla.clip.master.ui.widget.clip
 
+import com.cla.clip.master.ui.widget.sourceapp.AppIconLoader
+import com.cla.clip.master.ui.widget.sourceapp.EmptyAppIconLoader
+import com.cla.clip.master.ui.widget.sourceapp.rememberAppIconEntry
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -65,10 +68,6 @@ import androidx.paging.compose.itemKey
 import com.cla.clip.base.general.R as BaseR
 import com.cla.clip.base.general.config.ClipItemQuickAction
 import com.cla.clip.base.general.entity.ClipShowEntity
-import com.cla.clip.base.general.dao.SourceAppData
-import com.cla.clip.master.ui.widget.sourceapp.SourceAppPresentationProvider
-import com.cla.clip.master.ui.widget.sourceapp.SourceAppPresentationState
-import com.cla.clip.master.ui.widget.sourceapp.EmptySourceAppPresentationProvider
 import com.cla.clip.master.ad.DetailAdSensitivityPolicy
 import com.cla.clip.master.ad.ListAdPlacementPolicy
 import com.cla.clip.master.ad.rememberListAdLayoutCoordinator
@@ -142,8 +141,10 @@ internal fun ClipResultList(
     enableQuickAction: Boolean = false,
     // 可空配置让 Preview 和未接入页面保持原有纯内容行为。
     adConfig: ClipListAdConfig? = null,
-    /** 页面提供独立来源订阅，图标变化不进入 PagingData。 */
-    sourceAppPresentation: SourceAppPresentationProvider = EmptySourceAppPresentationProvider,
+    /** 页面提供的稳定加载边界，Preview 使用默认占位。 */
+    iconLoader: AppIconLoader = EmptyAppIconLoader,
+    /** 首页保留组合的非当前 Pager 页不能发起系统取图。 */
+    iconsVisibleToUser: Boolean = true,
 ) {
     // 取消置顶的排序变化由数据库/Paging 异步返回，先保存待恢复视口，再在快照确认后执行恢复。
     var pendingPinScrollRestore by remember { mutableStateOf<PendingPinScrollRestore?>(null) }
@@ -241,9 +242,10 @@ internal fun ClipResultList(
                                 contentHeights = contentHeights,
                                 slotEligible = slotEligible,
                             ) {
-                        ClipCard(
-                            clip = clip,
-                            sourceAppPresentation = sourceAppPresentation,
+                                ClipCard(
+                                    clip = clip,
+                                    iconLoader = iconLoader,
+                                    iconsVisibleToUser = iconsVisibleToUser,
                                     onInteractionChanged = { active ->
                                         interactingClipIds = if (active) interactingClipIds + clip.id else interactingClipIds - clip.id
                                     },
@@ -331,15 +333,18 @@ internal fun ClipCard(
     enableQuickAction: Boolean = false,
     openedMenuClipId: Long? = null,
     onMenuActive: (Long) -> Unit = {},
-    /** 单包名展示接口由页面适配提供，公共卡片不依赖业务仓库。 */
-    sourceAppPresentation: SourceAppPresentationProvider = EmptySourceAppPresentationProvider,
     onMenuInactive: (Long) -> Unit = {},
     // 侧滑与离场动画通知列表暂停广告布局变化，不包含业务动作副作用。
     onInteractionChanged: (Boolean) -> Unit = {},
+    /** 与菜单/安装入口共享 Manager，但组件只依赖加载契约。 */
+    iconLoader: AppIconLoader = EmptyAppIconLoader,
+    /** 同时受目的地 STARTED 与首页实际可见状态约束。 */
+    iconsVisibleToUser: Boolean = true,
 ) {
-    /** 名称、图标与主色独立更新，同来源多个可见卡片共享同一状态。 */
-    val sourceState = sourceAppPresentation.presentation(clip.sourceAppPackage)
-    val appColor = (sourceState as? SourceAppPresentationState.Ready)?.source?.primaryColor
+    /** 当前组合独占加载状态，图标与边框颜色使用同一结果。 */
+    val appIconEntry = rememberAppIconEntry(clip.sourceAppPackage, iconLoader, iconsVisibleToUser)
+    /** 冷缓存先使用主题色；同源主色加载完成后随图像一起更新。 */
+    val appColor = appIconEntry?.primaryColor
         ?.takeIf { it != -1 }?.let { Color(it) } ?: MaterialTheme.colorScheme.outlineVariant
     val borderColor = appColor.copy(alpha = 0.3f)
     // 斜向快捷区底色只保留很轻的同源提示，避免压住铺满整 卡的剪贴内容。
@@ -816,9 +821,7 @@ internal fun ClipCard(
                         ClipContent(clip, highlightQuery)
 
                         Spacer(Modifier.height(8.dp))
-                        SourceAppNameWithTime(clip, highlightQuery, timeMode, sourceState) {
-                            sourceAppPresentation.reportDecodeFailure(clip.sourceAppPackage)
-                        }
+                        SourceAppNameWithTime(clip, highlightQuery, timeMode, appIconEntry?.icon)
                     }
                 }
 
@@ -861,9 +864,9 @@ internal fun ClipCard(
 @Preview(widthDp = 150, heightDp = 300)
 @Preview(name = "深色长名称缺图", widthDp = 180, heightDp = 300, uiMode = android.content.res.Configuration.UI_MODE_NIGHT_YES)
 @Composable
-/** 长名称、缺图与独立主色快照的纯预览，不启动 Store 或系统读取。 */
+/** 长名称与冷缓存占位的纯预览，不启动 Manager 或系统读取。 */
 private fun ClipCardPreview() {
-    /** 内容模型与来源展示分开构造，保持新分页契约。 */
+    /** 合成正文与历史名称，Preview 不启动系统查询或文件读取。 */
     val clip = ClipShowEntity(
         id = 1L,
         content = "这是一个示例剪贴板内容，用于预览ClipCard组件的显示效果。用于预览ClipCard组件的显示效果。",
@@ -876,25 +879,12 @@ private fun ClipCardPreview() {
         isFolded = false,
         link = "https://www.wanandroid.com/",
         linkImgUrl = "https://img0.baidu.com/it/u=2280054277,2128244139&fm=253&fmt=auto&app=138&f=JPEG?w=973&h=304",
-        linkTitle = "这是链接的标题这是链接的标题这是链接的标题"
+        linkTitle = "这是链接的标题这是链接的标题这是链接的标题",
+        sourceAppName = "飞书长名称来源应用预览",
     )
-
-    /** 合成来源展示接口，只覆盖视觉边界，无文件/数据库副作用。 */
-    val sourcePresentation = remember {
-        object : SourceAppPresentationProvider {
-            /** 有效长名称即使没有图标也继续显示。 */
-            @Composable
-            override fun presentation(packageName: String?) = SourceAppPresentationState.Ready(
-                SourceAppData("fixture.preview", "飞书长名称来源应用预览", null, 0xFF008577.toInt(), null),
-            )
-            /** 缺图预览不调度后台修复。 */
-            override fun reportDecodeFailure(packageName: String?) = Unit
-        }
-    }
 
     ClipCard(
         clip = clip,
-        sourceAppPresentation = sourcePresentation,
         highlightQuery = "示例 飞书",
         onPinToggle = {},
         onDelete = {},

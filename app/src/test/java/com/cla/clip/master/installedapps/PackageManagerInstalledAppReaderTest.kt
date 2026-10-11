@@ -1,18 +1,15 @@
 package com.cla.clip.master.installedapps
 
-import android.graphics.drawable.ColorDrawable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import org.junit.Assert.assertSame
 import org.junit.Assert.fail
 import org.junit.Test
 
 /** 主进程安装应用读取测试，保护 QUERY_ALL_PACKAGES 直读规则和失败 reason。 */
 class PackageManagerInstalledAppReaderTest {
-
     @Test
     /** 默认扫描范围只保留非系统应用，避免为隐藏系统应用读取名称和图标。 */
     fun normalizeInstalledAppsExcludesSystemAppsByDefault() {
@@ -207,28 +204,6 @@ class PackageManagerInstalledAppReaderTest {
             showSystemApps = true,
         )
         assertEquals(listOf("com.example.system"), apps.map { it.packageName })
-    }
-
-    @Test
-    /** 扫描结果保留已读取图标和不可用条目，不在规范化阶段再次读取或丢弃应用。 */
-    fun loadInstalledAppsPreservesIconsAndUnavailableEntries() = runBlocking {
-        /** 合成内存图标；平台桩只用于对象身份，不调用真实绘制或系统资源。 */
-        val icon = ColorDrawable()
-        /** 一项有图标、一项不可用，后者仍应保留以展示默认图标。 */
-        val packageReader = FakeInstalledAppPackageReader(
-            listOf(
-                InstalledAppPackageEntry("com.example.a", "Alpha", false, icon),
-                InstalledAppPackageEntry("com.example.b", "Beta", false),
-            ),
-        )
-        /** 可控读取器；直接验证从扫描条目到公开安装结果的图标传递。 */
-        val reader = PackageManagerInstalledAppReader(packageReader, "com.example.self", { 1000L }, Dispatchers.Unconfined)
-        /** 默认范围读取结果，应携带相同图标并保留不可用图标应用。 */
-        val result = reader.loadInstalledApps() as InstalledAppLoadResult.Success
-        assertEquals(false, packageReader.requestedSystemApps)
-        assertEquals(2, result.apps.size)
-        assertSame(icon, result.apps[0].icon)
-        assertEquals(null, result.apps[1].icon)
     }
 
     @Test

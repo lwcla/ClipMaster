@@ -1,7 +1,6 @@
 package com.cla.clip.master.provider
 
 import android.content.Context
-import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.base.general.utils.logE
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.logW
@@ -16,13 +15,12 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withTimeout
 import org.jsoup.Jsoup
-import java.io.File
 import javax.inject.Inject
 
 /**
  * Provider 剪贴 payload 提交协调器。
  *
- * 只负责 commit_clip 阶段的 payload 解析、HTML fallback、来源图标缓存复用和文本入库，不读取系统剪贴板。
+ * 只负责 payload 解析、HTML fallback、来源名称和文本入库；图标由展示加载阶段读取。
  */
 class ClipboardBridgeClipCommitCoordinator @Inject constructor(
     /** 应用 Context，用于读取 payload 临时目录。 */
@@ -31,8 +29,6 @@ class ClipboardBridgeClipCommitCoordinator @Inject constructor(
     private val payloadStore: ClipboardBridgeClipPayloadStore,
     /** 剪贴板入库助手，复用现有去重、链接解析和通知逻辑。 */
     private val clipHelper: Lazy<ClipHelper>,
-    /** 剪贴仓库，用于复用旧来源图标字段。 */
-    private val clipRepository: Lazy<ClipRepository>,
 ) {
     companion object {
         /** 剪贴 payload 提交日志标签，用于定位 commit_clip 阶段结果。 */
@@ -130,33 +126,15 @@ class ClipboardBridgeClipCommitCoordinator @Inject constructor(
             )
         }
 
-        /** 旧来源图标缓存；剪贴入库可先复用旧图标，图标独立协程后续再补齐。 */
-        val sourceAppData = request.packageName
-            ?.let { packageName -> clipRepository.get().loadSourceApp(packageName) }
-
-        /** 旧来源图标文件是否真实存在；失效路径不能继续写回剪贴记录。 */
-        val hasReadableCachedIcon = sourceAppData?.iconPath
-            ?.takeIf { it.isNotBlank() }
-            ?.let { iconPath -> File(iconPath).exists() }
-            ?: false
-
-        /** 本次剪贴记录可复用的旧图标路径。 */
-        val iconPath = sourceAppData?.iconPath?.takeIf { hasReadableCachedIcon }
-
-        /** 本次剪贴记录可复用的旧图标主色。 */
-        val iconColor = sourceAppData?.primaryColor?.takeIf { hasReadableCachedIcon }
-
-        /** 本次剪贴记录可复用的旧图标 hash。 */
-        val cachedIconHash = sourceAppData?.iconHash?.takeIf { hasReadableCachedIcon }
-
         /** 文本入库结果；DuplicateOrEmpty 表示沿用现有去重语义没有新增记录。 */
         val processResult = clipHelper.get().processClipText(
             contentText = clipText,
             packageName = request.packageName,
             appName = request.appName,
-            iconPath = iconPath,
-            iconColor = iconColor,
-            iconHash = cachedIconHash,
+            // 兼容现有入库签名但不读旧文件、不新增持久图标元数据。
+            iconPath = null,
+            iconColor = null,
+            iconHash = null,
             capturedAtMillis = payload.capturedAtMillis
         )
 
@@ -171,8 +149,7 @@ class ClipboardBridgeClipCommitCoordinator @Inject constructor(
 
         logI(TAG) {
             "Provider 剪贴 payload 提交完成 eventId=${request.eventId} packageName=${request.packageName} " +
-                "clipStatus=$clipStatus textLength=${clipText.length} htmlLength=${payload.htmlText?.length} " +
-                "hasCachedIcon=${!iconPath.isNullOrBlank()}"
+                "clipStatus=$clipStatus textLength=${clipText.length} htmlLength=${payload.htmlText?.length}"
         }
         return ClipboardBridgeResult.of(
             resultCode = ClipboardBridgeContract.CODE_OK,
@@ -182,11 +159,7 @@ class ClipboardBridgeClipCommitCoordinator @Inject constructor(
             textLength = clipText.length,
             htmlLength = payload.htmlText?.length,
             mimeTypes = payload.mimeTypes,
-            iconStatus = if (!iconPath.isNullOrBlank()) {
-                ClipboardBridgeContract.ICON_STATUS_REUSED
-            } else {
-                ClipboardBridgeContract.ICON_STATUS_PLACEHOLDER
-            }
+            iconStatus = ClipboardBridgeContract.ICON_STATUS_PLACEHOLDER,
         )
     }
 

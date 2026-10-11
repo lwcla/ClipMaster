@@ -15,15 +15,6 @@ interface ClipboardBridgeEntryPoint {
     /** Provider 剪贴 payload 提交协调器。 */
     fun clipboardBridgeClipCommitCoordinator(): ClipboardBridgeClipCommitCoordinator
 
-    /** Provider 图标预判协调器。 */
-    fun clipboardBridgeIconQueryCoordinator(): ClipboardBridgeIconQueryCoordinator
-
-    /** Provider 图标异步提交协调器。 */
-    fun clipboardBridgeIconCommitter(): ClipboardBridgeIconCommitter
-
-    /** Provider 图标临时传输目录管理器。 */
-    fun clipboardBridgeIconStore(): ClipboardBridgeIconStore
-
     /** Provider 剪贴 payload 临时传输目录管理器。 */
     fun clipboardBridgeClipPayloadStore(): ClipboardBridgeClipPayloadStore
 

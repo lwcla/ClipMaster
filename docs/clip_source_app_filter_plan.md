@@ -2,6 +2,12 @@
 
 # 按 App 过滤剪贴保存方案
 
+## 可见行按包名加载图标（已完成，2026-10-11）
+
+- 扫描先过滤自身/系统范围，只读取名称和系统标记；安装结果与过滤候选不携带 Drawable、Bitmap 或主色。可见行通过共享 `SelectableAppRow.icon` slot 接入 `AppIcon`，系统取图复用统一 Manager，离开前台取消、离场释放。名称先显示，冷缓存使用默认资源；名单、搜索、统计、备份保持。
+- 共享选择行结构以 [共享表单方案](shared_form_components_plan.md) 为准；图标缓存、生命周期、失败及测试以 [来源图标主方案](source_app_icon_plan.md) 为准。扫描保留低敏数量/耗时日志，取图失败沿用 Manager，不记录安装名单或逐行读取。
+- 变更记录：2026-10-11，按用户确认方案从扫描阶段取图改为可见 UI 按需加载，避免全量图像引用及扫描等待。
+
 ## 当前状态
 
 2026-10-01：入口文案简化已完成。我的页在没有过滤规则时仅显示“未设置”；共用标题资源改为“剪贴过滤”，同步影响入口卡片与过滤设置页标题。有规则时仍显示“已过滤 X 个 App”。复用原字符串资源与 `blockedCount > 0` 分支，无新增组件/方法/状态；纯文案不新增或重跑 JVM 单测、不走 TDD。`./gradlew.bat :app:compileDebugKotlin --console=plain` 通过（BUILD SUCCESSFUL，1 分 19 秒），输出保存在 `build/clip-filter-copy-compile.log`，差异检查通过；设备视觉未验收。无需新增日志、备份或 release/R8 验证，字符串旁补充中文用途注释。

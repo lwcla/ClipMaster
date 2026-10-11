@@ -1,6 +1,12 @@
-状态：实现中
+状态：已完成
 
 # 剪贴结果列表组件设计文档
+
+## 按包名加载来源图标（已完成，2026-10-11）
+
+- 普通/折叠/搜索/回收站卡片只从展示对象读取正文、来源名称与包名；`rememberAppIconEntry` 由局部 UI 会话加载图标和主色，同一结果用于图标与边框。冷缓存先默认资源/主题色，离场释放引用；首页还受 `visibleToUser` 约束。保持稳定 id、选择和滑动，移除 maxSize=200 恢复现有全局回顶。
+- 共享列表/卡片接收可替换 `AppIconLoader`，纯绘制使用 `AppIconImage`；Preview 默认不读系统。完整生命周期、缓存、诊断及回归以 [来源图标主方案](source_app_icon_plan.md) 为准，不新增每行 UI 日志。
+- 变更记录：2026-10-11，按用户确认的 UI 按包名方案替换分页预装配图片，验证在主方案记录。下方早期图标订阅为历史基线。
 
 ## 默认来源图标统一（已完成，2026-10-02）
 
@@ -9,7 +15,7 @@
 - 日志与诊断计划：仅修改资源及展示样式，无新增副作用，不新增日志。单元测试门禁：不新增单测或走 TDD，因为未抽出业务规则；运行 app Kotlin 编译与差异检查，真实视觉仍需设备验收。无 schema/备份/外部协议变化，不需 release/R8。
 - 验证记录：`.\gradlew.bat -I build\source-app-isolation.init.gradle :app:compileDebugKotlin --no-daemon --no-watch-fs --console=plain` 为 BUILD SUCCESSFUL（1m28s），日志 `build/clip-default-icon-validation.log`；`git diff --check` 通过。继续使用此前临时输出隔离，未修改构建配置或提交代码。
 
-## 来源展示独立订阅接入（已接入，2026-10-02）
+## 来源展示独立订阅接入（历史，已被 2026-10-11 快照方案替代）
 
 - 普通列表、普通/折叠搜索、折叠和回收站共享分页已改用不关联来源表的内容模型，仅保留来源包名；名称、图标路径/hash、主色转移到独立 `SourceAppPresentationState`，不让图标写入使结果 PagingSource 失效。数据与缓存完整设计以 [来源图标主方案](source_app_icon_plan.md) 为准。
 - `ClipResultList`/`ClipCard` 已接收 `SourceAppPresentationProvider`，页面薄适配负责活跃需求、共享订阅及生命周期；组件不直接依赖 Repository/具体 ViewModel。同包名多行共享元数据状态，图标和主色更新对应卡片，名称标题继续使用共享显示名与关键词高亮，不重新构造 PagingData。

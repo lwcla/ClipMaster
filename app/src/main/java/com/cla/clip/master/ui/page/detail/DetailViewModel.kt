@@ -15,6 +15,8 @@ import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.toast
 import com.cla.clip.master.processor.ClipboardDataProcessor
 import com.cla.clip.master.processor.DefaultClipboardDataProcessor
+import com.cla.clip.master.sourceapp.ClipSourceNameAssembler
+import com.cla.clip.master.sourceapp.SourceAppLoadGate
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -73,7 +75,12 @@ class DetailViewModel @Inject constructor(
 
     /** 详情操作读取并原子更新来源过滤规则，失败时不显示虚假成功。 */
     private val clipSettingsRepository: ClipSettingsRepository,
+    /** 单条详情仅补历史来源名称，没有图标区域时无需取图。 */
+    private val sourceNames: ClipSourceNameAssembler,
 ) : ViewModel(), ClipboardDataProcessor by clipboardDataProcessor {
+    /** 页面不可见时取消未完成名称查询，保留轻量结果等待复用。 */
+    internal val sourceLoadGate = SourceAppLoadGate()
+
 
     companion object {
         private const val TAG = "DetailViewModel"
@@ -92,6 +99,7 @@ class DetailViewModel @Inject constructor(
      * `transformLatest` 保证路由 ID 快速变化时只保留最后一次查询结果，避免旧记录覆盖新详情。
      */
     val clipFlow = _clipIdFlow.filterNotNull().transformLatest { id ->
+        /** 路由对应的内容对象；不存在时不查询历史来源名称。 */
         val clip = clipRepository.get().loadClipDetail(id)
         currentCoroutineContext().ensureActive()
 
@@ -100,7 +108,7 @@ class DetailViewModel @Inject constructor(
             return@transformLatest
         }
 
-        emit(DetailUiState.Success(clip))
+        emit(DetailUiState.Success(sourceLoadGate.run { sourceNames.newSession().attach(clip) }))
     }.stateIn(
         CoroutineScope(viewModelScope.coroutineContext + Dispatchers.IO),
         SharingStarted.Lazily,
