@@ -38,19 +38,24 @@ class BackupPendingUploadStore internal constructor(
         }
     }
 
-    /** 仅从当前私有身份读取同包文件，校验文件名边界，损坏时显式失败。 */
+    /** 读取当前私有同包；缺失、空包及描述损坏统一返回稳定文件失败，不重新导出。 */
     fun read(artifactId: String): BackupExportResult {
         /** 受控根目录下的任务目录。 */
         val directory = directory(artifactId)
-        /** 生成时记录的文件名，不能逃逸任务目录。 */
-        val filename = File(directory, "filename").readText()
-        require(filename.matches(Regex("[A-Za-z0-9_.-]+\\.zip"))) { "invalid_pending_filename" }
-        /** 同包 sidecar 与正式发布使用相同外部协议。 */
-        val json = File(directory, "manifest.json").readText()
-        /** 待上传字节必须完整存在，不能重新导出兜底。 */
-        val payload = File(directory, filename)
-        check(payload.isFile && payload.length() > 0L) { "pending_payload_missing" }
-        return BackupExportResult(payload, BackupJson.decodeManifest(json), json, filename, "$filename.manifest.json", directory)
+        try {
+            /** 生成时记录的文件名，不能逃逸任务目录。 */
+            val filename = File(directory, "filename").readText()
+            require(filename.matches(Regex("[A-Za-z0-9_.-]+\\.zip"))) { "invalid_pending_filename" }
+            /** 私有小型描述不参与 WebDAV 独立发布，仍用于重建同包导出模型。 */
+            val json = File(directory, "manifest.json").readText()
+            /** 待上传字节必须可读且非空，不能重新导出兜底。 */
+            val payload = File(directory, filename)
+            check(payload.isFile && payload.canRead() && payload.length() > 0L) { "pending_payload_missing" }
+            return BackupExportResult(payload, BackupJson.decodeManifest(json), json, filename, "$filename.manifest.json", directory)
+        } catch (failure: Exception) {
+            // 读取和解析失败有明确本地文件证据；不保存原始路径或描述到用户原因和日志。
+            throw BackupFailure.TempFileUnavailable(failure)
+        }
     }
 
     /** 生成失败或下一轮淘汰时删除指定包；根路径校验保证不触及用户正式备份。 */

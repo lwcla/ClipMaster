@@ -1,6 +1,11 @@
 package com.cla.clip.base.general.backup
 
 import java.util.concurrent.atomic.AtomicInteger
+import com.cla.clip.base.general.backup.webdav.WebDavHttpFailure
+import com.cla.clip.base.general.backup.webdav.webDavEvidence
+import java.io.IOException
+import java.net.SocketTimeoutException
+import javax.net.ssl.SSLException
 
 /** 备份日志短 id 计数器，和时间戳组合后足够串起单进程内的一次备份/恢复任务。 */
 private val backupTaskCounter = AtomicInteger(0)
@@ -68,7 +73,17 @@ fun BackupFailure.reasonCode(): String {
         is BackupFailure.ChecksumMismatch -> "checksum_mismatch"
         is BackupFailure.StorageNotWritable -> "storage_not_writable"
         is BackupFailure.AuthenticationFailed -> "auth_failed"
-        is BackupFailure.RemoteFailed -> "remote_failed"
+        is BackupFailure.RemoteFailed -> {
+            /** 有界展开协程复制的同类异常，仍仅按类型/状态分类，不读取 message。 */
+            val evidence = webDavEvidence()
+            when (evidence) {
+                is WebDavHttpFailure -> if (evidence.operation == "mkcol") "webdav_directory_create_failed" else "webdav_http_${evidence.statusCode}"
+                is SocketTimeoutException -> "webdav_request_timeout"
+                is SSLException -> "webdav_tls_failed"
+                is IOException -> "webdav_network_failed"
+                else -> "remote_failed"
+            }
+        }
         is BackupFailure.FileTooLarge -> "file_too_large"
         is BackupFailure.ParseFailed -> "parse_failed"
         is BackupFailure.TempFileUnavailable -> "temp_file_unavailable"

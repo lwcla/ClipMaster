@@ -5,6 +5,7 @@ import androidx.activity.compose.BackHandler
 import com.cla.clip.master.backup.local.LocalBackupFile
 import com.cla.clip.master.ui.widget.BackupResultsSummary
 import com.cla.clip.master.ui.widget.BackupResultDetails
+import com.cla.clip.master.ui.widget.AcknowledgementDialog
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -109,7 +110,10 @@ internal fun BackupPage(
     val bodyKeys = (if (state.settingsLoadFailed) listOf<Any>("settings_error") else emptyList()) +
         listOf<Any>("auto", "local") + normalLocalBackups.map { it.lazyListKey() } +
         listOf("webdav") + if (normalRemoteBackups.isEmpty()) listOf("remote_empty") else normalRemoteBackups.map { it.lazyListKey() }
-    val adBlocked = editingCredentials || pickerOpen || pendingDisclosureAction != null || state.busyOperation.isModalProgress
+    // adBlocked 保留手动提交期间及入队确认的广告抑制；提交不显示进度弹窗也不能提前恢复广告。
+    val adBlocked = editingCredentials || pickerOpen || pendingDisclosureAction != null ||
+        state.manualBackupQueuedNoticeVisible || state.busyOperation.isModalProgress ||
+        state.busyOperation == BackupBusyOperation.UploadingWebDav
     SideEffect { adSession.suppressed = adBlocked }
     rememberListAdLayoutCoordinator(adSession, listState, bodyKeys, blocked = adBlocked,
         contentHeights = if (autoContentHeight > 0) mapOf("auto" to autoContentHeight) else emptyMap(),
@@ -286,6 +290,17 @@ internal fun BackupPage(
         BackupTaskProgressDialog(operation = state.busyOperation, progress = state.backupProgress)
     }
 
+    // 手动提交只展示这一个入队确认；与本地导出的进度弹窗互斥，后台执行不阻塞关闭。
+    if (state.manualBackupQueuedNoticeVisible && !state.busyOperation.isModalProgress) {
+        AcknowledgementDialog(
+            title = androidx.compose.ui.res.stringResource(HostR.string.host_backup_task_created_title),
+            message = androidx.compose.ui.res.stringResource(HostR.string.host_backup_upload_queued),
+            confirmText = androidx.compose.ui.res.stringResource(HostR.string.host_backup_task_created_confirm),
+            // 所有关闭路径只结束反馈，任务继续独立于页面运行。
+            onDismiss = backupVm::dismissManualBackupQueuedNotice,
+        )
+    }
+
     // action 是用户确认披露后需要继续执行的一次性动作，不持久化目标或页面状态。
     pendingDisclosureAction?.let { action ->
         BackupPlaintextDisclosureDialog(
@@ -369,7 +384,7 @@ private fun AutoBackupSection(
                     enabled = state.settingsLoaded && !state.isBusy
                 )
             }
-            BackupResultDetails(state.backupResults, state.pendingBackup)
+            BackupResultDetails(state.pendingBackup)
             RetentionControl(
                 count = state.backupRetentionCount,
                 enabled = state.settingsLoaded && !state.isBusy,
@@ -625,7 +640,6 @@ private fun LocalBackupCard(
         fileName = file.fileName,
         createdAt = file.manifest?.createdAt ?: file.sortCreatedAt.takeIf { it > 0L } ?: file.lastModified,
         size = file.size,
-        backupKind = file.effectiveBackupKind,
         isBusy = isBusy,
         onPreview = onPreview
     )
@@ -640,21 +654,19 @@ private fun RemoteBackupCard(
 ) {
     BackupFileCard(
         fileName = file.fileName,
-        createdAt = file.manifest?.createdAt ?: file.sortCreatedAt.takeIf { it > 0L } ?: file.lastModified,
+        createdAt = file.sortCreatedAt.takeIf { it > 0L } ?: file.lastModified,
         size = file.size,
-        backupKind = file.effectiveBackupKind,
         isBusy = isBusy,
         onPreview = onPreview
     )
 }
 
-/** 本地和远端备份共用卡片。 */
+/** 本地和远端共用基础元数据卡片；类型仅在恢复预览展示，减少列表对摘要的依赖。 */
 @Composable
 private fun BackupFileCard(
     fileName: String,
     createdAt: Long?,
     size: Long?,
-    backupKind: BackupKind?,
     isBusy: Boolean,
     onPreview: () -> Unit,
 ) {
@@ -699,11 +711,6 @@ private fun BackupFileCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Text(
-                    text = backupKind.labelText(),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
     }
@@ -791,8 +798,3 @@ private fun BackupKind?.labelText(): String {
         null -> androidx.compose.ui.res.stringResource(R.string.base_general_backup_kind_unknown)
     }
 }
-
-/** 需要用不可取消弹窗明确展示的备份/恢复长任务。 */
-private val BackupBusyOperation.isModalProgress: Boolean
-    get() = this == BackupBusyOperation.Exporting ||
-        this == BackupBusyOperation.UploadingWebDav

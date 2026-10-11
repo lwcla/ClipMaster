@@ -26,7 +26,7 @@ data class WebDavConfig(
 /**
  * WebDAV 远端备份文件信息。
  *
- * 列表优先来自 manifest sidecar；manifest 不可用时可以只展示文件名和服务器修改时间兜底。
+ * 列表只来自一次目录请求，包内元信息在用户选择恢复预览后读取。
  */
 data class RemoteBackupFile(
     /** 快照文件名。 */
@@ -37,18 +37,16 @@ data class RemoteBackupFile(
     val size: Long?,
     /** 服务端 Last-Modified，未知时为 null。 */
     val lastModified: Long?,
-    /** 对应 manifest，损坏或缺失时为 null。 */
-    val manifest: BackupManifest?,
 ) {
-    /** 列表排序使用的创建时间：manifest 优先，缺失时从标准备份文件名解析时间戳。 */
+    /** 标准文件名时间优先，服务器修改时间作为兼容兜底。 */
     val sortCreatedAt: Long
-        get() = manifest?.createdAt ?: parseBackupTimestampFromFileName(fileName) ?: 0L
+        get() = parseBackupTimestampFromFileName(fileName) ?: lastModified ?: 0L
 
-    /** 列表展示使用的有效类型：manifest 优先，缺失时通过旧版 safety 文件名兜底识别。 */
+    /** 只用于识别历史 safety 和保留清理，列表不显示自动/手动类型。 */
     val effectiveBackupKind: BackupKind?
-        get() = manifest?.backupKind ?: parseBackupKindFromFileName(fileName)
+        get() = parseBackupKindFromFileName(fileName)
 
-    /** 是否是参与保留份数的普通备份；manifest 缺失但文件名标准时按手动旧备份兼容处理。 */
+    /** 只允许标准文件名识别的普通 ZIP 参与保留，未知条目即使有修改时间也不删。 */
     val isRegularBackup: Boolean
         get() = when (effectiveBackupKind) {
             BackupKind.Manual,

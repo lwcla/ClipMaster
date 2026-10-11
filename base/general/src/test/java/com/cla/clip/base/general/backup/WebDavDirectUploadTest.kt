@@ -24,7 +24,7 @@ class WebDavDirectUploadTest {
         assertSinglePutWithRetryAfter("synthetic.zip")
     }
 
-    /** 独立 manifest 也不能因服务端即时重试提示自动重发。 */
+    /** 连接探测的小文本 PUT 仍保持单次请求，不再由正式备份上传外部摘要。 */
     @Test fun serviceUnavailableRetryAfterZeroDoesNotRepeatManifestPut() = runBlocking {
         assertSinglePutWithRetryAfter("synthetic.zip.manifest.json")
     }
@@ -74,8 +74,11 @@ class WebDavDirectUploadTest {
             val client = OkHttpClient.Builder().callTimeout(5L, TimeUnit.SECONDS).build()
             /** 明确仅允许此合成本机 HTTP 配置。 */
             val target = WebDavConfig("http://127.0.0.1:${server.localPort}", "", "", "/", true)
-            assertThrows(BackupFailure.StorageNotWritable::class.java) {
-                runBlocking { WebDavClient(client).uploadBackup(target, export()) }
+            assertThrows(BackupFailure.RemoteFailed::class.java) {
+                runBlocking {
+                    if (failingName.endsWith(".json")) WebDavClient(client).uploadText(target, failingName, "{}")
+                    else WebDavClient(client).uploadBackup(target, export())
+                }
             }
             assertEquals(1, zipPuts.get())
         } finally {
@@ -100,12 +103,12 @@ class WebDavDirectUploadTest {
     /** 独占合成文件目录。 */
     @get:Rule val folder = TemporaryFolder(File("build"))
 
-    /** 正式 ZIP 只传一次，两个正式 PUT 之后没有回读、临时文件或共享指针。 */
-    @Test fun publishesOnlyZipAndOwnManifest() = runBlocking {
+    /** 正常发布只有 ZIP PUT，目录和独立摘要不再成为前置失败点。 */
+    @Test fun publishesOnlyZipWithoutDirectoryPreflight() = runBlocking {
         /** 固定方法/路径用于验证发布顺序。 */
         val requests = mutableListOf<String>()
         WebDavClient(client(requests)).uploadBackup(config(), export())
-        assertEquals(listOf("PUT synthetic.zip", "PUT synthetic.zip.manifest.json"), requests.filter { it.startsWith("PUT") })
+        assertEquals(listOf("PUT synthetic.zip"), requests)
         assertFalse(requests.any { it.startsWith("GET") || it.contains(".tmp") || it.contains("latest.json") })
     }
 
@@ -113,20 +116,18 @@ class WebDavDirectUploadTest {
     @Test fun zipFailureStopsBeforeManifest() {
         /** 本次失败的实际请求序列。 */
         val requests = mutableListOf<String>()
-        assertThrows(BackupFailure.StorageNotWritable::class.java) {
+        assertThrows(BackupFailure.RemoteFailed::class.java) {
             runBlocking { WebDavClient(client(requests, "synthetic.zip")).uploadBackup(config(), export()) }
         }
         assertEquals(1, requests.count { it.startsWith("PUT") })
     }
 
-    /** manifest 失败意味着整次上传失败，不回滚服务器已收到的 ZIP。 */
-    @Test fun manifestFailureDoesNotReportSuccess() {
+    /** 历史摘要不可写不会影响新上传，客户端完全不请求它。 */
+    @Test fun externalManifestFailureCannotAffectZipPublication() = runBlocking {
         /** 两阶段的确定失败响应。 */
         val requests = mutableListOf<String>()
-        assertThrows(BackupFailure.StorageNotWritable::class.java) {
-            runBlocking { WebDavClient(client(requests, "synthetic.zip.manifest.json")).uploadBackup(config(), export()) }
-        }
-        assertEquals(2, requests.count { it.startsWith("PUT") })
+        WebDavClient(client(requests, "synthetic.zip.manifest.json")).uploadBackup(config(), export())
+        assertEquals(listOf("PUT synthetic.zip"), requests)
     }
 
     /** 离线 IO 错误明确失败，本轮不尝试第二次 ZIP 请求。 */

@@ -24,14 +24,14 @@ internal fun BackupResultsSummary(state: BackupEntryState, modifier: Modifier = 
     }
 }
 
-/** 单一目标结果文案，避免把时间或失败状态连成一条截断文本。 */
+/** 单一目标结果直接说明失败原因，纯映射和资源选择共享，窄屏自然换行不截断。 */
 @Composable
 private fun BackupResultRow(target: String, result: BackupResultPresentation) {
     /** 语义分类对应本地化资源；格式化仅在展示成功结果时发生。 */
     val text = when (result.kind) {
         BackupResultKind.Success -> stringResource(R.string.host_backup_result_success,
             SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(result.completedAt)))
-        BackupResultKind.Failed -> stringResource(R.string.host_backup_result_failed)
+        BackupResultKind.Failed -> stringResource(R.string.host_backup_result_failed_reason, BackupFailureReasonText(result.reasonCode))
         BackupResultKind.Never -> stringResource(R.string.host_backup_result_never)
         BackupResultKind.LocalUnconfigured -> stringResource(R.string.host_backup_result_local_unconfigured)
         BackupResultKind.WebDavUnconfigured -> stringResource(R.string.host_backup_result_unconfigured)
@@ -47,9 +47,9 @@ private fun BackupResultRow(target: String, result: BackupResultPresentation) {
             MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
-/** 备份页详情展示生成时间、等待阶段和可行动失败提示，不影响入口历史结论。 */
+/** 备份页只补充当前等待/运行详情；历史失败已在共享摘要展示，避免重复说明。 */
 @Composable
-internal fun BackupResultDetails(state: BackupEntryState, pending: List<BackupPendingPresentation>, modifier: Modifier = Modifier) {
+internal fun BackupResultDetails(pending: List<BackupPendingPresentation>, modifier: Modifier = Modifier) {
     Column(modifier) {
         pending.forEach { current ->
             /** 展示快照生成时间，使用现有成功时间格式策略。 */
@@ -58,30 +58,42 @@ internal fun BackupResultDetails(state: BackupEntryState, pending: List<BackupPe
             BackupResultRow(stringResource(if (current.target == com.cla.clip.base.general.backup.settings.BackupResultTarget.Local)
                 R.string.host_backup_target_local else R.string.host_backup_target_webdav), BackupResultPresentation(current.kind))
         }
-        listOf(R.string.host_backup_target_local to state.local, R.string.host_backup_target_webdav to state.webDav)
-            .filter { it.second.kind == BackupResultKind.Failed }.forEach { (target, result) ->
-                // 只映射固定 code，不向用户显示异常原文、地址或实现字段。
-                /** 纯 mapper 决定错误语义，组件只选择资源；旧中断记录也使用明确提示。 */
-                val message = when (BackupFailureMessageMapper.map(result.reasonCode)) {
-                    BackupFailureMessage.Storage -> BaseR.string.base_general_backup_error_storage
-                    BackupFailureMessage.Auth -> BaseR.string.base_general_backup_error_auth
-                    BackupFailureMessage.Remote -> BaseR.string.base_general_backup_error_remote
-                    BackupFailureMessage.Space -> BaseR.string.base_general_backup_error_insufficient_space
-                    BackupFailureMessage.TempFile -> BaseR.string.base_general_backup_error_temp_file_unavailable
-                    BackupFailureMessage.Interrupted -> R.string.host_backup_error_upload_interrupted
-                    BackupFailureMessage.Timeout -> R.string.host_backup_error_upload_timeout
-                    BackupFailureMessage.Quota -> R.string.host_backup_error_upload_quota
-                    BackupFailureMessage.Network -> R.string.host_backup_error_upload_network_interrupted
-                    BackupFailureMessage.DeviceState -> R.string.host_backup_error_upload_device_interrupted
-                    BackupFailureMessage.Cancelled -> R.string.host_backup_error_upload_cancelled
-                    BackupFailureMessage.Schedule -> R.string.host_backup_error_schedule
-                    BackupFailureMessage.Handoff -> R.string.host_backup_error_handoff
-                    BackupFailureMessage.Unknown -> BaseR.string.base_general_backup_error_unknown
-                }
-                Text(stringResource(R.string.host_backup_result_row, stringResource(target), stringResource(message)),
-                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
-            }
     }
+}
+
+/** 共享摘要的本地化适配；只读固定原因码，既不访问网络也不展示异常正文。 */
+@Composable
+private fun BackupFailureReasonText(reasonCode: String): String {
+    /** 经过纯校验的状态，用于安全格式化；非法格式由 mapper 降级未知。 */
+    val status = BackupFailureMessageMapper.httpStatus(reasonCode)
+    /** UI 仅选择资源，业务分类在既有纯 mapper 中维护。 */
+    val resource = when (BackupFailureMessageMapper.map(reasonCode)) {
+        BackupFailureMessage.Storage -> BaseR.string.base_general_backup_error_storage
+        BackupFailureMessage.Auth -> R.string.host_backup_error_auth_reason
+        BackupFailureMessage.Remote -> R.string.host_backup_error_remote_reason
+        BackupFailureMessage.Space -> BaseR.string.base_general_backup_error_insufficient_space
+        BackupFailureMessage.TempFile -> R.string.host_backup_error_package_unavailable
+        BackupFailureMessage.Interrupted -> R.string.host_backup_error_upload_interrupted
+        BackupFailureMessage.Timeout -> R.string.host_backup_error_upload_timeout
+        BackupFailureMessage.Quota -> R.string.host_backup_error_upload_quota
+        BackupFailureMessage.Network -> R.string.host_backup_error_upload_network_interrupted
+        BackupFailureMessage.DeviceState -> R.string.host_backup_error_upload_device_interrupted
+        BackupFailureMessage.Cancelled -> R.string.host_backup_error_upload_cancelled
+        BackupFailureMessage.Schedule -> R.string.host_backup_error_schedule
+        BackupFailureMessage.Handoff -> R.string.host_backup_error_handoff
+        BackupFailureMessage.RequestTimeout -> R.string.host_backup_error_request_timeout
+        BackupFailureMessage.Tls -> R.string.host_backup_error_tls
+        BackupFailureMessage.RequestNetwork -> R.string.host_backup_error_request_network
+        BackupFailureMessage.DirectoryCreate -> R.string.host_backup_error_directory_create
+        BackupFailureMessage.NoReason -> R.string.host_backup_error_no_reason
+        BackupFailureMessage.Unknown -> R.string.host_backup_error_unknown_reason
+        BackupFailureMessage.Http -> when (status) {
+            404 -> R.string.host_backup_error_http_missing
+            409 -> R.string.host_backup_error_http_conflict
+            else -> R.string.host_backup_error_http
+        }
+    }
+    return if (status != null) stringResource(resource, status) else stringResource(resource)
 }
 
 /** 深色等待与读取错误，配合大字体 Preview 检查独立结果区域。 */
@@ -100,6 +112,16 @@ private fun BackupResultsWaitingPreview() {
 private fun BackupResultsSummaryPreview() {
     MaterialTheme {
         BackupResultsSummary(BackupEntryState(BackupResultPresentation(BackupResultKind.Success, 100L),
-            BackupResultPresentation(BackupResultKind.Failed)))
+            BackupResultPresentation(BackupResultKind.Failed, reasonCode = "webdav_request_timeout")))
+    }
+}
+
+/** HTTP 冲突和缺失历史原因同屏覆盖自然换行，视觉与读屏仍需设备验收。 */
+@Preview(widthDp = 220, fontScale = 1.6f, uiMode = android.content.res.Configuration.UI_MODE_NIGHT_YES)
+@Composable
+private fun BackupFailureReasonsPreview() {
+    MaterialTheme(colorScheme = darkColorScheme()) {
+        BackupResultsSummary(BackupEntryState(BackupResultPresentation(BackupResultKind.Failed),
+            BackupResultPresentation(BackupResultKind.Failed, reasonCode = "webdav_http_409")))
     }
 }

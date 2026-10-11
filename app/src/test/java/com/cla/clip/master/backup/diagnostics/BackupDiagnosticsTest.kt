@@ -6,6 +6,21 @@ import org.junit.Test
 
 /** 保护停止原因分类、即时日志隐私与 trace 耗时边界，均使用合成事件。 */
 class BackupDiagnosticsTest {
+    /** 抢占与系统处理都是平台已知暂停，漏项会使系统重调度的完整包被失败终态挡住。 */
+    @Test fun preemptionAndSystemProcessingRemainResumable() {
+        assertTrue("系统抢占应保留同包重执行机会", BackupStopReasonMapper.canResume(WorkInfo.STOP_REASON_PREEMPT))
+        assertTrue("系统处理应保留同包重执行机会", BackupStopReasonMapper.canResume(WorkInfo.STOP_REASON_SYSTEM_PROCESSING))
+    }
+
+    /** 可恢复判定不允许未知/用户取消，系统时限、配额和后台设备约束则等待调度。 */
+    @Test fun resumableStopsRequireActualSystemEvidence() {
+        // stop 为真实平台常量，JVM 只保护分类，不证明 Android 会何时调度。
+        for (stop in listOf(WorkInfo.STOP_REASON_DEVICE_STATE, WorkInfo.STOP_REASON_BACKGROUND_RESTRICTION,
+            WorkInfo.STOP_REASON_APP_STANDBY, WorkInfo.STOP_REASON_TIMEOUT, WorkInfo.STOP_REASON_QUOTA,
+            WorkInfo.STOP_REASON_CONSTRAINT_CONNECTIVITY)) assertTrue(BackupStopReasonMapper.canResume(stop))
+        for (stop in listOf(WorkInfo.STOP_REASON_USER, WorkInfo.STOP_REASON_CANCELLED_BY_APP,
+            WorkInfo.STOP_REASON_UNKNOWN, WorkInfo.STOP_REASON_NOT_STOPPED, 9999)) assertFalse(BackupStopReasonMapper.canResume(stop))
+    }
     /** 超时、配额与连接约束必须区分，不能全部显示未知错误。 */
     @Test fun distinguishesKnownStopsAndKeepsUnknownInterruption() {
         assertEquals("upload_interrupted_timeout", BackupStopReasonMapper.interruptionCode(WorkInfo.STOP_REASON_TIMEOUT))

@@ -117,6 +117,87 @@
     </div>
   </header>
   <main>
+<h2>当前实现：手动入队确认</h2>
+<section class="diagram-card"><pre class="mermaid">flowchart TD
+    Manual[&quot;点击手动 WebDAV 备份&lt;br/&gt;编译验证，人工验证&quot;] --&gt; Submit[&quot;保存配置、校验并请求入队&lt;br/&gt;不显示进度弹窗，显示规则已单测，接线编译验证&quot;]
+    Submit --&gt;|失败| Error[&quot;沿用失败提示&lt;br/&gt;不显示任务已创建，编译验证&quot;]
+    Submit --&gt;|成功| Notice[&quot;可关闭的任务已创建弹窗&lt;br/&gt;阻塞广告、不等待备份结束，编译验证，人工验证&quot;]
+    Notice --&gt;|确认、外部点击或返回| Close[&quot;只关闭页面反馈&lt;br/&gt;不取消任务，编译验证，人工验证&quot;]
+    Submit --&gt;|成功| Background[&quot;后台生成及分目标发布&lt;br/&gt;独立于弹窗，人工验证&quot;]</pre></section>
+<h2>当前实现：手动云端完成反馈</h2>
+<section class="diagram-card"><pre class="mermaid">flowchart TD
+    Finish[&quot;目标执行结束或中断&lt;br/&gt;接线编译验证，人工验证&quot;] --&gt; Pause{&quot;系统暂停等待重调度？&lt;br/&gt;已单测&quot;}
+    Pause --&gt;|是| Queued[&quot;返回排队，不写终态、不提示&lt;br/&gt;已单测，接线编译验证&quot;]
+    Pause --&gt;|否| Record[&quot;条件提交真实成功或失败&lt;br/&gt;已单测，接线编译验证&quot;]
+    Record --&gt;|存储失败| StoreFailed[&quot;保持结果存储失败契约，不提示&lt;br/&gt;已单测&quot;]
+    Record --&gt;|事务返回| Allowed{&quot;接受新终态且来源为手动且目标为云端？&lt;br/&gt;已单测&quot;}
+    Allowed --&gt;|否| Silent[&quot;自动、本地镜像、旧或重复结果静默&lt;br/&gt;已单测&quot;]
+    Allowed --&gt;|是| Toast[&quot;尝试显示固定成功或失败 Toast&lt;br/&gt;调用边界已单测，真实展示人工验证&quot;]
+    Toast --&gt; Saved[&quot;显示和诊断异常隔离&lt;br/&gt;结果仍已保存，已单测&quot;]</pre></section>
+<h2>当前实现：单 ZIP 上传</h2>
+<section class="diagram-card"><pre class="mermaid">flowchart TD
+    Start[&quot;WebDAV Worker 获得执行机会&lt;br/&gt;人工验证&quot;] --&gt; Valid{&quot;最新任务、阶段和目标有效？&lt;br/&gt;已单测，接线编译验证&quot;}
+    Valid --&gt;|否| Skip[&quot;跳过或取消&lt;br/&gt;不覆盖新任务结果，已单测，接线编译验证&quot;]
+    Valid --&gt;|是| Read[&quot;读取 taskId 本地描述和非空 ZIP&lt;br/&gt;不查云端、不重新打包，已单测，接线编译验证&quot;]
+    Read --&gt;|包缺失或描述损坏| Failed[&quot;条件保存本轮失败&lt;br/&gt;不主动重试，已单测，接线编译验证&quot;]
+    Read --&gt;|可读| Put[&quot;直接 PUT 正式 ZIP&lt;br/&gt;无目录预查、无独立摘要，已单测，接线编译验证&quot;]
+    Put --&gt;|成功| Commit[&quot;事务内比较 taskId 并保存成功&lt;br/&gt;已单测，接线编译验证&quot;]
+    Put --&gt;|404 或 409| Repair[&quot;申请共用的一次目录修复许可&lt;br/&gt;同 taskId 跨重调度不重置，已单测，接线编译验证&quot;]
+    Put --&gt;|其他真实失败| Failed
+    Repair --&gt;|实际修复完成| RetryCheck{&quot;协程有效且同一 ZIP 仍可读？&lt;br/&gt;已单测，接线编译验证&quot;}
+    RetryCheck --&gt;|是| Put
+    RetryCheck --&gt;|包缺失| Failed
+    RetryCheck --&gt;|已取消| Stop
+    Repair --&gt;|许可已用、目录完整或修复失败| Failed
+    Commit --&gt;|成功保存| Prune[&quot;清理旧 ZIP&lt;br/&gt;清理失败不反转成功，已单测，接线编译验证&quot;]
+    Commit --&gt;|任务已过期| Skip
+    Commit --&gt;|存储失败| StoreFailed[&quot;保留 result_store_failed&lt;br/&gt;不自动重传，已单测，接线编译验证&quot;]
+    Put -.-&gt; Stop[&quot;取消请求并处理系统停止&lt;br/&gt;见独立子流程，人工验证&quot;]</pre></section>
+<h2>当前实现：目录缺失修复</h2>
+<section class="diagram-card"><pre class="mermaid">flowchart TD
+    Candidate[&quot;PUT 返回 404 或 409&lt;br/&gt;已单测，接线编译验证&quot;] --&gt; Claim{&quot;事务按 taskId 保存共用的一次处理许可&lt;br/&gt;跨重调度/重启不重置，已单测，接线编译验证&quot;}
+    Claim --&gt;|首次成功登记| Query[&quot;PROPFIND 配置目录&lt;br/&gt;已单测，接线编译验证&quot;]
+    Claim --&gt;|已使用或无法登记| Failed
+    Query --&gt;|目录存在或查询失败| Failed[&quot;结束本轮失败&lt;br/&gt;不做无进展重传，已单测，接线编译验证&quot;]
+    Query --&gt;|明确返回 404| Create[&quot;正式上传逐级查询并 MKCOL 缺失层级，405 即结束&lt;br/&gt;已单测，接线编译验证、真实服务人工验证&quot;]
+    Create --&gt;|失败或无实际创建| Failed
+    Create --&gt;|实际创建完成| Check{&quot;协程有效且同一 ZIP 仍存在非空？&lt;br/&gt;已单测，接线编译验证&quot;}
+    Check --&gt;|包缺失| Failed
+    Check --&gt;|已取消| Stop[&quot;传播取消，进入系统停止处理&lt;br/&gt;已单测，接线编译验证&quot;]
+    Check --&gt;|是| Retry[&quot;回到主流程 PUT 同一 ZIP&lt;br/&gt;再遇 404/409 不再修复，已单测，接线编译验证&quot;]</pre></section>
+<h2>当前实现：系统停止与重新执行</h2>
+<section class="diagram-card"><pre class="mermaid">flowchart TD
+    Stop[&quot;协程取消，联动 Call.cancel&lt;br/&gt;底层 Call.cancel 已单测，流释放依赖请求关闭&quot;] --&gt; Check{&quot;仍是有效未终结任务，且有系统暂停证据？&lt;br/&gt;包含抢占和系统处理，已单测，接线编译验证&quot;}
+    Check --&gt;|否| End[&quot;保留成功，或跳过/取消/结束中断&lt;br/&gt;不因包存在复活，已单测，接线编译验证&quot;]
+    Check --&gt;|是| Queue[&quot;条件回到 queued&lt;br/&gt;保留目录修复标记及最近完成结果，已单测，接线编译验证&quot;]
+    Queue --&gt; Schedule[&quot;等待 WorkManager 再次给出执行机会&lt;br/&gt;不调用 Result.retry，人工验证&quot;]
+    Schedule --&gt; Enter[&quot;同 taskId 重新进入 Worker&lt;br/&gt;人工验证&quot;]
+    Leftover[&quot;进程退出遗留 uploading&lt;br/&gt;系统重新进入，人工验证&quot;] --&gt; Enter
+    Enter --&gt; Validate{&quot;重新检查任务、目标及本地包&lt;br/&gt;已单测，接线编译验证&quot;}
+    Validate --&gt;|有效可读| Put[&quot;完整 PUT 原文件名、原 ZIP&lt;br/&gt;不做字节断点续传，已单测，接线编译验证&quot;]
+    Validate --&gt;|终态或已失效| End
+    Validate --&gt;|包缺失或描述损坏| Failed[&quot;条件保存文件错误并中止&lt;br/&gt;已单测，接线编译验证&quot;]</pre></section>
+<h2>当前实现：基础列表与恢复入口</h2>
+<section class="diagram-card"><pre class="mermaid">flowchart TD
+    Open[&quot;页面可见时按需刷新远端列表&lt;br/&gt;人工验证&quot;] --&gt; List[&quot;一次 PROPFIND 读取目录元数据&lt;br/&gt;零 sidecar GET，已单测，接线编译验证&quot;]
+    List --&gt; Filter[&quot;筛选标准 ZIP，排除集合并隐藏旧 safety&lt;br/&gt;按文件名时间及元数据稳定排序，已单测，接线编译验证&quot;]
+    Filter --&gt; Card[&quot;本地和远端共用列表卡片&lt;br/&gt;文件名、时间、大小；无自动/手动行&lt;br/&gt;人工验证&quot;]
+    Card --&gt; Click[&quot;用户选择预览某个 ZIP&lt;br/&gt;人工验证&quot;]
+    Click --&gt; Download[&quot;下载所选 ZIP，进入既有恢复预检&lt;br/&gt;人工验证&quot;]
+    Download --&gt; Inspect[&quot;读取 ZIP 内 manifest 并校验 checksum&lt;br/&gt;缺少外部摘要不影响预检，已单测，接线编译验证&quot;]
+    Inspect --&gt;|通过| Preview[&quot;沿用恢复预览与后续流程&lt;br/&gt;人工验证&quot;]
+    Inspect --&gt;|损坏或不兼容| Reject[&quot;拒绝恢复并展示既有错误&lt;br/&gt;已单测，接线编译验证&quot;]</pre></section>
+<h2>当前实现：“我的”页失败原因展示</h2>
+<section class="diagram-card"><pre class="mermaid">flowchart TD
+    Failure[&quot;实际 WebDAV 失败&lt;br/&gt;已单测，接线编译验证&quot;] --&gt; Reason[&quot;按异常类型/HTTP 状态生成低敏原因码&lt;br/&gt;不保存地址或异常原文，已单测，接线编译验证&quot;]
+    Reason --&gt; Save[&quot;比较当前 taskId 后保存失败原因&lt;br/&gt;不覆盖其他目标或新任务，已单测，接线编译验证&quot;]
+    Save --&gt; Collect[&quot;我的页可见时收集既有轻量结果&lt;br/&gt;不额外请求网络，人工验证&quot;]
+    Collect --&gt; Map{&quot;共享纯原因映射能识别？&lt;br/&gt;已单测，接线编译验证&quot;}
+    Map --&gt;|是| Known[&quot;本地化具体原因&lt;br/&gt;请求超时与系统执行时限分开，已单测，接线编译验证&quot;]
+    Map --&gt;|空或未知| Unknown[&quot;未记录具体原因或未知错误&lt;br/&gt;不猜测历史根因，已单测，接线编译验证&quot;]
+    Known --&gt; Summary[&quot;共享摘要直接显示失败及原因&lt;br/&gt;自然换行、备份页详情去重，人工验证&quot;]
+    Unknown --&gt; Summary
+    Collect --&gt;|结果读取失败| ReadFailed[&quot;展示备份结果读取失败&lt;br/&gt;不冒充上传失败，接线编译验证&quot;]</pre></section>
 <h2>当前实现：新轮次生成与并行分派</h2>
 <section class="diagram-card"><pre class="mermaid">flowchart TD
     Trigger[&quot;每日周期或手动生成请求&lt;br/&gt;编译验证&quot;] --&gt; Target{&quot;本轮开关和目标有效？&lt;br/&gt;编译验证&quot;}
@@ -139,15 +220,6 @@
     Write --&gt;|成功| Success[&quot;事务内比较本任务 ID 与最新任务 ID&lt;br/&gt;相等才保存本地结果，已单测&lt;br/&gt;保存成功再清理历史备份，编译验证&quot;]
     Read --&gt;|失败| Failure[&quot;同一事务比较任务 ID，已单测&lt;br/&gt;相等才保存失败，否则跳过，编译验证&quot;]
     Write --&gt;|失败| Failure</pre></section>
-<h2>当前实现：WebDAV 直接上传</h2>
-<section class="diagram-card"><pre class="mermaid">flowchart TD
-    Start[&quot;云端 Worker 获得执行机会&lt;br/&gt;无网络约束，接线编译验证&quot;] --&gt; Check{&quot;上传前检查任务 ID 与目标&lt;br/&gt;仍有效且未结束？编译验证&quot;}
-    Check --&gt;|否| Skip[&quot;旧请求或重复请求跳过&lt;br/&gt;编译验证&quot;]
-    Check --&gt;|是| Zip[&quot;读取本轮包并直接 PUT 正式 ZIP&lt;br/&gt;只传一次、不回读，已单测&quot;]
-    Zip --&gt; Manifest[&quot;直接 PUT 本轮正式 manifest&lt;br/&gt;编译验证&quot;]
-    Manifest --&gt;|请求成功| Success[&quot;事务内比较本任务 ID 与最新任务 ID&lt;br/&gt;相等才保存 WebDAV 结果，已单测&lt;br/&gt;保存成功再清理历史备份，编译验证&quot;]
-    Zip --&gt;|无网或上传失败| Failure[&quot;同一事务比较任务 ID，已单测&lt;br/&gt;相等才保存失败，否则跳过&lt;br/&gt;不主动重试，编译验证&quot;]
-    Manifest --&gt;|失败| Failure</pre></section>
 <h2>备份恢复导航组</h2>
 <section class="diagram-card"><pre class="mermaid">flowchart TD
     Entry[进入备份前页面]:::manual --&gt; Group[备份恢复导航组 编译验证]:::compile
@@ -169,67 +241,70 @@
     classDef unit fill:#dff5e7,stroke:#26804b,color:#16351f;
     classDef manual fill:#e8f1ff,stroke:#2b6cb0,color:#17375e;
     classDef compile fill:#efe8ff,stroke:#6b46c1,color:#2d1f53;</pre></section>
-<h2>恢复流程</h2>
+<h2>恢复页面：入口、读取与预览</h2>
 <section class="diagram-card"><pre class="mermaid">flowchart TD
-  subgraph RestoreSources[&quot;恢复来源来自备份流程输出&quot;]
-    SourceFile[&quot;本地 zip 文件&lt;br/&gt;来自系统文件创建器导出&lt;br/&gt;人工验证&quot;]:::manual
-    SourceLocal[&quot;本地备份目录条目&lt;br/&gt;来自本地备份列表&lt;br/&gt;人工验证&quot;]:::manual
-    SourceRemote[&quot;WebDAV 远端条目&lt;br/&gt;来自远端备份列表&lt;br/&gt;人工验证&quot;]:::manual
-  end
-
-  subgraph BackupPageRestore[&quot;备份页只负责发起恢复请求&quot;]
-    ChooseRestore{&quot;用户选择恢复来源&lt;br/&gt;人工验证&quot;}:::manual
-    RestoreRequest[&quot;写入当前导航组会话单槽请求&lt;br/&gt;已单测&quot;]:::unit
-    NavRestore[&quot;导航到 BackupRestoreRoute 独立恢复页&lt;br/&gt;编译验证&quot;]:::compile
-  end
-
-  subgraph RestorePage[&quot;独立恢复页 BackupRestoreRoute / BackupRestoreVm&quot;]
-    ClaimRequest[&quot;建立 Reading 后确认 requestId 并清空槽位&lt;br/&gt;编译验证&quot;]:::compile
-    CopyTemp[&quot;复制本地 URI 或下载 WebDAV 备份到私有临时文件&lt;br/&gt;人工验证&quot;]:::manual
-    Preview[&quot;BackupPackageReader 校验 manifest、checksum、schemaVersion&lt;br/&gt;已单测&quot;]:::unit
-    PreviewUi[&quot;展示轻量预检摘要&lt;br/&gt;人工验证&quot;]:::manual
-    Confirm{&quot;用户确认恢复？&lt;br/&gt;人工验证&quot;}:::manual
-    BackGuard[&quot;读取中 / 恢复中返回二次确认&lt;br/&gt;人工验证&quot;]:::manual
-    Restore[&quot;BackupSnapshotRestorer 事务合并写库&lt;br/&gt;编译验证&quot;]:::compile
-    TimeNorm[&quot;剪贴时间轴归一化&lt;br/&gt;已单测&quot;]:::unit
-    Report[&quot;恢复结果页展示新增 / 更新 / 跳过报告&lt;br/&gt;编译验证&quot;]:::compile
-    ReportDone[&quot;结果页底部完成&lt;br/&gt;关闭恢复页和备份页&lt;br/&gt;编译验证&quot;]:::compile
-    ReportBack[&quot;结果页顶部或系统返回&lt;br/&gt;回备份页&lt;br/&gt;人工验证&quot;]:::manual
-    RestoreFailure[&quot;读取或恢复失败&lt;br/&gt;取消协程并清理临时文件&lt;br/&gt;人工验证&quot;]:::manual
-  end
-
-  subgraph MediaBoundary[&quot;恢复页与本地媒体关联流程的交互边界&quot;]
-    MediaEntry[&quot;恢复结果页提供“恢复本地媒体关联”入口&lt;br/&gt;点击后进入本地媒体关联流程&lt;br/&gt;人工验证&quot;]:::manual
-    MediaResult[&quot;观察会话媒体 StateFlow 回显&lt;br/&gt;校验 restoreTaskId 后映射入口和 summary&lt;br/&gt;编译验证&quot;]:::compile
-    EntryState[&quot;入口显示：恢复 / 继续 / 扫描中 / 再次恢复关联&lt;br/&gt;人工验证&quot;]:::manual
-  end
-
-  SourceFile --&gt; ChooseRestore
-  SourceLocal --&gt; ChooseRestore
-  SourceRemote --&gt; ChooseRestore
-  ChooseRestore --&gt; RestoreRequest
-  RestoreRequest --&gt; NavRestore
-  NavRestore --&gt; ClaimRequest
-  ClaimRequest --&gt; CopyTemp
-  CopyTemp --&gt; Preview
-  Preview --&gt; PreviewUi
-  Preview --&gt; RestoreFailure
-  PreviewUi --&gt; Confirm
-  PreviewUi --&gt; BackGuard
-  Confirm --&gt;|&quot;确认&quot;| Restore
-  Confirm --&gt;|&quot;取消&quot;| RestoreFailure
-  Restore --&gt; TimeNorm
-  TimeNorm --&gt; Report
-  Report --&gt;|&quot;底部完成&quot;| ReportDone
-  Report --&gt;|&quot;顶部或系统返回&quot;| ReportBack
-  Restore --&gt; RestoreFailure
-  Report --&gt; MediaEntry
-  MediaEntry --&gt;|&quot;打开独立媒体关联页&quot;| MediaResult
-  MediaResult --&gt; EntryState
-  EntryState --&gt; MediaEntry
+  File[&quot;系统文件选择器选 ZIP&lt;br/&gt;人工验证&quot;]:::manual --&gt; Request
+  Local[&quot;点击本地备份列表条目&lt;br/&gt;人工验证&quot;]:::manual --&gt; Request
+  Remote[&quot;点击 WebDAV 列表条目&lt;br/&gt;人工验证&quot;]:::manual --&gt; Request
+  Request[&quot;会话接受单槽恢复请求&lt;br/&gt;忙碌或关闭时拒绝 已单测&quot;]:::unit --&gt; Visible
+  Visible[&quot;打开恢复页并绑定会话&lt;br/&gt;首次 RESUMED 才接管 编译验证&quot;]:::compile --&gt; Valid
+  Valid{&quot;是否存在有效请求？&lt;br/&gt;人工验证&quot;}:::manual
+  Valid --&gt;|&quot;无请求或进程重建丢失&quot;| Back[&quot;回备份页，重新选择&lt;br/&gt;不自动重新恢复 人工验证&quot;]:::manual
+  Valid --&gt;|&quot;有效&quot;| Reading[&quot;建立 Reading，再确认请求&lt;br/&gt;同一 VM 不重复读取 编译验证&quot;]:::compile
+  Reading --&gt; Temp[&quot;本地复制 / WebDAV 下载&lt;br/&gt;写入本次私有临时目录 人工验证&quot;]:::manual
+  Temp --&gt; Verify[&quot;预检格式、应用身份、版本&lt;br/&gt;文件清单和 checksum 已单测&quot;]:::unit
+  Temp --&gt;|&quot;复制或下载失败&quot;| Error
+  Verify --&gt;|&quot;预检失败&quot;| Error[&quot;Error：展示读取失败原因&lt;br/&gt;重新选择按钮回备份页 人工验证&quot;]:::manual
+  Verify --&gt;|&quot;通过&quot;| Preview[&quot;Preview：信息、分类数量、合并说明&lt;br/&gt;仅预览，不写库 人工验证&quot;]:::manual
+  Preview --&gt;|&quot;点击合并恢复&quot;| Restore[&quot;进入分阶段恢复流程&lt;br/&gt;人工验证&quot;]:::manual
+  Preview --&gt;|&quot;取消或返回&quot;| Clean[&quot;释放请求、清理临时包&lt;br/&gt;回备份页 人工验证&quot;]:::manual
 
   classDef unit fill:#dff5e7,stroke:#26804b,color:#16351f;
-  classDef todo fill:#fff1cc,stroke:#b7791f,color:#3d2a05;
+  classDef manual fill:#e8f1ff,stroke:#2b6cb0,color:#17375e;
+  classDef compile fill:#efe8ff,stroke:#6b46c1,color:#2d1f53;</pre></section>
+<h2>恢复页面：执行与结果分支</h2>
+<section class="diagram-card"><pre class="mermaid">flowchart TD
+  Start[&quot;点击合并恢复 / 重试部分恢复&lt;br/&gt;复用已预检临时包 人工验证&quot;]:::manual --&gt; Restoring
+  Restoring[&quot;Restoring：登记新 taskId&lt;br/&gt;生成与恢复互斥 编译验证&quot;]:::compile --&gt; Validate
+  Validate[&quot;再次检查临时包及协议&lt;br/&gt;已单测&quot;]:::unit --&gt; Room
+  Room[&quot;宿主 Room 事务合并&lt;br/&gt;归一化剪贴时间轴 编译验证&quot;]:::compile --&gt; Feature
+  Validate --&gt;|&quot;文件失效或校验失败&quot;| Error
+  Room --&gt;|&quot;事务失败：回滚本次宿主写入&quot;| Error[&quot;Error：展示恢复失败&lt;br/&gt;关闭或返回备份页 人工验证&quot;]:::manual
+  Feature[&quot;依次恢复已启用的功能库&lt;br/&gt;独立提交 编译验证&quot;]:::compile --&gt; Settings
+  Feature --&gt;|&quot;功能库阶段失败&quot;| Partial
+  Settings[&quot;最后提交 DataStore 设置白名单&lt;br/&gt;独立提交 编译验证&quot;]:::compile --&gt; Success
+  Settings --&gt;|&quot;设置阶段失败&quot;| Partial[&quot;Result：部分成功&lt;br/&gt;保留已确认报告，标记失败阶段 已单测&quot;]:::unit
+  Partial --&gt; Retry[&quot;可重试同一备份或完成退出&lt;br/&gt;媒体关联入口暂不开放 人工验证&quot;]:::manual
+  Retry --&gt;|&quot;重试：重新执行合并恢复&quot;| Start
+  Success[&quot;Result：全部成功&lt;br/&gt;展示新增 / 更新 / 跳过 人工验证&quot;]:::manual --&gt; Register
+  Register[&quot;登记 Result.taskId&lt;br/&gt;允许媒体关联 已单测&quot;]:::unit --&gt; Actions
+  Actions[&quot;选择：恢复本地媒体关联&lt;br/&gt;完成退出 / 返回备份页 人工验证&quot;]:::manual
+  Actions --&gt;|&quot;恢复本地媒体关联&quot;| Media[&quot;打开独立媒体关联页&lt;br/&gt;只传任务身份 编译验证&quot;]:::compile
+  Media --&gt;|&quot;普通返回&quot;| Echo[&quot;匹配 taskId 的状态与摘要回显&lt;br/&gt;扫描细节见下方独立流程 已单测&quot;]:::unit
+  Echo --&gt; Actions
+
+  classDef unit fill:#dff5e7,stroke:#26804b,color:#16351f;
+  classDef manual fill:#e8f1ff,stroke:#2b6cb0,color:#17375e;
+  classDef compile fill:#efe8ff,stroke:#6b46c1,color:#2d1f53;</pre></section>
+<h2>恢复页面：返回、完成与取消清理</h2>
+<section class="diagram-card"><pre class="mermaid">flowchart TD
+  Back[&quot;顶部返回 / 系统返回&lt;br/&gt;人工验证&quot;]:::manual --&gt; Running
+  Done[&quot;Result 底部完成&lt;br/&gt;扫描中按钮禁用 人工验证&quot;]:::manual --&gt; DoneGuard
+  Running{&quot;会话中的媒体关联正在扫描？&lt;br/&gt;已单测&quot;}:::unit
+  Running --&gt;|&quot;是&quot;| Stay[&quot;提示扫描中并留在当前流程&lt;br/&gt;人工验证&quot;]:::manual
+  Running --&gt;|&quot;否&quot;| Busy{&quot;当前为 Reading 或 Restoring？&lt;br/&gt;人工验证&quot;}:::manual
+  Busy --&gt;|&quot;是&quot;| Confirm[&quot;显示退出二次确认&lt;br/&gt;人工验证&quot;]:::manual
+  Confirm --&gt;|&quot;继续等待&quot;| Keep[&quot;关闭确认弹窗，任务继续&lt;br/&gt;人工验证&quot;]:::manual
+  Confirm --&gt;|&quot;确认退出&quot;| Cancel[&quot;取消本页协程&lt;br/&gt;不撤销已提交阶段 人工验证&quot;]:::manual
+  Busy --&gt;|&quot;否&quot;| Clean
+  Cancel --&gt; Clean[&quot;释放请求及媒体回显&lt;br/&gt;清理临时目录 编译验证&quot;]:::compile
+  Clean --&gt; Backup[&quot;只弹恢复页，回备份页&lt;br/&gt;人工验证&quot;]:::manual
+  DoneGuard{&quot;同步会话检查是否允许退出？&lt;br/&gt;已单测&quot;}:::unit
+  DoneGuard --&gt;|&quot;扫描中&quot;| Stay
+  DoneGuard --&gt;|&quot;允许&quot;| DoneClean[&quot;清理恢复状态及临时包&lt;br/&gt;关闭会话，弹出整个备份导航组 编译验证&quot;]:::compile
+  DoneClean --&gt; Entry[&quot;回到进入备份前的页面&lt;br/&gt;不固定跳首页 Tab 人工验证&quot;]:::manual
+
+  classDef unit fill:#dff5e7,stroke:#26804b,color:#16351f;
   classDef manual fill:#e8f1ff,stroke:#2b6cb0,color:#17375e;
   classDef compile fill:#efe8ff,stroke:#6b46c1,color:#2d1f53;</pre></section>
 <h2>本地媒体关联流程</h2>

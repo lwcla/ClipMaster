@@ -18,6 +18,45 @@ import java.io.File
 
 /** 分目标结果与待上传身份回归测试；只使用合成配置。 */
 class BackupTargetResultsTest {
+    /** 一个 taskId 只有一次许可，回到 queued 和重建仓库不重置；新任务才重新获得机会。 */
+    @Test fun directoryRecoveryPermitPersistsAcrossRescheduleAndNewRepository() = runBlocking {
+        /** 使用合成 DataStore，实际事务参与验证，不模拟标记写入。 */
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            /** 独占安装内测试介质及仓库。 */
+            val store = createTestHostSettingsStore(scope, File(folder.root, "recovery.preferences_pb"))
+            /** 真实事务仓库，许可不能由测试替身重置。 */
+            val repository = BackupRuntimeRepository(store)
+            repository.replacePending(BackupPendingUpload("A", "hash", "auto", "uploading", 100L))
+            assertFalse(repository.claimWebDavDirectoryRecoveryIfCurrentRound("old"))
+            assertTrue(repository.claimWebDavDirectoryRecoveryIfCurrentRound("A"))
+            assertTrue(repository.snapshot().pendingUpload!!.webDavDirectoryRecoveryAttempted)
+            // 同身份替换描述也不是新任务，不应重置许可。
+            repository.replacePending(repository.snapshot().pendingUpload!!.copy(phase = "queued"))
+            assertFalse(repository.claimWebDavDirectoryRecoveryIfCurrentRound("A"))
+            assertFalse(repository.claimWebDavDirectoryRecoveryIfCurrentRound("A"))
+            repository.updateTargetPhase("A", BackupResultTarget.WebDav, "queued")
+            assertFalse(BackupRuntimeRepository(store).claimWebDavDirectoryRecoveryIfCurrentRound("A"))
+            assertTrue(repository.snapshot().pendingUpload!!.webDavDirectoryRecoveryAttempted)
+            assertEquals(0L, repository.snapshot().webDavResult.completedAt)
+            repository.replacePending(BackupPendingUpload("B", "hash", "auto", "ready", 200L))
+            assertFalse(repository.snapshot().pendingUpload!!.webDavDirectoryRecoveryAttempted)
+            assertTrue(repository.claimWebDavDirectoryRecoveryIfCurrentRound("B"))
+        } finally { scope.cancel() }
+    }
+
+    /** 已结束的任务不能获得目录许可，保护成功结果和系统恢复边界。 */
+    @Test fun terminalRoundCannotClaimRecovery() = runBlocking {
+        /** 合成持久化生命周期。 */
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            /** 独占被测仓库。 */
+            val repository = BackupRuntimeRepository(createTestHostSettingsStore(scope, File(folder.root, "terminal-recovery.preferences_pb")))
+            repository.replacePending(BackupPendingUpload("A", "hash", "auto", "ready", 100L))
+            repository.recordTargetResultIfCurrentRound("A", BackupResultTarget.WebDav, 200L)
+            assertFalse(repository.claimWebDavDirectoryRecoveryIfCurrentRound("A"))
+        } finally { scope.cancel() }
+    }
     /** 旧 Wi-Fi 键只退役策略，不能抹掉两目标历史结果或已登记的新轮次。 */
     @Test fun retiredWifiPreferenceDoesNotEraseResultsOrRound() = runBlocking {
         /** 合成持久化生命周期。 */

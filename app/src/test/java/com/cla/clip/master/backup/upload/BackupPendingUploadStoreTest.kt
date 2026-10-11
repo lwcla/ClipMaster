@@ -12,6 +12,30 @@ class BackupPendingUploadStoreTest {
     /** 合成文件目录。 */
     @get:Rule val folder = TemporaryFolder(File("build"))
 
+    /** 实际消费者入口的缺包、空包和描述损坏必须保留稳定文件原因，供我的页面展示。 */
+    @Test fun unreadablePendingPackageHasSpecificFileReason() {
+        // variant 分别覆盖目录不存在、缺失正文、空正文、缺失摘要、损坏摘要和越界文件名。
+        for (variant in listOf("missing", "payload", "empty", "manifest", "corrupt", "filename")) {
+            /** 每个变体独占受控私有目录。 */
+            val root = folder.newFolder(variant)
+            /** 被测真实文件读取边界。 */
+            val store = BackupPendingUploadStore(root)
+            if (variant != "missing") {
+                store.prepare("A", syntheticExport(folder.newFolder("export_$variant")))
+                when (variant) {
+                    "payload" -> File(root, "A/synthetic.zip").delete()
+                    "empty" -> File(root, "A/synthetic.zip").writeBytes(byteArrayOf())
+                    "manifest" -> File(root, "A/manifest.json").delete()
+                    "corrupt" -> File(root, "A/manifest.json").writeText("invalid")
+                    "filename" -> File(root, "A/filename").writeText("../outside.zip")
+                }
+            }
+            /** 与 Coordinator 相同的读取及稳定码转换边界。 */
+            val failure = assertThrows(BackupFailure.TempFileUnavailable::class.java) { store.read("A") }
+            assertEquals("temp_file_unavailable", failure.backupReasonCode())
+        }
+    }
+
     /** 等待包使用导出时的相同字节，清除生成缓存后仍可读取。 */
     @Test fun preparedPackageSurvivesExportCacheDeletion() {
         /** 私有待上传存储。 */

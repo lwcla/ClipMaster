@@ -4,6 +4,304 @@
 
 <!-- flow-title: WebDAV本地自动备份恢复流程 -->
 
+提交前集成验证（2026-10-11）：按用户要求提交并推送主分支前，重新执行 `.\gradlew.bat :base:general:testDebugUnitTest :app:testDebugUnitTest :app:compileDebugKotlin --init-script build\review-build-isolation.gradle --console=plain` 成功。base:general 101 项、app 289 项，共 390 项单测，失败、错误和跳过均为 0；最终暂存增量复核无可行动问题。此前原始单 ZIP 实现已通过 Release/R8，随后停止分类、目录探测及页面反馈改动不涉及外部协议、反射或 keep，本次集成不重复 Release/R8。真实设备调度、系统 Toast、UI、SAF 和服务端兼容性仍待验收，不在本次 Git 推送中自动执行。
+
+## 手动上传仅保留入队确认弹窗（2026-10-11，已完成）
+
+本节状态：已完成。用户反馈点击手动上传会先短暂显示“正在创建备份”，再显示任务已创建确认。根因是页面原有 `BackupBusyOperation.isModalProgress` 仍把 `UploadingWebDav` 纳入模态进度范围，而该入口实际只保存配置、校验并提交后台任务。最终行为：提交期间不显示进度弹窗，只保留原有按钮忙碌禁用与广告抑制；入队成功后仅显示可关闭的任务已创建确认，失败沿用错误反馈。后台生成、上传、完成 Toast 的手动/自动筛选与本地导出进度弹窗均沿用。
+
+复用当前操作枚举、模态判断和共享 `AcknowledgementDialog`，将既有模态纯判断移到同 feature 的 `BackupBusyOperationPresentation.kt`，避免页面底部继续承载可测试规则；不增加新的任务、状态或组件。按 `$repo-unit-test-gate` 先写回归，原样抽出旧规则用于验证手动提交仍误显示进度，再修正规则；覆盖手动提交不显示、本地导出仍显示、其他操作不显示。运行 app 单测与 Debug Kotlin 编译，验证产物延续独立目录。无持久化、备份字段、后台策略或外部契约变化，不新增日志或 keep/R8，现有入队失败及结果提交低敏日志已覆盖，本次纯显示判断不应产生重组日志。弹窗数量和实际交互仍需设备验收。
+
+验证：新增 3 项纯显示规则回归，在旧判断上手动提交一项按预期断言失败，其余两项通过；修复后 `.\gradlew.bat :app:testDebugUnitTest :app:compileDebugKotlin --init-script build\review-build-isolation.gradle --console=plain` 成功，app 289 项单测零失败、错误与跳过。独立增量复核无可行动问题，确认入队失败无确认、忙碌/广告边界、本地导出和完成 Toast 契约。重新生成 HTML，对应 `--check` 与 `git diff --check` 均通过。未作设备视觉验收，未安装或触发真实备份。
+
+## 后台备份入队确认弹窗与手动完成 Toast（2026-10-11，已完成）
+
+本节状态：已完成。用户已确认执行入队成功后可关闭的任务已创建弹窗，并再次明确自动备份完成不能弹出 Toast，只有手动备份需要。最终实现覆盖手动 WebDAV 主目标，成功和已记录失败均提示；自动任务及同包本地镜像无 Toast。完成指实现、单测与本地编译通过，真实 UI 交互和后台 Toast 留设备验收。此前已完成的后台实现继续按完成章节执行，下方持续转圈弹窗评估标为已废弃，保留原取舍记录。
+
+实施拆分：新增 `backup/feedback/BackupCompletionFeedback` 作为纯结果提交与提示边界，复用 `BackupResultPersistence`；`ManualBackupCompletionNotifier` 只装配应用上下文、固定资源和现有 Toast；既有协调器的统一 `commit` 接入该边界并显式传入本轮 source。共享 `AcknowledgementDialog` 只接收文案和关闭回调；`BackupVm` 在实际入队返回后更新一个页面内存展示标记，关闭不取消任务，页面把该弹窗纳入现有广告阻塞边界。无新增持久化字段、备份字段或外部模型，故不新增 keep/R8 规则。
+
+先写纯反馈边界测试，验证手动成功/失败、自动不提示、本地镜像及未知来源不提示、过期/重复结果不提示、存储失败和提示异常隔离、系统暂停不提示，再实现。入队成功后的标记赋值与弹窗接线属于薄 UI 适配，沿用队列 `.result.get()` 成功/异常契约；本轮不为这几行接线引入第二个提交框架或额外测试依赖。已提供窄屏、大字体、深色 Preview 定义并通过编译，尚未渲染验收；入队失败、旋转、返回和外部点击仍需设备验证，风险是本地编译不证明真实 UI 行为。运行 `:app:testDebugUnitTest :app:compileDebugKotlin`，产物继续隔离到 `build/review-20261011`；不调整 base:general 生产代码，无需重复其单测。日志沿用提交/暂停证据，只对 Toast 边界异常记录低敏类型，不输出异常正文。Release/R8 不重跑，理由是没有外部协议、反射或 keep 改动。
+
+### 已确认范围与最终行为
+
+入队确认无需让页面阻塞到系统重新调度。范围为当前讨论的手动 WebDAV 入口，自动备份仅更新已有摘要；系统文件选择器导出的本地手动备份不是这个后台队列，保留原入口按实际导出结果反馈的行为。
+
+1. 提交配置、校验及 `enqueueManual` 真正成功后，打开可关闭的确认弹窗，文案明确“后台备份任务已创建，请稍后在备份页面查看结果”，提供“知道了”按钮。关闭、返回或离开页面只结束反馈，不取消已安排任务；入队失败按失败提示处理，不能显示已创建，也不再同时发送原有入队 Snackbar。
+2. 后台本次 WebDAV 发布并成功提交结果后，发送标准文字 Toast“云端备份成功”；实际失败结果成功保存后，发送“云端备份失败，请在备份页面查看原因”。生成失败若已记录该轮云端失败也属于失败反馈；生成 Worker 成功、Worker 正常跳过或系统暂停等待，都不能被解释成备份成功或最终失败。
+3. 手动 WebDAV 同包本地镜像仍独立保存结果，只对 WebDAV 主目标发送一次完成 Toast，避免本地成功和云端失败两条相互误导的提示；不为自动任务增加弹窗或完成 Toast。
+4. 备份页与“我的”页继续保留实际成功/失败结果，Toast 只是短暂补充。结果保存发生在历史保留清理之前，按发布及结果提交提示完成；后续清理异常不反转成功，也不再发送第二条备份失败提示。
+
+### 复用、职责与可靠性边界
+
+复用当前入队成功返回、分目标条件结果提交、稳定来源 code、低敏原因码、Material `AlertDialog` 和 `base/general/utils/ToastUtils.kt` 的标准文字 Toast（内部切主线程）。旧持续转圈组件的等待状态不适用于入队确认，确认弹窗通过稳定文案、关闭回调和独立共享 UI 组件承载；页面负责展示，后台编排通过小型应用级完成反馈协作者触发 Toast，不将 Compose、页面 ViewModel 或导航依赖带入后台流程，不往现有大协调器堆 UI 细节，也不增加持续轮询。
+
+完成反馈必须在“本次、手动、WebDAV、真正保存的终态”边界触发。利用当前 `recordTargetResultIfCurrentRound` 返回值与轮次身份保护：旧轮次、已终结任务或重复提交返回 false 时不提示；系统暂停回到 queued 时不提示；页面重开读取历史结果时不重放 Toast。通知协作者只做最好努力的 UI 副作用，不能把显示失败或协程取消转化为上传失败、覆盖成功结果，不能因提示失败重新上传。入队确认不需要为了等完成再给页面增加完整任务跟踪状态机，但后台仍需带着本轮来源和身份判断是否提示。
+
+完成提示不能仅依赖 `BackupVm.messages`：当前它由备份页收集并显示 Snackbar，离开页面后不满足跨页面 Toast 要求。使用应用上下文可以跨页面尝试展示；任务在新进程恢复实际执行并提交终态时也可在该次执行中提示，无需重放旧结果。但“保存结果”和“Toast 展示”不是同一个可原子提交的操作；两者之间进程结束可能漏掉提示，Toast 本身也短暂，不能承诺用户一定看到、严格一次交付或重启后自动补提示。
+
+Android 官方 [Toast API](https://developer.android.com/reference/android/widget/Toast) 说明后台 Toast 会被限流；项目现有工具使用 `Toast.makeText`，属于标准文字 Toast，不是 Android 11 起限制的后台自定义 Toast。按 [Toast 使用说明](https://developer.android.com/guide/topics/ui/notifiers/toasts)，需要后台可留存或让用户后续行动时应考虑系统通知；本轮实现用户要求的 Toast，不扩大为通知栏方案。当前 targetSdk 为 36，文案保持短小，避免 Android 12 起的两行限制。以上边界意味着可尝试后台提示，不能把后台状态等同为 Toast 必然禁止或必然可见。
+
+### 影响、测试与日志与诊断计划
+
+改动规模为小到中等，集中在入队确认 UI、手动来源的最终结果反馈接线与一个小型 Toast 协作者；保留既有生成、发布、系统停止重调度及保留清理职责。无需新增用户设置、备份内容、后台结果历史表、可靠事件队列或 Toast 补发标记。若后续要求跨进程严格去重或补发，需要另行设计运行态消费记录；此类设备绑定状态应排除用户快照及跨安装备份。纯页面状态与编译期模型没有新增序列化或反射边界，本轮无需 keep/R8 调整。
+
+按 `$repo-unit-test-gate`，选择性 TDD 新增 11 项纯反馈回归：手动成功/失败、等待保存期间静默、自动与未知来源静默、本地镜像静默、被拒绝/重复结果静默、存储失败契约、显示与诊断异常隔离、系统暂停不提交不提示。只保留原结果提交行为的最小实现运行这 11 项时，5 项断言按预期失败，新增规则实现后全通过。使用合成来源与可替换副作用，不使用真实服务或剪贴数据。入队失败不出现确认属于上方记录的薄 UI 接线人工验收；前后台、退出备份页、进程恢复、长文案和系统 Toast 限流依赖设备验证。
+
+完整验证执行 `.\gradlew.bat :app:testDebugUnitTest :app:compileDebugKotlin --init-script build\review-build-isolation.gradle --console=plain` 成功；app 286 项单测，失败、错误和跳过均为 0。独立增量复核未发现可行动问题，确认来源接线、事务接受后反馈、系统暂停/清理边界、弹窗关闭和广告抑制。未安装应用、访问用户 WebDAV 服务器或作真实设备验收。流程图生成器未修改，仅更新真实反馈流程并同步生成 HTML；`python -X utf8 tools/render_doc_flow_html.py --check docs/webdav_backup_plan.md` 与 `git diff --check` 通过。
+
+日志计划沿用 taskId/roundId、来源、阶段和结果提交 reasonCode；反馈协作者新增 WARN，仅在展示边界抛出异常时记录异常类型，不输出正文，不影响已保存结果。既有 Toast 工具会打印 msg，因此只传短固定资源文案，不传异常正文、凭据、WebDAV 地址、授权 URI 或备份内容。既有工具已吞掉的系统显示异常仍以原工具行为为准。不新增每次重组或已请求/跳过 DEBUG，原因是现有提交证据已覆盖来源与目标且 Toast 不能证明用户已看到，重复记录会增加噪声。用替换展示及诊断回调的异常测试验证隔离边界，真实日志与系统限流留设备验收。
+
+### 后续待办与验收
+
+- 入队失败、外部点击、系统返回、旋转、跨页面完成、前后台和进程恢复仍需真实设备验收；本地导出和自动任务的额外通知不在当前范围。
+- 采用最好努力的标准 Toast 与持久化结果兜底；若未来要求用户离开应用后仍可靠看到，评估系统通知而不是依赖 Toast 补发。
+
+## 手动备份结果弹窗可行性评估（2026-10-11，已废弃）
+
+本节状态：已废弃。用户因系统暂停可能长时间等待，改为上方“后台备份入队确认弹窗与完成 Toast”方案；以下仅保留原评估和历史取舍，不作为待实施方案。此前未修改生产代码。
+
+### 需求、结论与当前基础
+
+用户要求：手动备份后显示弹窗；备份期间显示转圈状态；备份结束后在同一弹窗展示结果；结束之前点击外部区域不能关闭弹窗。当前讨论主入口为手动 WebDAV 上传；若同时覆盖系统文件选择器导出的本地备份，可接入同一弹窗，但必须分别以实际云端结果和本地文件导出结果判定完成。
+
+可行，属于已有备份流程的反馈与状态连接调整，工作量中等，不是仅增加一个 loading Boolean。复用现有 `BackupTaskProgressDialog` 的转圈和模态反馈、`BackupResultPresentationMapper` 的阶段分类与低敏失败原因展示、`BackupRuntimeRepository` 的当前轮次及分目标事务结果、页面 `collectAsStateWithLifecycle` 订阅，以及原有后台 Worker；没有理由新增第二套生成、上传、轮询或恢复机制。
+
+当前 `uploadWebDavBackup` 在 `enqueueManual` 返回后就结束 `runOperation`，因此弹窗只覆盖配置提交和入队；`enqueueManual` 返回 Unit，生成 Worker 开始后才创建 roundId；现有页面的待执行展示模型没有任务 ID，最近完成结果又优先于本轮进度。可靠实现需要将本次手动请求与后续 roundId 明确关联，按该身份收集排队、生成、上传和终态，不能用最近结果的时间变化猜测完成，也不能把生成 Worker 成功当成上传成功。
+
+### 建议交互与职责边界
+
+| 状态 | 弹窗展示 | 关闭边界 |
+| --- | --- | --- |
+| 提交/排队 | 转圈，“正在提交备份”或“等待执行” | 不响应外部点击；返回键是否同样拦截见开放问题 |
+| 生成/上传 | 转圈及真实阶段文案，无百分比承诺 | 同上，不提供重复提交按钮 |
+| 系统暂停等待重调度 | 转圈，“系统已暂停，等待继续” | 严格等待终态时仍不能外部关闭，但须明确长期等待的产品取舍 |
+| 成功 | 停止转圈，显示本次目标成功结果 | 提供“完成”按钮；完成后外部点击关闭是否允许待确认 |
+| 失败/取消/被新任务替代/结果不可读取 | 停止转圈，显示有证据的原因或未能确认结果 | 提供“关闭”按钮，不误报成功 |
+
+共享弹窗应抽到可预测的共享 UI 位置，接收具名等待/运行/结束状态和关闭回调；页面只接线，纯任务归属与终态判断单独放在备份领域的 mapper 或状态归约器中。页面 ViewModel 连接本次请求身份、运行态和必要的 WorkManager 状态，不把长任务放进 Composable，不继续向已有大页面文件堆业务判断。请求拒绝、生成尚未登记轮次就失败、读取状态失败及被其他轮次替代，均需可结束的反馈分支，避免永久转圈。
+
+弹窗仅由手动入口打开；自动备份仍更新既有摘要。手动 WebDAV 主结果建议以该轮次的 WebDAV 发布及结果提交为准，同包本地镜像独立展示，不用本地成功冒充云端成功。当前成功事务早于历史保留清理；清理失败不反转已发布成功，如要求弹窗等待清理也退出，则需增加实际 Worker 完成信号，而不是直接使用当前成功阶段。
+
+外部点击拦截与系统返回分开定义；建议运行期间同时拦截返回以避免绕过模态，但用户目前只明确限制外部点击。切后台、锁屏及系统回收不是可被弹窗阻止的行为；恢复可见时应按保存的非敏感本次身份恢复展示并重新订阅，屏幕旋转不创建新任务。结束结果保留到用户主动关闭，避免瞬间消失或页面重组反复弹出；不因弹窗打开增加远端列表查询或持续网络轮询。
+
+### 影响、测试与日志与诊断计划
+
+影响集中在手动请求身份传递、页面状态模型、模态关闭/返回与终态反馈；生成、目标发布、现有系统暂停重调度和分目标失败契约应保持既有职责。身份属于安装内临时运行态，即使为配置/进程重建保存，也排除用户快照及系统跨安装备份，不增加备份内容或保留策略。仅页面状态与编译期纯模型无需额外 keep；若实际实现引入 WorkData 字段，要固定 key 并覆盖旧请求兼容。
+
+按 `$repo-unit-test-gate`，后续实现必须选择性 TDD 覆盖：入队不等于完成；上一轮成功不能结束新弹窗；生成成功但上传未结束；真实目标成功/失败；系统暂停保持等待；提交/读取失败与轮次替代可结束；完成结果保持到主动关闭；自动来源不打开手动弹窗。配置/进程重建、后台返回、返回键/外部点击、窄屏与读屏需 Preview、设备或 UI 验证。实施时运行受影响模块 `testDebugUnitTest` 与 `:app:compileDebugKotlin`，是否需要 base:general 验证由身份接线改动决定。本轮只更新评估文档，不新增测试，不运行 Android 编译；既有 376 项测试不代表该弹窗方案已验证。文档验证已运行 HTML 同步检查与 `git diff --check`，均通过；本轮未新增流程图，不把草案替换为当前已实现流程。
+
+日志计划：沿用当前 taskId/roundId、阶段、系统 stopReason、发布结果及 reasonCode 日志；仅在新接线确有缺口时补一次低频身份绑定/结果判定日志（DEBUG，字段限非敏感请求身份、阶段和 reasonCode），不记录 UI 每次重组，不打印凭据、WebDAV 地址、备份内容或授权 URI。本轮无运行时改动，不新增日志。
+
+### 开放问题
+
+- 备份范围：只覆盖当前讨论的手动 WebDAV，还是本地手动文件导出也统一接入；WebDAV 弹窗是否展示同包本地镜像的独立结果。
+- 关闭规则：运行中返回键是否也禁止；系统长时间暂停时是否增加“后台继续”明确按钮，仅关闭反馈并让任务继续执行，同时仍禁止外部点击关闭。用户只明确禁止外部点击，并未明确禁止这种按钮；是否采用须确认。若进一步要求“终态之前任何方式都不可关闭”，必须接受页面可能长时间受模态阻塞，不能为解锁页面捏造超时失败或取消任务。
+- 完成边界：按目标发布并提交结果进入结束态，还是等历史清理和 Worker 退出；当前实现只直接提供前一种持久化成功证据。
+
+## WebDAV 单 ZIP 上传与系统中断恢复修改方案（2026-10-11，已完成）
+
+本节状态：已完成，按用户授权实施并通过最终测试、编译和 Release/R8。最终目录修复规则为：同一 taskId 的 PUT 404/409 共用一次处理机会，不按状态码分别计数，系统重调度或进程重启也不重置。“我的”页面直接显示 WebDAV 备份失败原因。直接单 ZIP 发布、本地包检查、系统中断后同包重新执行、列表取消自动/手动类型均已接入；下方当前数据流及流程图同步为最终契约，历史基线明确标注。完成指代码及本地验证，真实设备调度、服务端兼容性和视觉验收仍保留后续边界。
+
+### 本次审查修正（2026-10-11，已完成）
+
+用户接受两项 P2 修复：系统抢占 `STOP_REASON_PREEMPT` 与系统处理 `STOP_REASON_SYSTEM_PROCESSING` 都属于已知系统暂停，当前有效 WebDAV 任务应回到 queued，保留最近完成结果并等待 WorkManager 重调度；用户取消、应用取消、未知原因及本地发布的终态规则延续。
+
+连接测试与正式上传复用逐级目录准备，但使用不同的 405 边界。正式上传遇任一缺失层级 MKCOL 405 仍立即结束修复，405 不计作实际创建，不补传；连接测试遇 405 则继续准备尚未检查的子目录，最后通过上传并删除探测文件验证完整目标的可写性。405 本身不证明资源是目录，若资源类型、子目录或权限不满足要求，由后续目录操作或最终探测明确失败，不伪造连接成功。
+
+实现只扩展 `BackupStopReasonMapper.canResume` 和既有私有 `ensureDirectory` 的调用目的参数，不新增协调器、平台封装或外部协议。采用选择性 TDD：先补停止原因分类、暂停不写失败结果和连接测试父级 405 后继续创建子目录的失败回归，再实现并运行受影响模块完整单测与 Debug Kotlin 编译。新验证沿用 `build/review-build-isolation.gradle`，避免普通及旧验证产物被其他 JVM 占用。
+
+日志与诊断沿用暂停的 stopReason、阶段和目录创建/连接探测结果日志，不新增日志点，避免重复或高频噪声；不输出资源地址、用户名、密码或请求体。本次没有数据字段、序列化、反射或备份格式变化，无需调整备份白名单、keep 或 R8 规则；不单独重跑 Release/R8，风险边界为真实 Worker 重调度和 WebDAV 服务兼容性仍需设备验收。下方原有 373 项单测与 Release/R8 记录属于本次修复前的验证。
+
+修复验证：新增的停止原因分类、暂停不写失败结果、父级 405 后继续准备子目录三项回归均先在旧实现上失败，修复后通过。执行 `.\gradlew.bat :base:general:testDebugUnitTest :app:testDebugUnitTest :app:compileDebugKotlin --init-script build\review-build-isolation.gradle --console=plain` 成功；base:general 101 项、app 275 项，共 376 项单测，失败、错误与跳过均为 0。独立增量复核未发现可行动问题，并确认正式上传任一层 405 仍不计作创建、不补传。本次未访问用户 WebDAV 服务器或运行真实设备调度验收。
+
+### 问题、目标与范围
+
+2026-10-11 日志中完整 ZIP 生成与本地发布成功；WebDAV 尚在目录查询阶段，系统约 12 秒后停止 Worker，停止原因为 4（设备状态）。底层请求后来报 SocketTimeoutException 并提交 remote_failed；系统重调度因 already_finished 跳过。日志不能确定具体省电、Doze 或内存原因，也不能证明目录超时完全由系统停止造成。
+
+目标：正常发布直接 PUT 一个 ZIP，减少上传前置查询和独立文件发布；系统中断后保留重新执行同一任务的机会，避免迟到网络异常把它写成不可恢复的失败。自动与手动 WebDAV 复用同一上传路径；本地和远端共用的列表卡片统一只显示文件名、备份时间和文件大小。“我的”页备份入口直接显示 WebDAV 最近一次失败的具体原因，用户无需进入备份页才看到原因。
+
+架构沿用“生成完整包 → 本地/WebDAV 分目标消费 → 条件保存结果 → 保留清理”。业务身份、配置、运行态由 app 编排；HTTP、目录操作和远端元数据由 base:general 承担。技术栈继续使用 Kotlin 协程、OkHttp、WorkManager、DataStore 和 Compose。
+
+### 已确认约束
+
+1. WebDAV 新备份只上传 ZIP，取消独立 `<ZIP 文件名>.manifest.json` 的 PUT；ZIP 内部 manifest、checksum 和恢复预检继续保留。
+2. 正常上传前不执行 PROPFIND、HEAD 或 GET，不检查远端同名 ZIP。PUT 返回 404 或 409 时，同一 taskId 共用一次目录查询/修复机会；已处理过任意一个状态后，再遇到其中任意一个都结束，系统重调度、Worker 重新进入或进程重启不重置，新 taskId 才重置。
+3. 只有目录查询明确返回 404，才逐级查询并 MKCOL 缺失目录；本请求实际创建缺失目录后重传同一 ZIP，再按新响应判断。目录已完整、查询/创建失败、协程取消或包缺失时结束当前修复；不在未发现缺失目录时重复 PUT。
+4. taskId 表示本地完整包身份，复用 roundId/artifactId；同任务文件名、ZIP 字节和目的地固定，系统恢复时重新 PUT 整个 ZIP。
+5. 本地包存在之外，还保留最新任务、未终结、目标配置和自动开关检查；旧包存在不能使过期或已成功任务复活。
+6. 系统停止可等待系统重新调度；真实 HTTP/网络失败结束本轮。继续不设置网络/Wi-Fi 约束，不调用 Result.retry()，不新增网络恢复监听或应用启动补传。
+7. 自动备份仍为 24 小时周期，新轮次仍使旧轮次失效并清理旧内部包。生成、本地保存、恢复的数据范围与发布方式不在本轮重构范围。
+8. 不新增任务索引、任务领取协议、文件租约、引用计数、按目标锁池、远端临时包、latest.json 或上传后下载回读。
+9. “我的”页 WebDAV 失败摘要显示“上次备份失败：具体原因”，复用备份结果 reasonCode 和共享展示能力；已知原因不能全部降级为“备份失败”，没有可靠证据时明确显示原因未知。
+
+### 上传流程与失败契约
+
+1. Worker 获得执行机会后，确认 taskId 仍是当前有效轮次、WebDAV 尚未终结，目标配置一致；自动任务还需自动开关开启。
+2. 复用 BackupPendingUploadStore.read(taskId)，读取受控目录中的描述与 ZIP，确认描述可解析、ZIP 可读且非空。缺失正文/描述、空包、非法文件名或描述损坏统一返回 temp_file_unavailable，显示“本地备份包缺失、为空或描述损坏，请重新备份”；身份路径越界仍由存储边界拒绝。不扫描数据库、不重新打包、不在上传前解压校验整个 ZIP。
+3. 直接 PUT 正式 ZIP。成功响应后，复用现有事务内 taskId 比较保存 WebDAV 成功结果。
+4. PUT 返回 404 或 409 时，先按 taskId 取得并持久化共用的唯一处理许可，保证跨 Worker 重调度也最多进入一次。许可已经用过时直接结束；获得许可后，目录存在则结束并报告原上传失败，目录返回 404 则逐级检查并创建缺失目录，查询或创建失败直接结束。
+5. 目录修复完成后（MKCOL 405 不算本请求创建进展），确认协程仍有效、同一 ZIP 仍存在且非空，再 PUT 原 ZIP。该任务已经用过处理许可，补传再返回 404/409 时直接结束，不再查询或创建目录；成功或其他失败按各自契约结束。一次未中断执行最多首次 PUT 与修复后的补传，系统重执行仍可重新 PUT 同一包，但不重置目录修复许可；不声称整个 taskId 跨重调度只发送两次 PUT。客户端检查文件与取消信号，不向共享模块传入 app 运行态或新增轮次检查回调。
+6. 成功结果实际保存后才执行保留清理；清理失败不反转上传成功。正常“发布”只有一个 ZIP PUT，但成功后的清理仍可能有目录查询与 DELETE，不能把整轮任务描述成只有一个 HTTP 请求。
+
+| 情况 | 处理 |
+| --- | --- |
+| 首次 ZIP PUT 成功 | 保存本轮成功；不上传外部 manifest |
+| 同 taskId 第一次遇到 PUT 404/409，且成功登记共用处理许可，目录查询 404 | 逐级 MKCOL 后补传同包一次；跨重调度不重置许可 |
+| 同 taskId 已处理过 PUT 404 或 409，再遇到 PUT 404/409 | 结束并记录当前具体失败原因；无额外目录查询/MKCOL |
+| 进入修复分支后确认目录已存在 | 保留上传失败，不盲目 MKCOL 或重复 PUT |
+| 401/403、5xx、离线、TLS 或未取消时的超时/IOException | 结束本轮；不查询目录、不补传 |
+| 目录查询或 MKCOL 失败 | 结束本轮；不绕过失败重传 |
+| 修复后 PUT 失败 | 结束；保留当前 HTTP/网络原因，不重新修复 |
+| ZIP 缺失/空文件、描述损坏 | 中止并条件保存本轮文件错误；不重新生成包 |
+| 旧任务、已终结、自动关闭或目标改变 | 跳过/取消；不请求远端、不覆盖新轮次结果 |
+| 服务器接收成功，但结果存储失败 | 保留 result_store_failed 契约；不声称成功，不自动复活重传 |
+
+uploadFile 通过模块内 WebDavHttpFailure 保留操作和整数状态，再映射为低敏稳定 reasonCode；WebDavFailureEvidence 只解开协程恢复产生的同类型 RemoteFailed 包装，不扫描任意异常链。不能通过异常文案识别 404/409。协议规定“PUT 缺少适当父集合时必须返回 409”，并未规定“409 只表示父目录缺失”；HTTP 409 也可能表示其他资源冲突。最终选择一次目录修复策略，而非按每个 409 无限进入修复：只创建实际缺失的目录，完整目录下的 409 作为未解决冲突结束。一次限制针对 PUT 404/409 触发的整个修复分支，不限制逐级目录查询返回的多个 404 或创建多个层级。每次 PUT 保持单次请求体语义，不因 Retry-After 或底层自动重试重复发送。
+
+目录修复许可复用当前运行态仓库与 DataStore，不建任务索引：在 BackupPendingUpload 增加安装内布尔标记 `webDavDirectoryRecoveryAttempted`，默认 false，只有 replacePending 的 taskId 改变才重置，同 taskId 的状态重写保留；提供 `claimWebDavDirectoryRecoveryIfCurrentRound(roundId): Boolean`，事务内比较当前任务、未终结阶段和标记，只有第一次成功置位才返回 true。404/409 共用该标记；先保存再查询目录，保存后即使系统停止、进程退出或查询尚未完成，同一 taskId 也不再次获得许可，表达“最多尝试一次”。标记写入失败不能继续修复。
+
+WebDavClient.uploadBackup 接收具名挂起许可回调，由协调器绑定上述窄接口；PUT 404 或 409 都调用相同许可，共享客户端不持有 app/运行态模型。它是一次操作的持久化许可，不是每次重传的通用轮次检查。逐级 PROPFIND 的 404 不单独申请许可；新标记不写入 ZIP 或 manifest，继续排除自定义与系统备份。上一版“404 单独保存、409 每次修复”仅属讨论历史，尚未实施，后续直接采用共用标记，不保留双轨状态或旧字段别名。
+
+### taskId、命名与本地检查
+
+taskId 使用现有 roundId/artifactId，与 Worker UUID 区分；每次系统重执行从同一个受控 taskId 目录读取同一包。BackupSnapshotExporter 已将 taskId 加入标准文件名，继续保留 `clip_master_backup_` 前缀、安装身份、taskId 和时间戳，不改成纯 `<taskId>.zip`，避免破坏列表过滤、时间排序与旧 safety 识别。
+
+每次 Worker 重新进入都执行完整本地门禁；同一次目录修复后的补传只检查取消信号与同一 ZIP 的存在/非空。结束时仍在同一次 DataStore 事务内比较 taskId 后提交结果。旧文件删除失败、检查后被新轮次删除或旧请求迟到均沿用现有隔离边界；检查不能撤回服务器已经接收的数据。
+
+“校验任务和包”只读本地状态、小型描述和文件属性，不产生额外 WebDAV 请求。非空检查不保证 ZIP 内部完整，实际恢复仍必须读取包内 manifest 并校验 checksum。
+
+### 系统停止与重新执行
+
+取消应联动 OkHttp Call.cancel，并关闭响应和文件流；协程取消优先传播 CancellationException，不将取消产生的 IOException 转为 remote_failed。HTTP 响应、网络错误和结果提交前均需遵守协程取消边界。系统停止与真实网络失败分别记录。
+
+复用现有 queued 阶段表达“等待系统重新执行”，不新增阶段字段或另一套状态机；同任务 404/409 共用处理标记独立保存，回到 queued 时不得重置。系统暂停的任务若仍有效且未终结，条件更新 WebDAV 阶段为 queued，不覆盖最近一次已完成结果；继续传播取消，由 WorkManager 决定后续调度。应用主动取消、新轮次替换、用户停止、开关关闭或配置改变不按系统暂停复活。停止原因未知时保守结束，不猜测为可恢复暂停。
+
+在 BackupSchedulingPolicy 新增仅用于 WebDAV Worker 执行入口的纯规则 `canExecuteWebDavUpload(phase: String, workFinished: Boolean = false): Boolean`，接受未结束的 ready/queued，以及进程退出后遗留的 uploading。它只在系统已经给出执行机会时使用；本地保存和应用入队规则仍沿用 canSchedule，不把本地 publishing 阶段一起复活。
+
+| WebDAV 阶段/事件 | 后续行为 |
+| --- | --- |
+| ready / queued，Worker 已开始执行 | 检查有效任务与本地包后上传 |
+| uploading，系统重新进入同一任务 | 处理进程退出遗留状态，检查后重新 PUT 同一包 |
+| 执行中被系统设备状态、后台限制、配额、执行时限、抢占或系统处理等停止 | 仍有效时回到 queued，等待系统调度；不提交业务失败终态 |
+| succeeded / failed / cancelled / result_store_failed / unselected | 跳过；文件仍存在也不能重传 |
+| ZIP 请求成功并已保存 succeeded，随后清理被停止 | 保留成功；重调度不重复上传 |
+
+重新执行指完整同名 PUT，不是字节断点续传；若上次请求已到达服务器但客户端未保存成功，可能再次覆盖同名 ZIP。它不保证恰好发送一次或消除服务端版本历史。系统可能继续延后或停止；本轮不新增恢复次数/时限上限，最新轮次与现有终态决定有效期。升级前已记为 failed 的任务不批量复活，避免把历史真实网络失败当成系统暂停。
+
+### “我的”页直接显示 WebDAV 失败原因
+
+改动前，MineVm 已通过 BackupResultPresentationMapper 取得包含 reasonCode 的结果，MineEntries.BackupEntry 使用共享 BackupResultsSummary；BackupResultRow 的 Failed 分支只输出“上次备份失败”，未使用 reasonCode，而详情在备份页才映射具体提示。现在改由共享摘要直接显示原因，备份页详情去重，不另做 Mine 页专用错误链路。
+
+已确认展示：`WebDAV：上次备份失败：请求超时`、`WebDAV：上次备份失败：认证或访问权限校验失败`。继续保留本地/WebDAV 两个独立结果区域，原因允许自然换行，窄屏或大字体不截断；本地结果使用自己的 reasonCode，不能把远端失败覆盖本地成功。失败摘要不通过额外目录请求、异常原文或耗时猜测原因。
+
+原因链路为“有类型/状态的实际失败 → 稳定低敏 reasonCode → 现有运行态结果 → 纯原因映射 → 本地化字符串”。优先复用 BackupFailure.RemoteFailed(cause)、backupReasonCode 和现有 mapper；补足当前被 remote_failed/storage_not_writable 聚合而丢失的 WebDAV 证据，不把任意全局 IOException 当成 WebDAV 网络故障。HTTP 操作类别和整数状态只用于构造稳定原因码，不保存地址、请求体或异常 message。
+
+| 可靠证据/原因码 | 入口显示与边界 |
+| --- | --- |
+| auth_failed，已确认认证/访问拒绝 | 认证或访问权限校验失败；不只凭 403 猜测密码错误 |
+| WebDAV 请求中的 SocketTimeoutException：webdav_request_timeout | 请求超时；与系统 Worker 执行时限中断分开 |
+| WebDAV TLS 异常：webdav_tls_failed | 安全连接失败；不默认建议关闭 HTTPS |
+| 其他已确认网络请求失败：webdav_network_failed；旧 remote_failed | 网络请求失败；旧聚合原因显示“远端请求失败”，不补猜历史具体根因 |
+| WebDAV HTTP 失败：webdav_http_状态码 | 404 显示上传路径不存在（HTTP 404），409 显示上传冲突（HTTP 409），其他显示服务器返回错误（HTTP 状态码）；只解析规定格式和 400–599 整数 |
+| 实际 MKCOL 失败：webdav_directory_create_failed | 无法创建备份目录；认证/网络原因已有更具体证据时优先展示具体原因 |
+| temp_file_unavailable / insufficient_space / storage_not_writable | 本地包缺失、空包或描述损坏提示重新备份；空间不足、存储不可写沿用已有提示 |
+| 历史 upload_interrupted_* | 沿用已记录的系统执行时限、配额、设备限制或取消分类，不与请求超时混淆 |
+| 空/未知原因码 | 未记录具体原因/未知错误；不再只显示无原因的“上次备份失败” |
+
+复用 BackupFailureMessageMapper 处理纯规则；必要的 WebDAV 状态/类型细化放在共享备份错误映射，UI 只选择资源并格式化状态码。新增资源化“上次备份失败：%1$s”及必要短原因；错误详情不复制到 MineVm。共享 BackupResultRow 使用同一规则，因此备份页摘要同步显示原因；删除 BackupResultDetails 中重复输出同一失败原因的块，保留本轮等待/运行详情和用户可行动提示的唯一展示。继续使用现有 ListEntryCard 说明 slot，不新增组件展示开关或另一份入口卡片。
+
+系统暂停且尚可重调度的当前任务仍是等待状态，不伪造成失败原因；最近完成结果继续如实显示“上次”。结果存储读取失败保留“备份结果读取失败”，不能冒充上传失败；未知/缺失历史证据不能编造。页面继续生命周期感知地收集轻量结果，不为展示原因启动网络或备份。Mine 页接入摘要同步到 [我的页方案](mine_page_plan.md)，共享契约和完整测试日志以本节为准。
+
+### 列表、保留清理与恢复兼容
+
+远端列表一次 PROPFIND 读取文件名、路径、getcontentlength、getlastmodified 和 resourcetype；集合类型或目录 href 不进入文件列表，防止清理递归删除同名集合。不逐包 GET sidecar，也不为了列表下载 ZIP。RemoteBackupFile 改为目录元数据模型，移除远端 sidecar 依赖；本地列表模型和包导出模型继续保留现有 manifest。
+
+| 列表信息 | 数据来源与边界 |
+| --- | --- |
+| 文件名 | PROPFIND 返回的 ZIP 名称 |
+| 备份时间 | 优先解析标准文件名中的时间；无法解析时使用服务器修改时间，仍未知则不显示 |
+| 文件大小 | PROPFIND 的 getcontentlength；未知则不显示，不下载 ZIP 补齐 |
+| 自动/手动类型 | 从本地/远端共用 BackupFileCard 移除该展示和参数 |
+
+远端排序继续使用文件名时间、服务器修改时间、文件名的稳定兜底。文件名时间精度为秒且没有时区标识，保持现有解析语义；它不是服务器最后修改时间，也不能替代包内精确 createdAt。详细类型、协议、数量与校验信息仍可由用户打开预览后从 ZIP 内获取。
+
+继续只识别标准备份 ZIP，旧 safety 文件名仍隐藏且不参与普通保留清理；不可识别条目保守跳过，不凭修改时间推断它是普通备份。历史外部 manifest/latest.json 忽略，新旧标准 ZIP 都可列出和恢复。保留清理沿用普通 ZIP 按时间保留最近 N 份，只删除选中的 ZIP，不再对每个 ZIP 请求删除 sidecar；历史 sidecar 可能残留，本轮不增加批量清理或迁移任务。清理返回值不再从远端 manifest 推测已删除的自动/手动类型。
+
+BackupRestoreVm.previewRemoteBackup 继续按选中条目下载 ZIP，再调用既有包内 manifest/checksum 预检；缺少外部 manifest 不影响恢复。ZIP 内协议、数据表/设置白名单、媒体排除、恢复报告和冲突处理不变；包内 fileSize=0 的既有约定不改，实际大小由目录元数据或本地文件长度提供。
+
+本地 SAF 的独立摘要、私有待上传目录的小型描述、自动/手动来源字段仍服务既有本地发布、有效任务判断或预览，不随 WebDAV sidecar 一起删除。类型字符串仍被预览使用，不能因列表去掉类型而全局删除资源。列表稳定 key、页面生命周期、分页与导航继续复用既有实现。
+
+### 文件影响与职责分工
+
+以下列出最终调整与沿用的接入边界；标为核对/复用的文件未重复修改：
+
+| 文件（仓库相对路径） | 调整与复用 |
+| --- | --- |
+| `base/general/src/main/java/com/cla/clip/base/general/backup/WebDavClient.kt` | uploadBackup 先 PUT 单 ZIP；复用并调整 ensureDirectory/MKCOL；保留状态分类；listBackups/pruneBackups 取消远端 sidecar 操作；保留连接测试所用 uploadText，已删除无调用的 sidecar downloadText |
+| `base/general/src/main/java/com/cla/clip/base/general/backup/webdav/WebDavCallExecutor.kt`（新增） | 模块内可取消 HTTP 执行与响应释放；接收 Request 和响应消费回调，取消时 Call.cancel；不依赖 Context、app 运行态或任务调度 |
+| `base/general/src/main/java/com/cla/clip/base/general/backup/webdav/WebDavHttpFailure.kt`、`WebDavFailureEvidence.kt`（新增） | 模块内 HTTP 操作/状态证据与协程同类型包装读取；不保存服务 URL、正文或异常 message，不新增序列化/keep 契约 |
+| `base/general/src/main/java/com/cla/clip/base/general/backup/WebDavModels.kt` | RemoteBackupFile 使用目录元数据，复用现有文件名时间/safety 解析；不重构 WebDavConfig 或外部备份协议 |
+| `base/general/src/main/java/com/cla/clip/base/general/backup/settings/BackupTargetResult.kt`、`BackupRuntimeRepository.kt`、`base/general/src/main/java/com/cla/clip/base/general/config/datastore/HostSettingsKeys.kt` | 为当前 taskId 持久化一个 404/409 共用处理标记；复用 DataStore 事务登记唯一许可、新任务重置和过期/终态保护，不新增任务框架或备份协议 |
+| `app/src/main/java/com/cla/clip/master/backup/BackupSchedulingPolicy.kt` | 局部增加 WebDAV 执行规则；保留本地入队规则和周期常量 |
+| `app/src/main/java/com/cla/clip/master/backup/BackupExecutionCoordinator.kt` | 复用包读取、配置比较和条件结果提交；提供 taskId 绑定的共用目录修复许可回调；保存具体低敏失败原因；系统暂停只更新待执行阶段，不重置许可；不将清理取消反转成发布失败 |
+| `app/src/main/java/com/cla/clip/master/backup/upload/BackupPendingUploadStore.kt` | 受控 read 将缺失/空正文、缺失/坏描述和非法记录文件名转换为稳定文件原因；不重新打包，路径身份校验继续保留 |
+| `app/src/main/java/com/cla/clip/master/work/BackupWebDavUploadWorker.kt` | 保留取消传播；区分跳过、系统停止和真实成功，不用 Worker SUCCESS 代替远端结果 |
+| `app/src/main/java/com/cla/clip/master/backup/diagnostics/BackupStopReasonMapper.kt` | 在现有纯映射中明确可恢复系统暂停与不可恢复取消/未知原因 |
+| `app/src/main/java/com/cla/clip/master/backup/BackupResultPresentationMapper.kt` | queued 复用现有等待展示；保留历史完成结果，核对重新调度接线 |
+| `app/src/main/java/com/cla/clip/master/ui/page/backup/BackupPage.kt` | 复用 LocalBackupCard/RemoteBackupCard/BackupFileCard，删除类型行与参数；远端时间改用目录元数据，不新增通用组件或展示开关 |
+| `base/general/src/main/java/com/cla/clip/base/general/backup/BackupLog.kt` 及 WebDAV 类型化失败 | 在既有 backupReasonCode 路径保留已确认网络/HTTP/目录失败证据；优先复用已有失败类型，不以原始异常文案作为原因码 |
+| `app/src/main/java/com/cla/clip/master/backup/BackupFailureMessageMapper.kt` | 复用纯原因映射，补网络请求超时、TLS、HTTP 状态、目录创建及空/未知原因；不把资源和 Context 放进纯 mapper |
+| `app/src/main/java/com/cla/clip/master/ui/widget/BackupResultsSummary.kt`、`app/src/main/res/values/strings.xml` | 摘要显示本地化失败原因，复用现有状态/资源选择；备份页详情去重，补窄屏和已知/未知失败 Preview |
+| `app/src/main/java/com/cla/clip/master/ui/page/mine/MineEntries.kt`、`MineVm.kt`、`MinePage.kt` | 核对既有 reasonCode 和共享说明 slot 接入；生命周期/导航已满足时只复用，不额外修改或发请求 |
+| 对应单测及 `BackupFlowSessionTest.kt` | 回归上传序列、取消、任务规则、列表/清理/恢复与远端模型构造调用方 |
+
+复用查找已从备份域、base:general、共享模块到全仓核对。未找到可直接复用的底层 OkHttp 取消执行封装；torrent-search 的回调执行位于上层 feature，不能让 base:general 反向依赖。新执行器只下沉 HTTP 取消/资源职责，业务编排继续保留既有协作者，不新增通用任务框架。RemoteBackupFile 是编译期模型，本轮不新增序列化契约、Room 迁移或 keep 规则。
+
+### 实施任务与验证
+
+按 repo-unit-test-gate 采用选择性 TDD。直接单 ZIP、稳定原因码、许可事务、系统重执行/停止、同 taskId 状态重写及审查发现的边界均先复现失败再修复。取消、目录元数据及剩余组合回归补充到完整套件；薄 UI 删除和资源接线以编译及 Preview 源码检查为主，不补镜像排版单测。修改的方法、变量、字段和关键分支补简体中文注释。
+
+| 任务 | 最终实现与回归 | 状态 |
+| --- | --- | --- |
+| 直接单 ZIP 与一次修复 | WebDavDirectUploadTest 验证单 ZIP、503 不重发；WebDavRecoveryTest 覆盖 404/409 四种组合、多级 MKCOL、目录完整/查询失败/认证拒绝、405 无创建不补传、许可写入失败和缺包不请求 | 已实现、验证通过 |
+| 取消与系统重新执行 | WebDavCancellationTest 用同步信号验证 Call.cancel 和立即传播取消；BackupSchedulingPolicyTest、BackupDiagnosticsTest、BackupExecutionCoordinatorTest 验证恢复阶段、停止分类及暂停不改历史失败；BackupTargetResultsTest 与真实 DataStore 验证同身份许可跨仓库/阶段保留、新身份重置、过期/终态拒绝；WebDavRecoveryTest 验证保存许可后被停止仍不重复查询 | 已实现、验证通过 |
+| 元数据列表与清理 | WebDavMetadataTest 验证非空目录无 sidecar GET、时间/大小、只删标准普通 ZIP、保留 safety/未知文件、排除 DAV collection/目录 href、防止递归删除集合及派生客户端不继承完整 URL logger；原包协议套件继续验证 ZIP 内 manifest/checksum | 已实现、验证通过 |
+| 原因与共享 UI | BackupFailureMessageMapperTest、WebDavFailureReasonTest 覆盖请求超时与系统时限、TLS/网络、HTTP/目录、旧码、空/未知/非法状态及协程异常包装；BackupPendingUploadStoreTest 覆盖实际消费入口的缺包、空包与坏描述原因；共享摘要显示原因并自然换行、详情去重、列表取消类型行；补窄屏大字体/深色 Preview 定义 | 已实现、验证通过 |
+
+执行命令使用 Windows `.\gradlew.bat`。为避开另一个 JVM 占用普通 classes.jar，本轮通过已忽略的 `build/webdav-build-isolation.gradle` 把各模块产物隔离至 `build/webdav-verify`，不结束其它进程。最终命令为 `.\gradlew.bat :base:general:testDebugUnitTest :app:testDebugUnitTest :app:compileDebugKotlin :app:assembleRelease --init-script build\webdav-build-isolation.gradle --console=plain`；具体结果在完成记录中追加。
+
+尚需设备验收：有效/多级缺失目录和服务端兼容性；真实 WorkManager 系统停止/进程重建后的同包重调度；上传和清理中的实际停止、文件/配置变化；“我的”及备份页窄屏、大字体、深色和读屏；实际下载新旧 ZIP 预检/恢复与 SAF 独立发布。JVM 单测验证纯规则及可控请求/存储边界，不证明设备后台调度、真实服务端或 Compose 视觉效果。Preview 已定义，未运行渲染。
+
+此前审查已修复：协程增加的 RemoteFailed 包装不能丢失 HTTP/网络证据；同 taskId replacePending 不重置许可；私有包读取失败使用稳定文件原因；正式上传任一缺失层级 MKCOL 405 都结束修复，即使父级已创建也不补传；像 ZIP 的 DAV 集合不可清理；派生 WebDAV 客户端移除全局 HttpLoggingInterceptor，保留低敏日志。本次复查另发现系统暂停分类漏项及连接测试共用 405 边界的问题，修正规则以本节“本次审查修正”为准。清理/列表目前各自查询，页面刷新可发生两次 PROPFIND，本轮没有合并为缓存查询。
+
+### 日志与诊断计划
+
+| 级别 | 触发时机 | 低敏字段 |
+| --- | --- | --- |
+| INFO/DEBUG（沿用现有门控） | 首次 ZIP PUT、目录修复、同包重传、Worker 执行和结果条件保存 | taskId/workId、stage、Worker attempt、HTTP 状态、repairCount=1、fileSize、elapsedMs、结果是否提交；发布/补传由不同 stage 区分 |
+| WARN | 系统暂停、任务失效/包缺失、目录修复失败、保留清理失败 | stopReason、reasonCode、stage、taskId/workId；不把暂停记录成失败终态 |
+| ERROR | 真实 HTTP/网络终态失败、结果存储失败 | HTTP 状态、reasonCode、errorType、stage、taskId/workId |
+| DEBUG | 目录列表读取/清理统计 | ZIP 条目数、可识别普通备份数、待删/成功删除数；取消 manifestMissingOrBroken 统计 |
+
+复用现有 trace/Logcat 门控；删除 publishing_remote_manifest 阶段，正常路径不再出现 ensuring_remote_directory，仅修复分支记录目录操作。日志禁止输出服务地址/目录路径、账户、密码、认证头、请求响应体、包内内容和描述原文；不新增日志落盘。测试核对取消后不出现 remote_failed 覆盖停止原因，跳过不能记录为实际上传成功，清理错误不能反转成功。本轮调整上传阶段、增加唯一修复/许可不可用与暂停诊断；移除派生客户端应用/网络 HttpLoggingInterceptor，避免依赖拦截器输出完整 URL。
+
+失败分类由实际请求/结果提交节点记录 reasonCode、errorType、HTTP 状态和 stage；许可已使用则 WARN 记录固定 directory_recovery_already_attempted 诊断码，业务失败原因仍保留当次具体 HTTP 状态。共享摘要/Mine 页展示不新增重组日志，读取失败沿用 MineVm 的 runtime_store_failed 低敏错误；不输出原因对应的原始异常文本。验证存储的稳定码、入口本地化原因和日志证据一致。
+
+### 取舍、后续边界与方案验证
+
+- 旧 sidecar 留在服务器但不再读取/删除；如未来确需清理，另做用户可控维护，不扩大本轮网络操作。
+- 列表的文件名时间没有时区和毫秒信息；精确信息以下载后包内 manifest 为准，本轮不迁移命名协议。
+- 直接正式 PUT 在中断时可能留下远端不完整文件；本轮不引入事务发布或上传回读，恢复预检仍拒绝损坏 ZIP。
+- 目录被外部持续删除时，同 taskId 也不再次修复；404/409 共用一次许可是用户最终选择，减少反复网络操作，接受一次修复后再次路径失败就结束。新任务重置机会，旧任务系统重调度不重置。
+- 系统重新调度没有本轮新增次数/期限上限，下一轮会淘汰旧任务；持续后台限制仍可能无法完成，日志只说明实际停止证据。
+- 自动/手动继续保留为内部业务来源和包内元信息，列表不展示；本地 SAF 摘要继续使用。本轮不新增业务数据、schema 或备份字段，任务/临时包/凭据仍排除用户与系统备份。
+
+本节局部替代 2026-10-08 的“先查目录、ZIP 与外部 manifest 均成功才结束、运行中断终结且不重传”规则；其他最新轮次、两目标独立和条件结果提交约束延续。代码采用该最终契约；无阻塞待确认点，设备验收作为后续边界保留，不自动部署或访问用户服务器。
+
+最终完整验证命令成功：base:general 100 项、app 273 项单元测试共 373 项，失败/错误/跳过均为 0；`:app:compileDebugKotlin`、`:app:assembleRelease`（含 lintVital、R8、正式打包）成功，耗时 2 分 40 秒。生成器未修改，无需重复其单元测试；已重生成 HTML，`python -X utf8 tools/render_doc_flow_html.py --check docs/webdav_backup_plan.md` 和 `git diff --check` 通过。流程图仅把真实规则/可控 IO 回归标为已单测，实际 Worker、网络服务、SAF 与视觉效果保留人工验证。原位 feature 分支保留既有用户方案修改，未建立物理隔离 worktree；已核对差异范围，未提交或推送。构建保留既有 Shizuku `AppOpsManager.OnOpNotedListener` R8 警告，该模块未修改；正式 APK 和 mapping 位于 `app/build/webdav-verify/outputs`，未安装或触发真实备份。
+
+技术依据：[WebDAV PUT 父目录要求](https://www.rfc-editor.org/rfc/rfc4918.html#section-9.7.1)、[HTTP 409 冲突语义](https://www.rfc-editor.org/rfc/rfc9110.html#section-15.5.10)、[HTTP PUT 幂等性](https://www.rfc-editor.org/rfc/rfc9110.html#section-9.2.2)、[WorkManager 停止与取消](https://developer.android.com/develop/background-work/background-tasks/persistent/how-to/manage-work#stop_a_running_worker)。
+
 ## 来源图标纯内存兼容（2026-10-11）
 
 来源图标展示改为可见 UI 按包名请求主进程统一 Manager，停止 Shizuku PNG/hash 同步、正式图标发布和图标元数据写库。新 Bitmap、主色与图标 UI 会话只在内存，分页和安装对象不持图像，不新增备份字段或 dirty/后台调度。旧 `source_apps.iconPath/iconHash/primaryColor` JSONL 白名单仍兼容旧包，恢复后 UI 只由可见 UI 按包名读取当前设备系统图标，不以历史路径/主色作为显示真相；不主动删除旧用户文件或旧缓存。系统备份/迁移仍保留 `app_icons/` 和传输目录排除。
@@ -25,6 +323,8 @@
 下方文件留证与公共录制说明属于已退役旧实现或历史证据；历史诊断结论不会因用户反馈当前功能正常而重写。
 
 ## 最新轮次并行备份与 WebDAV 直接上传（2026-10-08）
+
+本节是 2026-10-08 已完成的历史基线；其独立 manifest PUT、目录/中断处理及失败摘要由顶部 2026-10-11 当前实现替代。最新轮次、目标独立与条件结果提交继续沿用。
 
 本轮状态：已完成。2026-10-08 按用户授权的最新两个提交 d56d025、5b4262d 完成代码与 JVM/编译/R8 验证；设备验收另列待办。下方历史验证不作为本轮证据。保留生成/恢复锁，扩展现有运行态和包存储，新增一个本地 Worker，不建立额外协调框架。恢复、备份数据白名单等未改契约继续沿用原章节。
 
@@ -74,7 +374,7 @@
 - 手动 WebDAV 入口继续先提交配置并校验地址，再提交一次性生成任务；沿用当前已配置本地目录的同包保存能力，但两目标独立执行。手动触发同样产生新轮次并淘汰旧轮次。
 - 本次不把“通过系统文件创建器导出一个本地文件”扩大为云端备份入口。该入口继续只导出用户选择的文件，复用快照导出能力；它的临时目录独立，不删除后台轮次产物，也不触发 WebDAV。
 - 页面去掉“WebDAV 仅 Wi-Fi 备份”开关、等待 Wi-Fi/等待网络提示及对应状态分支。任务尚未获得系统调度时显示“等待执行”，不能显示“等待网络”。
-- 手动入队提示改为表达“已安排备份，可在备份入口查看结果”；入队不表示 ZIP 已生成或远端成功。生成、保存和上传各自展示真实阶段，页面关闭不取消已提交的后台任务。
+- 手动 WebDAV 入队成功后展示可关闭的“后台备份任务已创建，请稍后在备份页面查看结果”弹窗，不再同时发送入队 Snackbar；入队不表示 ZIP 已生成或远端成功。当前手动云端结果真实保存后给出成功/失败 Toast，自动任务与本地镜像静默，细节以顶部完成反馈章节为准。生成、保存和上传各自展示真实阶段，页面关闭不取消已提交的后台任务。
 - 本地与 WebDAV 的最近结果分别保存；未配置的目标不显示虚假的成功或失败。连接测试只更新连接健康状态，不触发实际备份或抹掉最近备份失败。
 - 本地/远端已发布历史备份继续按现有保留份数管理。“开始时删除旧包”只指应用私有中间目录，不包括用户授权目录、远端正式历史备份或恢复预览文件。
 - 地址、账号、远端目录或本地目录改变后，旧任务不得把旧轮次内容发给新目标。复用目标身份校验；密码只在实际上传时读取，不写入 WorkData 或包描述。
@@ -474,6 +774,8 @@ Hilt 不会因为目的地进入嵌套图就自动生成“导航组 scope”；
 
 ## 每日备份与分目标结果改造（已完成，2026-10-01）
 
+本节保留当时实现记录；后续调度已由 2026-10-08 改为无网络约束，上传、系统停止与共享失败摘要以顶部 2026-10-11 当前实现为准。
+
 本轮状态：已完成。本节依据 2026-09-30 最新代码重新分析，分析基线为 `d9952fa`；用户已确认“每日生成一份包、保存本地、满足网络条件后上传同一份包”的流程，2026-10-01 用户确认实施。生产流程、回归测试、两种功能配置的编译/R8及一次独立审查修复已完成，系统和真实服务验收仍需设备。旧保存版本、变更触发和主动退避机制已删除；本文对应章节统一以每日同包流程为准。其他页面正在维护的无关方案不在本次修改范围。
 
 ### 需求与范围
@@ -733,7 +1035,7 @@ WebDAV：上次备份失败
 - WebDAV 测试连接会校验 HTTPS、目录规范化、目录存在性和可写性；测试成功后自动刷新远端备份列表，页面同时保留显式“刷新列表”按钮和提示文案，避免用户误以为列表会自动常驻更新。
 - 当前实现：手动 WebDAV 提交后台生成请求，完整包准备后本地与云端独立 Worker 消费；任一目标失败不阻塞另一目标，见顶部 2026-10-08 章节。
 - WebDAV 密码经独立 Android Keystore alias 的 AES-GCM 加密后存入宿主 DataStore；新安装不读取旧介质。密钥失效时要求重新输入密码。
-- 当前实现：手动 WebDAV 只提交后台生成请求并提示已安排备份，入队不表示生成或上传成功；后台分目标更新真实结果。独立系统文件导出仍按该入口的实际完成结果提示。
+- 当前实现：手动 WebDAV 提交后台生成请求，成功入队后展示可关闭的任务已创建弹窗；入队不表示生成或上传成功。后台分目标更新真实结果，仅对本轮已保存的手动 WebDAV 终态尝试成功/失败 Toast，自动任务无完成 Toast。独立系统文件导出仍按该入口的实际完成结果提示。
 - 恢复链路使用真正的独立导航页面，用户选择本地文件、本地备份目录条目或 WebDAV 条目后进入恢复页读取状态，页面内部在读取、预览、恢复中、恢复完成和恢复失败之间切换，避免 BottomSheet 下滑误关闭。
 - 备份页和恢复页不共享 `BackupVm`；三个页面通过父图作用域 `BackupFlowVm` 共用一个 `BackupFlowSession`。备份页把恢复请求写入会话单槽 StateFlow，独立 `BackupRestoreVm` 首次 RESUMED 时接管读取、下载、预览、恢复和临时文件清理。建立 Reading 后按 requestId 确认清空请求，关闭页面或 ViewModel 销毁时按匹配身份清理，避免长期持有 URI、WebDAV 条目或备份页状态。
 - 备份页和恢复流程页已接入 `SecondaryPageScaffold` 二级页面骨架，标题栏、页面背景、Snackbar 和底部操作入口跟随本轮固定品牌主题；备份导出、WebDAV、恢复预检、恢复写库和媒体关联状态机不变。
@@ -759,7 +1061,123 @@ WebDAV：上次备份失败
 
 ## 流程图
 
-前三张描述本轮实际生成与两目标独立消费。纯规则/包存储/分目标事务/请求序列有单测，Worker 接线以编译验证为准；真实 WorkManager、SAF 和服务端行为仍需人工验证。旧串行生成和网络等待图已删除；导航与恢复图继续保留原有边界。
+前七张图描述 2026-10-11 当前实现；入队确认 UI 与后台完成反馈分别成图，保持页面和后台的职责边界。纯规则、许可/包读取、请求序列、元数据清理和完成反馈判断有 JVM 回归，app 编排接线由编译验证，真实 Worker、服务端、SAF、系统 Toast 和 UI 视觉仍需人工验证。后续生成、本地保存、导航与恢复图沿用原有边界。
+
+### 当前实现：手动入队确认
+
+```mermaid
+%% title: 当前实现：手动入队确认
+flowchart TD
+    Manual["点击手动 WebDAV 备份<br/>编译验证，人工验证"] --> Submit["保存配置、校验并请求入队<br/>不显示进度弹窗，显示规则已单测，接线编译验证"]
+    Submit -->|失败| Error["沿用失败提示<br/>不显示任务已创建，编译验证"]
+    Submit -->|成功| Notice["可关闭的任务已创建弹窗<br/>阻塞广告、不等待备份结束，编译验证，人工验证"]
+    Notice -->|确认、外部点击或返回| Close["只关闭页面反馈<br/>不取消任务，编译验证，人工验证"]
+    Submit -->|成功| Background["后台生成及分目标发布<br/>独立于弹窗，人工验证"]
+```
+
+### 当前实现：手动云端完成反馈
+
+```mermaid
+%% title: 当前实现：手动云端完成反馈
+flowchart TD
+    Finish["目标执行结束或中断<br/>接线编译验证，人工验证"] --> Pause{"系统暂停等待重调度？<br/>已单测"}
+    Pause -->|是| Queued["返回排队，不写终态、不提示<br/>已单测，接线编译验证"]
+    Pause -->|否| Record["条件提交真实成功或失败<br/>已单测，接线编译验证"]
+    Record -->|存储失败| StoreFailed["保持结果存储失败契约，不提示<br/>已单测"]
+    Record -->|事务返回| Allowed{"接受新终态且来源为手动且目标为云端？<br/>已单测"}
+    Allowed -->|否| Silent["自动、本地镜像、旧或重复结果静默<br/>已单测"]
+    Allowed -->|是| Toast["尝试显示固定成功或失败 Toast<br/>调用边界已单测，真实展示人工验证"]
+    Toast --> Saved["显示和诊断异常隔离<br/>结果仍已保存，已单测"]
+```
+
+### 当前实现：单 ZIP 上传
+
+```mermaid
+%% title: 当前实现：单 ZIP 上传
+flowchart TD
+    Start["WebDAV Worker 获得执行机会<br/>人工验证"] --> Valid{"最新任务、阶段和目标有效？<br/>已单测，接线编译验证"}
+    Valid -->|否| Skip["跳过或取消<br/>不覆盖新任务结果，已单测，接线编译验证"]
+    Valid -->|是| Read["读取 taskId 本地描述和非空 ZIP<br/>不查云端、不重新打包，已单测，接线编译验证"]
+    Read -->|包缺失或描述损坏| Failed["条件保存本轮失败<br/>不主动重试，已单测，接线编译验证"]
+    Read -->|可读| Put["直接 PUT 正式 ZIP<br/>无目录预查、无独立摘要，已单测，接线编译验证"]
+    Put -->|成功| Commit["事务内比较 taskId 并保存成功<br/>已单测，接线编译验证"]
+    Put -->|404 或 409| Repair["申请共用的一次目录修复许可<br/>同 taskId 跨重调度不重置，已单测，接线编译验证"]
+    Put -->|其他真实失败| Failed
+    Repair -->|实际修复完成| RetryCheck{"协程有效且同一 ZIP 仍可读？<br/>已单测，接线编译验证"}
+    RetryCheck -->|是| Put
+    RetryCheck -->|包缺失| Failed
+    RetryCheck -->|已取消| Stop
+    Repair -->|许可已用、目录完整或修复失败| Failed
+    Commit -->|成功保存| Prune["清理旧 ZIP<br/>清理失败不反转成功，已单测，接线编译验证"]
+    Commit -->|任务已过期| Skip
+    Commit -->|存储失败| StoreFailed["保留 result_store_failed<br/>不自动重传，已单测，接线编译验证"]
+    Put -.-> Stop["取消请求并处理系统停止<br/>见独立子流程，人工验证"]
+```
+
+### 当前实现：目录缺失修复
+
+```mermaid
+%% title: 当前实现：目录缺失修复
+flowchart TD
+    Candidate["PUT 返回 404 或 409<br/>已单测，接线编译验证"] --> Claim{"事务按 taskId 保存共用的一次处理许可<br/>跨重调度/重启不重置，已单测，接线编译验证"}
+    Claim -->|首次成功登记| Query["PROPFIND 配置目录<br/>已单测，接线编译验证"]
+    Claim -->|已使用或无法登记| Failed
+    Query -->|目录存在或查询失败| Failed["结束本轮失败<br/>不做无进展重传，已单测，接线编译验证"]
+    Query -->|明确返回 404| Create["正式上传逐级查询并 MKCOL 缺失层级，405 即结束<br/>已单测，接线编译验证、真实服务人工验证"]
+    Create -->|失败或无实际创建| Failed
+    Create -->|实际创建完成| Check{"协程有效且同一 ZIP 仍存在非空？<br/>已单测，接线编译验证"}
+    Check -->|包缺失| Failed
+    Check -->|已取消| Stop["传播取消，进入系统停止处理<br/>已单测，接线编译验证"]
+    Check -->|是| Retry["回到主流程 PUT 同一 ZIP<br/>再遇 404/409 不再修复，已单测，接线编译验证"]
+```
+
+### 当前实现：系统停止与重新执行
+
+```mermaid
+%% title: 当前实现：系统停止与重新执行
+flowchart TD
+    Stop["协程取消，联动 Call.cancel<br/>底层 Call.cancel 已单测，流释放依赖请求关闭"] --> Check{"仍是有效未终结任务，且有系统暂停证据？<br/>包含抢占和系统处理，已单测，接线编译验证"}
+    Check -->|否| End["保留成功，或跳过/取消/结束中断<br/>不因包存在复活，已单测，接线编译验证"]
+    Check -->|是| Queue["条件回到 queued<br/>保留目录修复标记及最近完成结果，已单测，接线编译验证"]
+    Queue --> Schedule["等待 WorkManager 再次给出执行机会<br/>不调用 Result.retry，人工验证"]
+    Schedule --> Enter["同 taskId 重新进入 Worker<br/>人工验证"]
+    Leftover["进程退出遗留 uploading<br/>系统重新进入，人工验证"] --> Enter
+    Enter --> Validate{"重新检查任务、目标及本地包<br/>已单测，接线编译验证"}
+    Validate -->|有效可读| Put["完整 PUT 原文件名、原 ZIP<br/>不做字节断点续传，已单测，接线编译验证"]
+    Validate -->|终态或已失效| End
+    Validate -->|包缺失或描述损坏| Failed["条件保存文件错误并中止<br/>已单测，接线编译验证"]
+```
+
+### 当前实现：基础列表与恢复入口
+
+```mermaid
+%% title: 当前实现：基础列表与恢复入口
+flowchart TD
+    Open["页面可见时按需刷新远端列表<br/>人工验证"] --> List["一次 PROPFIND 读取目录元数据<br/>零 sidecar GET，已单测，接线编译验证"]
+    List --> Filter["筛选标准 ZIP，排除集合并隐藏旧 safety<br/>按文件名时间及元数据稳定排序，已单测，接线编译验证"]
+    Filter --> Card["本地和远端共用列表卡片<br/>文件名、时间、大小；无自动/手动行<br/>人工验证"]
+    Card --> Click["用户选择预览某个 ZIP<br/>人工验证"]
+    Click --> Download["下载所选 ZIP，进入既有恢复预检<br/>人工验证"]
+    Download --> Inspect["读取 ZIP 内 manifest 并校验 checksum<br/>缺少外部摘要不影响预检，已单测，接线编译验证"]
+    Inspect -->|通过| Preview["沿用恢复预览与后续流程<br/>人工验证"]
+    Inspect -->|损坏或不兼容| Reject["拒绝恢复并展示既有错误<br/>已单测，接线编译验证"]
+```
+
+### 当前实现：“我的”页失败原因展示
+
+```mermaid
+%% title: 当前实现：“我的”页失败原因展示
+flowchart TD
+    Failure["实际 WebDAV 失败<br/>已单测，接线编译验证"] --> Reason["按异常类型/HTTP 状态生成低敏原因码<br/>不保存地址或异常原文，已单测，接线编译验证"]
+    Reason --> Save["比较当前 taskId 后保存失败原因<br/>不覆盖其他目标或新任务，已单测，接线编译验证"]
+    Save --> Collect["我的页可见时收集既有轻量结果<br/>不额外请求网络，人工验证"]
+    Collect --> Map{"共享纯原因映射能识别？<br/>已单测，接线编译验证"}
+    Map -->|是| Known["本地化具体原因<br/>请求超时与系统执行时限分开，已单测，接线编译验证"]
+    Map -->|空或未知| Unknown["未记录具体原因或未知错误<br/>不猜测历史根因，已单测，接线编译验证"]
+    Known --> Summary["共享摘要直接显示失败及原因<br/>自然换行、备份页详情去重，人工验证"]
+    Unknown --> Summary
+    Collect -->|结果读取失败| ReadFailed["展示备份结果读取失败<br/>不冒充上传失败，接线编译验证"]
+```
 
 ### 当前实现：新轮次生成与并行分派
 
@@ -793,20 +1211,6 @@ flowchart TD
     Write -->|失败| Failure
 ```
 
-### 当前实现：WebDAV 直接上传
-
-```mermaid
-%% title: 当前实现：WebDAV 直接上传
-flowchart TD
-    Start["云端 Worker 获得执行机会<br/>无网络约束，接线编译验证"] --> Check{"上传前检查任务 ID 与目标<br/>仍有效且未结束？编译验证"}
-    Check -->|否| Skip["旧请求或重复请求跳过<br/>编译验证"]
-    Check -->|是| Zip["读取本轮包并直接 PUT 正式 ZIP<br/>只传一次、不回读，已单测"]
-    Zip --> Manifest["直接 PUT 本轮正式 manifest<br/>编译验证"]
-    Manifest -->|请求成功| Success["事务内比较本任务 ID 与最新任务 ID<br/>相等才保存 WebDAV 结果，已单测<br/>保存成功再清理历史备份，编译验证"]
-    Zip -->|无网或上传失败| Failure["同一事务比较任务 ID，已单测<br/>相等才保存失败，否则跳过<br/>不主动重试，编译验证"]
-    Manifest -->|失败| Failure
-```
-
 下图表示已接入的父图、请求及回显边界；会话和归约有 JVM 回归，导航实际返回、owner 释放及进程重建仍待设备验收。后续备份、恢复和媒体关联图同步采用本组会话，不再依赖 Singleton 发送器。
 
 ```mermaid
@@ -835,71 +1239,98 @@ flowchart TD
 
 ### 恢复流程
 
+以下三张图按 2026-10-10 当前代码梳理，分别表达读取与预览、分阶段恢复、返回与清理。原图将取消等同失败、将所有恢复阶段描述为一次事务，并遗漏部分成功；本轮以 `BackupRestoreFlowPage`、`BackupRestoreVm`、`BackupNavigation` 和 `BackupSnapshotRestorer` 的实际行为为准，只修正文档，不调整运行时代码。
+
+页面状态为 `Hidden → Reading → Preview → Restoring → Result / Error`。`Hidden` 是首次请求检查前的等待状态以及退出后的清理状态；读取失败直接进入 `Error`，功能库或设置阶段失败且携带已提交报告时进入部分成功的 `Result`。
+
+#### 入口、读取与预览
+
 ```mermaid
-%% title: 恢复流程
+%% title: 恢复页面：入口、读取与预览
 flowchart TD
-  subgraph RestoreSources["恢复来源来自备份流程输出"]
-    SourceFile["本地 zip 文件<br/>来自系统文件创建器导出<br/>人工验证"]:::manual
-    SourceLocal["本地备份目录条目<br/>来自本地备份列表<br/>人工验证"]:::manual
-    SourceRemote["WebDAV 远端条目<br/>来自远端备份列表<br/>人工验证"]:::manual
-  end
-
-  subgraph BackupPageRestore["备份页只负责发起恢复请求"]
-    ChooseRestore{"用户选择恢复来源<br/>人工验证"}:::manual
-    RestoreRequest["写入当前导航组会话单槽请求<br/>已单测"]:::unit
-    NavRestore["导航到 BackupRestoreRoute 独立恢复页<br/>编译验证"]:::compile
-  end
-
-  subgraph RestorePage["独立恢复页 BackupRestoreRoute / BackupRestoreVm"]
-    ClaimRequest["建立 Reading 后确认 requestId 并清空槽位<br/>编译验证"]:::compile
-    CopyTemp["复制本地 URI 或下载 WebDAV 备份到私有临时文件<br/>人工验证"]:::manual
-    Preview["BackupPackageReader 校验 manifest、checksum、schemaVersion<br/>已单测"]:::unit
-    PreviewUi["展示轻量预检摘要<br/>人工验证"]:::manual
-    Confirm{"用户确认恢复？<br/>人工验证"}:::manual
-    BackGuard["读取中 / 恢复中返回二次确认<br/>人工验证"]:::manual
-    Restore["BackupSnapshotRestorer 事务合并写库<br/>编译验证"]:::compile
-    TimeNorm["剪贴时间轴归一化<br/>已单测"]:::unit
-    Report["恢复结果页展示新增 / 更新 / 跳过报告<br/>编译验证"]:::compile
-    ReportDone["结果页底部完成<br/>关闭恢复页和备份页<br/>编译验证"]:::compile
-    ReportBack["结果页顶部或系统返回<br/>回备份页<br/>人工验证"]:::manual
-    RestoreFailure["读取或恢复失败<br/>取消协程并清理临时文件<br/>人工验证"]:::manual
-  end
-
-  subgraph MediaBoundary["恢复页与本地媒体关联流程的交互边界"]
-    MediaEntry["恢复结果页提供“恢复本地媒体关联”入口<br/>点击后进入本地媒体关联流程<br/>人工验证"]:::manual
-    MediaResult["观察会话媒体 StateFlow 回显<br/>校验 restoreTaskId 后映射入口和 summary<br/>编译验证"]:::compile
-    EntryState["入口显示：恢复 / 继续 / 扫描中 / 再次恢复关联<br/>人工验证"]:::manual
-  end
-
-  SourceFile --> ChooseRestore
-  SourceLocal --> ChooseRestore
-  SourceRemote --> ChooseRestore
-  ChooseRestore --> RestoreRequest
-  RestoreRequest --> NavRestore
-  NavRestore --> ClaimRequest
-  ClaimRequest --> CopyTemp
-  CopyTemp --> Preview
-  Preview --> PreviewUi
-  Preview --> RestoreFailure
-  PreviewUi --> Confirm
-  PreviewUi --> BackGuard
-  Confirm -->|"确认"| Restore
-  Confirm -->|"取消"| RestoreFailure
-  Restore --> TimeNorm
-  TimeNorm --> Report
-  Report -->|"底部完成"| ReportDone
-  Report -->|"顶部或系统返回"| ReportBack
-  Restore --> RestoreFailure
-  Report --> MediaEntry
-  MediaEntry -->|"打开独立媒体关联页"| MediaResult
-  MediaResult --> EntryState
-  EntryState --> MediaEntry
+  File["系统文件选择器选 ZIP<br/>人工验证"]:::manual --> Request
+  Local["点击本地备份列表条目<br/>人工验证"]:::manual --> Request
+  Remote["点击 WebDAV 列表条目<br/>人工验证"]:::manual --> Request
+  Request["会话接受单槽恢复请求<br/>忙碌或关闭时拒绝 已单测"]:::unit --> Visible
+  Visible["打开恢复页并绑定会话<br/>首次 RESUMED 才接管 编译验证"]:::compile --> Valid
+  Valid{"是否存在有效请求？<br/>人工验证"}:::manual
+  Valid -->|"无请求或进程重建丢失"| Back["回备份页，重新选择<br/>不自动重新恢复 人工验证"]:::manual
+  Valid -->|"有效"| Reading["建立 Reading，再确认请求<br/>同一 VM 不重复读取 编译验证"]:::compile
+  Reading --> Temp["本地复制 / WebDAV 下载<br/>写入本次私有临时目录 人工验证"]:::manual
+  Temp --> Verify["预检格式、应用身份、版本<br/>文件清单和 checksum 已单测"]:::unit
+  Temp -->|"复制或下载失败"| Error
+  Verify -->|"预检失败"| Error["Error：展示读取失败原因<br/>重新选择按钮回备份页 人工验证"]:::manual
+  Verify -->|"通过"| Preview["Preview：信息、分类数量、合并说明<br/>仅预览，不写库 人工验证"]:::manual
+  Preview -->|"点击合并恢复"| Restore["进入分阶段恢复流程<br/>人工验证"]:::manual
+  Preview -->|"取消或返回"| Clean["释放请求、清理临时包<br/>回备份页 人工验证"]:::manual
 
   classDef unit fill:#dff5e7,stroke:#26804b,color:#16351f;
-  classDef todo fill:#fff1cc,stroke:#b7791f,color:#3d2a05;
   classDef manual fill:#e8f1ff,stroke:#2b6cb0,color:#17375e;
   classDef compile fill:#efe8ff,stroke:#6b46c1,color:#2d1f53;
 ```
+
+请求先被当前导航组会话接受，再打开恢复页；系统文件选择器取消不提交请求。预览保留同一份私有临时包，显示文件信息、来源、备份时间、版本、校验结果和分类数量。按钮直接启动合并恢复，没有额外的恢复确认弹窗，也不自动生成安全快照。
+
+#### 执行、部分成功与媒体关联入口
+
+```mermaid
+%% title: 恢复页面：执行与结果分支
+flowchart TD
+  Start["点击合并恢复 / 重试部分恢复<br/>复用已预检临时包 人工验证"]:::manual --> Restoring
+  Restoring["Restoring：登记新 taskId<br/>生成与恢复互斥 编译验证"]:::compile --> Validate
+  Validate["再次检查临时包及协议<br/>已单测"]:::unit --> Room
+  Room["宿主 Room 事务合并<br/>归一化剪贴时间轴 编译验证"]:::compile --> Feature
+  Validate -->|"文件失效或校验失败"| Error
+  Room -->|"事务失败：回滚本次宿主写入"| Error["Error：展示恢复失败<br/>关闭或返回备份页 人工验证"]:::manual
+  Feature["依次恢复已启用的功能库<br/>独立提交 编译验证"]:::compile --> Settings
+  Feature -->|"功能库阶段失败"| Partial
+  Settings["最后提交 DataStore 设置白名单<br/>独立提交 编译验证"]:::compile --> Success
+  Settings -->|"设置阶段失败"| Partial["Result：部分成功<br/>保留已确认报告，标记失败阶段 已单测"]:::unit
+  Partial --> Retry["可重试同一备份或完成退出<br/>媒体关联入口暂不开放 人工验证"]:::manual
+  Retry -->|"重试：重新执行合并恢复"| Start
+  Success["Result：全部成功<br/>展示新增 / 更新 / 跳过 人工验证"]:::manual --> Register
+  Register["登记 Result.taskId<br/>允许媒体关联 已单测"]:::unit --> Actions
+  Actions["选择：恢复本地媒体关联<br/>完成退出 / 返回备份页 人工验证"]:::manual
+  Actions -->|"恢复本地媒体关联"| Media["打开独立媒体关联页<br/>只传任务身份 编译验证"]:::compile
+  Media -->|"普通返回"| Echo["匹配 taskId 的状态与摘要回显<br/>扫描细节见下方独立流程 已单测"]:::unit
+  Echo --> Actions
+
+  classDef unit fill:#dff5e7,stroke:#26804b,color:#16351f;
+  classDef manual fill:#e8f1ff,stroke:#2b6cb0,color:#17375e;
+  classDef compile fill:#efe8ff,stroke:#6b46c1,color:#2d1f53;
+```
+
+当前 JSONL 备份按宿主 Room、可选功能库、DataStore 设置的顺序恢复，三者不组成跨库事务。旧 v1 / JSON 数组备份走兼容入口，宿主 Room 完成后提交设置。宿主事务失败会回滚该事务；功能库或设置失败保留此前已提交的数据，部分结果只承诺异常明确携带的报告，不推测失败阶段写入了多少。部分成功重试会重新执行整个合并恢复，依赖既有幂等规则跳过相同数据，并非仅重试失败阶段。未知异常仍进入 `Error`。
+
+#### 返回、完成与取消清理
+
+```mermaid
+%% title: 恢复页面：返回、完成与取消清理
+flowchart TD
+  Back["顶部返回 / 系统返回<br/>人工验证"]:::manual --> Running
+  Done["Result 底部完成<br/>扫描中按钮禁用 人工验证"]:::manual --> DoneGuard
+  Running{"会话中的媒体关联正在扫描？<br/>已单测"}:::unit
+  Running -->|"是"| Stay["提示扫描中并留在当前流程<br/>人工验证"]:::manual
+  Running -->|"否"| Busy{"当前为 Reading 或 Restoring？<br/>人工验证"}:::manual
+  Busy -->|"是"| Confirm["显示退出二次确认<br/>人工验证"]:::manual
+  Confirm -->|"继续等待"| Keep["关闭确认弹窗，任务继续<br/>人工验证"]:::manual
+  Confirm -->|"确认退出"| Cancel["取消本页协程<br/>不撤销已提交阶段 人工验证"]:::manual
+  Busy -->|"否"| Clean
+  Cancel --> Clean["释放请求及媒体回显<br/>清理临时目录 编译验证"]:::compile
+  Clean --> Backup["只弹恢复页，回备份页<br/>人工验证"]:::manual
+  DoneGuard{"同步会话检查是否允许退出？<br/>已单测"}:::unit
+  DoneGuard -->|"扫描中"| Stay
+  DoneGuard -->|"允许"| DoneClean["清理恢复状态及临时包<br/>关闭会话，弹出整个备份导航组 编译验证"]:::compile
+  DoneClean --> Entry["回到进入备份前的页面<br/>不固定跳首页 Tab 人工验证"]:::manual
+
+  classDef unit fill:#dff5e7,stroke:#26804b,color:#16351f;
+  classDef manual fill:#e8f1ff,stroke:#2b6cb0,color:#17375e;
+  classDef compile fill:#efe8ff,stroke:#6b46c1,color:#2d1f53;
+```
+
+读取/恢复失败先保留错误页；部分成功保留临时包供重试，不在进入失败或结果状态时立即删除。普通返回、确认取消、完成以及恢复 VM 的 `onCleared()` 负责本次临时文件清理。取消只表示取消当前任务；已提交的 Room、功能库或设置不会被整组回滚。页面离开前台不会重复启动读取，也不把已确认任务自动变为后台可续跑任务；进程死亡丢失内存请求和报告后退回备份起点，已提交数据仍保留。
+
+本轮复用主方案和既有离线 HTML 生成器，不新建重复恢复文档、不修改组件/类/方法。按 `$repo-unit-test-gate` 判断，纯流程说明和图块调整无需新增单测、选择性 TDD、Android 编译或 R8；验证重点为源码分支核对、生成同步和 Mermaid 渲染。测试徽标表示既有覆盖范围，不表示本轮重新执行 Android 测试；实际导航、SAF、WebDAV 和取消期间的设备行为仍按原验收边界人工验证。日志与诊断沿用下方现有计划，本轮无新增运行时副作用或日志点，也不改变备份覆盖、格式和恢复协议。
 
 ### 本地媒体关联流程
 
@@ -992,8 +1423,8 @@ flowchart TD
 2. 生成 Worker 在生成/恢复锁内登记新轮次，尽力取消旧目标并清理受控旧内部包及后台生成缓存，再生成完整 ZIP。
 3. 完整 ZIP/sidecar 复制至 `noBackupFilesDir/backup_pending_upload/<roundId>` 后原子推进 ready，清理本轮生成缓存并分别登记本地/云端唯一任务。
 4. 两目标只读取自己的 roundId 和固定包，不互相等待；开始前核对当前身份、阶段和目标配置。
-5. 云端实际执行时读取密码，直接 PUT 正式 ZIP 一次及对应 manifest，无网络约束、无回读、无 latest.json。
-6. 完成/失败/取消均通过事务内条件提交；成功实际落盘后才保留清理，清理异常不反转成功。共享包不由消费方删除。
+5. 云端实际执行时读取密码，直接 PUT 正式 ZIP，无预查目录、无外部 manifest PUT、无网络约束/回读/latest.json；404/409 按 taskId 共用一次持久化目录修复机会，实际创建后补传同包。
+6. 成功/真实失败通过事务内条件提交；有证据的系统停止仍有效时回到 queued 而不覆盖历史结果，等待系统重调度；主动/未知停止沿用终结契约。成功实际落盘后才清理，清理异常不反转成功，共享包不由消费方删除。
 
 ### 自动备份
 
@@ -1001,30 +1432,30 @@ flowchart TD
 2. 普通业务保存不触发备份。生成 Worker 自动关闭或无目标时直接跳过，不删除当前完整包、不改历史结果。
 3. 有效新轮次先替换身份，再取消旧目标和删除旧内部产物；新包失败不恢复旧包，只结束选中目标。
 4. 本地和云端分别登记一次性任务，无网络约束、互不依赖。排队显示等待执行；历史结果继续保留。
-5. 无网、认证、超时和发布失败不调用 Result.retry；中断或重复执行的已运行目标结束而不重传。当前完整包保留到下轮开始。
+5. 无网、认证、实际请求超时和发布失败不调用 Result.retry。WebDAV 有证据的系统停止可恢复 queued，系统重新进入允许 ready/queued/uploading，但共用修复许可不重置；终态不得重传。本地中断保持原契约，当前完整包保留到下轮开始。
 6. 升级仅清理旧 artifact 请求和 pending，旧输入缺少 round_id 时安全退出；启动不补入队，ready 到入队之间进程死亡接受等待下一次周期/手动触发。
 
 ### 保留份数
 
 1. 普通备份默认保留 5 份，用户可设置 1-20；本地和 WebDAV 都按该数量保留最近的普通备份。
 2. 手动备份和自动备份都算普通备份，统一参与保留清理，不再区分当前安装标识或旧安装标识。
-3. 清理不删除旧版 safety 回滚文件、manifest 损坏文件、不可识别文件或用户目录里的其他文件，避免异常文件被误删。
+3. 本地沿用 manifest 安全识别；WebDAV 仅清理标准普通 ZIP 文件，不删除 safety、不可识别文件、集合目录或其它用户资源，不查询/删除旧 sidecar。
 4. 新备份完整写入、校验和发布成功后才清理旧备份，避免新备份失败时旧备份也被删除；手动刷新列表也会触发一次保留清理，让历史超额备份立即收敛。
-5. 排序优先使用 manifest `created_at`，缺失时使用文件名时间戳或服务端修改时间兜底。
-6. 只统计可识别的普通 ZIP 备份及对应 sidecar；其他非备份文件不计入保留份数。
+5. 本地排序沿用 manifest `created_at`；WebDAV 使用标准文件名时间，失败时用修改时间和文件名兜底，但修改时间不能使未知文件获得清理资格。
+6. 只统计可识别普通 ZIP；本地仍删除其 sidecar，WebDAV 只删除 ZIP，旧 sidecar 不参与保留份数。
 7. 每次备份或刷新清理后记录本地/WebDAV 清理了多少旧备份，最近成功摘要中展示自动备份产生的清理结果。
 
 ### 恢复安全边界
 
 1. 恢复前只做预检，不再自动生成 `backupKind = safety` 的恢复前安全快照。
-2. 恢复写库阶段保持 Room transaction，失败会回滚，不留下半恢复状态。
+2. 宿主写库保持 Room transaction，该事务失败会回滚本次宿主写入；可选功能库和 DataStore 设置分别在宿主事务之后提交，不承诺跨库整体原子性。后续阶段失败保留已提交数据及明确报告，页面展示部分成功，允许幂等重试；取消任务也不撤销已提交阶段。
 3. 恢复确认文案提示用户：恢复会合并到当前数据，不会清空；如需保留恢复前状态，请先手动导出普通备份。
 4. 历史版本已经生成的 `backupKind = safety` 文件不会被新流程自动删除，但备份列表会隐藏这些旧回滚文件，避免干扰普通备份选择。
 
 ### WebDAV 手动恢复
 
-1. 列举远端目录中的 `.zip` 快照并读取对应 manifest sidecar，列表只读 manifest，不为展示摘要下载完整备份。
-2. 当前代码直接扫描 ZIP 并按各自 manifest 创建时间等信息排序，不读取共享的“最新备份”指针；用户选择具体文件进行预检。此前“先读指针、损坏后回退扫描”的描述不符合实际调用链，本次已修正。
+1. 一次 PROPFIND 读取远端文件元数据，筛选标准 ZIP，排除集合；不 GET 外部 manifest 或完整包。
+2. 按文件名时间及目录元数据排序，不读取共享“最新备份”指针；列表不展示自动/手动类型。用户选择具体 ZIP 后才下载并读取包内 manifest/checksum。
 3. 用户预览指定备份时下载完整 `.zip` 快照并执行同本地导入的预检流程。
 4. 用户确认后执行合并恢复。
 
@@ -1163,7 +1594,7 @@ manifest 简化示例：
 - 自动备份调度记录每日周期更新、旧任务取消、同包入队、阶段切换、身份替换和终态清理；字段只包含开关、24 小时周期、source、artifactId、网络约束和稳定 reasonCode，不记录 WebDAV 地址或本地授权 URI。
 - 自动备份执行记录开始、跳过、快照生成、本地写入开始/成功/失败、WebDAV 上传开始/成功/失败、结束和失败，不记录应用已取消的重试路径；字段包括目标是否配置、保留份数、备份类型、文件名、文件大小、条目数量、清理数量、耗时和 reasonCode。
 - 手动本地备份记录开始、快照生成和成功；手动 WebDAV 备份记录开始、本地镜像写入、WebDAV 上传和成功；字段包括文件名、文件大小、条目数量、耗时和目标状态，不记录用户选择文件 URI、WebDAV endpoint、用户名或密码。
-- 备份 zip 组装阶段不再把真实 `fileSize` 写回包内 manifest；包内 manifest 固定 `fileSize = 0`，避免 fileSize 字段改变 JSON 长度后影响 zip 压缩结果并产生大小震荡。目标方案保留本地目录/WebDAV sidecar manifest、导出摘要和阶段日志中的真实文件大小，不需要另一份共享摘要；日志字段包含 `taskId`、文件名、真实文件大小、包内 manifest fileSize 和 entry 数量，不输出临时目录绝对路径和备份内容。
+- 备份 zip 组装阶段不再把真实 `fileSize` 写回包内 manifest；包内 manifest 固定 `fileSize = 0`，避免 fileSize 字段改变 JSON 长度后影响 zip 压缩结果并产生大小震荡。当前实现保留本地目录 sidecar、私有描述、导出摘要和阶段日志中的真实文件大小，WebDAV 不独立发布 sidecar，不需要另一份共享摘要；日志字段包含 `taskId`、文件名、真实文件大小、包内 manifest fileSize 和 entry 数量，不输出临时目录绝对路径和备份内容。
 - 恢复流程记录 `restore start/success/failed`，字段包括备份类型、文件大小、预检数量摘要、新增/更新/跳过数量、未来时间归一化字段数、正向时钟偏移毫秒数和耗时；失败日志输出 reasonCode 和异常类型，不输出备份内容。
 - 来源过滤名单恢复裁剪时记录 `reasonCode=backup_blocked_packages_trimmed`、本机数量、备份数量和合并后数量；禁止记录具体包名列表、App 名称或拦截次数。
 - 备份恢复流程页状态切换记录 `restore_flow_state_change`，字段包括 `taskId`、`fromState`、`toState`、`sourceType` 和 `reasonCode`；feature 内部恢复请求流只记录 `requestId`、请求类型和消费/清理时机，不记录本地 URI、WebDAV 地址或远端路径；读取/恢复中二次确认退出记录 `flow_closed` 或用户确认退出日志；恢复结果页底部“完成”记录低敏完成关闭链路日志，字段只包含当前状态、是否存在运行中的媒体关联和 reasonCode；不记录剪贴内容、搜索词、完整 URL 或备份包内容。
@@ -1200,7 +1631,7 @@ manifest 简化示例：
 
 ### 当前阶段：大数据量备份导出/导入流式化
 
-- 对外仍保持单个 `.zip` 备份文件和 manifest sidecar，不改成本地目录包，不备份媒体文件本体。
+- 本地对外仍保持单个 `.zip` 备份文件和 manifest sidecar，WebDAV 对外只发布单 `.zip`，不改成本地目录包，不备份媒体文件本体。
 - 新导出使用 `schemaVersion = 2` 和 JSONL 数据文件；旧 `schemaVersion = 1` 的 JSON 数组 zip 只读兼容导入，不再新生成。
 - TorrentSearch 接入后，新导出使用 `schemaVersion = 4`；`BackupFeatureContributor` 追加字段白名单数据和 `feature_counts`，旧磁力 JSONL 备份统一作为不兼容输入跳过，不再兼容恢复。
 - 导出不再生成整包 `ByteArray`：先分页写 JSONL 临时文件并计算 size/checksum，再生成 manifest，最后组装 zip。
@@ -1243,13 +1674,13 @@ manifest 简化示例：
 - 同一个备份重复恢复不会产生重复数据。
 - App 身份不匹配、schemaVersion 不支持、checksum 损坏、半截 zip 或缺失业务数据文件均禁止导入。
 - WebDAV 默认目录可用，用户修改目录后能保存并规范化。
-- 设置本地备份文件夹后，WebDAV 手动备份会先在本地目录生成 `.zip` 和 manifest，再上传 WebDAV。
+- 设置本地备份文件夹后，同一完整包独立交给本地和 WebDAV；本地发布 ZIP/sidecar，WebDAV 只 PUT ZIP，互不等待。
 - 设置本地备份文件夹后，页面展示已设置的目录路径或目录名。
 - 本地备份文件夹授权失效时，只记录本地失败；同轮 WebDAV 不受影响。
 - WebDAV 目录存在时不应触发创建；只有服务端明确返回 404 时才逐级创建目录。TLS、证书、网络、认证、跳转失败或服务端错误不能被误判为“目录不存在”，应直接按远端失败或认证失败提示。
-- WebDAV 列表直接扫描快照及各自 manifest；历史共享指针文件存在、缺失或损坏均不影响列表和指定文件恢复。
+- WebDAV 列表只读取目录元数据；旧 sidecar/共享指针存在、缺失或损坏都不影响列表，恢复仍校验 ZIP 内 manifest/checksum。
 - 大量剪贴数据备份时不明显卡死或 OOM。
-- 备份包内 manifest 的 `fileSize` 保持为 0，本地目录/WebDAV sidecar manifest 的 `fileSize` 应等于真实 zip 大小；导出不应再因为 `43333/43334` 这类自引用大小震荡而失败。
+- 备份包内 manifest 的 `fileSize` 保持为 0，本地目录 sidecar 与私有描述 manifest 的 `fileSize` 应等于真实 zip 大小，WebDAV 不独立上传 sidecar；导出不应再因为 `43333/43334` 这类自引用大小震荡而失败。
 - 从远端或本地恢复来自未来时间轴的备份后，剪贴卡片不再长期显示“现在”；恢复后新复制的普通数据应排在置顶数据下方、旧恢复普通数据上方。
 - 恢复完成页点击底部“完成”应关闭恢复页和备份页，回到进入备份前页面；点击顶部返回或系统返回应只回备份页。恢复页底部“完成”在媒体关联 Running 时继续禁用或提示等待。
 - 恢复完成后不会自动进入媒体关联页；用户点击“恢复本地媒体关联”后导航到独立页面并先展示预估。入口需要防抖并使用 `launchSingleTop`，Running 状态下入口禁用，避免重复打开多个媒体关联页。媒体关联完成或无须处理后，底部“完成”应关闭备份恢复链路，顶部返回和系统返回只回恢复结果页。
@@ -1286,6 +1717,8 @@ manifest 简化示例：
 - 备份包加密是否作为默认能力，需要在用户愿意管理恢复密码后再开启。
 
 ## 验证记录
+
+- 2026-10-10：本轮仅梳理恢复页现有行为并更新三张流程图；`python tools/render_doc_flow_html.py docs/webdav_backup_plan.md`、对应 `--check` 与 `git diff --check` 通过。已核对三类入口、首次 RESUMED 接管、预检只读、分阶段提交、部分成功重试、媒体入口与返回/完成/取消清理。未修改生成器、Kotlin、资源、测试或备份协议，不新增单测，不运行 Gradle/R8；测试徽标只表示既有覆盖。浏览器无法访问本地 HTTP 预览，且文件 URL 被浏览器安全策略禁止，因此离线 HTML 的浏览器渲染和视觉布局尚未验收，最终回复直接展示主流程 Mermaid 图供查看。
 
 - 2026-10-08：三 Worker、最新轮次和直接上传实施完成。最终运行 `.\gradlew.bat :app:testDebugUnitTest :base:general:testDebugUnitTest :app:compileDebugKotlin :app:minifyReleaseWithR8 --console=plain`，`BUILD SUCCESSFUL`；app 60 个套件 296 项、base/general 17 个套件 82 项，失败/错误/跳过均为 0。证据位于 `build/backup-final-verify.log`，mapping 保留于 `app/build/outputs/mapping/release/mapping.txt`。独立代码复核发现的分派取消及 HTTP 503 自动重发均经失败回归修复；重新复核未发现剩余缺陷。临时移除事务 ID 守卫可使两项过期结果回归失败，已恢复守卫并通过全量检查。流程 HTML 重新生成、`--check` 与 `git diff --check` 通过；生成器未变，不新增脚本测试。既有 Gradle/R8 Shizuku 警告保留。未安装、未提交、未连接真实 WebDAV，设备调度、SAF、离线、进程重建和视觉验收仍待完成；JVM 消费挂起替身不证明真实 WorkManager 并行。
 
@@ -1364,10 +1797,43 @@ manifest 简化示例：
 
 ## 变更记录
 
+- 2026-10-11：按用户要求整理备份实现、回归及方案的主分支提交，补充提交前核心模块共 390 项单测和 Debug 编译的集成验证；核对只暂存本会话备份相关文件，最终增量审查无可行动问题。原因：确认实际待提交代码与已验证方案一致，设备与服务端验收仍保留原边界。
+
+- 2026-10-11：完成手动 WebDAV 上传仅保留任务已创建确认弹窗的修正，将页面模态进度限定为实际本地导出，显式保留手动提交的广告抑制，按钮忙碌及后台 Toast 契约沿用。新增 3 项回归，旧规则手动提交一项先失败，修复后 app 289 项完整单测与 Debug 编译成功，独立增量复核无可行动问题。更新手动入队流程节点并同步 HTML，实际视觉效果留设备验收。原因：避免短暂创建进度与确认弹窗连续切换。
+
+- 2026-10-11：开始修正手动上传入口短暂进度弹窗与入队确认连续出现的问题；只保留真实入队成功确认，提交忙碌与广告抑制沿用，将已有模态判断抽出做失败回归。原因：用户明确要求点击上传仅出现一个确认弹窗，原判断仍把任务提交当成页面内长任务。
+
+- 2026-10-11：完成可关闭的手动 WebDAV 入队确认弹窗及手动云端终态 Toast，自动任务、本地镜像、旧/重复结果和系统暂停静默；新增纯结果反馈边界、应用级 Toast 协作者及共享确认弹窗，沿用结果事务与后台调度。新增 11 项选择性 TDD 回归，最小旧行为上 5 项按预期失败，最终 app 286 项单测零失败/错误/跳过，Debug 编译通过，独立增量复核无可行动问题。同步两张独立反馈图和旧入口说明，HTML 同步检查与差异检查通过；无持久化/备份格式/反射变化，不重跑 Release/R8。真实 UI、跨页面与后台 Toast 留设备验收。原因：落实用户确认方案及自动备份不提示的明确约束，避免入队与完成混淆。
+
+- 2026-10-11：用户确认实施入队确认弹窗与手动备份完成 Toast，并明确自动备份不得弹出 Toast；先补纯反馈规则失败测试，按纯结果边界、应用上下文 Toast 和共享确认弹窗拆分，既有协调器仅接入统一提交。无持久化或备份格式变化，入队确认薄 UI 接线不新增提交框架，真实 UI/后台 Toast 留设备验收；该实施开始记录的验证结果见上方完成记录。
+
+- 2026-10-11：按用户最新提议评估“入队成功后可关闭的任务已创建弹窗，后台真实结束后给出 Toast”，新节为草案并将持续等待弹窗评估标为已废弃。复用标准文字 Toast、来源与条件结果提交，明确手动 WebDAV 主目标、成功/失败、暂停/过期不提示、跨页面接线、后台限流与进程间隙漏提示，以及反馈不得改变备份结果的边界；补充选择性 TDD、低敏日志与设备验收。原因：入队确认可避免系统暂停造成页面长期阻塞，Toast 需作为持久化结果的补充而非可靠完成通知；本轮仅文档评估，未实施。
+
+- 2026-10-11：记录手动备份“运行转圈、结束展示结果、结束前禁止外部点击关闭”的可行性评估，标为草案且未实施；明确现有弹窗只跟踪入队、本次请求/轮次与结果归属、生成及上传完成的区别、系统暂停长期阻塞、返回键与完成边界，补充复用、生命周期、备份排除、选择性 TDD 和低敏日志计划。原因：用户要求先评估可行性，不能把增加弹窗当成已完成任务跟踪，也不能把未确认交互写成当前实现。
+
+- 2026-10-11：按用户接受的两项 P2 建议完成修复，补齐抢占/系统处理的可恢复系统暂停分类，并区分连接测试与正式上传的 MKCOL 405 处理；三项回归先失败再通过，受影响模块完整 376 项单测与 Debug Kotlin 编译通过，独立增量复核未发现可行动问题。原因：已知系统暂停不能终结可重调度的同包任务，正式上传的无进展限制不能使连接测试提前放弃子目录准备。日志沿用既有低敏证据，无备份或外部协议变化；本次未重跑 Release/R8，真实设备调度与服务端兼容性仍待验收。
+
+- 2026-10-11：按用户授权完成单 ZIP 发布、taskId 持久化共用一次 404/409 目录修复、可取消 HTTP、系统停止等待重调度和 uploading 重进入；元数据列表取消外部摘要 GET/DELETE 与自动/手动行，“我的”共享摘要显示稳定具体原因。选择性 TDD 补回归，修正协程异常包装、同任务许可重置、实际缺包原因、MKCOL 405（含父级已创建）及 ZIP 同名集合清理，移除继承的完整 URL logger；独立复核无剩余问题。最终 373 项单测零失败/错误/跳过、Kotlin 编译与 assembleRelease/R8/lint/打包通过，HTML 同步和差异检查通过。同步当前流程/我的页，保留既有用户来源图标与恢复说明；真机调度、服务端/SAF、视觉和读屏仍待验收。原因：落实用户最终方案并补齐审查发现的边界；未提交、安装、推送或访问用户服务器。
+
+- 2026-10-11：按用户最终要求，将 PUT 404/409 改为同一 taskId 共用一次目录查询/修复机会，系统重调度和进程重启均不重置；规划一个共用运行态标记和事务许可，替代尚未实施的“404 一次、409 每次”设计。补充“我的”页直接显示 WebDAV 具体失败原因：复用现有 reasonCode、纯原因映射和共享摘要，细化有证据的网络/HTTP/目录失败并与系统中断区分，空或未知原因明确提示，备份页详情去重。同步我的页接入文档、选择性 TDD、日志、设备验收及五张待实施图。原因：用户要求按任务统一限制目录处理次数，并避免入口只有泛化的失败文案；本轮仅更新文档与生成 HTML，未实施代码、资源或测试。
+
+- 2026-10-11：按用户对“404 只处理一次”的澄清，将范围从每次 Worker 执行改为同一 taskId 的完整生命周期；系统重调度和进程重启不重置，新任务才重置。规划复用运行态/DataStore 保存一个已处理标记、事务获取一次许可及客户端窄回调，补跨重调度、写入失败与新任务重置回归，更新两张方案图和 HTML；标记属于安装内临时任务状态，不进入备份。原因：仅用执行内局部标记会让同一任务多次取得 404 修复机会，不符合用户所说的一次边界；本轮仍未实施代码或测试。
+
+- 2026-10-11：按用户最新澄清区分目录恢复策略：PUT 404 每次执行兼容处理一次，任意一次 PUT 409 都重新检查并修复实际缺失目录，取消固定两次 PUT/一次修复上限；目录完整、查询/创建失败或取消/包缺失仍结束，修复后才重传同一包。纠正“409 等于父目录缺失”的反向推断，补充重复 409、404 标记、无进展结束和持续目录抖动的日志/回归/验收边界，更新两张方案图并同步 HTML。原因：此前次数限制是额外策略，并非 WebDAV 协议要求，也不符合用户对后续 409 的处理意图；本轮仅方案调整，代码和测试未实施，之前“一次修复”的记录作为讨论历史保留。
+
+- 2026-10-11：用户确认 checksum、远端保留清理及目录查询策略，并要求明确 409 的处理；澄清首次 ZIP PUT 返回 409 即进入目录查询，无额外冲突原因判断，只有目录查询 404 才逐级创建并最多补传一次，继续保留首次 PUT 404 的兼容入口。原因：避免把“409 只是目录缺失候选”误读为不查询目录；仅修正文案，原方案图和日志/测试计划已覆盖该分支，运行时代码未改，HTML 同步检查和差异检查继续验证。
+
+- 2026-10-11：按用户最终确认，将讨论草案收敛为 WebDAV 单 ZIP 上传与系统中断恢复修改方案，状态改为已确认、未实施；明确上传取消外部 manifest、列表取消逐包摘要 GET 和自动/手动展示、清理只删除 ZIP、保留包内 manifest/checksum 与本地摘要。补齐 taskId 命名/有效任务检查、404/409 有界目录修复、可取消 HTTP 执行、复用 queued 与系统重执行、文件职责、选择性 TDD、日志、兼容和验收任务；新增四张待实施方案图并同步离线 HTML，保留既有当前实现和用户文档改动。原因：减少网络操作和失败点，同时修正系统停止后任务终结导致重调度跳过；本轮未修改运行时代码、资源或单测。
+
+- 2026-10-11：记录用户对先 PUT/目录修复、包与有效任务检查、系统中断重新执行三项建议的确认；补充本地校验不请求网络、ZIP 已含恢复 manifest、外部 sidecar 仅服务摘要和现有第二次 PUT 失败契约。新增 WebDAV 单 ZIP 发布与列表取消逐包摘要 GET 的待确认候选，说明类型/时间兜底、恢复兼容及测试日志边界。原因：用户质疑两次上传增加失败点，需要重新评估发布物而非默认为必需；本轮仍只更新方案，不改生产代码、测试或当前流程图。
+
+- 2026-10-11：新增 WebDAV 先 PUT、目录缺失修复及本地 taskId 包检查的可行性评估草案；记录已明确的本地包语义、推荐 404/409 恢复入口、系统中断重执行、取消联动、文件名兼容、复用/测试/日志与待确认边界。原因：日志确认系统停止后目录请求超时、重调度被终态跳过，原两条规则尚不足以完整处理恢复；仅更新文档，不改变代码、备份协议或图块，保留已有用户改动。
+
 - 2026-10-11：同步图标可见 UI 按包名加载边界，列表对象不持图片；原因是用户确认以局部会话替代图像快照。备份 schema、白名单、dirty、恢复与日志不变，本次无 Mermaid 变化，无需重生成流程图。
 
 - 2026-10-11：核对图标备份与恢复代码，修正独立图标订阅、发布写库及 Shizuku 预热的过期现行描述。图标图片和新主色不进入备份，旧路径/hash/主色字段仍按原协议兼容，恢复展示只使用本机系统图标；不修改生产代码、备份格式、恢复合并或既有日志，不新增运行时日志。仅文档说明调整，验证 HTML 同步与差异检查，无需重跑 Android 编译或单元测试。原因是用户确认纯内存方案后的备份边界，文档必须与当前实现一致。
 
+- 2026-10-10：按当前代码重新梳理恢复页面，将旧恢复图拆为入口/预览、执行/结果、返回/清理三个图块，并同步生成离线 HTML；补全首次可见接管、无会话降级、部分成功重试、完整结果媒体入口、返回与完成差异及取消边界。原因：用户要求恢复页面流程图，原图遗漏部分成功且把取消/失败和整体事务回滚描述混淆；仅调整文档，不改变恢复代码或协议。
 - 2026-10-10：完成公共录制与私有诊断文件留证移除，保留即时日志、稳定停止原因及备份业务结果；最终 362 项完整单测、Debug、Release/R8 与独立复核通过。详细验证归应用日志主方案，未改备份协议/dirty/恢复，未安装或实际上传，历史日志保留。
 - 2026-10-10：用户批准完整移除方案，开始删除两条日志文件保存链路并保留即时 Logcat；验证记录在应用日志主方案统一维护，不改备份业务与恢复协议。
 - 2026-10-10：新增本地日志保存移除草案并引用应用日志主方案；用户确认同时停止公共录制与私有诊断落盘，保留常规 Logcat、备份最近结果和停止原因映射，明确当前代码仍未实施与历史证据边界。原因是用户反馈 WebDAV 备份已正常，开发文件留证已完成用途。

@@ -10,4 +10,8 @@ internal object BackupSchedulingPolicy {
     const val uploadRequiresNetwork = false
     /** 失败及运行中断不得在启动时复活，只有尚未开始上传的包可以修复入队。 */
     fun canSchedule(phase: String, workFinished: Boolean = false): Boolean = !workFinished && (phase == "ready" || phase == "queued")
+
+    /** 仅系统已给出执行机会时使用，重执行规则由回归保护；不改变本地入队策略。 */
+    fun canExecuteWebDavUpload(phase: String, workFinished: Boolean = false): Boolean =
+        !workFinished && phase in setOf("ready", "queued", "uploading")
 }

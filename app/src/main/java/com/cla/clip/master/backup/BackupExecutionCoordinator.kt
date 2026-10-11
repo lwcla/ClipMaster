@@ -10,6 +10,7 @@ import com.cla.clip.master.backup.local.LocalBackupDirectoryWriter
 import com.cla.clip.master.backup.upload.BackupPendingUploadStore
 import com.cla.clip.master.backup.upload.BackupUploadTargetFingerprint
 import com.cla.clip.master.backup.diagnostics.*
+import com.cla.clip.master.backup.feedback.ManualBackupCompletionNotifier
 import com.cla.clip.master.work.BackupAutoScheduler
 import com.cla.clip.master.work.BackupTaskGate
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -35,12 +36,22 @@ class BackupExecutionCoordinator @Inject internal constructor(
     private val pendingStore: BackupPendingUploadStore,
     /** 独立导出缓存，不包括恢复预览和当前只读包。 */
     private val temporaryStore: BackupTempFileStore,
-    /** 只直接发布正式 ZIP 与独立 manifest。 */
+    /** 直接发布单 ZIP；目录修复与取消由共享客户端承担。 */
     private val webDavClient: WebDavClient,
     /** 低敏阶段即时输出 Logcat，不保存诊断文件，也不影响业务结果。 */
     private val diagnostics: BackupDiagnostics,
+    /** 仅在当前手动云端结果实际保存后提示；自动及本地镜像静默，展示失败不影响备份结论。 */
+    private val completionNotifier: ManualBackupCompletionNotifier,
 ) {
     companion object {
+        /** 中断的窄边界供取消竞态回归：只有云端系统暂停回到 queued，本地和未知停止保留失败契约。 */
+        internal suspend fun finishInterruption(target: BackupResultTarget, stopReason: Int,
+            requeue: suspend () -> Boolean, recordFailure: suspend (String) -> Unit): Boolean {
+            // 事务拒绝代表任务已失效或终结，不再写失败去反转成功或覆盖新任务。
+            if (target == BackupResultTarget.WebDav && BackupStopReasonMapper.canResume(stopReason)) return requeue()
+            recordFailure(if (target == BackupResultTarget.Local) "local_interrupted" else BackupStopReasonMapper.interruptionCode(stopReason))
+            return false
+        }
         /** 只提交短队列操作，不等待目标 IO；可替换边界用于验证两目标分派。 */
         internal suspend fun dispatchTargets(targets: List<BackupResultTarget>, enqueue: suspend (BackupResultTarget) -> Unit,
             recordFailure: suspend (BackupResultTarget, Throwable) -> Unit) {
@@ -130,7 +141,7 @@ class BackupExecutionCoordinator @Inject internal constructor(
                 val reason = if (failure is CancellationException) "generation_interrupted" else failure.backupReasonCode()
                 withContext(NonCancellable) {
                     // target 仅枚举本轮实际选择的目标，不修改未配置目标的历史结果。
-                    for (target in selectedTargets(hasLocal, hasRemote)) commit(roundId, target, reason)
+                    for (target in selectedTargets(hasLocal, hasRemote)) commit(roundId, target, source, reason)
                     try { pendingStore.remove(roundId) } catch (_: Exception) { trace.event("package_cleanup_failed") }
                 }
                 trace.event("generation_failed", errorType = failure.javaClass.simpleName, reasonCode = reason)
@@ -145,7 +156,7 @@ class BackupExecutionCoordinator @Inject internal constructor(
                 }, recordFailure = { target, failure ->
                     /** 已知生成中断与真实队列失败分开，未入队目标不会永久显示等待。 */
                     val reason = if (failure is CancellationException) "generation_interrupted" else "schedule_failed"
-                    withContext(NonCancellable) { commit(roundId, target, reason) }
+                    withContext(NonCancellable) { commit(roundId, target, source, reason) }
                     trace.event("schedule_failed", errorType = failure.javaClass.simpleName, reasonCode = reason)
                 })
             trace.event("generation_finished")
@@ -190,9 +201,11 @@ class BackupExecutionCoordinator @Inject internal constructor(
             trace.event("target_skipped", reasonCode = "superseded"); return@withContext
         }
         trace.bind(roundId, pending.source)
-        if (!BackupSchedulingPolicy.canSchedule(phase.orEmpty())) {
-            // 重执行运行中阶段时结果未知，沿用结束而不重传契约。
-            if (phase == "uploading" || phase == "publishing") commit(roundId, target, "upload_interrupted")
+        /** 本地入队契约不变，云端仅在系统给出执行机会时允许消费遗留 uploading。 */
+        val executable = if (target == BackupResultTarget.WebDav) BackupSchedulingPolicy.canExecuteWebDavUpload(phase.orEmpty())
+            else BackupSchedulingPolicy.canSchedule(phase.orEmpty())
+        if (!executable) {
+            if (phase == "publishing") commit(roundId, target, pending.source, "upload_interrupted")
             trace.event("target_skipped", reasonCode = "already_finished"); return@withContext
         }
         try {
@@ -208,7 +221,9 @@ class BackupExecutionCoordinator @Inject internal constructor(
                 runtime.updateTargetPhase(roundId, target, "cancelled")
                 trace.event("target_skipped", reasonCode = "configuration_changed"); return@withContext
             }
-            runtime.updateTargetPhase(roundId, target, if (target == BackupResultTarget.Local) "publishing" else "uploading")
+            if (!runtime.updateTargetPhase(roundId, target, if (target == BackupResultTarget.Local) "publishing" else "uploading")) {
+                trace.event("target_skipped", reasonCode = "superseded"); return@withContext
+            }
             trace.stage(if (target == BackupResultTarget.Local) "publishing_local" else "reading_upload_package")
             /** 只读取本请求目录，旧包被删允许失败，不重读业务数据库。 */
             val export = pendingStore.read(roundId)
@@ -218,9 +233,11 @@ class BackupExecutionCoordinator @Inject internal constructor(
                     normalizeWebDavRemoteDir(settings.webDavRemoteDir), settings.webDavAllowInsecureHttp)
             }
             if (target == BackupResultTarget.Local) localWriter.writeExport(Uri.parse(settings.localBackupDirUri), export)
-            else webDavClient.uploadBackup(requireNotNull(config), export, roundId, trace::stage)
+            else webDavClient.uploadBackup(requireNotNull(config), export, roundId, trace::stage,
+                claimDirectoryRecovery = { runtime.claimWebDavDirectoryRecoveryIfCurrentRound(roundId) })
+            currentCoroutineContext().ensureActive()
             trace.stage("committing_result")
-            if (!commit(roundId, target)) { trace.event("result_skipped", reasonCode = "superseded"); return@withContext }
+            if (!commit(roundId, target, pending.source)) { trace.event("result_skipped", reasonCode = "superseded"); return@withContext }
             trace.event("target_result_saved")
             // 成功实际落盘才清理历史备份，清理失败不能反转成功。
             try {
@@ -233,27 +250,49 @@ class BackupExecutionCoordinator @Inject internal constructor(
                 trace.event("retention_cleanup_failed", errorType = failure.javaClass.simpleName, reasonCode = "retention_cleanup_failed")
                 logW("BackupCoordinator") { "历史备份清理失败 target=$target reasonCode=retention_cleanup_failed" }
             }
-        } catch (failure: Throwable) {
+        } catch (caught: Throwable) {
+            /** 协程停止优先于迟到网络异常；已确认结果存储故障仍保留“不自动重传”契约。 */
+            val failure = if (caught is BackupResultPersistenceFailure) caught else try {
+                currentCoroutineContext().ensureActive()
+                caught
+            } catch (cancelled: CancellationException) { cancelled }
+            if (failure is CancellationException) {
+                /** 只读取本次平台停止证据，不用超时异常或历史状态猜测系统暂停。 */
+                val stopReason = interruptedReason()
+                withContext(NonCancellable) {
+                    try {
+                        /** 条件排队不覆盖最近结果，旧任务或成功目标由事务拒绝。 */
+                        val queued = finishInterruption(target, stopReason,
+                            requeue = { runtime.updateTargetPhase(roundId, target, "queued") },
+                            recordFailure = { reason -> commit(roundId, target, pending.source, reason) })
+                        trace.event(if (queued) "target_paused" else "target_stopped", stopReason,
+                            failure.javaClass.simpleName, BackupStopReasonMapper.interruptionCode(stopReason))
+                    } catch (storeFailure: Throwable) {
+                        trace.event("interruption_store_failed", stopReason, storeFailure.javaClass.simpleName, "runtime_store_failed")
+                        logW("BackupCoordinator") { "中断状态保存失败 target=$target reasonCode=runtime_store_failed" }
+                    }
+                }
+                throw failure
+            }
             /** 状态写盘故障不能将已经发布的文件伪造成发布失败。 */
             val reason = when (failure) {
                 is BackupResultPersistenceFailure -> "result_store_failed"
-                is CancellationException -> if (target == BackupResultTarget.Local) "local_interrupted"
-                    else BackupStopReasonMapper.interruptionCode(interruptedReason())
                 else -> failure.backupReasonCode()
             }
             trace.event("target_failed", errorType = failure.javaClass.simpleName, reasonCode = reason)
             withContext(NonCancellable) {
                 if (failure is BackupResultPersistenceFailure) runtime.updateTargetPhase(roundId, target, "result_store_failed")
-                else commit(roundId, target, reason)
+                else commit(roundId, target, pending.source, reason)
             }
             logE("BackupCoordinator") { "目标执行结束 target=$target reasonCode=$reason" }
             throw failure
         }
     }
 
-    /** 条件结果提交保持原有存储失败契约，消费方永远不删除共享包。 */
-    private suspend fun commit(roundId: String, target: BackupResultTarget, reason: String = ""): Boolean =
-        BackupResultPersistence.commit(reason.isBlank()) {
+    /** source 固定为本轮来源；条件提交决定是否提示，展示失败不能反转已保存的结果。 */
+    private suspend fun commit(roundId: String, target: BackupResultTarget, source: String, reason: String = ""): Boolean =
+        completionNotifier.complete(source, target, reason.isBlank()) {
+            // 轮次及终态比较沿用同一事务；过期或重复结果不产生完成 Toast。
             runtime.recordTargetResultIfCurrentRound(roundId, target, System.currentTimeMillis(), reason)
         }
 

@@ -44,10 +44,11 @@ class BackupWebDavUploadWorker @AssistedInject internal constructor(
         return try {
             // 在中断捕获时读取当次停止原因，不从历史 WorkSpec 推断。
             coordinator.upload(artifactId, trace) { diagnostics.stopReason(this) }
-            trace.event("worker_succeeded")
+            // Worker 正常退出也可能只是旧任务跳过；实际上传结果以条件保存事件为准。
+            trace.event("worker_finished")
             Result.success()
         } catch (failure: Throwable) {
-            // 取消后保留既有边界即时输出停止事件，不写日志文件；原取消继续传播，绝不安排新的上传。
+            // 取消继续传播，系统暂停由协调器保留等待阶段；不主动安排 retry 或新的上传。
             withContext(NonCancellable + Dispatchers.IO) {
                 /** 本条结束记录只读取一次系统停止证据，兼顾尚未进入协调器的任务锁等待中断。 */
                 val stopReason = diagnostics.stopReason(this@BackupWebDavUploadWorker)

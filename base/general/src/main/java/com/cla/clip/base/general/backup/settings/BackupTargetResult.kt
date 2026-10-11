@@ -29,6 +29,8 @@ data class BackupPendingUpload(
     val localTargetFingerprint: String = "",
     /** 本地独立阶段，与云端阶段互不覆盖。 */
     val localPhase: String = "unselected",
+    /** 安装内当前任务的 404/409 共用处理标记，系统重调度不重置，也不进入备份。 */
+    val webDavDirectoryRecoveryAttempted: Boolean = false,
 ) {
     /** 云端已结束时不再请求；共享包仍由下一轮清理。 */
     val terminal: Boolean get() = isTerminalPhase(phase)

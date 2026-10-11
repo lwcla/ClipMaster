@@ -61,6 +61,8 @@ class BackupRuntimeRepository @Inject internal constructor(
     suspend fun replacePending(pending: BackupPendingUpload) {
         migrateLegacy()
         store.edit { preferences ->
+            /** 相同身份只是描述更新，只有新 taskId 才重置目录许可。 */
+            val newTask = preferences[Keys.PENDING_ARTIFACT_ID] != pending.artifactId
             preferences[Keys.CURRENT_BACKUP_ROUND_ID] = pending.artifactId
             preferences[Keys.PENDING_ARTIFACT_ID] = pending.artifactId
             preferences[Keys.PENDING_TARGET] = pending.targetFingerprint
@@ -69,11 +71,29 @@ class BackupRuntimeRepository @Inject internal constructor(
             preferences[Keys.PENDING_CREATED_AT] = pending.createdAt
             preferences[Keys.PENDING_LOCAL_TARGET] = pending.localTargetFingerprint
             preferences[Keys.PENDING_LOCAL_PHASE] = pending.localPhase
+            // 新任务身份才重置许可，阶段更新和系统重调度不写此字段。
+            if (newTask) preferences[Keys.PENDING_WEBDAV_DIRECTORY_RECOVERY_ATTEMPTED] = false
         }
     }
 
     /** 两消费者开始前读取任务身份，不让旧请求借用新包。 */
     suspend fun isCurrentRound(roundId: String): Boolean = snapshot().currentRoundId == roundId
+
+    /** 404/409 共用一次目录许可，先在当前未终结任务的事务中落盘；写盘失败直接传播，不允许修复。 */
+    suspend fun claimWebDavDirectoryRecoveryIfCurrentRound(roundId: String): Boolean {
+        /** 只有本次成功落盘置位的调用获得许可，多调用及重建仓库均不能再次取得。 */
+        var claimed = false
+        store.edit { preferences ->
+            if (preferences[Keys.CURRENT_BACKUP_ROUND_ID] == roundId &&
+                preferences[Keys.PENDING_ARTIFACT_ID] == roundId &&
+                preferences[Keys.PENDING_PHASE] in setOf("ready", "queued", "uploading") &&
+                preferences[Keys.PENDING_WEBDAV_DIRECTORY_RECOVERY_ATTEMPTED] != true) {
+                preferences[Keys.PENDING_WEBDAV_DIRECTORY_RECOVERY_ATTEMPTED] = true
+                claimed = true
+            }
+        }
+        return claimed
+    }
 
     /** 两目标终态独立，事务内比较最新 ID 后才保存结果；迟到或重复提交返回 false。 */
     suspend fun recordTargetResultIfCurrentRound(roundId: String, target: BackupResultTarget,
@@ -131,6 +151,7 @@ class BackupRuntimeRepository @Inject internal constructor(
                 preferences.remove(Keys.PENDING_CREATED_AT)
                 preferences.remove(Keys.PENDING_LOCAL_TARGET)
                 preferences.remove(Keys.PENDING_LOCAL_PHASE)
+                preferences.remove(Keys.PENDING_WEBDAV_DIRECTORY_RECOVERY_ATTEMPTED)
             }
         }
     }
@@ -170,7 +191,8 @@ class BackupRuntimeRepository @Inject internal constructor(
             pendingUpload = artifactId.takeIf(String::isNotBlank)?.let {
                 BackupPendingUpload(it, preferences[Keys.PENDING_TARGET].orEmpty(), preferences[Keys.PENDING_SOURCE].orEmpty(),
                     preferences[Keys.PENDING_PHASE].orEmpty(), preferences[Keys.PENDING_CREATED_AT] ?: 0L,
-                    preferences[Keys.PENDING_LOCAL_TARGET].orEmpty(), preferences[Keys.PENDING_LOCAL_PHASE] ?: "unselected")
+                    preferences[Keys.PENDING_LOCAL_TARGET].orEmpty(), preferences[Keys.PENDING_LOCAL_PHASE] ?: "unselected",
+                    preferences[Keys.PENDING_WEBDAV_DIRECTORY_RECOVERY_ATTEMPTED] ?: false)
             },
             webDavHealth = when (preferences[Keys.WEBDAV_HEALTH]) {
                 "available" -> BackupTargetHealth.Available

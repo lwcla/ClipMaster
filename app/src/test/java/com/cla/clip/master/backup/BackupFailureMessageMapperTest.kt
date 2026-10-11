@@ -5,6 +5,25 @@ import org.junit.Test
 
 /** 明确失败提示必须基于稳定证据，不能靠耗时或截图猜测。 */
 class BackupFailureMessageMapperTest {
+    /** 已知 WebDAV 证据不能继续降级未知，也不能与系统执行时限混淆。 */
+    @Test fun webDavEvidenceHasSpecificPresentation() {
+        // code 为本次已确认的稳定原因，非真实服务返回内容。
+        for (code in listOf("webdav_request_timeout", "webdav_tls_failed", "webdav_network_failed",
+            "webdav_http_404", "webdav_http_409", "webdav_http_503", "webdav_directory_create_failed")) {
+            org.junit.Assert.assertNotEquals(code, BackupFailureMessage.Unknown, BackupFailureMessageMapper.map(code))
+        }
+        org.junit.Assert.assertNotEquals(BackupFailureMessageMapper.map("upload_interrupted_timeout"),
+            BackupFailureMessageMapper.map("webdav_request_timeout"))
+        org.junit.Assert.assertNotEquals(BackupFailureMessageMapper.map(""), BackupFailureMessageMapper.map("garbage"))
+    }
+
+    /** 状态码格式不合法时保持未知，不能解释服务端原文或拼接注入文本。 */
+    @Test fun malformedHttpReasonsStayUnknown() {
+        // code 覆盖越界、多余符号、空状态及伪造后缀。
+        for (code in listOf("webdav_http_399", "webdav_http_600", "webdav_http_+404", "webdav_http_", "webdav_http_404x")) {
+            assertEquals(BackupFailureMessage.Unknown, BackupFailureMessageMapper.map(code))
+        }
+    }
     /** 旧中断与明确超时/配额各有独立分类。 */
     @Test fun interruptionAndInfrastructureErrorsAreActionable() {
         assertEquals(BackupFailureMessage.Interrupted, BackupFailureMessageMapper.map("upload_interrupted"))

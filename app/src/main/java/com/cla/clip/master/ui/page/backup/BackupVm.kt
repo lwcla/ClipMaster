@@ -371,7 +371,7 @@ class BackupVm @Inject constructor(
         }
     }
 
-    /** 提交草稿后先生成同包及本地镜像，再由联网任务上传；页面离开不丢等待包。 */
+    /** 配置和手动任务入队成功才打开确认；弹窗不等待后台完成，离开页面不取消任务。 */
     fun uploadWebDavBackup() {
         viewModelScope.launch {
             runOperation(BackupBusyOperation.UploadingWebDav) {
@@ -381,9 +381,16 @@ class BackupVm @Inject constructor(
                 validateWebDavEndpoint(settings.webDavEndpoint, settings.webDavAllowInsecureHttp)
                 // 仅提交后台生成请求，页面退出不取消已安排的备份。
                 BackupAutoScheduler.enqueueManual(appContext)
-                emitMessage(HostR.string.host_backup_upload_queued)
+                // current 是页面内存状态；只在入队实际返回后展示，不再发送同内容 Snackbar。
+                _uiState.update { current -> current.copy(manualBackupQueuedNoticeVisible = true) }
             }
         }
+    }
+
+    /** 关闭入队确认只改变页面反馈，不调用 Worker 取消，也不清除后台包或结果。 */
+    fun dismissManualBackupQueuedNotice() {
+        // current 不包含完成回执；关闭后历史结果仍由既有运行态订阅更新。
+        _uiState.update { current -> current.copy(manualBackupQueuedNoticeVisible = false) }
     }
 
     /** 刷新远端备份列表。 */
@@ -633,6 +640,8 @@ data class BackupUiState(
     val settingsLoadFailed: Boolean = false,
     /** 当前长任务类型，`None` 表示页面可自由操作。 */
     val busyOperation: BackupBusyOperation = BackupBusyOperation.None,
+    /** 入队成功的可关闭确认，只留在页面 ViewModel 内存，不用于完成判断或跨安装备份。 */
+    val manualBackupQueuedNoticeVisible: Boolean = false,
     /** WebDAV 服务地址。 */
     val webDavEndpoint: String = "",
     /** WebDAV 用户名。 */

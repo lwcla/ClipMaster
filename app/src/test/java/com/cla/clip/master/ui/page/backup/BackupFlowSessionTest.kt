@@ -158,6 +158,6 @@ class BackupFlowSessionTest {
 
     /** 合成远端目标用于纯请求测试，不含真实地址、账号或授权 URI。 */
     private fun request(): BackupRestoreRequest = BackupRestoreRequest.WebDav(
-        RemoteBackupFile("synthetic.zip", "synthetic.zip", null, null, null)
+        RemoteBackupFile("synthetic.zip", "synthetic.zip", null, null)
     )
 }
