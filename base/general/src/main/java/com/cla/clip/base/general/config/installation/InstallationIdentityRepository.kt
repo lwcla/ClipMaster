@@ -11,7 +11,7 @@ import javax.inject.Inject
 
 /** 已提交的安装与 Shizuku 进程身份快照；空安装 ID 表示尚未生成。 */
 data class InstallationIdentitySnapshot(
-    /** 安装级纯数字身份，不能作为用户身份或日志字段。 */
+    /** 安装级身份；首次生成采用 20 位纯数字，已有非空值原样保留，不能作为用户身份或日志字段。 */
     val installId: String,
     /** 主进程认可的完整 Shizuku 进程名。 */
     val expectedProcessName: String,
@@ -28,15 +28,16 @@ class InstallationIdentityRepository @Inject internal constructor(
     /** 读取一次已提交身份；调用方需要身份时应先调用 getOrCreateInstallId。 */
     suspend fun snapshot(): InstallationIdentitySnapshot = mapSnapshot(store.snapshot())
 
-    /** 在事务中校验或生成唯一安装 ID，并且仅返回已持久化的值。 */
+    /** 在事务中仅为空身份生成 20 位纯数字 ID；非空值原样复用，仅返回已持久化的值，存储失败向外传播。 */
     suspend fun getOrCreateInstallId(): String {
         /** 本次事务最终提交的安装 ID，绝不提前向调用方发射临时值。 */
         var committedId = ""
+        /** preferences 是串行事务的当前快照，空值判断与首次写入共同避免并发重复生成。 */
         store.edit { preferences ->
-            /** 当前文件中的身份；旧格式和损坏值会在开发阶段替换。 */
+            /** 当前文件中的身份；只判断是否为空，不因长度、字符或空白重新生成。 */
             val storedId = preferences[HostSettingsKeys.INSTALL_ID]
-            if (NumericInstallIdGenerator.isValid(storedId)) {
-                committedId = storedId.orEmpty()
+            if (!storedId.isNullOrEmpty()) {
+                committedId = storedId
             } else {
                 /** 新安装身份只生成一次，写入与并发读改写由 DataStore 串行化。 */
                 val generatedId = NumericInstallIdGenerator.generate()
@@ -54,10 +55,10 @@ class InstallationIdentityRepository @Inject internal constructor(
         store.edit { preferences -> preferences[HostSettingsKeys.EXPECTED_PROCESS_NAME] = normalized }
     }
 
-    /** 映射已提交身份；读取阶段不生成新值，避免 Provider 冷启动死锁。 */
+    /** 原样映射已提交身份，仅将缺失值视为空；读取阶段不生成新值，避免 Provider 冷启动死锁。 */
     private fun mapSnapshot(preferences: Preferences): InstallationIdentitySnapshot {
-        /** 只有满足当前 20 位数字契约的身份才向调用方展示。 */
-        val storedId = preferences[HostSettingsKeys.INSTALL_ID]?.takeIf(NumericInstallIdGenerator::isValid).orEmpty()
+        /** 已保存身份不做格式过滤或空白裁剪，快照与获取入口保持非空值复用契约一致。 */
+        val storedId = preferences[HostSettingsKeys.INSTALL_ID].orEmpty()
         /** 非空的期望进程名保留完整值，只裁剪首尾空白。 */
         val processName = preferences[HostSettingsKeys.EXPECTED_PROCESS_NAME]?.trim().orEmpty()
         return InstallationIdentitySnapshot(storedId, processName)

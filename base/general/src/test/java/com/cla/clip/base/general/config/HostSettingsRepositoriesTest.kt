@@ -15,6 +15,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -28,6 +29,15 @@ import java.io.File
 class HostSettingsRepositoriesTest {
     /** 测试文件不接触真实安装身份与用户设置。 */
     @get:Rule val folder = TemporaryFolder(File("build"))
+
+    /** 合成非空身份，覆盖长度、字符与空白差异；读取不得按生成格式替换或规范化。 */
+    private val nonEmptyInstallIds = listOf(
+        "1234567890123456789",
+        "0123456789012345678x",
+        "00000000-0000-0000-0000-000000000001",
+        "  legacy-id  ",
+        "   ",
+    )
 
     @Test
     /** 新安装默认值应与旧业务规则一致，广告隐私默认为未同意。 */
@@ -155,6 +165,75 @@ class HostSettingsRepositoriesTest {
             assertEquals(ids.single(), repository.snapshot().installId)
             repository.setExpectedProcessName(" com.demo:shizuku ")
             assertEquals("com.demo:shizuku", repository.snapshot().expectedProcessName)
+        } finally {
+            scope.coroutineContext[Job]?.cancelAndJoin()
+        }
+    }
+
+    @Test
+    /** 已有非空身份在重复请求后仍原样保留，不因长度或字符变化重新生成。 */
+    fun nonEmptyInstallIdsRemainUnchangedAcrossRepeatedRequests() = runBlocking {
+        /** 独立 DataStore 生命周期，测试结束后等待文件作用域关闭。 */
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            /** index 隔离各合成身份的文件；storedId 是应原样保留的非空持久化值。 */
+            for ((index, storedId) in nonEmptyInstallIds.withIndex()) {
+                /** 每个身份使用独立真实文件，避免前一项影响下一项的生成分支。 */
+                val store = createTestHostSettingsStore(scope, File(folder.root, "existing-identity-$index.preferences_pb"))
+                /** preferences 是本次事务快照，写入受控身份以模拟已生成的安装状态。 */
+                store.edit { preferences -> preferences[HostSettingsKeys.INSTALL_ID] = storedId }
+                /** 生产仓库是重复获取身份的唯一入口。 */
+                val repository = InstallationIdentityRepository(store)
+                assertEquals(storedId, repository.getOrCreateInstallId())
+                assertEquals(storedId, repository.getOrCreateInstallId())
+                assertEquals(storedId, store.snapshot()[HostSettingsKeys.INSTALL_ID])
+            }
+        } finally {
+            scope.coroutineContext[Job]?.cancelAndJoin()
+        }
+    }
+
+    @Test
+    /** 快照和身份流不得把非空身份过滤为空，也不得裁剪其空白。 */
+    fun identitySnapshotsExposeNonEmptyInstallIdsWithoutNormalization() = runBlocking {
+        /** 独立 DataStore 生命周期，读取只接触测试临时文件。 */
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            /** index 隔离读取 fixture；storedId 同时作为快照与流的字面量期望值。 */
+            for ((index, storedId) in nonEmptyInstallIds.withIndex()) {
+                /** 每个文件保存一个合成非空身份，读取前不调用生成入口。 */
+                val store = createTestHostSettingsStore(scope, File(folder.root, "identity-snapshot-$index.preferences_pb"))
+                /** preferences 是受控写入快照，读取阶段不得修改此身份。 */
+                store.edit { preferences -> preferences[HostSettingsKeys.INSTALL_ID] = storedId }
+                /** 两个读取入口复用生产仓库的身份映射。 */
+                val repository = InstallationIdentityRepository(store)
+                assertEquals(storedId, repository.snapshot().installId)
+                assertEquals(storedId, repository.data.first().installId)
+                assertEquals(storedId, store.snapshot()[HostSettingsKeys.INSTALL_ID])
+            }
+        } finally {
+            scope.coroutineContext[Job]?.cancelAndJoin()
+        }
+    }
+
+    @Test
+    /** 已保存空字符串仍表示尚未生成，首次获取后必须持久化并持续复用数字身份。 */
+    fun emptyStoredInstallIdGeneratesOnePersistentNumericValue() = runBlocking {
+        /** 独立 DataStore 生命周期，空值边界不接触真实安装数据。 */
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            /** 真实临时文件明确保存空字符串，区别于缺失键的既有测试。 */
+            val store = createTestHostSettingsStore(scope, File(folder.root, "empty-identity.preferences_pb"))
+            /** preferences 是本次事务快照，空字符串模拟尚未生成的身份。 */
+            store.edit { preferences -> preferences[HostSettingsKeys.INSTALL_ID] = "" }
+            /** 安装身份入口负责空值判断、首次生成和原子提交。 */
+            val repository = InstallationIdentityRepository(store)
+            /** 首次返回的身份必须已持久化，格式期望独立于生成器校验方法。 */
+            val installId = repository.getOrCreateInstallId()
+            assertTrue(installId.matches(Regex("[0-9]{20}")))
+            assertEquals(installId, repository.getOrCreateInstallId())
+            assertEquals(installId, repository.snapshot().installId)
+            assertEquals(installId, store.snapshot()[HostSettingsKeys.INSTALL_ID])
         } finally {
             scope.coroutineContext[Job]?.cancelAndJoin()
         }
