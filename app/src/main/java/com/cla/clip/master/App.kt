@@ -4,16 +4,13 @@ import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import androidx.work.WorkManager
 import com.cla.clip.base.general.BaseApplication
-import com.cla.clip.base.general.backup.BackupTempFileStore
-import com.cla.clip.base.general.utils.logI
-import com.cla.clip.base.general.utils.logE
 import com.cla.clip.base.general.utils.ApplicationScope
+import com.cla.clip.base.general.utils.logE
 import com.cla.clip.master.utils.ShizukuConnector
 import com.cla.clip.master.work.BackupAutoScheduler
 import com.cla.clip.master.work.DownloadVideoWorker
 import com.cla.clip.master.work.RecycleBinCleanupScheduler
 import com.cla.clip.master.work.ShizukuWorkScheduler
-import dagger.Lazy
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -41,10 +38,6 @@ class App : BaseApplication(), Configuration.Provider {
     /** Shizuku 连接管理器，主进程启动后用它建立剪贴板读取桥接。 */
     @Inject
     lateinit var shizukuConnector: ShizukuConnector
-
-    /** 备份临时文件管理器，启动时清理上次异常退出遗留的过期临时文件。 */
-    @Inject
-    lateinit var backupTempFileStore: BackupTempFileStore
 
     /** 应用级协程作用域；后台调度独立于启动回调和页面生命周期。 */
     @Inject
@@ -75,7 +68,6 @@ class App : BaseApplication(), Configuration.Provider {
             ShizukuWorkScheduler.checkNow(this)
             RecycleBinCleanupScheduler.schedulePeriodic(this)
             RecycleBinCleanupScheduler.cleanupNow(this)
-            backupTempFileStore.cleanupExpired()
             applicationScope.launch {
                 try {
                     BackupAutoScheduler.reschedule(this@App)

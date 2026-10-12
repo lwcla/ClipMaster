@@ -2,7 +2,6 @@ package com.cla.clip.base.general.backup
 
 import android.content.Context
 import android.os.StatFs
-import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -14,6 +13,7 @@ import javax.inject.Singleton
  *
  * 流式备份会产生导出中间 JSONL、最终 zip 和 WebDAV 下载临时包；这些文件不属于用户正式备份，
  * 必须集中放在应用私有缓存目录并按 taskId 标记，避免失败或取消后长期占用空间。
+ * 后台导出残留由新轮次开始清理，导出和恢复各自释放任务目录，不再按文件年龄全局扫描。
  */
 @Singleton
 class BackupTempFileStore internal constructor(
@@ -28,9 +28,6 @@ class BackupTempFileStore internal constructor(
 
         /** 备份临时根目录。 */
         private const val ROOT_DIR = "backup_tmp"
-
-        /** 过期临时文件保留时长，避免运行中任务被启动清理误删。 */
-        private const val MAX_TEMP_AGE_MS = 24L * 60L * 60L * 1000L
     }
 
     /** 创建导出任务临时目录，目录名包含 taskId，方便失败后按任务清理。 */
@@ -70,24 +67,6 @@ class BackupTempFileStore internal constructor(
             logE(TAG) {
                 "备份临时目录清理失败 ${backupTaskLogField(taskId)}reasonCode=${throwable.backupReasonCode()} type=${throwable::class.simpleName}"
             }
-        }
-    }
-
-    /** 清理过期临时文件；运行中任务目录由于 mtime 很新，不会被启动清理误删。 */
-    fun cleanupExpired() {
-        val now = System.currentTimeMillis()
-        val root = rootDir()
-        if (!root.exists()) return
-        var deleted = 0
-        root.listFiles().orEmpty().forEach { group ->
-            group.listFiles().orEmpty().forEach { taskDir ->
-                if (now - taskDir.lastModified() > MAX_TEMP_AGE_MS && taskDir.deleteRecursively()) {
-                    deleted += 1
-                }
-            }
-        }
-        if (deleted > 0) {
-            logD(TAG) { "过期备份临时目录清理完成 deleted=$deleted" }
         }
     }
 
