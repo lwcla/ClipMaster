@@ -115,6 +115,12 @@ data class AdSlotRequest(
     val interactionEnabled: Boolean = true,
     /** 仅控制尚未启动的网络请求；缓存回绑可以继续展示原有素材。 */
     val canRequest: Boolean = true,
+    /** 当前页面实际有可展示内容；持续影响 View 挂载，不阻止独立素材请求或释放缓存。 */
+    val contentPresentable: Boolean = true,
+    /** 异步加载和旧绑定回调必须读取最新内容资格，不能用加载时的快照回挂空态 View。 */
+    val contentPresentableNow: () -> Boolean = { contentPresentable },
+    /** 卡片内部关闭控件调用宿主既有释放入口；仅编译期回调，不传给广告 SDK 或持久化。 */
+    val onDismiss: () -> Unit = {},
 )
 
 /**
@@ -184,6 +190,9 @@ data class AdSlotEvent(
 interface AdSourceEntry {
     /** 独立隐私平台；为空时继续使用旧的国内同意状态。 */
     val privacyController: AdPrivacyController? get() = null
+
+    /** 自绘来源在标题行承载宿主关闭按钮时为 true，宿主不再追加外部控制行。 */
+    val rendersHostDismissControl: Boolean get() = false
 
     /** 稳定广告源 ID，必须使用固定字符串，不能依赖枚举名或类名。 */
     val sourceId: String

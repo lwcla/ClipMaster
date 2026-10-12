@@ -13,8 +13,9 @@ import androidx.compose.ui.platform.LocalDensity
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logW
 import com.cla.clip.feature.ad.api.*
+import com.cla.clip.master.ui.widget.ad.DismissibleAdLayout
 
-/** 跨页面广告宿主；只把稳定低敏请求和安全展示许可传给来源。 */
+/** 跨页面广告宿主；统一关闭和资源释放，只向来源透传低敏请求、展示许可及编译期控件回调。 */
 @Composable
 internal fun PageAdSlot(
     session: PageAdSession,
@@ -26,6 +27,8 @@ internal fun PageAdSlot(
     modifier: Modifier = Modifier,
     /** Lazy 槽离屏交给页面缓存；固定槽主动移除时可立即释放。 */
     retainOnDispose: Boolean = true,
+    /** 实际内容消失立即撤下 View 和控件，但保留仍有效的素材，不混入请求资格。 */
+    contentPresentable: Boolean = true,
 ) {
     // 缺失宿主环境时 Preview 和无广告接入保持零尺寸。
     val environment = LocalAdHostEnvironment.current ?: return
@@ -34,7 +37,7 @@ internal fun PageAdSlot(
     // 组合身份独立于缓存资源，旧 Lazy 回调不能覆盖新挂载的可见状态。
     val binding = remember(session, leaseKey) { Any() }
     // 真实业务资格与临时遮挡分开；暂停/弹窗不撤销资源存活资格。
-    val allowed = session.active && eligible
+    val allowed = session.active && eligible && !session.isDismissed(leaseKey)
     // 选择器只接收资格布尔值，不接收业务内容。
     val selection = environment.selector.select(environment.sources, placement, environment.activeSourceId,
         environment.legacyConsent, environment.policy.copy(isSensitiveContext = !eligible))
@@ -52,6 +55,21 @@ internal fun PageAdSlot(
     val hostView = LocalView.current
     // 回调在同一帧也读取最新指针状态，避免等待重组期间使用过期的展示许可。
     val latestCanReveal by rememberUpdatedState(canReveal)
+    // 同帧 Loaded 读取最新内容资格和当前所有权，关闭/释放的旧请求不能回挂 View。
+    val latestContentPresentable by rememberUpdatedState(contentPresentable)
+    // 自动隐藏不计为 Released；只按实际内容状态变化记录低敏诊断。
+    var previousContentPresentable by remember(session, leaseKey) { mutableStateOf(contentPresentable) }
+    SideEffect {
+        if (previousContentPresentable != contentPresentable) {
+            if (!contentPresentable) {
+                // 已归零的内容画面不保留旧测高，之后隐私撤销/内容恢复也不能留下过期空壳。
+                lastHeightPx = 0
+                claimed?.let { session.updateSlotVisibility(leaseKey, it, binding, false) }
+            }
+            logD("广告宿主") { "广告呈现资格 placement=${placement.placementId} slotIndex=$slotIndex reasonCode=${if (contentPresentable) "content_ready" else "content_empty"}" }
+            previousContentPresentable = contentPresentable
+        }
+    }
     // 容量变化只唤醒未取得租约的位置，已淘汰位置等下次挂载再请求。
     LaunchedEffect(session, leaseKey, source?.sourceId, allowed, requestEnabled,
         session.canRequest, session.suppressed, session.leaseRevision) {
@@ -86,18 +104,42 @@ internal fun PageAdSlot(
         source != null && source.sourceId == acquiredSourceId
     if (mounted) {
         key(lease.nonce, source.sourceId) {
+            // 内置与外部控件共用当前租约的关闭入口，旧绑定/重复点击由会话拒绝。
+            val dismiss = {
+                if (session.ownsSlot(leaseKey, lease) && lease.binding === binding) {
+                    session.onLayoutWillChange?.invoke()
+                    if (session.dismissSlot(leaseKey, lease, binding)) {
+                        lastHeightPx = 0
+                        logD("广告宿主") { "广告关闭 source=${source.sourceId} placement=${placement.placementId} slotIndex=$slotIndex reasonCode=user_dismissed" }
+                    }
+                    session.onLayoutChanged?.invoke()
+                }
+            }
+            DismissibleAdLayout(
+                presentable = contentPresentable,
+                interactionEnabled = session.canRequest && !session.suppressed,
+                // 自绘卡片已在标题行内承载按钮，避免在描边外重复追加控制区。
+                onDismiss = if (source.rendersHostDismissControl) null else dismiss,
+                modifier = modifier.onSizeChanged { size ->
+                    // 最外层测量包含关闭区，隐私撤销的短暂等高保护才能保留完整原尺寸。
+                    if (size.height > 0) lastHeightPx = size.height
+                },
+            ) {
             source.NativeAdSlot(
                 request = AdSlotRequest(
                     placement = placement,
                     requestNonce = lease.nonce,
                     isDebugRequest = environment.policy.debugMode,
-                    canReveal = canReveal && session.canRequest && !session.suppressed && session.canMutateLayout && !session.pointerPressed,
-                    canRevealNow = { latestCanReveal && session.canRequest && !session.suppressed && session.canMutateLayout && !session.pointerPressedNow() },
+                    canReveal = contentPresentable && canReveal && session.canRequest && !session.suppressed && session.canMutateLayout && !session.pointerPressed,
+                    canRevealNow = { latestContentPresentable && latestCanReveal && session.ownsSlot(leaseKey, lease) && session.canRequest && !session.suppressed && session.canMutateLayout && !session.pointerPressedNow() },
+                    contentPresentable = contentPresentable,
+                    contentPresentableNow = { latestContentPresentable && session.ownsSlot(leaseKey, lease) && lease.binding === binding },
                     resourceOwner = lease.resources,
-                    interactionEnabled = session.canRequest && !session.suppressed,
+                    interactionEnabled = contentPresentable && session.canRequest && !session.suppressed,
                     canRequest = requestEnabled && session.canRequest && !session.suppressed,
                     onLayoutWillChange = { session.onLayoutWillChange?.invoke() },
                     onLayoutChanged = { session.onLayoutChanged?.invoke() },
+                    onDismiss = dismiss,
                 ),
                 onEvent = { event ->
                     // 事件字段只来自封闭低敏契约，禁止输出 SDK 异常原文。
@@ -115,19 +157,18 @@ internal fun PageAdSlot(
                         session.releaseSlot(leaseKey, lease, reason)
                     }
                 },
-                modifier = modifier
-                    .onSizeChanged { size -> if (size.height > 0) lastHeightPx = size.height }
-                    .onGloballyPositioned { coordinates ->
+                modifier = Modifier.onGloballyPositioned { coordinates ->
                         // SDK View 的实际窗口交集决定可见性，不能用列表预取组合代替曝光范围。
                         val bounds = coordinates.boundsInWindow()
                         // 根窗口内的有效显示范围，不记录坐标或设备尺寸。
                         val viewport = Rect(0f, 0f, hostView.width.toFloat(), hostView.height.toFloat())
                         session.updateSlotVisibility(leaseKey, lease, binding,
-                            bounds.width > 0 && bounds.height > 0 && bounds.overlaps(viewport))
+                            contentPresentable && bounds.width > 0 && bounds.height > 0 && bounds.overlaps(viewport))
                     },
             )
+            }
         }
-    } else if (lastHeightPx > 0) {
+    } else if (lastHeightPx > 0 && contentPresentable && !session.isDismissed(leaseKey)) {
         // 先销毁真实 View 并保留等高外壳；锚点回调必须发生在清空高度之前。
         Box(modifier.height(with(density) { lastHeightPx.toDp() }))
         LaunchedEffect(lastHeightPx, session.pointerPressed, session.canMutateLayout) {

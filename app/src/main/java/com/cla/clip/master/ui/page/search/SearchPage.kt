@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
@@ -75,10 +76,12 @@ import com.cla.clip.feature.ad.api.AdPlacement
 import com.cla.clip.master.ad.rememberPageAdSession
 import com.cla.clip.master.ad.adInteractionGuard
 import com.cla.clip.master.ui.widget.clip.ClipListAdConfig
+import com.cla.clip.master.ui.widget.clip.ClipListAdHost
 import com.cla.clip.master.ui.widget.clip.ClipResultList
+import com.cla.clip.master.ui.widget.clip.rememberClipListAdPresentation
+import com.cla.clip.master.ui.widget.ad.FixedListAdLayout
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
 import kotlin.math.max
 
 /**
@@ -86,6 +89,7 @@ import kotlin.math.max
  *
  * 页面负责搜索输入、筛选条件选择、Result/History 模式切换和结果展示；
  * 查询组合、分页和剪贴操作都交给 SearchViewModel，让 UI 层只编排页面内交互状态。
+ * 固定广告宿主跨 History/Result 保持组合，查询变化只影响业务结果与持续呈现许可。
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -187,9 +191,9 @@ fun SearchPage(
     val navigationBarBottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     /** 输入法底部占位高度，历史列表需要避开它以免最后几条历史被键盘遮住。 */
     val imeBottomPadding = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
-    /** 历史列表底部安全距离，输入法打开时优先按输入法高度保护内容。 */
+    /** 固定内容容器底部安全距离，输入法打开时同时保护历史、广告和结果操作区域。 */
     val historyBottomPadding = maxOf(navigationBarBottomPadding, imeBottomPadding)
-    /** 当前内容顶部内边距，展开时跟随搜索头，收起时至少保留状态栏安全区。 */
+    /** 固定容器顶部避让，展开时跟随可见搜索头底边，收起时至少保留状态栏安全区。 */
     val contentTopPaddingDp = with(density) {
         max(statusBarTopPx, headerHeightPx + headerOffsetPx).toDp()
     }
@@ -200,21 +204,19 @@ fun SearchPage(
     /** 批量操作按钮是否可用；0 选中或执行中都不能触发删除/折叠。 */
     val batchActionsEnabled = clipSelectionMode && selectedCount > 0 && !isBatchActionRunning
 
-    // 搜索身份只在范围、真实关键词或筛选改变时更换；页面模式和分页结果不参与身份。
-    val searchAdKey = remember(visibilityScope, filterState.query, filterState.timeFilter, filterState.sourceAppPackages) {
-        listOf(visibilityScope, filterState.query, filterState.timeFilter, filterState.sourceAppPackages.toSet())
-    }
-    // 任意条件变化立即回到未稳定态；800ms 内继续编辑会取消旧计时，旧会话同时失效。
-    var searchAdSettled by remember(searchAdKey) { mutableStateOf(false) }
-    LaunchedEffect(searchAdKey) {
-        delay(800)
-        searchAdSettled = true
-    }
-    // 只在结果页且条件稳定时请求；该本地业务身份不会传给 SDK 或日志。
-    val adSession = rememberPageAdSession(searchAdKey, enabled = pageMode == SearchPageMode.Result && searchAdSettled)
+    // 普通/折叠作用域是稳定访问身份；广告请求与数据库并行，不以模式、搜索词或节流作为前置门。
+    val adSession = rememberPageAdSession(visibilityScope)
     // 所有确认、筛选弹层与批量任务都暂停广告交互及布局变化。
     val adOverlayBlocked = deleteClip != null || showBatchDeleteDialog || expandedMenu != SearchFilterMenu.None ||
         showClearHistoryConfirm || isBatchActionRunning
+    /** 结果模式才收集分页，历史模式仍不提前启动剪贴查询；广告宿主始终独立组合。 */
+    val pagedClips = if (pageMode == SearchPageMode.Result) {
+        viewModel.pagedClips.collectAsLazyPagingItems()
+    } else {
+        null
+    }
+    /** 共享列表与页面固定区从同一当前快照读取真实内容和可见敏感许可，不复制一份迟到状态。 */
+    val adPresentation = rememberClipListAdPresentation(pagedClips, resultListState)
 
     // 生命周期监听只关闭浮层，不回滚已生效筛选，不启动任何额外数据任务。
     DisposableEffect(menuLifecycleOwner, saveableScopeKey, darkTheme) {
@@ -462,77 +464,98 @@ fun SearchPage(
                 }
             }
     ) {
-        if (pageMode == SearchPageMode.History) {
-            SearchHistoryPanel(
-                listState = historyListState,
-                histories = searchHistories,
-                query = filterState.query,
-                contentPadding = PaddingValues(
-                    start = 12.dp,
-                    // 历史标题直接从搜索头实测底边开始，不再额外增加 8dp 空白。
-                    top = contentTopPaddingDp,
-                    end = 12.dp,
-                    bottom = historyBottomPadding + 24.dp,
-                ),
-                onHistoryClick = { history ->
-                    viewModel.selectHistory(history.query)
-                    showResultMode()
-                },
-                onDeleteHistory = viewModel::deleteHistory,
-                onClearHistories = { showClearHistoryConfirm = true }
-            )
-        } else {
-            /** 结果模式才收集分页数据，避免搜索页初始历史态提前加载剪贴数据列表。 */
-            // 结果区离开组合就暂停名称装配；菜单行自己控制图标加载。
-            SourceAppNameLoadingEffect(viewModel.sourceLoadGate)
-            val pagedClips = viewModel.pagedClips.collectAsLazyPagingItems()
+        FixedListAdLayout(
+            session = adSession,
+            placement = if (isVisibleSearch) AdPlacement.SearchFeedNative else AdPlacement.FoldedSearchNative,
+            contentState = adPresentation.contentState,
+            eligible = adPresentation.eligible,
+            blocked = clipSelectionMode || adOverlayBlocked,
+            canReveal = !adOverlayBlocked && headerSnapJob?.isActive != true,
+            modifier = Modifier.fillMaxSize().padding(
+                top = contentTopPaddingDp,
+                bottom = historyBottomPadding,
+            ),
+        ) { remainingContentModifier ->
+            // 历史/结果都消费宿主分配的剩余高度，广告位始终独立于业务模式与空态分支。
+            if (pageMode == SearchPageMode.History) {
+                SearchHistoryPanel(
+                    modifier = remainingContentModifier,
+                    listState = historyListState,
+                    histories = searchHistories,
+                    query = filterState.query,
+                    contentPadding = PaddingValues(
+                        start = 12.dp,
+                        // 搜索头与底部系统区域已由固定容器避让，历史标题继续贴合可见操作区底边。
+                        top = 0.dp,
+                        end = 12.dp,
+                        bottom = 24.dp,
+                    ),
+                    // 恢复历史关键词后进入结果；这次业务切换沿用页面广告访问。
+                    onHistoryClick = { history ->
+                        viewModel.selectHistory(history.query)
+                        showResultMode()
+                    },
+                    onDeleteHistory = viewModel::deleteHistory,
+                    // 清空历史先展示现有确认弹窗，固定宿主保持组合并暂停交互。
+                    onClearHistories = { showClearHistoryConfirm = true }
+                )
+            } else {
+                // 结果区离开组合就暂停名称装配；菜单行自己控制图标加载。
+                SourceAppNameLoadingEffect(viewModel.sourceLoadGate)
 
-            ClipResultList(
-                iconLoader = iconLoader,
-                adConfig = ClipListAdConfig(
-                    session = adSession,
-                    placement = if (isVisibleSearch) AdPlacement.SearchFeedNative else AdPlacement.FoldedSearchNative,
-                    suppressed = clipSelectionMode || adOverlayBlocked,
-                    requestEnabled = searchAdSettled,
-                    layoutBlocked = adOverlayBlocked || headerSnapJob?.isActive == true,
-                ),
-                listState = resultListState,
-                pagedClips = pagedClips,
-                emptyText = stringResource(scope.emptyTextRes),
-                highlightQuery = filterState.query,
-                // 搜索结果和其他剪贴结果列表保持统一，同时把顶部留白交给折叠搜索头的当前可见高度。
-                contentPadding = PaddingValues(
-                    start = 10.dp,
-                    top = contentTopPaddingDp + 10.dp,
-                    end = 10.dp,
-                    bottom = navigationBarBottomPadding + if (clipSelectionMode) 96.dp else 12.dp,
-                ),
-                // 折叠搜索保留置顶操作能力；数据层会先排置顶数据，再在分组内按 foldedAt 倒序。
-                onPinToggle = { clip -> viewModel.updatePinStatus(clip, !clip.isPinned) },
-                onDelete = { deleteClip = it },
-                onCopy = viewModel::copyToClipboard,
-                onSwipePastAction = { clip ->
-                    viewModel.updateFoldStatus(
-                        clip = clip,
-                        isFolded = scope == SearchScope.VisibleOnly
-                    )
-                },
-                swipePastActionText = stringResource(scope.swipePastTextRes),
-                timeMode = if (isVisibleSearch) ClipCardTimeMode.ClipTime else ClipCardTimeMode.FoldedTime,
-                quickAction = quickAction,
-                enableQuickAction = isVisibleSearch && !clipSelectionMode && quickAction != ClipItemQuickAction.None,
-                selectedIds = if (clipSelectionMode) selectedIds else emptySet(),
-                selectionMode = clipSelectionMode,
-                onToggleSelection = ::toggleSelection,
-                onClick = { clip ->
-                    if (clipSelectionMode) {
-                        toggleSelection(clip)
-                    } else {
-                        onNavigate(DetailRoute(clip.id))
-                    }
-                },
-                onLongClick = { clip -> enterSelection(clip) }
-            )
+                ClipResultList(
+                    modifier = remainingContentModifier,
+                    iconLoader = iconLoader,
+                    adConfig = ClipListAdConfig(
+                        session = adSession,
+                        placement = if (isVisibleSearch) AdPlacement.SearchFeedNative else AdPlacement.FoldedSearchNative,
+                        suppressed = clipSelectionMode || adOverlayBlocked,
+                        layoutBlocked = adOverlayBlocked || headerSnapJob?.isActive == true,
+                        host = ClipListAdHost.External,
+                    ),
+                    listState = resultListState,
+                    // 与上方同一 pageMode 分支收集的分页引用必定存在，不延迟复制内容状态。
+                    pagedClips = checkNotNull(pagedClips),
+                    emptyText = stringResource(scope.emptyTextRes),
+                    highlightQuery = filterState.query,
+                    // 广告与搜索头已在列表外，结果仅保留卡片间距和本页面多选栏空间。
+                    contentPadding = PaddingValues(
+                        start = 10.dp,
+                        top = 10.dp,
+                        end = 10.dp,
+                        bottom = if (clipSelectionMode) 96.dp else 12.dp,
+                    ),
+                    // 折叠搜索保留置顶操作能力；数据层会先排置顶数据，再在分组内按 foldedAt 倒序。
+                    onPinToggle = { clip -> viewModel.updatePinStatus(clip, !clip.isPinned) },
+                    // 删除仍由页面弹窗确认，不把业务动作放进固定广告宿主。
+                    onDelete = { deleteClip = it },
+                    onCopy = viewModel::copyToClipboard,
+                    // 第二段滑动保持普通折叠/折叠取消语义，完成后由同源快照更新内容许可。
+                    onSwipePastAction = { clip ->
+                        viewModel.updateFoldStatus(
+                            clip = clip,
+                            isFolded = scope == SearchScope.VisibleOnly
+                        )
+                    },
+                    swipePastActionText = stringResource(scope.swipePastTextRes),
+                    timeMode = if (isVisibleSearch) ClipCardTimeMode.ClipTime else ClipCardTimeMode.FoldedTime,
+                    quickAction = quickAction,
+                    enableQuickAction = isVisibleSearch && !clipSelectionMode && quickAction != ClipItemQuickAction.None,
+                    selectedIds = if (clipSelectionMode) selectedIds else emptySet(),
+                    selectionMode = clipSelectionMode,
+                    onToggleSelection = ::toggleSelection,
+                    // 普通多选仅切换选择；其他状态继续使用页面导航进入详情。
+                    onClick = { clip ->
+                        if (clipSelectionMode) {
+                            toggleSelection(clip)
+                        } else {
+                            onNavigate(DetailRoute(clip.id))
+                        }
+                    },
+                    // 长按入口仍由页面判定普通搜索是否允许多选，广告不进入选择状态。
+                    onLongClick = { clip -> enterSelection(clip) }
+                )
+            }
         }
 
         SearchCollapsibleHeader(

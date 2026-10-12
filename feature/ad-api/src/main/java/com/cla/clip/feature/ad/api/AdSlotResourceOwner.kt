@@ -29,6 +29,8 @@ enum class AdReleaseReason(
     LoadFailed("load_failed", false),
     /** 素材绑定失败后关闭，并交给来源保险丝处理。 */
     RenderFailed("render_failed", false),
+    /** 用户关闭只影响本访问内的单个广告位，来源变化和回绑都不能自动重试。 */
+    UserDismissed("user_dismissed", false),
 }
 
 /** SDK 私有资源只向宿主暴露释放能力，所有调用都由 UI 主线程串行执行。 */

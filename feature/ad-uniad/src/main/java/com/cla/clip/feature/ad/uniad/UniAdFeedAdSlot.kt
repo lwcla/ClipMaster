@@ -22,6 +22,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -34,6 +35,7 @@ import com.cla.clip.feature.ad.api.AdRuntimePolicy
 import com.cla.clip.feature.ad.api.AdSlotEvent
 import com.cla.clip.feature.ad.api.AdSlotEventType
 import com.cla.clip.feature.ad.api.AdSlotRequest
+import com.cla.clip.feature.ad.api.AdPresentationPolicy
 import kotlinx.coroutines.delay
 
 /** uni-ad 详情页信息流广告 Compose 容器。 */
@@ -341,7 +343,14 @@ internal fun UniAdFeedAdSlot(
         }
     }
 
-    if (renderReady && adView != null) {
+    // 当前 View 是否已呈现只属于组合内存；自动隐藏不释放素材，后续回挂重新检查安全门。
+    var presented by remember(request.requestNonce) { mutableStateOf(false) }
+    // 当前页面内容资格持续影响 View 及附属标记，Loaded 与真实曝光分别处理。
+    val mount = AdPresentationPolicy.canMount(renderReady && adView != null,
+        request.contentPresentable && request.contentPresentableNow(), presented,
+        request.canReveal && request.canRevealNow())
+    SideEffect { presented = mount }
+    if (mount) {
         /** 广告标识文案；用于视觉展示和 TalkBack 说明。 */
         val adLabel = stringResource(id = R.string.ad_uniad_detail_ad_label)
         Column(

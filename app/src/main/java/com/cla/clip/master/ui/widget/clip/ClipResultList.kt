@@ -68,14 +68,15 @@ import androidx.paging.compose.itemKey
 import com.cla.clip.base.general.R as BaseR
 import com.cla.clip.base.general.config.ClipItemQuickAction
 import com.cla.clip.base.general.entity.ClipShowEntity
-import com.cla.clip.master.ad.DetailAdSensitivityPolicy
-import com.cla.clip.master.ad.ListAdPlacementPolicy
 import com.cla.clip.master.ad.rememberListAdLayoutCoordinator
 import com.cla.clip.master.R
 import com.cla.clip.master.ui.widget.ClipMasterCardDefaults
 import com.cla.clip.master.ui.widget.ClipMasterGestureCard
 import com.cla.clip.master.ui.widget.PagingLoadingContent
+import com.cla.clip.master.ui.widget.PagingErrorContent
 import com.cla.clip.master.ui.widget.pagingAppendStateItem
+import com.cla.clip.master.ui.widget.ad.FixedListAdLayout
+import com.cla.clip.master.ui.widget.ad.ListAdContentState
 import kotlinx.coroutines.launch
 import kotlin.math.max
 
@@ -117,6 +118,7 @@ enum class ClipCardTimeMode {
  *
  * 该组件同时服务普通列表页和搜索页：列表页传空 `highlightQuery`，搜索页传当前关键词。
  * 这里统一维护单列 item、侧滑操作、复制入口和分页加载状态，避免两个页面在后续迭代中出现体验分叉。
+ * 固定广告宿主独立于内容/加载/空态分支；搜索页可明确声明外层宿主，保持跨历史模式的素材访问。
  */
 @Composable
 internal fun ClipResultList(
@@ -151,23 +153,23 @@ internal fun ClipResultList(
     // 共享列表只允许一个右滑菜单保持展开；新 item 开始右滑时写入该 id，其他 item 会观察到并自动收回。
     var openedMenuClipId by rememberSaveable { mutableStateOf<Long?>(null) }
 
-    // 复用详情已有敏感规则，仅在本地将锚点正文判定为布尔资格，不记录命中内容。
-    val adSensitivityPolicy = remember { DetailAdSensitivityPolicy() }
-    // 可见卡片的业务内容高度，用于排除仅剩广告尾部可见的内容容器。
+    // 可见卡片的纯业务高度仍用于布局锚点，广告不进入卡片测量范围。
     val contentHeights = remember { mutableMapOf<Any, Int>() }
     // 侧滑动画独立于菜单展开状态，回收站没有菜单也需要保护离场动画。
     var interactingClipIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
-    // 去重后的真实内容顺序同时驱动广告密度和内容锚点，广告不进入业务集合。
-    val renderEntries = remember(pagedClips.itemSnapshotList) {
-        buildUniqueClipPagingRenderEntries(pagedClips.itemSnapshotList)
-    }
+    // 真实渲染索引、内容三态和可见敏感许可使用同源快照，不把 Paging 占位符视作内容。
+    val adPresentation = rememberClipListAdPresentation(pagedClips, listState)
+    // 列表直接消费共享接线的渲染索引，保持稳定 key 和原 Paging 访问位置。
+    val renderEntries = adPresentation.renderEntries
+    // 侧滑、离场和置顶纠偏期间固定区不改变列表可用高度；页面动画保护继续透传。
+    val adLayoutBlocked = adConfig?.layoutBlocked == true || openedMenuClipId != null ||
+        interactingClipIds.isNotEmpty() || pendingPinScrollRestore != null
     if (adConfig != null) {
-        SideEffect { adConfig.session.suppressed = adConfig.suppressed || selectionMode }
         rememberListAdLayoutCoordinator(
             session = adConfig.session,
             listState = listState,
             contentKeys = renderEntries.map { it.clipId },
-            blocked = adConfig.layoutBlocked || openedMenuClipId != null || interactingClipIds.isNotEmpty(),
+            blocked = adLayoutBlocked,
             pinRestorePending = pendingPinScrollRestore != null,
             contentHeights = contentHeights,
         )
@@ -198,105 +200,131 @@ internal fun ClipResultList(
         }
     }
 
-    when {
-        pagedClips.loadState.refresh is LoadState.NotLoading && pagedClips.itemCount == 0 -> {
-            EmptyScreen(text = emptyText, modifier = modifier)
-        }
+    // 内容 slot 接收固定区扣除广告后的剩余空间，所有状态都使用该 Modifier 而不覆盖父层测量边界。
+    val listContent: @Composable (Modifier) -> Unit = { contentModifier ->
+        when (adPresentation.contentState) {
+            ListAdContentState.Empty -> {
+                if (pagedClips.loadState.refresh is LoadState.Error) {
+                    // 无真实旧记录时仅显示既有重试状态，错误文字不能许可广告呈现。
+                    PagingErrorContent(
+                        text = stringResource(BaseR.string.base_general_data_load_failed_retry),
+                        // refresh 失败由 Paging 直接重试，不引入页面独立错误状态。
+                        onRetry = { pagedClips.retry() },
+                        modifier = contentModifier,
+                    )
+                } else {
+                    EmptyScreen(text = emptyText, modifier = contentModifier)
+                }
+            }
 
-        pagedClips.loadState.refresh is LoadState.Loading && pagedClips.itemCount == 0 -> {
-            // Paging 重新收集时可能短暂出现空快照；此时不组合绑定 listState 的空 LazyColumn，避免把保留的滚动位置钳回顶部。
-            PagingLoadingContent(modifier = modifier)
-        }
+            ListAdContentState.Loading -> {
+                // Paging 重新收集时可能短暂出现空快照；此时不组合绑定 listState 的空 LazyColumn，避免把保留的滚动位置钳回顶部。
+                PagingLoadingContent(modifier = contentModifier)
+            }
 
-        else -> {
-            val retryText = stringResource(com.cla.clip.base.general.R.string.base_general_data_load_failed_retry)
-            LazyColumn(
-                state = listState,
-                // 页面外壳统一观察按压；内层不重复写同一指针状态，避免子项释放提前解除根手势保护。
-                modifier = modifier.fillMaxSize(),
-                contentPadding = contentPadding,
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                if (renderEntries.isNotEmpty()) {
-                    items(
-                        count = renderEntries.size,
-                        // 当前快照里即使短暂出现重复记录，也只允许首个 clip.id 进入组合树，直接拦住 LazyColumn 重复 key 崩溃。
-                        key = { index -> renderEntries[index].clipId },
-                        contentType = { "ClipCard" }
-                    ) { index ->
-                        /** 当前要渲染的唯一条目；内部保留原 Paging 索引，避免破坏预取和回调定位。 */
-                        val renderEntry = renderEntries[index]
-                        /** 渲染可见唯一条目时访问真实源索引，保留 Paging 追加和预取提示；去重快照本身仍不触发加载。 */
-                        val clip = pagedClips[renderEntry.sourceIndex]
-                        if (clip != null) {
-                            // 敏感锚点跳过且不补位；非广告锚点不重复执行正文识别规则。
-                            val slotEligible = remember(index, clip.content) {
-                                ListAdPlacementPolicy.singleColumnSlotIndex(index) == null ||
-                                    !adSensitivityPolicy.shouldHideAds(clip.content)
-                            }
-                            ListAdContentItem(
-                                contentKey = clip.id,
-                                contentIndex = index,
-                                listState = listState,
-                                adConfig = adConfig,
-                                contentHeights = contentHeights,
-                                slotEligible = slotEligible,
-                            ) {
-                                ClipCard(
-                                    clip = clip,
-                                    iconLoader = iconLoader,
-                                    iconsVisibleToUser = iconsVisibleToUser,
-                                    onInteractionChanged = { active ->
-                                        interactingClipIds = if (active) interactingClipIds + clip.id else interactingClipIds - clip.id
-                                    },
-                                    highlightQuery = highlightQuery,
-                                    onPinToggle = onPinToggle,
-                                    onDelete = onDelete,
-                                    onCopy = onCopy,
-                                    onSwipePastAction = onSwipePastAction,
-                                    onClick = onClick,
-                                    onLongClick = onLongClick,
-                                    selected = clip.id in selectedIds,
-                                    selectionMode = selectionMode,
-                                    onToggleSelection = onToggleSelection,
-                                    timeMode = timeMode,
-                                    quickAction = quickAction,
-                                    enableQuickAction = enableQuickAction,
-                                    openedMenuClipId = openedMenuClipId,
-                                    onMenuActive = { clipId ->
-                                        if (openedMenuClipId != clipId) {
-                                            openedMenuClipId = clipId
+            ListAdContentState.Rendered -> {
+                // append 错误文案复用基础资源；保留真实记录时 refresh/append 错误不收起整个列表。
+                val retryText = stringResource(com.cla.clip.base.general.R.string.base_general_data_load_failed_retry)
+                LazyColumn(
+                    state = listState,
+                    // 页面外壳统一观察按压；内层不重复写同一指针状态，避免子项释放提前解除根手势保护。
+                    modifier = contentModifier.fillMaxSize(),
+                    contentPadding = contentPadding,
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (renderEntries.isNotEmpty()) {
+                        items(
+                            count = renderEntries.size,
+                            // 当前快照里即使短暂出现重复记录，也只允许首个 clip.id 进入组合树，直接拦住 LazyColumn 重复 key 崩溃。
+                            key = { index -> renderEntries[index].clipId },
+                            contentType = { "ClipCard" }
+                        ) { index ->
+                            /** 当前要渲染的唯一条目；内部保留原 Paging 索引，避免破坏预取和回调定位。 */
+                            val renderEntry = renderEntries[index]
+                            /** 渲染可见唯一条目时访问真实源索引，保留 Paging 追加和预取提示；去重快照本身仍不触发加载。 */
+                            val clip = pagedClips[renderEntry.sourceIndex]
+                            if (clip != null) {
+                                // 纯测量包装复用原卡片高度账本，删除尾槽能力后仍保持业务 Lazy 索引。
+                                MeasuredClipContent(
+                                    contentKey = clip.id,
+                                    contentHeights = contentHeights,
+                                ) {
+                                    ClipCard(
+                                        clip = clip,
+                                        iconLoader = iconLoader,
+                                        iconsVisibleToUser = iconsVisibleToUser,
+                                        // 侧滑/离场开始与结束只更新当前交互集合，让固定广告延后改变业务视口高度。
+                                        onInteractionChanged = { active ->
+                                            interactingClipIds = if (active) interactingClipIds + clip.id else interactingClipIds - clip.id
+                                        },
+                                        highlightQuery = highlightQuery,
+                                        onPinToggle = onPinToggle,
+                                        onDelete = onDelete,
+                                        onCopy = onCopy,
+                                        onSwipePastAction = onSwipePastAction,
+                                        onClick = onClick,
+                                        onLongClick = onLongClick,
+                                        selected = clip.id in selectedIds,
+                                        selectionMode = selectionMode,
+                                        onToggleSelection = onToggleSelection,
+                                        timeMode = timeMode,
+                                        quickAction = quickAction,
+                                        enableQuickAction = enableQuickAction,
+                                        openedMenuClipId = openedMenuClipId,
+                                        // 菜单归属继续使用业务 id，广告不参与共享互斥关系。
+                                        onMenuActive = { clipId ->
+                                            if (openedMenuClipId != clipId) {
+                                                openedMenuClipId = clipId
+                                            }
+                                        },
+                                        // 只清理仍属于该卡片的菜单状态，避免旧回调关闭新的可见菜单。
+                                        onMenuInactive = { clipId ->
+                                            if (openedMenuClipId == clipId) {
+                                                openedMenuClipId = null
+                                            }
+                                        },
+                                        swipePastActionText = swipePastActionText,
+                                        // 取消置顶前同步保留业务视口，固定广告协调器在该待恢复期间让出优先权。
+                                        onKeepCurrentScrollPosition = {
+                                            pendingPinScrollRestore = PendingPinScrollRestore(
+                                                index = listState.firstVisibleItemIndex,
+                                                offset = listState.firstVisibleItemScrollOffset,
+                                                snapshotSignature = pagedClips.itemSnapshotList.items.map { it.id to it.isPinned }
+                                            )
                                         }
-                                    },
-                                    onMenuInactive = { clipId ->
-                                        if (openedMenuClipId == clipId) {
-                                            openedMenuClipId = null
-                                        }
-                                    },
-                                    swipePastActionText = swipePastActionText,
-                                    onKeepCurrentScrollPosition = {
-                                        pendingPinScrollRestore = PendingPinScrollRestore(
-                                            index = listState.firstVisibleItemIndex,
-                                            offset = listState.firstVisibleItemScrollOffset,
-                                            snapshotSignature = pagedClips.itemSnapshotList.items.map { it.id to it.isPinned }
-                                        )
-                                    }
-                                )
+                                    )
+                                }
                             }
                         }
                     }
-                }
 
-                pagingAppendStateItem(
-                    loadState = pagedClips.loadState.append,
-                    retryText = retryText,
-                    onRetry = {
-                        // append 加载失败时直接使用 Paging 的 retry，避免页面自己维护重试状态。
-                        pagedClips.retry()
-                    }
-                )
+                    pagingAppendStateItem(
+                        loadState = pagedClips.loadState.append,
+                        retryText = retryText,
+                        onRetry = {
+                            // append 加载失败时直接使用 Paging 的 retry，避免页面自己维护重试状态。
+                            pagedClips.retry()
+                        }
+                    )
+                }
             }
         }
+    }
+
+    if (adConfig != null && adConfig.host == ClipListAdHost.Fixed) {
+        FixedListAdLayout(
+            session = adConfig.session,
+            placement = adConfig.placement,
+            contentState = adPresentation.contentState,
+            eligible = adPresentation.eligible,
+            blocked = adConfig.suppressed || selectionMode,
+            canReveal = !adLayoutBlocked,
+            modifier = modifier,
+            content = listContent,
+        )
+    } else {
+        // 搜索由外层固定宿主提供剩余空间；Preview/未接入页面保持原纯内容入口。
+        listContent(modifier)
     }
 }
 

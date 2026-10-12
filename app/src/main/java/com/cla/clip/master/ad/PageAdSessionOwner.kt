@@ -13,9 +13,11 @@ internal class PageAdSessionOwner(
     initiallyEnabled: Boolean,
     /** 初始转场可能只有 STARTED，此时允许保留但不能请求。 */
     initiallyResumed: Boolean = initiallyVisible,
+    /** 业务 key 替换所有者时仍复用访问记录，关闭状态不进入数据库或备份。 */
+    private var visitState: PageAdVisitState = PageAdVisitState(),
 ) {
     /** 新访问替换整个对象，使旧槽释放回调只能影响旧账本；变化驱动宿主重组。 */
-    var session by mutableStateOf(PageAdSession(initiallyVisible && initiallyEnabled).apply {
+    var session by mutableStateOf(PageAdSession(initiallyVisible && initiallyEnabled, visitState).apply {
         canRequest = active && initiallyResumed
     })
         private set
@@ -29,7 +31,9 @@ internal class PageAdSessionOwner(
         releaseReason: AdReleaseReason = AdReleaseReason.PageLeft) {
         if (closed) return
         if (visible && !wasVisible) {
-            session = PageAdSession(active = enabled)
+            // 新访问替换记录对象，旧会话的迟到回调无法污染本次重新打开。
+            visitState = PageAdVisitState()
+            session = PageAdSession(active = enabled, visitState = visitState)
         }
         wasVisible = visible
         session.active = visible && enabled
@@ -37,6 +41,9 @@ internal class PageAdSessionOwner(
         if (!visible) session.clear(releaseReason)
         else if (!enabled) session.clear(AdReleaseReason.Ineligible)
     }
+
+    /** 页面组合的访问容器跟随真正返回后的记录更新，后续业务 key 变化继续复用它。 */
+    fun currentVisitState(): PageAdVisitState = visitState
 
     /** 组合离开时永久关闭，重复调用无副作用。 */
     fun close(reason: AdReleaseReason = AdReleaseReason.PageLeft) {

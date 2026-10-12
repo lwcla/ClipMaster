@@ -47,7 +47,7 @@
 - 下载记录页面使用顶部纯文字 Tab 和横向 Pager 区分视频、图片，点击 Tab 会滚动到对应页面，左右滑动页面会同步更新当前 Tab，并在分类切换时清空多选状态；Tab 不配置图标，避免顶部区域过高挤占列表浏览空间；媒体记录范围包含成功、部分成功、失败、已过滤和进行中，图片未确认下载的 `STATUS_EXTRACTED` 批次不展示。TorrentSearch 的内部下载/历史不复用本页的 Pager、选择态、删除或备份 dirty 流程。
 - 下载记录页面在多选状态拦截系统返回键，优先调用 `exitSelection()` 清空选择并回到普通浏览态；删除确认弹窗或图片预览弹层显示时，返回键仍优先交给对应模态层处理；普通态和多选态顶部栏都使用一致的状态栏 padding 与 48dp 高度，确保标题、右侧按钮和多选操作在同一垂直位置。
 - 下载记录的视频列表和图片列表普通态底部留白使用同一套 12dp 轻量间距；进入多选态后，页面底部删除条通过 `Scaffold.bottomBar` 参与布局，列表内容区自动让出对应空间，不再依赖额外叠加系统导航高度。
-- 下载记录页参考剪贴列表页的分页模式，视频和图片分页 Flow 在 ViewModel 内保持稳定并通过 `cachedIn(viewModelScope)` 缓存，页面层通过 `flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)` 绑定前台生命周期；当前 Tab 的内容分支才调用 `collectAsLazyPagingItems()`，避免切换 Tab 时用空 Flow 覆盖已有分页数据。
+- 下载记录页参考剪贴列表页的分页模式，视频和图片分页 Flow 在 ViewModel 内保持稳定并通过 `cachedIn(viewModelScope)` 缓存，页面层通过 `flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)` 绑定前台生命周期；`DownloadHistoryPager` 在横向 Pager 外只为 `settledPage` 对应的稳定 Tab 调用 `collectAsLazyPagingItems()`，避免邻页预组合或点击 Tab 后尚未停稳时提前加载另一分类，也不使用空 Flow 覆盖缓存。
 - 视频和图片列表分别持有独立的 `LazyListState`，并通过 `rememberSaveable` 保存首个可见项和偏移量；切换视频/图片 Tab、亮暗色主题重组或 Activity 重建后，已浏览过的分类应尽量保留原滚动位置。
 - 视频和图片都使用 PagingSource，每页 20 条、预取 5 条，避免一次性读取大量任务、批次、首帧和图片项。
 - 标题栏按钮、清空数量和“是否包含进行中任务”使用数据库 `COUNT` 与 id 查询，不依赖已分页加载的可见列表，避免分页只加载部分数据时全选、清空或删除提示统计不完整。
@@ -87,7 +87,7 @@
 ## 数据流
 
 - 下载记录页进入后，ViewModel 不在 `init` 中主动 collect 列表；ViewModel 只暴露稳定的 `pagedVideos` 与 `pagedImages` 分页 Flow，并使用 `cachedIn(viewModelScope)` 保留分页缓存。可选扩展 Tab 的分页 Flow 由扩展内容在当前 Tab 可见时自行收集。
-- 页面层参考剪贴列表页做法，先用 `flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)` 将分页 Flow 绑定页面生命周期，再在当前 Tab 内容分支里调用 `collectAsLazyPagingItems()`；这样页面不可见时暂停收集，Tab 切换时也不会把旧分页结果清空。
+- 页面层参考剪贴列表页做法，先用 `flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)` 将分页 Flow 绑定页面生命周期，再在横向 Pager 外的稳定 Tab 分支调用 `collectAsLazyPagingItems()`；这样页面不可见时暂停收集，滑动尚未停稳时仍只为原 Tab 工作，真正切换时复用 `cachedIn` 缓存。
 - `DownloadDao.pagingHistory()` 和 `ImageExtractDao.pagingHistory()` 返回 `PagingSource`，分页查询按 `update_time DESC, id DESC` 排序；`Pager` 每页读取 20 条并缓存到 ViewModel 生命周期。
 - 视频和图片分别持有独立 `LazyListState`，列表滚动位置不依赖当前 Tab 的组合生命周期；主题切换等重组场景不会主动回到顶部。
 - 视频分页项在映射当前页数据时读取 `savePath`、`pendingOutputUri`、`updateTime` 和状态，并从本地媒体 URI/路径查询大小、时长与首帧；未进入当前页的数据不读取首帧。
@@ -198,6 +198,8 @@
 
 ## 变更记录
 
+- 2026-10-12：按已确认的 `ec41106` 广告方案，将视频/图片下载历史改为标题与 Tab 下方、横向 Pager 上方的固定单广告；分页收集与广告会话均按稳定 `settledPage` 编排，固定宿主不随业务 loading/空态分支退出。视频刷新 loading 不把旧快照视为实际内容，图片有旧批次时继续按原分支呈现；原因是广告需与数据库并行请求，并且横向拖动/回弹不能提前请求邻页或移走有效素材。共享状态测试和集成验证由广告主方案统一记录。
+
 - 2026-09-27：下载历史 Pager 复用 `AdPagerPageState` 统一稳定页可见性与滚动布局门，保持已有拖动不重载、切页返回新请求的行为；回归边界以 [广告主方案](ad_module_plan.md) 为准。
 
 - 2026-09-27：视频/图片记录页返回后允许重新请求广告，稳定选中页决定访问边界，横向拖动仅阻止布局揭示；修复释放后不重载，完整契约与验证以 [广告主方案](ad_module_plan.md) 为准。
@@ -243,10 +245,25 @@
 - 2026-05-21：补充备份恢复后媒体重新定位对下载记录页的影响；原因是恢复后旧媒体 URI/路径可能失效，第一版只通过恢复页手动触发高可信写回，下载记录页继续复用现有不可读展示和重新下载入口，不新增 schema 状态字段。
 
 
-## 2026-09-18 AdMob 接入变更（实现中）
+## 固定广告接入（2026-10-12，已完成）
 
-视频记录与图片批次使用独立单元，仅可见 Tab 请求；图片按外层批次卡片计数，不在缩略图中嵌套广告。原分页、选择、重试和滚动状态保留。
+视频记录与图片批次继续使用独立单元，每次稳定 Tab 访问只有一个固定槽；槽位位于标题和 Tab 下方、整个横向 Pager 上方，不参与列表和横向页面的滚动。复用共享 `FixedListAdLayout`、`ListAdContentState`、`AdPagerPageState` 和 `rememberPageAdSession`，移除业务卡片尾部的 `ListAdContentItem`。稳定页对应的分页收集与广告请求从同一次页面组合分别启动，广告请求不等待列表首批、数量查询或 refresh 完成；加载、空态和纯错误画面只关闭呈现许可，固定宿主仍存在。
 
-共享广告的隐私、生命周期、资源、布局及低敏日志契约以 [广告主方案](ad_module_plan.md) 为准；本页验证重点为业务交互不回归及广告异步加载时的内容锚点保护。
+视频 `refresh Loading` 原本始终画加载态，因此即使分页快照残留旧记录，传入状态仍为 `Loading`；图片仅在 `refresh Loading && itemCount == 0` 时画加载态，有旧批次时继续显示列表并允许呈现。两者的状态由当前分页数据直接计算并透传给列表的加载分支，不通过额外协程或记忆布尔值复制。仅真实业务快照有记录且当前不是加载画面时进入 `Rendered`，清空后及时变为 `Empty`。点击 Tab 时 ViewModel 先更新标题/业务选择态，再执行 Pager 动画；旧稳定页继续展示已有内容，固定广告保持原布局。`DownloadHistoryPagerPolicy` 将不匹配分类的选择投影为普通浏览态，并暂停点击/长按/重试/预览直到停稳且与业务选择同步，避免相同主键串用新分类选择或触发副作用。图片业务身份与计数仍是外层批次，不在缩略图中嵌套广告。
 
-变更记录：2026-09-19，按实际接入更新页面差异与边界；集成编译/测试结果见主方案。
+`AdPagerPageState.visibleToUser` 仍由 `settledPage` 决定，页面 `STARTED/RESUMED` 生命周期门继续生效；两个会话放在横向 Pager 外，邻页预组合不取得新请求许可。按压、横向拖动/惯性、列表滚动、多选、预览、删除确认和任务执行继续使用现有布局/交互安全门及实时按压读取；拖动只延后布局变化，回弹不销毁原访问素材。真正停稳到另一分类才切换分页与会话，返回创建新访问。业务稳定 key、去重后对应的原 Paging 索引、卡片、批次数量、append 状态和独立 `LazyListState` 保留，锚点继续由 `rememberListAdLayoutCoordinator` 只针对业务 key 恢复。
+
+### 日志与诊断计划
+
+共享广告的隐私、生命周期、持续呈现、关闭、空间预算和低敏日志契约以 [广告主方案](ad_module_plan.md) 为准。本页不新增重复日志；复用 DEBUG 请求、加载、曝光、释放和 `content_empty`/`content_ready`/`user_dismissed` 状态事件，异常沿用 WARN 来源初始化/渲染失败。字段只含来源、placement、slotIndex、稳定 reasonCode，不记录记录主键、批次信息、媒体 URI、路径、标题、素材或 SDK 原文，也不逐帧输出。通过同一访问请求次数与拖动/回弹、清空/恢复的事件顺序验证，自动隐藏不能伪报主动关闭或释放。仅 Compose 接线和临时内存状态变化，无 Room、下载元数据、设置、备份格式或外部序列化/反射契约变化。
+
+### 验证与取舍
+
+- 共享 `ListAdContentState` 与广告会话/空间纯规则由广告主方案统一测试先行；本页复用已有 `AdPagerPageStateTest`，并先补 `DownloadHistoryPagerPolicyTest`，覆盖提前选择另一分类、相同主键选择隔离、拖动期间动作暂停和停稳恢复。固定布局和 Paging/Compose 接线使用集成编译与设备验收，不编写源码镜像测试。
+- 本轮保留 `DownloadHistoryPager` 内集中编排稳定页、分页实例、固定宿主和业务列表，虽然函数超过约 80 行，但不承载广告纯规则、SDK 或 IO 实现；原因是这些接线必须共用同一分页实例与实时画面状态，避免拆分引入状态副本和生命周期歧义。旧的仅透传 `DownloadHistoryContent` 中间层已移除；后续新增分类时再评估具名分页 UI 契约与专属编排组件，复用规则仍以下层共享广告能力为准。
+- 验证进入页时广告请求不等待数据库；加载或空态时零空白；视频 refresh 保留旧快照时广告隐藏，图片 refresh 有旧批次时按原画面继续呈现；清空后隐藏、恢复内容后复用有效素材。
+- 验证横向拖动与回弹不移动固定广告、不请求邻页、不丢原素材；停稳切 Tab 才切单元，返回为新访问；多选、按压、预览、确认、busy 和纵向滚动期间安全门与业务锚点不回归。
+- 验证业务卡片 key、原 Paging 索引、外层批次数量、卡片点击/长按/重试、append 与滚动位置保持原契约；小屏、大字体和横屏的共享空间预算以主方案为准。
+- 本轮下载历史接入不单独运行 Gradle，app 编译和共享广告单测由根代理串行执行并汇总到主方案；真实 SDK View、TalkBack、大字体、横屏和实际锚点仍需设备验证。未新增 SDK/反射契约，不额外扩大 keep 或备份范围。
+
+变更记录：2026-10-12，完成固定单槽与稳定 Tab 收集；复核修正点击 Tab 动画空白，抽取并先测跨分类选择投影和动作暂停规则。app 292 项测试、编译及复核通过，整体广告验证与设备边界以主方案为准；页面原有其他实施事项继续按原状态跟踪。

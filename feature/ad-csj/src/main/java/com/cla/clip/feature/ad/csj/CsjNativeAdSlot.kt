@@ -20,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -33,6 +34,7 @@ import com.cla.clip.feature.ad.api.AdRuntimePolicy
 import com.cla.clip.feature.ad.api.AdSlotEvent
 import com.cla.clip.feature.ad.api.AdSlotEventType
 import com.cla.clip.feature.ad.api.AdSlotRequest
+import com.cla.clip.feature.ad.api.AdPresentationPolicy
 import kotlinx.coroutines.delay
 
 /** 穿山甲详情页原生广告 Compose 容器。 */
@@ -62,6 +64,8 @@ internal fun CsjNativeAdSlot(
     var adHandle by remember(request.requestNonce) { mutableStateOf<CsjNativeAdHandle?>(null) }
     /** 当前广告是否已经渲染成功；未成功前不插入容器。 */
     var renderReady by remember(request.requestNonce) { mutableStateOf(false) }
+    /** 已呈现素材保持普通滚动布局，内容自动隐藏后恢复必须重新取得布局许可。 */
+    var presented by remember(request.requestNonce) { mutableStateOf(false) }
     /** 当前请求开始时间；用于计算低敏耗时。 */
     val startedAtMillis = remember(request.requestNonce) { System.currentTimeMillis() }
     /** 当前运行时策略；adapter 内部只补充真实 SDK 需要的本地判断。 */
@@ -265,7 +269,12 @@ internal fun CsjNativeAdSlot(
         }
     }
 
-    if (renderReady) {
+    // 保留已加载句柄与释放保护器，只退出原生 View 的组合，不把自动隐藏误当关闭。
+    val mount = AdPresentationPolicy.canMount(renderReady,
+        request.contentPresentable && request.contentPresentableNow(), presented,
+        request.canReveal && request.canRevealNow())
+    SideEffect { presented = mount }
+    if (mount) {
         /** 广告标识文案；用于视觉展示和 TalkBack 说明。 */
         val adLabel = stringResource(id = R.string.ad_csj_detail_ad_label)
         Column(

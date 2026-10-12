@@ -120,7 +120,7 @@ private fun AdLayoutCoordinator(
     // 帧回调直接读取 Lazy 滚动状态，避免新手势先到而重组尚未刷新闭包的竞态。
     val currentScrollingNow by rememberUpdatedState(scrollingNow)
     // 业务交互和滚动共同决定是否可以改变布局；指针按压由宿主额外约束。
-    val canMutate = ListAdPlacementPolicy.canMutateLayout(scrolling, blocked, pinRestorePending)
+    val canMutate = AdListLayoutPolicy.canMutateLayout(scrolling, blocked, pinRestorePending)
     // 下一帧回调也必须复核交互状态，避免恢复抢走刚开始的新手势。
     val currentCanMutate by rememberUpdatedState(canMutate && !session.pointerPressed)
     // 首次变化保存的业务锚点；同帧多个槽位复用它，避免中间布局覆盖原位置。

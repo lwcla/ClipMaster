@@ -5,6 +5,7 @@ import android.os.Looper
 import android.util.Log
 import com.cla.clip.feature.ad.api.AdPlacement
 import com.google.android.libraries.ads.mobile.sdk.common.LoadAdError
+import com.google.android.libraries.ads.mobile.sdk.common.AdChoicesPlacement
 import com.google.android.libraries.ads.mobile.sdk.nativead.*
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resumeWithException
@@ -23,13 +24,16 @@ internal object AdmobSdkLoader {
     /** 进程内诊断序号不关联设备、页面内容或广告平台响应，不持久化。 */
     private val requestSequence = AtomicLong()
 
-    /** 返回单个原生广告；广告单元仅用于请求，低敏位置用于诊断；取消不能阻止 SDK 网络回调。 */
+    /** 返回单个原生广告，SDK 选项放左下角以避开标题关闭热区；取消后仍拒绝迟到素材。 */
     suspend fun load(unitId: String, placement: AdPlacement): NativeAd = suspendCancellableCoroutine { continuation ->
         /** 同次 SDK 请求的开始和终态共享序号，不暴露宿主内容身份或正式广告单元。 */
         val requestId = requestSequence.incrementAndGet()
         if (BuildConfig.DEBUG) Log.d("AdmobLoader", "原生广告加载开始 requestId=$requestId placement=${placement.placementId}")
         NativeAdLoader.load(
-            NativeAdRequest.Builder(unitId, listOf(NativeAd.NativeAdType.NATIVE)).build(),
+            // 使用 SDK 标准角落选项，布局只在左下角局部留位，不启用受限的自定义选项视图。
+            NativeAdRequest.Builder(unitId, listOf(NativeAd.NativeAdType.NATIVE))
+                .setAdChoicesPlacement(AdChoicesPlacement.BOTTOM_LEFT)
+                .build(),
             object : NativeAdLoaderCallback {
                 /** 迟到素材不能交回已销毁页面，恢复调度竞争也必须销毁。 */
                 override fun onNativeAdLoaded(nativeAd: NativeAd) {

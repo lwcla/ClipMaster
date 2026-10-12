@@ -2,4 +2,6 @@
 <resources>
     <string name="host_ad_privacy_options">广告隐私选项</string>
     <string name="host_ad_privacy_options_description">查看或修改广告隐私选择</string>
+    <string name="host_ad_dismiss">关闭此广告</string>
+    <string name="host_ad_preview">广告素材预览</string>
 </resources>

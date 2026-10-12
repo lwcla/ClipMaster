@@ -52,6 +52,9 @@ internal class AdmobSlotSession(
     /** 当前公开给 Compose 的 View；空值占用零尺寸。 */
     var view: NativeAdView? by mutableStateOf(null)
         private set
+    /** 自动隐藏保留 View/素材但清除呈现状态；重新挂载仍要通过滚动和按压安全门。 */
+    var presented by mutableStateOf(false)
+        private set
     /** 初始化与加载共享十五秒总预算的起点，用于低敏阶段耗时。 */
     private val startedAt = SystemClock.elapsedRealtime()
 
@@ -136,12 +139,17 @@ internal class AdmobSlotSession(
         } else if (loadedAt?.let { SystemClock.elapsedRealtime() - it >= 60 * 60 * 1000L } == true) {
             close(AdReleaseReason.Expired)
         } else {
-            revealIfAllowed()
+            if (!request.contentPresentable || !request.contentPresentableNow()) {
+                // 空态与 View 解绑同次主线程更新，不销毁素材，不生成新请求或关闭记录。
+                presented = false
+                (view?.parent as? ViewGroup)?.removeView(view)
+            } else revealIfAllowed()
         }
     }
 
     /** 登记新绑定与搬移 View 在同一主线程调用内完成，旧 onDispose 不能拆掉新外壳。 */
     fun bindView(binding: Any, container: ViewGroup) {
+        if (!request.contentPresentable || !request.contentPresentableNow() || !presented) return
         // 素材已销毁或尚未揭示时没有可搬移的 View。
         val nativeView = view ?: return
         this.binding = binding
@@ -155,24 +163,30 @@ internal class AdmobSlotSession(
     fun detach(binding: Any) {
         if (this.binding !== binding) return
         this.binding = null
+        presented = false
+        // 主线程解绑即移除关闭监听，缓存素材不保留离屏组合的页面引用。
+        view?.let { AdmobNativeAssets.updateDismissControl(it, false, onDismiss = {}) }
         (view?.parent as? ViewGroup)?.removeView(view)
-        request = request.copy(canReveal = false, canRevealNow = { false },
-            onLayoutWillChange = {}, onLayoutChanged = {}, interactionEnabled = false)
+        request = request.copy(canReveal = false, canRevealNow = { false }, contentPresentable = false, contentPresentableNow = { false },
+            onLayoutWillChange = {}, onLayoutChanged = {}, onDismiss = {}, interactionEnabled = false)
     }
 
     /** 允许展示时才创建原生 View；渲染异常触发独立保险丝事件。 */
     private fun revealIfAllowed() {
         // 布尔快照尚未随重组更新时，实时门仍能同步阻止交互中的布局变化。
-        if (binding == null || !request.canReveal || !request.canRevealNow() || view != null || !privacy.state.value.canRequestAds) return
+        if (binding == null || !request.contentPresentable || !request.contentPresentableNow() || !privacy.state.value.canRequestAds) return
+        // 已在窗口的素材不因普通滚动收起；缓存 View 重新挂载要重新取得安全许可。
+        if (presented || !request.canReveal || !request.canRevealNow()) return
         /** 当前素材和 Activity 上下文都必须仍然存在。 */
         val currentAd = ad ?: return
         /** 页面关闭后没有合法 UI 宿主。 */
         val context = uiContext ?: return
         try {
             /** 先完成 SDK 绑定，再通知宿主即将改变布局。 */
-            val created = AdmobNativeViewFactory.create(context, currentAd)
+            val created = view ?: AdmobNativeViewFactory.create(context, currentAd)
             request.onLayoutWillChange()
             view = created
+            presented = true
             request.onLayoutChanged()
         } catch (failure: Exception) {
             emit(AdSlotEventType.RenderFailed, "admob_render_failed")
@@ -197,6 +211,7 @@ internal class AdmobSlotSession(
     /** 真正离开/过期/撤销才销毁；先关闭状态再回报，防止宿主释放回调重入。 */
     override fun close(reason: AdReleaseReason) {
         if (!guard.close()) return
+        presented = false
         scope.cancel()
         /** 当前 View 先撤出布局，锚点回调必须先于尺寸变化。 */
         val previousView = view
@@ -215,7 +230,7 @@ internal class AdmobSlotSession(
             reason.code, SystemClock.elapsedRealtime() - startedAt, BuildConfig.DEBUG, "1.4.0"))
         // 释放后清除捕获的页面环境及回调，SDK 的迟到结果只能走 guard 拒绝分支。
         onEvent = {}
-        request = request.copy(canReveal = false, canRevealNow = { false },
-            onLayoutWillChange = {}, onLayoutChanged = {})
+        request = request.copy(canReveal = false, canRevealNow = { false }, contentPresentable = false, contentPresentableNow = { false },
+            onLayoutWillChange = {}, onLayoutChanged = {}, onDismiss = {})
     }
 }

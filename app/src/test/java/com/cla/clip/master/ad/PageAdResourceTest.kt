@@ -7,6 +7,37 @@ import org.junit.Test
 
 /** 验证有限缓存、回滚复用与迟到回调，不加载任何 SDK 或网络。 */
 class PageAdResourceTest {
+    /** 主动关闭只能影响指定位置，重复点击和来源变化都不能重新领取资源。 */
+    @Test fun dismissedSlotReleasesOnceAndLeavesOtherSlotsAvailable() {
+        // 当前页面资源与两个独立位置，关闭次数保护 SDK 幂等销毁。
+        val session = PageAdSession(true)
+        val dismissed = session.acquireSlot("home_feed:0", "admob")!!
+        val other = session.acquireSlot("home_feed:1", "admob")!!
+        val binding = Any()
+        var closes = 0
+        session.bindSlot("home_feed:0", dismissed, binding)
+        dismissed.resources.getOrCreate { AdSlotResource { closes++ } }
+        assertTrue(session.dismissSlot("home_feed:0", dismissed, binding))
+        assertFalse(session.dismissSlot("home_feed:0", dismissed, binding))
+        assertEquals(1, closes)
+        assertNull(session.acquireSlot("home_feed:0", "admob"))
+        assertNull(session.acquireSlot("home_feed:0", "debug"))
+        assertSame(other, session.acquireSlot("home_feed:1", "admob"))
+    }
+
+    /** 已被替换的组合关闭回调不能关闭同一缓存的新绑定。 */
+    @Test fun staleDismissCallbackCannotCloseCurrentBinding() {
+        // 新旧绑定共用素材，但只有当前绑定拥有关闭权限。
+        val session = PageAdSession(true)
+        val lease = session.acquireSlot("slot", "admob")!!
+        val oldBinding = Any()
+        val currentBinding = Any()
+        session.bindSlot("slot", lease, oldBinding)
+        session.bindSlot("slot", lease, currentBinding)
+        assertFalse(session.dismissSlot("slot", lease, oldBinding))
+        assertSame(lease, session.acquireSlot("slot", "admob"))
+        assertTrue(session.dismissSlot("slot", lease, currentBinding))
+    }
     /** 同一缓存跨组合回绑时，旧解绑/坐标回调不能把新可见广告变成淘汰候选。 */
     @Test fun staleBindingCannotMakeReattachedAdEvictable() {
         // 同一个广告资源先后绑定两个 Lazy 组合。

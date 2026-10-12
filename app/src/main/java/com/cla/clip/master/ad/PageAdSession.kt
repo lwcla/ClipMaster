@@ -9,6 +9,8 @@ import java.util.UUID
 internal class PageAdSession(
     /** 页面处于可保留资源的可见状态，新增请求另由 canRequest 控制。 */
     active: Boolean,
+    /** 请求账本随业务 key 更换，用户关闭记录仍属于同一次页面访问。 */
+    private val visitState: PageAdVisitState = PageAdVisitState(),
 ) {
     /** 当前访问的存活许可；真实离开后返回由所有者替换会话，短暂暂停保持原会话。 */
     var active by mutableStateOf(active)
@@ -43,6 +45,7 @@ internal class PageAdSession(
 
     /** 尝试取得位置租约；容量淘汰可在未来重新绑定，失败历史仍保留。 */
     fun acquire(key: String): Boolean {
+        if (visitState.isDismissed(key)) return false
         // 成功取得新资源容量；已有对象的复用由 acquireSlot 提前处理。
         val acquired = leases.acquire(key)
         // 容量策略先完成，再同步销毁被淘汰的真实资源；不能只删除租约计数。
@@ -65,6 +68,7 @@ internal class PageAdSession(
     }
     /** 取得现存缓存或申请新资源；失败位置与没有容量时返回空。 */
     fun acquireSlot(key: String, sourceId: String, allowNewRequest: Boolean = true): PageAdSlotLease? {
+        if (visitState.isDismissed(key)) return null
         // 命中当前来源时复用；切换来源必须释放旧对象。
         val cached = slots[key]
         if (cached != null && cached.sourceId == sourceId) return cached
@@ -77,6 +81,17 @@ internal class PageAdSession(
 
     /** 校验绑定身份，旧组合回调只能影响它自己取得的资源。 */
     fun ownsSlot(key: String, slot: PageAdSlotLease): Boolean = slots[key] === slot
+
+    /** 用户关闭按广告位识别，不依赖本次请求 nonce 或选中的 SDK 来源。 */
+    fun isDismissed(key: String): Boolean = visitState.isDismissed(key)
+
+    /** 只接受当前 View 绑定的关闭，旧回调不影响新绑定或其他广告位；成功返回 true。 */
+    fun dismissSlot(key: String, slot: PageAdSlotLease, binding: Any): Boolean {
+        if (!ownsSlot(key, slot) || slot.binding !== binding || visitState.isDismissed(key)) return false
+        visitState.dismiss(key)
+        releaseSlot(key, slot, AdReleaseReason.UserDismissed)
+        return true
+    }
 
     /** 同资源回绑也生成新的组合身份，新挂载接管可见性回报权限。 */
     fun bindSlot(key: String, slot: PageAdSlotLease, binding: Any) {

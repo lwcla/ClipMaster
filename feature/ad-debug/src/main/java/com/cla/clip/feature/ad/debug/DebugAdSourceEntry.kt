@@ -12,6 +12,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -23,6 +28,7 @@ import com.cla.clip.feature.ad.api.AdSlotEvent
 import com.cla.clip.feature.ad.api.AdSlotEventType
 import com.cla.clip.feature.ad.api.AdSlotRequest
 import com.cla.clip.feature.ad.api.AdSourceEntry
+import com.cla.clip.feature.ad.api.AdPresentationPolicy
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -67,10 +73,18 @@ internal class DebugAdSourceEntry @Inject constructor() : AdSourceEntry {
         onEvent: (AdSlotEvent) -> Unit,
         modifier: Modifier,
     ) {
-        LaunchedEffect(request.requestNonce) {
+        // 调试来源同样区分请求与呈现，不用提前上报曝光掩盖空态门禁问题。
+        var loaded by remember(request.requestNonce) { mutableStateOf(false) }
+        // 当前是否已挂载调试素材；空态清除该标记，恢复仍需经过布局安全门。
+        var presented by remember(request.requestNonce) { mutableStateOf(false) }
+        // 一次访问的一次调试请求只产生一组加载事件，临时遮挡不重新加载。
+        var started by remember(request.requestNonce) { mutableStateOf(false) }
+        LaunchedEffect(request.requestNonce, request.canRequest) {
+            if (!request.canRequest || started) return@LaunchedEffect
+            started = true
             onEvent(request.toDebugEvent(AdSlotEventType.RequestStarted))
             onEvent(request.toDebugEvent(AdSlotEventType.Loaded))
-            onEvent(request.toDebugEvent(AdSlotEventType.Impression))
+            loaded = true
         }
 
         DisposableEffect(request.requestNonce) {
@@ -79,7 +93,17 @@ internal class DebugAdSourceEntry @Inject constructor() : AdSourceEntry {
             }
         }
 
-        DebugNativeAdCard(modifier = modifier)
+        // 同源持续内容门只影响当前挂载，素材加载状态在自动隐藏时保留。
+        val contentAllowed = request.contentPresentable && request.contentPresentableNow()
+        // 与真实来源共用纯规则，避免调试包允许空屏而真实包不允许的差异。
+        val mount = AdPresentationPolicy.canMount(loaded, contentAllowed, presented,
+            request.canReveal && request.canRevealNow())
+        SideEffect { presented = mount }
+        if (mount) DebugNativeAdCard(modifier = modifier)
+        // 调试曝光仅在实际有内容且素材挂载时产生，不为请求计时添加固定延迟。
+        LaunchedEffect(request.requestNonce, mount) {
+            if (mount) onEvent(request.toDebugEvent(AdSlotEventType.Impression))
+        }
     }
 }
 

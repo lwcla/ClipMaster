@@ -24,12 +24,15 @@ internal fun rememberPageAdSession(
     val latestEnabled by rememberUpdatedState(enabled)
     /** Tab 切换不一定改变导航生命周期，因此单独保留最新可见性。 */
     val latestVisible by rememberUpdatedState(visibleToUser)
+    /** 生命周期范围的访问记录跨业务 key 保留；真正返回时由所有者替换其对象。 */
+    var visitState by remember(lifecycle) { mutableStateOf(PageAdVisitState()) }
     /** 生命周期宿主或业务阶段改变即隔离旧所有者，不跨页面/阶段复用请求账本。 */
     val owner = remember(key, lifecycle) {
         PageAdSessionOwner(
             initiallyVisible = visibleToUser && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED),
             initiallyEnabled = enabled,
             initiallyResumed = lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED),
+            visitState = visitState,
         )
     }
     // 直接观察事件，避免后台停止重组时 StateFlow 合并掉短暂的离开/返回边界。
@@ -42,6 +45,7 @@ internal fun rememberPageAdSession(
                 resumed = lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED),
                 releaseReason = if (!latestVisible) AdReleaseReason.TabChanged else AdReleaseReason.LifecycleStop,
             )
+            visitState = owner.currentVisitState()
         }
         lifecycle.addObserver(observer)
         // 先注销再关闭，迟到事件也不能使已离开组合的页面重新活跃。
@@ -57,6 +61,7 @@ internal fun rememberPageAdSession(
             resumed = lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED),
             releaseReason = if (!visibleToUser) AdReleaseReason.TabChanged else AdReleaseReason.LifecycleStop,
         )
+        visitState = owner.currentVisitState()
     }
     // 页面层清理所有离屏缓存，不能只依赖已挂载槽的来源选择器。
     val environment = LocalAdHostEnvironment.current

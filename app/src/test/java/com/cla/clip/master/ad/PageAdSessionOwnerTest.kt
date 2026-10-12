@@ -5,6 +5,30 @@ import org.junit.Test
 
 /** 保护页面返回重载、同页去重以及旧回调隔离，不依赖广告 SDK 或网络。 */
 class PageAdSessionOwnerTest {
+    /** 业务 key 重建只替换会话，不解除同一次页面访问的单位置关闭记录。 */
+    @Test fun businessSessionReplacementKeepsDismissalUntilNewVisit() {
+        // 访问状态独立于搜索条件等业务会话身份，不保存业务输入。
+        val visit = PageAdVisitState()
+        val original = PageAdSessionOwner(true, true, visitState = visit)
+        val lease = original.session.acquireSlot("search_feed:0", "admob")!!
+        val binding = Any()
+        original.session.bindSlot("search_feed:0", lease, binding)
+        assertTrue(original.session.dismissSlot("search_feed:0", lease, binding))
+        original.close()
+        // 新业务 key 创建新所有者，但本页面访问仍共用关闭记录。
+        val replacement = PageAdSessionOwner(true, true, visitState = visit)
+        replacement.update(true, false)
+        replacement.update(true, true, resumed = false)
+        replacement.update(true, true)
+        assertNull(replacement.session.acquireSlot("search_feed:0", "admob"))
+        assertNotNull(replacement.session.acquireSlot("folded_search:0", "admob"))
+        replacement.update(false, true)
+        replacement.update(true, true)
+        assertNotNull(replacement.session.acquireSlot("search_feed:0", "admob"))
+        // 旧访问的迟到点击不能改写新访问。
+        assertFalse(original.session.dismissSlot("search_feed:0", lease, binding))
+        assertNotNull(replacement.session.acquireSlot("search_feed:0", "admob"))
+    }
     /** 短暂停只阻止新增工作，恢复时仍使用原会话及原资源。 */
     @Test fun pauseThenResumePreservesResources() {
         // 模拟前台页面和已申请的广告。

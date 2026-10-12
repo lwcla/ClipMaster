@@ -6,6 +6,17 @@ import org.junit.Test
 
 /** 实时展示门必须在同一请求内读取最新交互状态。 */
 class AdSlotRequestTest {
+    /** 未有业务内容仅禁止呈现，不能阻止独立广告请求。 */
+    @Test fun missingContentDoesNotBlockRequestAndLiveGateReadsLatestContent() {
+        // 同一请求可先缓存素材，再随真实内容出现获得呈现资格。
+        var containsContent = false
+        val request = AdSlotRequest(AdPlacement.HomeFeedNative, "parallel", true,
+            contentPresentable = false, contentPresentableNow = { containsContent })
+        assertTrue(request.canRequest)
+        assertFalse(request.contentPresentableNow())
+        containsContent = true
+        assertTrue(request.contentPresentableNow())
+    }
     /** 未提供实时门时沿用构造请求时的展示许可。 */
     @Test
     fun defaultLiveGateFollowsRevealPermission() {

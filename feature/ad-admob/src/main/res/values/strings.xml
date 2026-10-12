@@ -1,1 +1,4 @@
-<resources><string name="ad_admob_attribution">广告</string></resources>
+<resources>
+    <string name="ad_admob_attribution">广告</string>
+    <string name="ad_admob_dismiss">关闭此广告</string>
+</resources>

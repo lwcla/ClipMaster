@@ -33,6 +33,9 @@ internal class AdmobAdSourceEntry @Inject constructor(
     /** 所有已注册位置都只提供原生广告，不引入激励或插屏格式。 */
     override val supportedPlacements = AdPlacement.entries.toSet()
 
+    /** 全部 AdMob 自绘卡片在标题行内承载关闭控件，宿主不再追加描边外的按钮。 */
+    override val rendersHostDismissControl = true
+
     /** 平台独立隐私语义与运行时安全边界都必须满足。 */
     override fun isAvailable(consentState: AdConsentState, runtimePolicy: AdRuntimePolicy): Boolean =
         runtimePolicy.adsGlobalEnabled && runtimePolicy.isMainProcess &&
@@ -87,7 +90,9 @@ internal class AdmobAdSourceEntry @Inject constructor(
         }
         // 首次素材只在安全布局时揭示，已有 View 可跨离屏绑定保留。
         val nativeView = session.view
-        if (nativeView != null) {
+        if (nativeView != null && AdPresentationPolicy.canMount(true,
+                request.contentPresentable && request.contentPresentableNow(), session.presented,
+                request.canReveal && request.canRevealNow())) {
             AndroidView(
                 // 每次挂载独享外壳；搬移 SDK View 前移除旧父节点，避免双重挂载。
                 factory = { viewContext ->
@@ -98,6 +103,10 @@ internal class AdmobAdSourceEntry @Inject constructor(
                 modifier = modifier,
                 // 外壳销毁只解除子 View 关系，素材销毁始终属于页面资源所有者。
                 onRelease = { container ->
+                    // 素材可能已搬到新外壳；旧 onRelease 只能清理自身或已解绑按钮的回调。
+                    if (nativeView.parent == null || nativeView.parent === container) {
+                        AdmobNativeAssets.updateDismissControl(nativeView, false, onDismiss = {})
+                    }
                     container.removeAllViews()
                     container.canInteract = { false }
                     container.updateInteraction(false)
@@ -107,9 +116,15 @@ internal class AdmobAdSourceEntry @Inject constructor(
                     // 绑定登记和 View 搬移统一处理，也能修复应用阶段中新旧外壳交接。
                     session.bindView(binding, container)
                     container.canInteract = {
-                        latestRequest.interactionEnabled && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+                        latestRequest.contentPresentable && latestRequest.contentPresentableNow() &&
+                            latestRequest.interactionEnabled && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
                     }
                     container.updateInteraction(container.canInteract())
+                    // 关闭属于宿主操作，事件发生时读取最新绑定，不进入 SDK 广告点击回调。
+                    AdmobNativeAssets.updateDismissControl(nativeView, container.canInteract()) {
+                        // 无障碍等直接调用按钮也要读取实时交互门，不能绕过临时遮挡。
+                        if (container.canInteract()) latestRequest.onDismiss()
+                    }
                     AdmobNativeAssets.applyColors(
                         nativeView, colors.surface.toArgb(), colors.onSurface.toArgb(),
                         colors.onSurfaceVariant.toArgb(), colors.primary.toArgb(), colors.onPrimary.toArgb(),
