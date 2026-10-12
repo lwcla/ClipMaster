@@ -296,7 +296,7 @@ class BackupExecutionCoordinator @Inject internal constructor(
             runtime.recordTargetResultIfCurrentRound(roundId, target, System.currentTimeMillis(), reason)
         }
 
-    /** 升级只释放旧请求；启动和配置变化不补传、不删除当前完整包。 */
+    /** 升级只释放旧请求和引用；启动不补传，旧内部文件留到新轮次开始清理。 */
     suspend fun reconcile() = BackupTaskGate.runExclusive {
         withContext(Dispatchers.IO) {
             /** 没有新轮次键的旧身份不能冒领当前文件。 */
@@ -306,8 +306,6 @@ class BackupExecutionCoordinator @Inject internal constructor(
                     BackupAutoScheduler.cancelLegacyUpload(context, old.artifactId)
                     runtime.clearPending(old.artifactId)
                 }
-                try { pendingStore.cleanupExcept(null) }
-                catch (_: Exception) { logW("BackupCoordinator") { "旧内部包清理失败 reasonCode=package_cleanup_failed" } }
             }
         }
     }

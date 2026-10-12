@@ -71,7 +71,7 @@ TorrentSearch 保留独立文件及独立 Repository，不合并领域模型。�
 | `clipItemQuickAction` | 稳定 `storageValue`，默认 `copy` | 保留 |
 | `blockedClipSourcePackages` | `stringSetPreferencesKey`；默认空集，复用 `ClipSourceBlockRules` 的规范化、上限与排序规则 | 保留；导出为确定顺序，恢复取并集 |
 | `recycleBinRetentionDays` | Int，默认 30，范围 1–3650 | 保留 |
-| `pid`、`shizukuSuffix` | 安装 ID 缺失时通过事务生成；期望进程名默认空，绑定前计算并持久化 | 排除，安装/运行身份 |
+| `pid`、`shizukuSuffix` | 安装 ID 缺失或为空字符串时通过事务生成 20 位纯数字；非空值原样复用；期望进程名默认空，绑定前计算并持久化 | 排除，安装/运行身份 |
 | `videoDownloadTaskId`、`appUpdateLastCheckAt` | Long，默认分别为 -1、0；更新限频继续复用 24 小时规则 | 排除，运行状态 |
 | `activeAdSourceId`、`adsGlobalEnabled` | 默认 `auto`、true；加载失败不能据此启动广告 SDK | 排除，本机配置 |
 | `adConsentState`、`adPrivacyPolicyVersion` | 默认 `unknown`、空字符串；一次事务更新，保留现有同意校验规则 | 排除，本机隐私决定 |
@@ -100,7 +100,7 @@ TorrentSearch 保留独立文件及独立 Repository，不合并领域模型。�
 当前 Manifest 未发现业务组件通过 `android:process` 直接共享该配置文件；Shizuku 通过 Provider 访问主进程，不直接读应用 DataStore。因此默认单进程 DataStore，不为“存在 Shizuku 进程”引入 MultiProcessDataStore。实施时同时检查启用功能后的 merged manifest；如果确有其他进程读写同一文件，必须单独复核，不能混用两种实例。
 
 - `Provider.onCreate()` 只保留轻量入口准备；不在这里读磁盘、不 `runBlocking`，不等待 `Application.onCreate()` 中的预加载。
-- Provider 首次请求经现有 Hilt EntryPoint 懒取同一个实例。安装 ID 的校验和生成放在 `edit` 内，所有并发读取获得同一个已提交 ID；不先发射临时 ID。
+- Provider 首次请求经现有 Hilt EntryPoint 懒取同一个实例。安装 ID 的空值判断和首次生成放在 `edit` 内，所有并发读取获得同一个已提交 ID；不先发射临时 ID。首次生成由现有 `NumericInstallIdGenerator` 保证 20 位纯数字格式；已保存的非空 ID 原样复用，不因长度、字符或首尾空白重新生成。`snapshot()` 与 `data` 同样原样返回非空值，仅将缺失值映射为空字符串，读取不产生隐式写入。
 - `ShizukuConnector` 在现有应用协程内先等待身份就绪，再计算并提交期望进程名，最后执行延迟、早退判断和 bind。Provider 查询同样先得到已提交身份，不等待 bind 完成，防止循环等待。
 - Android `ContentProvider.call()` 是同步边界。远端 Binder 工作线程可采用局部、有超时的协程桥接（建议初始上限 3 秒，经冷启动测试校准），实际 DataStore IO 不运行在 Main；超时/IO 错误返回明确失败码。若检测到本进程 Main 同步调用，立即返回可重试失败，内部改走挂起接口，不阻塞 UI。
 - 普通 Repository、getter、ViewModel 和 Application 不允许 `runBlocking`。上述 Binder 边界是明确的局部例外，需要主线程、超时和取消测试。
@@ -166,6 +166,8 @@ WebDAV 存储版本、IV 和带认证标签的密文，采用小型显式格式�
 
 ## 测试验证
 
+2026-10-12 安装身份复用：按 `repo-unit-test-gate` 对持久化规则变更采用测试先行，复用真实临时文件 DataStore；新增回归覆盖非空 ID 的重复读取与持久化值不变、`snapshot()`/`data` 原样展示，以及已保存空字符串首次生成 20 位纯数字后持续复用。合成输入包含长度不符、非数字字符、UUID、首尾空白和纯空白字符串，明确空白字符串仍属于非空身份。沿用已有缺失键默认值与并发首次生成测试。旧实现运行身份所在测试类共 10 项，两个非空身份回归按预期失败；调整后执行 `.\gradlew.bat :base:general:testDebugUnitTest :base:general:compileDebugKotlin --no-daemon '-Pkotlin.compiler.execution.strategy=in-process' --console=plain`，结果 `BUILD SUCCESSFUL`，general 共 104 项单测，失败、错误、跳过均为 0，`git diff --check` 通过。首次编译遇到 Kotlin daemon 临时文件权限限制并自动回退；修改后沙箱读取 Gradle transforms 缓存 JAR 被拒绝，使用上述命令在沙箱外完成验证。未修改工程或 JDK 配置，未做设备交互与 release/R8 验证；本次没有外部协议、反射或混淆规则变更。RED 与 GREEN 日志分别为 `build/installation-identity-red.log` 和 `build/installation-identity-green-retry.log`。
+
 2026-09-30 剪贴字段 Flow：先验证名单修改不会重复通知快捷动作与保留天数，再验证三个字段各自变化、同文件其他领域变化、默认值/规范化与 IO 失败传播。复用 JVM 内存 fake 和已有测试依赖；页面改动只替换订阅接线，编译及既有 app 单测覆盖接入，生命周期与重试方式保持原契约。
 
 `repo-unit-test-gate` 判断：本次实施涉及纯规则、并发、Flow、数据协议和失败契约，已对 DataStore 原子写入、恢复合并、凭据失败、Provider 超时与密码决策选择性补充单元测试；设备绑定 Keystore 另以 instrumentation 编译和后续实机验证覆盖。
@@ -201,6 +203,8 @@ Release/R8 验证关注从枚举 name 改为稳定 code 后的状态恢复、摘
 
 ## 日志与诊断计划
 
+2026-10-12 安装身份复用不新增日志：本次仅收紧首次生成条件，保留已有 DataStore 事务和调用方持久化失败诊断；重复读取与纯快照映射不记录高频日志，禁止输出安装 ID 或完整进程名。安装 ID 继续作为本机身份排除自定义备份与系统备份，备份协议、字段白名单及 keep/R8 契约均不变化。
+
 2026-09-30 字段订阅调整不新增副作用或高频日志，沿用各页面既有读取失败、保存失败日志及稳定 reasonCode。我的页两个字段分别记录读取失败，页面错误入口取两者任一失败，防止一个字段读取成功掩盖另一字段故障。不改变设置键、写入事务、dirty 版本、备份白名单或外部协议；无新增 keep/R8 契约，本次不安排 release/R8 或设备验证。
 
 复用项目 `logD/logI/logW/logE` 与既有 taskId/eventId。日志正文简体中文；设置值、密码、密文、安装 ID、完整进程名、包名名单、地址、URI 和备份正文不进入新增日志。
@@ -228,6 +232,8 @@ Release/R8 验证关注从枚举 name 改为稳定 code 后的状态恢复、摘
 - 仍需用设备校准 Provider 超时、验证 merged manifest 与功能开关组合；这些是设备验证项，不影响当前选型。
 
 ## 变更记录
+
+- 2026-10-12：按用户要求将安装 ID 改为首次生成时保证格式、后续非空即原样复用；同步移除快照读取的格式过滤并补充回归测试。原因是格式不符不能等同于身份尚未生成，避免已保存身份被自动覆盖或读取为空。
 
 - 2026-09-30：按用户要求取消剪贴设置整体快照 Flow，改为三个独立字段 Flow 并更新页面订阅；原因是独立设置没有成组消费需求，整体对象增加无关映射与通知。备份和任务的一次性一致快照保留；验证结果见本次字段 Flow 验证记录。
 

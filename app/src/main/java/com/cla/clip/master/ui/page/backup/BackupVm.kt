@@ -19,7 +19,6 @@ import com.cla.clip.base.general.backup.RemoteBackupFile
 import com.cla.clip.base.general.backup.WebDavClient
 import com.cla.clip.base.general.backup.WebDavConfig
 import com.cla.clip.base.general.backup.BackupTargetHealth
-import com.cla.clip.base.general.backup.BackupTempFileStore
 import com.cla.clip.base.general.backup.backupReasonCode
 import com.cla.clip.base.general.backup.buildBackupFileName
 import com.cla.clip.base.general.backup.buildBackupDeviceLabel
@@ -73,8 +72,6 @@ class BackupVm @Inject constructor(
     private val webDavClient: WebDavClient,
     /** 本地备份文件夹写入器，负责 SAF 目录下的文件创建和字节写入。 */
     private val localBackupDirectoryWriter: LocalBackupDirectoryWriter,
-    /** 备份临时文件目录管理器，用于导入预览和导出完成后的清理。 */
-    private val tempFileStore: BackupTempFileStore,
     /** 本机备份配置，所有用户确认的字段均等待 DataStore 提交。 */
     private val backupSettings: BackupSettingsRepository,
     /** 分目标最近结果和连接健康状态，手动与每日共用。 */
@@ -124,8 +121,8 @@ class BackupVm @Inject constructor(
     /** 页面订阅的一次性提示事件。 */
     val messages = _messages.asSharedFlow()
 
+    /** 页面初始化只连接配置观察，临时目录由备份和恢复任务各自清理。 */
     init {
-        tempFileStore.cleanupExpired()
         observeSettings()
     }
 

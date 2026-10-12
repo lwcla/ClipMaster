@@ -14,7 +14,7 @@ internal object HostSettingsKeys {
     val BLOCKED_CLIP_SOURCE_PACKAGES = stringSetPreferencesKey("blocked_clip_source_packages")
     /** 回收站滚动保留天数。 */
     val RECYCLE_BIN_RETENTION_DAYS = intPreferencesKey("recycle_bin_retention_days")
-    /** 安装级纯数字身份，禁止进入用户备份。 */
+    /** 安装级身份，首次生成采用 20 位纯数字，已有非空值原样保留；禁止进入用户备份。 */
     val INSTALL_ID = stringPreferencesKey("pid")
     /** 主进程当前认可的 Shizuku 完整进程名。 */
     val EXPECTED_PROCESS_NAME = stringPreferencesKey("current_suffix")

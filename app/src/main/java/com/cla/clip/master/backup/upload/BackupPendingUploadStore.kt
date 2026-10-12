@@ -65,7 +65,7 @@ class BackupPendingUploadStore internal constructor(
         check(!directory.exists() || directory.deleteRecursively()) { "pending_cleanup_failed" }
     }
 
-    /** 下一轮/旧版本迁移清理内部目录，消费者结束不调用；当前完整包不按年龄淘汰。 */
+    /** 下一轮开始清理内部目录，启动及消费者结束不调用；当前完整包不按年龄淘汰。 */
     fun cleanupExcept(artifactId: String?) {
         root.listFiles()?.filter { it.name != artifactId }?.forEach { child ->
             // 子目录只能由本存储生成；安全身份规则排除根和上级目录。

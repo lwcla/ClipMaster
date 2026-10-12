@@ -6,6 +6,18 @@
 
 提交前集成验证（2026-10-11）：按用户要求提交并推送主分支前，重新执行 `.\gradlew.bat :base:general:testDebugUnitTest :app:testDebugUnitTest :app:compileDebugKotlin --init-script build\review-build-isolation.gradle --console=plain` 成功。base:general 101 项、app 289 项，共 390 项单测，失败、错误和跳过均为 0；最终暂存增量复核无可行动问题。此前原始单 ZIP 实现已通过 Release/R8，随后停止分类、目录探测及页面反馈改动不涉及外部协议、反射或 keep，本次集成不重复 Release/R8。真实设备调度、系统 Toast、UI、SAF 和服务端兼容性仍待验收，不在本次 Git 推送中自动执行。
 
+## 移除备份临时文件过期扫描（2026-10-12，已完成）
+
+按用户要求，旧内部完整包及后台导出残留仍由 `BackupExecutionCoordinator.generate()` 在新轮次登记、取消旧任务后清理，再生成新包；移除 `App.onCreate()`、`BackupVm` 初始化和 `BackupRestoreVm.startPendingRestore()` 中的 `cleanupExpired()` 调用，并删除该方法、24 小时阈值及只为此扫描存在的注入。应用启动和页面进入不再扫描 `backup_tmp` 按目录修改时间删除任务文件。
+
+同时移除 `BackupExecutionCoordinator.reconcile()` 的旧内部目录删除，升级仍取消旧 artifact 请求并清除 pending 引用，旧文件留到下一轮备份前回收；`cleanupExcept()` 的生产调用仅保留在 `generate()` 中。保留导出交接、导出失败、独立文件导出结束，以及恢复替换预览、取消、退出等已有单任务目录清理；每轮后台清理继续排除 `manual-local` 和 `import`。进程异常退出若未执行单任务清理，这两类残留不再按年龄自动回收，本轮接受该取舍，不新增定时清理、启动扫描或替代清理机制。备份数据范围、ZIP/manifest/checksum、用户正式备份保留和系统备份排除规则不变。
+
+单元测试检查：本轮仅删除过期扫描能力和入口接线，不新增纯规则或状态机；不新增检查源码调用是否存在的测试，也不走失败测试先行，复用 `BackupTempFileStoreTest` 和 `BackupPendingUploadStoreTest` 对每轮清理范围、完整包交接及新包失败不回退的覆盖，运行两模块既有单测和 Debug 编译。启动及恢复页实际交互留设备验收；无外部协议、反射或 keep 变化，不新增 Release/R8 验证。
+
+日志与诊断计划：随方法删除“过期备份临时目录清理完成”日志，启动兼容分支的旧文件清理失败日志一并移除；继续沿用生成协调器旧内部包/中间文件清理失败的 `WARN` 和单任务清理异常的 `ERROR`，仅记录 taskId、reasonCode 和异常类型，不输出路径或备份内容；不新增日志点，验证方式为引用与差异检查及既有测试。
+
+验证结果（2026-10-12）：运行 `.\gradlew.bat :app:compileDebugKotlin :base:general:testDebugUnitTest :app:testDebugUnitTest --no-daemon '-Pkotlin.compiler.execution.strategy=in-process' --console=plain`，在沙盒外使用新建单次 Gradle 进程后 `BUILD SUCCESSFUL`；base:general 101 项、app 289 项，共 390 项单测，失败、错误和跳过均为 0。此前普通命令及沙盒外复用 daemon 均因 Gradle 缓存 JAR 的 `AccessDeniedException` 失败，并出现 Kotlin daemon 临时文件权限错误；最终仅调整本次验证参数，未修改构建配置或缓存权限。引用检查确认旧包批量清理只在 `generate()` 中调用，过期扫描能力及引用已删除；`git diff --check` 和流程图 `--check` 通过，Mermaid 未变，无需重生成 HTML。无新增方法、变量或模型；相关注释已同步。设备启动/恢复交互和 Release/R8 未验证。
+
 ## 手动上传仅保留入队确认弹窗（2026-10-11，已完成）
 
 本节状态：已完成。用户反馈点击手动上传会先短暂显示“正在创建备份”，再显示任务已创建确认。根因是页面原有 `BackupBusyOperation.isModalProgress` 仍把 `UploadingWebDav` 纳入模态进度范围，而该入口实际只保存配置、校验并提交后台任务。最终行为：提交期间不显示进度弹窗，只保留原有按钮忙碌禁用与广告抑制；入队成功后仅显示可关闭的任务已创建确认，失败沿用错误反馈。后台生成、上传、完成 Toast 的手动/自动筛选与本地导出进度弹窗均沿用。
@@ -799,7 +811,7 @@ Hilt 不会因为目的地进入嵌套图就自动生成“导航组 scope”；
 | `ListEntryCard` | 现有说明是一个最多两行的 Text；不能靠拼接换行保证两种结果都完整显示，扩展说明 slot，复用卡片外壳。 |
 | `BackupRepository` 与包 IO、导出、恢复协作者 | 职责符合需求，继续复用，不重写文件协议或恢复管线。 |
 | `BackupTaskGate` | 保留完整备份/恢复副作用的进程内互斥；移除版本机制不等于移除任务锁或数据库事务。 |
-| `BackupTempFileStore` | 现有导出文件位于 cacheDir，24 小时过期且任务结束会删除；不能复用为等待 Wi-Fi 的长期包。保留临时生成能力，完整 ZIP/manifest 交接到独立待上传存储后再清理导出中间文件。 |
+| `BackupTempFileStore` | 导出文件位于 cacheDir，由任务结束或新轮次开始按已有范围清理，不再按 24 小时年龄淘汰；不能复用为长期完整包。保留临时生成能力，完整 ZIP/manifest 交接到独立待上传存储后再清理导出中间文件。 |
 | TorrentSearch contributor | 已参与 schema v4 导出和恢复；仅移除 dirty marker、DI 和恢复批次标记封装，不删除 contributor 或恢复计数规则。 |
 
 按生产源码关键词复核，旧调度/版本/dirty 路径至少涉及 app 18 个、base/general 7 个、TorrentSearch 5 个文件；另有 4 个直接相关旧测试文件。结果模型、入口 UI、字符串及新测试还会增加涉及文件，因此整体为中等规模，主要是清理调用与依赖，不是重做备份系统。数量只代表本次扫描命中，实施时以实际引用为准。
@@ -1433,7 +1445,7 @@ flowchart TD
 3. 有效新轮次先替换身份，再取消旧目标和删除旧内部产物；新包失败不恢复旧包，只结束选中目标。
 4. 本地和云端分别登记一次性任务，无网络约束、互不依赖。排队显示等待执行；历史结果继续保留。
 5. 无网、认证、实际请求超时和发布失败不调用 Result.retry。WebDAV 有证据的系统停止可恢复 queued，系统重新进入允许 ready/queued/uploading，但共用修复许可不重置；终态不得重传。本地中断保持原契约，当前完整包保留到下轮开始。
-6. 升级仅清理旧 artifact 请求和 pending，旧输入缺少 round_id 时安全退出；启动不补入队，ready 到入队之间进程死亡接受等待下一次周期/手动触发。
+6. 升级仅取消旧 artifact 请求并清除 pending 引用，旧内部文件留到下一轮开始清理；旧输入缺少 round_id 时安全退出；启动不补入队，ready 到入队之间进程死亡接受等待下一次周期/手动触发。
 
 ### 保留份数
 
@@ -1643,7 +1655,7 @@ manifest 简化示例：
 - 预览只解析 manifest 和流式校验完整性，不反序列化全部业务数据。
 - 恢复按 JSONL 行和 chunk 解析、查询已有记录并写库；进入 Room transaction 后不可取消。
 - 本地 SAF 和 WebDAV 写入都改为文件流复制；WebDAV 上传使用带 `Content-Length` 的文件 RequestBody，发布正式文件前重新校验远端临时 zip。
-- 临时文件按导出和导入下载分区保存，文件名带 taskId；启动或进入备份页时清理过期临时文件，保留清理忽略 `.tmp`。
+- 临时文件按导出和导入下载分区保存，文件名带 taskId；由任务自身清理，后台导出残留在新轮次开始清理，不再在启动、备份页初始化或恢复请求接管时按年龄扫描删除；用户正式备份保留清理继续忽略 `.tmp`。
 - 备份/恢复弹窗从单一文案升级为阶段 + 数量；日志按阶段和类别节流记录，不按 JSONL 每行输出。
 - v2 只优化元数据备份，不包含视频/图片文件本体；媒体重新定位只绑定已有本地媒体引用，不改变备份包内容。
 
@@ -1796,6 +1808,8 @@ manifest 简化示例：
 - 2026-05-21：将媒体重新定位入口文案从“重新定位媒体”调整为“恢复本地媒体关联”，已运行 `./gradlew :app:compileDebugKotlin`、`./gradlew :app:testDebugUnitTest` 和 `git diff --check`，结果通过；原因是后者更贴近用户语言，也能避免误以为会恢复媒体文件本体。
 
 ## 变更记录
+
+- 2026-10-12：按用户要求移除备份临时文件的 24 小时过期扫描、三个入口调用及无用注入，并移除启动兼容分支的旧内部目录删除，保留每轮备份前旧包/后台中间文件清理和单任务清理；同步记录异常退出后手动导出/恢复导入残留不再自动过期回收的取舍、既有测试复用与日志边界。原因：将旧备份包淘汰保持在新轮次开始，避免应用启动和页面进入承担额外全局扫描。
 
 - 2026-10-11：按用户要求整理备份实现、回归及方案的主分支提交，补充提交前核心模块共 390 项单测和 Debug 编译的集成验证；核对只暂存本会话备份相关文件，最终增量审查无可行动问题。原因：确认实际待提交代码与已验证方案一致，设备与服务端验收仍保留原边界。
 

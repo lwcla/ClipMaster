@@ -115,7 +115,6 @@ class BackupRestoreVm @Inject constructor(
         /** 当前唯一待接管目标；接管确认后不再长期保留于槽位。 */
         val request = session.requests.value
         if (request != null) {
-            tempFileStore.cleanupExpired()
             startFromRequest(request)
             // Reading 状态已建立再确认接管，不能先清空槽位再尝试开始。
             if (!session.acknowledgeRequest(request.requestId)) {
