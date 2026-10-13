@@ -179,6 +179,8 @@ fun MinePage(
             }
 
             item { MineSectionHeader(title = stringResource(R.string.base_general_mine_settings_section)) }
+            // 独立日志 VM/平台薄适配不继续膨胀页面主 VM，身份不依赖列表下标。
+            item(key = "log_capture_settings") { MineLogSettingsItem(visibleToUser = visibleToUser) }
             if (settingsLoadFailed) {
                 item {
                     TextButton(onClick = mineVm::retrySettingsLoad) {

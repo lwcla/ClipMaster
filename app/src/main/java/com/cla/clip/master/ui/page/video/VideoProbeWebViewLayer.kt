@@ -101,7 +101,8 @@ internal fun SharedVideoProbeWebViewLayer(
                         cookie = cookie,
                         fileName = pageName
                     )
-                    logD(tag) { "candidate=$candidate " }
+                    // 候选持有 Cookie/网页标题，只记录成功事实，不展开对象。
+                    logD(tag) { "视频候选识别成功" }
                     coroutineScope.launch {
                         // 候选命中后页面即将销毁，先抓取一次 DOM 预览，避免错过 WebView 阶段的封面信息。
                         onSaveLinkPreview(view)
@@ -210,7 +211,8 @@ private fun VideoProbeWebViewLayer(
                                     cookie = cookie,
                                     fileName = pageName
                                 )
-                                logD(tag) { "candidate=$candidate " }
+                                // 旧 WebView 分支遵守相同低敏日志契约。
+                                logD(tag) { "视频候选识别成功" }
                                 onVideoCandidate(candidate)
                             }
                         }

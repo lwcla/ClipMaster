@@ -61,14 +61,21 @@ annotation class LinkPreviewClient
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
 
-    //  如果M3U8需要高并发下载多个 .ts 分片，可以考虑提供一个专门配置的 OkHttpClient 实例
+    /** 保持 HttpLoggingInterceptor 类型供 WebDAV 移除；公开采集时暂停 BASIC 完整地址日志。 */
+    private fun createRequestLogger(): HttpLoggingInterceptor = HttpLoggingInterceptor { message ->
+        // SDK logger 回调没有结构化 URL 契约，采集期间整体抑制此自有拦截器的原文。
+        if (!com.cla.clip.base.general.utils.isLogCaptureDiagnosticsEnabled()) android.util.Log.d("OkHttp", message)
+    }.apply {
+        level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC else HttpLoggingInterceptor.Level.NONE
+    }
+
+    /** 提供分片下载专用客户端，沿用并发/超时，仅共用安全日志构造。 */
     @Provides
     @Singleton
     @M3u8Client
     fun provideM3U8Client(): OkHttpClient {
-        val logger = HttpLoggingInterceptor().apply {
-            level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC else HttpLoggingInterceptor.Level.NONE // 生产环境关闭日志
-        }
+        /** 采集期间不能通过分片请求打印完整下载地址。 */
+        val logger = createRequestLogger()
 
         val dispatcher = Dispatcher().apply {
             maxRequests = 32          // 全局最大并发请求
@@ -113,9 +120,8 @@ object NetworkModule {
     @Singleton
     @LinkPreviewClient
     fun provideLinkPreviewClient(): OkHttpClient {
-        val logger = HttpLoggingInterceptor().apply {
-            level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC else HttpLoggingInterceptor.Level.NONE
-        }
+        /** 链接预览与下载复用同一采集隐私门控。 */
+        val logger = createRequestLogger()
 
         return OkHttpClient.Builder()
             .addInterceptor(logger)
@@ -129,12 +135,12 @@ object NetworkModule {
             .build()
     }
 
+    /** 提供默认网络客户端，WebDAV 仍可移除其原生 HTTP 日志拦截器。 */
     @Provides
     @Singleton
     fun provideOkHttpClient(): OkHttpClient {
-        val logger = HttpLoggingInterceptor().apply {
-            level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC else HttpLoggingInterceptor.Level.NONE // 生产环境关闭日志
-        }
+        /** 仍保持原生拦截器类型供 WebDAV 移除；公开采集期间不输出完整请求地址。 */
+        val logger = createRequestLogger()
 
         return OkHttpClient.Builder()
             .addInterceptor(logger)

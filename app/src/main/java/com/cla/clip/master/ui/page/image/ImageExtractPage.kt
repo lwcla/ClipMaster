@@ -1686,7 +1686,8 @@ private fun parseDomCandidates(value: String?, referer: String, userAgent: Strin
             }
         }
     }.getOrElse {
-        logD("ImageExtractPage") { "parseDomCandidates failed: ${it.message}" }
+        // 外部页面解析错误不复制 message，避免网页原文进入公共采集。
+        logD("ImageExtractPage") { "parseDomCandidates failed type=${it.javaClass.simpleName}" }
         emptyList()
     }
 }

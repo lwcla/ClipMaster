@@ -1,7 +1,6 @@
 package com.cla.clip.master.ui.page.detail
 
 import android.content.Context
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cla.clip.base.general.R
@@ -204,34 +203,27 @@ class DetailViewModel @Inject constructor(
      */
     private suspend fun extractDouyinVideoUrl(pageUrl: String): String? {
         return try {
-            // 1. 跟随重定向获取真实 URL
+            // 跟随重定向的内存地址只用于请求，不写入公开排障日志。
             val realUrl = followRedirect(pageUrl)
-            Log.d("DouyinExtract", "重定向后的 URL: $realUrl")
-            logD(TAG) {
-                """
-                重定向
-                原来的url=${pageUrl}
-                重定向后的url=${realUrl}
-            """.trimIndent()
-            }
+            logD(TAG) { "视频短链重定向完成 redirected=${pageUrl != realUrl}" }
 
-            // 2. 下载 HTML 内容
+            // 页面正文仅供解析，不进入公共日志文件。
             val html = downloadHtml(realUrl, pageUrl)
-            logD(TAG) { html }
+            logD(TAG) { "视频页面读取完成 htmlLength=${html.length}" }
 
-            // 3. 从 HTML 中提取视频 URL（可能在 JS 变量中）
+            // 内存候选来自脚本或元数据；日志只说明是否发现，禁止记录完整地址。
             var videoUrl = extractVideoUrlFromJsVariable(html)
-            logD(TAG) { "从 HTML 中提取视频 URL videoUrl=$videoUrl" }
+            logD(TAG) { "脚本视频候选解析完成 found=${!videoUrl.isNullOrBlank()}" }
             if (!videoUrl.isNullOrBlank()) return videoUrl
 
             // 4. 尝试从响应头或 meta 标签中查找
             videoUrl = extractVideoUrlFromMeta(html)
-            logD(TAG) { "尝试从响应头或 meta 标签中查找 videoUrl=$videoUrl" }
+            logD(TAG) { "元数据视频候选解析完成 found=${!videoUrl.isNullOrBlank()}" }
             if (!videoUrl.isNullOrBlank()) return videoUrl
 
             null
         } catch (e: Exception) {
-            logE(TAG, e) { "提取失败" }
+            logE(TAG) { "视频候选提取失败 reasonCode=video_parse_failed type=${e.javaClass.simpleName}" }
             null
         }
     }

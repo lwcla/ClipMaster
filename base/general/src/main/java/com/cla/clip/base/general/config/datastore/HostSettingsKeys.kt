@@ -8,6 +8,8 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 
 /** 宿主设置的持久化键，仅供同模块领域仓库使用。 */
 internal object HostSettingsKeys {
+    /** 本机排障保存意图；不加入用户备份设置白名单。 */
+    val LOG_CAPTURE_ENABLED = booleanPreferencesKey("log_capture_enabled")
     /** 普通剪贴 item 快捷动作的稳定 code。 */
     val CLIP_ITEM_QUICK_ACTION = stringPreferencesKey("clip_item_quick_action")
     /** 来源过滤名单；仓库负责规范化并排序。 */

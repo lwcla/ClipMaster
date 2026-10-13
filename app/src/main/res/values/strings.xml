@@ -1,4 +1,17 @@
 <resources>
+    <string name="host_log_title">日志</string>
+    <string name="host_log_directory" translatable="false">Download/ClipMaster/logs/</string>
+    <string name="host_log_file_count">日志文件：%1$d 个</string>
+    <string name="host_log_count_loading">日志文件：读取中…</string>
+    <string name="host_log_count_failed">日志文件数量读取失败</string>
+    <string name="host_log_settings_loading">正在读取日志保存设置</string>
+    <string name="host_log_settings_failed">设置读取失败，日志保存状态未知</string>
+    <string name="host_log_capture_failed">日志保存失败，可关闭后重新开启。每文件 10 MiB，保留 20 个历史文件。</string>
+    <string name="host_log_open_folder">打开日志文件夹</string>
+    <string name="host_log_folder_missing">日志文件夹尚未生成，请先开启日志保存。</string>
+    <string name="host_log_open_failed">无法打开日志文件夹或文件。</string>
+    <string name="host_log_permission_missing">未获得存储权限，日志保存未开启。</string>
+    <string name="host_log_retry">重试读取</string>
     <string name="host_shizuku_permission_title">Shizuku 权限</string>
     <string name="host_shizuku_service_require">App 需要 Shizuku 权限，才能在后台监听剪贴板变化。</string>
     <string name="host_notification_permission_title">通知权限</string>

@@ -61,17 +61,39 @@ internal fun SettingSwitchEntryCard(
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // 原字符串入口仍允许整卡切换，现有权限项不改变行为。
+    SettingSwitchEntryCard(
+        title = title, checked = checked, enabled = enabled, icon = icon,
+        onCheckedChange = onCheckedChange, modifier = modifier,
+        onEntryClick = { onCheckedChange(!checked) },
+        descriptionContent = {
+            Text(text = description, style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        },
+    )
+}
+
+/** 说明 slot 可拥有独立动作；默认空白区不点击，Switch 的可用状态不禁止说明浏览。 */
+@Composable
+internal fun SettingSwitchEntryCard(
+    title: String,
+    checked: Boolean,
+    enabled: Boolean,
+    icon: @Composable () -> Unit,
+    onCheckedChange: (Boolean) -> Unit,
+    descriptionContent: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    onEntryClick: (() -> Unit)? = null,
+    trailingContent: (@Composable () -> Unit)? = null,
+) {
     /** 入口式设置卡片的页面外边距，复用我的页入口卡片的统一节奏。 */
     val spacing = ClipMasterThemeTokens.tokens.spacing
-    /** 用户点击整卡时期望切换到的下一状态；具体是否真的变更由调用方业务决定。 */
-    val toggledChecked = !checked
-
     ClipMasterCard(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = spacing.large, vertical = spacing.small),
         enabled = enabled,
-        onClick = { onCheckedChange(toggledChecked) },
+        onClick = onEntryClick,
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -91,16 +113,13 @@ internal fun SettingSwitchEntryCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                descriptionContent()
             }
 
             Spacer(modifier = Modifier.width(spacing.medium))
 
-            Switch(
+            // 已知设置默认 Switch；未知设置可由调用方用状态 slot 替代，避免伪造关闭语义。
+            if (trailingContent != null) trailingContent() else Switch(
                 checked = checked,
                 onCheckedChange = { requestedChecked ->
                     /** Switch 原生回调给出的目标状态；传给调用方保持控件语义完整。 */

@@ -180,7 +180,8 @@ fun VideoExtractPage(
                         onVideoCandidate = { candidate ->
                             if (videoExtractVm.probeState !is ProbeState.Success) {
                                 clearWebView()
-                                logD(tag) { "VideoExtractPage: 视频地址识别成功 candidate=$candidate" }
+                                // 候选包含鉴权和用户网页标题，不打印对象正文。
+                                logD(tag) { "VideoExtractPage: 视频地址识别成功" }
                                 videoExtractVm.probeState = ProbeState.Success(candidate)
                             }
                         }

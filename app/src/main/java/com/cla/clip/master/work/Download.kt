@@ -279,7 +279,8 @@ sealed class Download {
                     }
                 }
             } catch (t: Throwable) {
-                logE(TAG, t) { "下载失败: ${t.message}" }
+                // message 可能含完整下载地址/鉴权，统一异常封装保留代码栈即可。
+                logE(TAG, t) { "下载失败 type=${t.javaClass.simpleName}" }
                 throw t
             } finally {
                 // 无论成功或失败都清理临时目录，避免缓存目录持续膨胀。

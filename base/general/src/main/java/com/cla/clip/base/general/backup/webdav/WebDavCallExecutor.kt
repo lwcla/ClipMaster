@@ -30,7 +30,7 @@ internal class WebDavCallExecutor(
                     if (!continuation.isActive) return
                     /** 不保留敏感地址或异常 message，只保留异常类型供稳定分类。 */
                     val failure = BackupFailure.RemoteFailed(e)
-                    logW("WebDavClient") { "WebDAV 请求异常 operation=$operation reasonCode=${failure.backupReasonCode()} type=${e.javaClass.simpleName}" }
+                    logW("WebDavClient") { "${webDavFailureLog(operation, "request", e)} reasonCode=${failure.backupReasonCode()}" }
                     continuation.resumeWithException(failure)
                 }
 
@@ -44,6 +44,10 @@ internal class WebDavCallExecutor(
                         if (!continuation.isActive) return
                         /** 响应流异常也保持类型；已有业务失败不被二次包装。 */
                         val mapped = if (failure is IOException) BackupFailure.RemoteFailed(failure) else failure
+                        // 活跃响应 IO 同样留固定类型证据；取消不作为新的网络失败打印。
+                        if (failure is IOException) logW("WebDavClient") {
+                            "${webDavFailureLog(operation, "response", failure)} reasonCode=${mapped.backupReasonCode()}"
+                        }
                         continuation.resumeWithException(mapped)
                     }
                 }

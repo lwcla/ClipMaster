@@ -464,7 +464,8 @@ class ImageExtractVm @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             val meta = runCatching { requestPreviewMeta(item) }
                 .getOrElse {
-                    logD(TAG) { "loadPreviewMeta: 探测图片元信息失败: ${it.message}" }
+                    // 元信息异常可能含外部地址，只保留类型。
+                    logD(TAG) { "loadPreviewMeta: 探测图片元信息失败 type=${it.javaClass.simpleName}" }
                     ImagePreviewMeta(
                         width = item.width,
                         height = item.height,
@@ -497,7 +498,8 @@ class ImageExtractVm @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             val meta = runCatching { requestPreviewMeta(candidate) }
                 .getOrElse {
-                    logD(TAG) { "loadCandidatePreviewMeta: 探测候选图片元信息失败: ${it.message}" }
+                    // 候选读取失败同样不输出 message/URL。
+                    logD(TAG) { "loadCandidatePreviewMeta: 探测候选图片元信息失败 type=${it.javaClass.simpleName}" }
                     ImagePreviewMeta(
                         width = candidate.width,
                         height = candidate.height,

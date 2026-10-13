@@ -9,6 +9,7 @@ import com.cla.clip.base.general.utils.logE
 import com.cla.clip.master.utils.ShizukuConnector
 import com.cla.clip.master.work.BackupAutoScheduler
 import com.cla.clip.master.work.DownloadVideoWorker
+import com.cla.clip.master.logging.LogcatCaptureController
 import com.cla.clip.master.work.RecycleBinCleanupScheduler
 import com.cla.clip.master.work.ShizukuWorkScheduler
 import dagger.hilt.android.HiltAndroidApp
@@ -39,6 +40,10 @@ class App : BaseApplication(), Configuration.Provider {
     @Inject
     lateinit var shizukuConnector: ShizukuConnector
 
+    /** 本机日志开关观察仅在主进程启动，页面退出不停止后台留证。 */
+    @Inject
+    internal lateinit var logCapture: LogcatCaptureController
+
     /** 应用级协程作用域；后台调度独立于启动回调和页面生命周期。 */
     @Inject
     @ApplicationScope
@@ -59,6 +64,8 @@ class App : BaseApplication(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
         if (isMainProcess) {
+            // 先观察已提交日志开关，所有存储/进程工作都在应用后台作用域。
+            logCapture.start()
             // 手动初始化 WorkManager，确保用的是HiltWorkerFactory去执行的初始化
             WorkManager.initialize(this, workManagerConfiguration)
             // 不要在app启动之后自动执行上次遗留的下载任务
