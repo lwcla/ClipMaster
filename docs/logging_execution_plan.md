@@ -4,7 +4,7 @@
 
 目标：实现已确认的日志开关、原生 10 MiB/20 历史轮转、蓝色目录与实际数量入口，并补 WebDAV 固定异常诊断。
 
-设计以 [日志主方案](app_logging_plan.md)、[我的页接入](mine_page_plan.md)、[共享组件](shared_form_components_plan.md) 和 [WebDAV 诊断](webdav_backup_plan.md) 为准。使用 writing-plans、executing-plans 和选择性 TDD，在用户当前工作区执行；用户已明确“开始执行”，不再增加一轮设计确认。现有四份文档是本会话设计，不回退或覆盖；不创建提交、推送或安装应用。
+设计以 [日志主方案](app_logging_plan.md)、[我的页接入](mine_page_plan.md)、[共享组件](shared_form_components_plan.md) 和 [WebDAV 诊断](webdav_backup_plan.md) 为准。使用 writing-plans、executing-plans 和选择性 TDD，在用户当前工作区执行；用户已明确“开始执行”，不再增加一轮设计确认。现有四份文档是本会话设计，不回退或覆盖；实施阶段不创建提交、推送或安装应用。2026-10-13 用户追加授权提交代码并推送主分支，提交前复验记录见下文。
 
 ## 职责与执行清单
 
@@ -50,7 +50,17 @@ TDD：命令/文件族/诊断/settings 和异常 Formatter 的 RED→GREEN 记�
 - 2026-10-13：开始执行。用户当前目录为 main 且含本会话已确认设计，按明确执行指令在原目录保护性修改；不为执行流程另要求 worktree 或计划二次批准。计划进度在本文维护，避免与用户指定 docs 主文档分叉；技能 shell 脚本的临时账本/提交步骤改为 Windows 原生工具与此记录，未要求的 Git 提交不执行。
 - 设备验证依赖 ADB 连接；直接 Download 路径与原生轮转兼容必须如实记录，不能以编译成功代替。
 
+## 主分支提交前复验（2026-10-13）
+
+按用户追加的提交与推送授权，核对工作区 `main` 与 `origin/main` 起点一致，将日志实现及方案归为一个提交，版本声明另行提交。沿用既有版本配置，将 `versionCode` 从 38 提升到 39，`versionName` 从 0.8.3 提升到 0.9.3，并同步版本码的简体中文注释。
+
+重新运行 `.\gradlew.bat :base:general:testDebugUnitTest :app:testDebugUnitTest :app:compileDebugKotlin :app:assembleRelease --no-daemon '-Pkotlin.compiler.execution.strategy=in-process' --console=plain`，`BUILD SUCCESSFUL`，5 分 38 秒、473 tasks；base:general 109 项、app 304 项，共 413 项单测，失败、错误、跳过均为 0。Debug 编译、Release/R8、lintVital 和 APK 打包通过，`git diff --check` 与 `git diff --staged --check` 通过。0.9.3 产物为 `app/build/outputs/apk/release/ClipMaster-v0.9.3-admob.apk`，mapping 沿用 `app/build/outputs/mapping/release/mapping.txt`。
+
+本次收尾只补版本码注释与验证记录，复用现有版本配置、测试和主方案，不新增业务方法或运行时日志；已有 17 项回归随功能提交，版本声明及注释不另写镜像单测。日志文件与本机设置的备份排除、真实设备交互和 SDK 原文边界仍按上文约定。已有 Shizuku `OnOpNotedListener` 的 R8 告警保留；本次构建不代替真机权限、轮转、目录浏览和读屏验收。
+
 ## 变更记录
+
+- 2026-10-13：按用户提交并推送主分支的追加授权，记录两个提交的范围、0.9.3/39 版本声明及本轮 413 项单测、Debug、Release/R8 和差异复验；同步过期版本码注释。原因：保证实际待提交版本、验证证据与文档一致，保留设备验收边界。
 
 - 2026-10-13：按用户开始执行指令记录实施任务、接口归口、选择性 TDD、平台验收与规则取舍。
 
