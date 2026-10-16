@@ -2,6 +2,15 @@ package com.cla.clip.master.ui.page.download
 
 /** 横向切换保留旧稳定页展示，业务选择和动作只属于真正停稳的同一分类。 */
 internal object DownloadHistoryPagerPolicy {
+    /** 分类映射为 Bundle 可保存的稳定页面身份，不依赖索引、显示语言或混淆后的类名。 */
+    fun pageKey(
+        // 业务分类只决定状态所属页面，sealed 单例自身不能交给 Android 保存状态。
+        tab: DownloadHistoryTab,
+    ): String = when (tab) {
+        DownloadHistoryTab.Video -> "download_history_video"
+        DownloadHistoryTab.Image -> "download_history_image"
+    }
+
     /** 分类不一致时只投影普通浏览态，避免视频/图片相同主键串用新分类的选择集合。 */
     fun listState(
         // 标题栏可能已经选择目标分类，仍不能直接将其多选状态交给旧页。

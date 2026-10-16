@@ -2,6 +2,18 @@
 
 # 下载记录页面方案
 
+## Pager 状态 key 闪退修复（2026-10-16，已完成）
+
+状态：已完成。真机从“我的 → 下载记录”进入时抛出 `Type of the key Video is not supported`。根因是 `DownloadHistoryPager` 把不可写入 Android Bundle 的 `DownloadHistoryTab` sealed 单例直接交给 `HorizontalPager.key`，异常在首次页面组合的状态保存容器中触发，不是视频记录或广告素材引起。现已使用分类对应的稳定字符串 key。
+
+- 复用 `DownloadHistoryPagerPolicy` 集中提供分类对应的稳定字符串 key，视频和图片分别使用独立字面值；不使用页码、资源化标题、`toString()` 或类名作为身份。Pager 只替换 key 接线，分类模型、两个独立列表状态、稳定页收集、广告会话和业务动作门均保持原契约。
+- 测试先行新增设备回归，直接组合生产 `DownloadHistoryPager`，以空 Paging 合成流且不提供广告环境运行；先在旧代码复现同一异常，再覆盖默认视频、直接图片、两类切换与 Compose 状态保存恢复。复用现有 Compose 测试依赖，不新增框架、测试专用生产 API 或源码文本断言。
+- 修复前设备回归已确认两项均失败：默认入口为 `Video`，直接图片入口为 `Image`，均在 `SaveableStateHolderImpl.SaveableStateProvider` 抛出不支持的 Bundle key 异常；因此两个分类一起映射为稳定字符串，而非只修默认视频分支。
+- 日志与诊断计划：不新增运行时日志；此处是纯 UI 身份映射，无网络/文件/数据库副作用，失败由设备回归、AndroidRuntime 和既有广告/下载诊断定位。测试不读取用户下载内容，不请求广告；人工验收只浏览和切页，不删除或重新下载记录。
+- 验证结果：`.\gradlew.bat :app:testDebugUnitTest :app:compileDebugKotlin :app:assembleDebug :app:connectedDebugAndroidTest '-Pandroid.testInstrumentationRunnerArguments.class=com.cla.clip.master.ui.page.download.DownloadHistoryPagerStateTest' --console=plain` 成功，宿主 304 项单测及 Samsung SM-G9730 / Android 12 上 2 项设备回归通过。测试空 Paging 流显式携带完成状态，避免初始 Loading 掩盖真实可见页断言；两项回归覆盖默认视频、直接图片、双向切换与保存恢复。独立代码复核无阻塞问题，`git diff --check` 通过。字符串不依赖反射或类名，无需 keep；无持久化/备份协议变化，本次不重复 release/R8。
+- 实机浏览：重装修复包后的空数据入口、视频/图片切换可用。用户确认恢复最近本地备份后，冷启动再从“我的 → 下载记录”进入，真实视频记录和图片批次均可展示；缺失文件仍按原有不可用状态显示，没有再出现分类 key 异常。未执行删除或重新下载操作；未找到媒体与备份时间边界见备份主方案。
+- 验证事故与后续边界：上述 Gradle 宿主设备测试结束时卸载应用且未保留数据，原数据库与设置丢失，未达到原计划的保留数据验证。已重新安装修复包并向用户说明；用户确认后已在手机内恢复最近本地备份，恢复结果和未找回范围见 [备份主方案](webdav_backup_plan.md#设备测试后的数据恢复记录2026-10-16)。后续宿主设备测试须使用无用户数据的专用模拟器/设备或独立 applicationId；不得在现用数据安装上直接运行会卸载目标应用的 connected 测试。证据位于 Git 忽略的 `build/download-pager-key/`，不提交备份或用户数据。
+
 ## 当前状态
 
 应用已经有视频下载任务表 `download_tasks`、图片提取批次表 `image_extract_batches` 和图片项表 `image_extract_items`。视频下载完成后，Android 10 及以上会通过 MediaStore 写入公共媒体库，并把 `ContentResolver.insert()` 返回的 `content://` URI 记录到任务的 `savePath`；Android 10 以下记录真实文件路径。图片批量下载完成后，批次记录保存 `outputDir`，每张成功图片项保存 `output_uri`。
@@ -197,6 +209,8 @@
 - 多选底部删除条的删除类图标通过 `SelectionActionBar` 接入 `DeleteActionIcon`，与列表菜单删除和详情页删除共用同款删除图形；“清空当前分类”继续使用 `DeleteSweep` 清空语义图标，仅统一为危险色。
 
 ## 变更记录
+
+- 2026-10-16：修复下载记录首次进入的 `Video`/`Image` key 闪退，复用 PagerPolicy 映射 Bundle 支持的稳定字符串；先复现两分支异常，再通过 2 项生产组件设备回归、304 项宿主单测、编译和打包。同步记录设备测试卸载导致的数据丢失及恢复跟踪，后续改用隔离测试设备；分页、选择态与广告代码保持原契约。
 
 - 2026-10-12：按已确认的 `ec41106` 广告方案，将视频/图片下载历史改为标题与 Tab 下方、横向 Pager 上方的固定单广告；分页收集与广告会话均按稳定 `settledPage` 编排，固定宿主不随业务 loading/空态分支退出。视频刷新 loading 不把旧快照视为实际内容，图片有旧批次时继续按原分支呈现；原因是广告需与数据库并行请求，并且横向拖动/回弹不能提前请求邻页或移走有效素材。共享状态测试和集成验证由广告主方案统一记录。
 

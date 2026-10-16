@@ -223,8 +223,8 @@ internal fun DownloadHistoryPager(
         HorizontalPager(
             state = pagerState,
             modifier = contentModifier,
-            // 分类本身就是稳定身份，不把广告或当前选中索引用作业务页面 key。
-            key = { page -> tabs[page].tab },
+            // Pager 的 key 会进入 Android 保存状态，使用稳定字符串而不是不可写入 Bundle 的分类单例。
+            key = { page -> DownloadHistoryPagerPolicy.pageKey(tabs[page].tab) },
         ) { page ->
             // 稳定页继续画已加载内容，邻页不预读；过渡中的业务动作由实时门暂停。
             if (page == pagerState.settledPage) {
