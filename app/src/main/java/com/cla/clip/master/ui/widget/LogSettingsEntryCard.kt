@@ -1,7 +1,6 @@
 package com.cla.clip.master.ui.widget
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Description
@@ -23,7 +22,7 @@ import com.cla.clip.master.ui.theme.ClipMasterTheme
 import com.cla.clip.master.ui.theme.BrandPrimaryLight
 import com.cla.clip.master.ui.theme.BrandPrimaryDark
 
-/** 日志的纯展示适配：蓝色说明仅打开目录，只有 Switch 改变采集意图。 */
+/** 日志的纯展示适配：仅展示固定蓝色目录，避免数量加载造成跳变；只有 Switch 改变采集意图。 */
 @Composable
 internal fun LogSettingsEntryCard(
     state: LogSettingsEntryState,
@@ -36,8 +35,6 @@ internal fun LogSettingsEntryCard(
     val toggle = state.toggle as? LogToggleState.Ready
     /** 用户要求蓝色，不随 Material 动态壁纸主色变绿；复用已有亮/暗品牌 token。 */
     val linkColor = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) BrandPrimaryDark else BrandPrimaryLight
-    /** 数量的加载/错误仍属于文件入口，不与开关许可混合。 */
-    val fileCount = state.files
     /** 未知设置不绘制 unchecked Switch；读屏只获知加载/状态未知。 */
     val statusContent: (@Composable () -> Unit)? = when (state.toggle) {
         is LogToggleState.Ready -> null
@@ -58,15 +55,10 @@ internal fun LogSettingsEntryCard(
         modifier = modifier,
         trailingContent = statusContent,
         descriptionContent = {
-            Column(Modifier.clickable(onClickLabel = stringResource(R.string.host_log_open_folder), onClick = onOpenFolder)) {
-                Text(stringResource(R.string.host_log_directory), color = linkColor,
-                    style = MaterialTheme.typography.bodyMedium)
-                Text(when (fileCount) {
-                    is LogFileCountState.Ready -> stringResource(R.string.host_log_file_count, fileCount.count)
-                    LogFileCountState.Loading -> stringResource(R.string.host_log_count_loading)
-                    LogFileCountState.Failed -> stringResource(R.string.host_log_count_failed)
-                }, color = linkColor, style = MaterialTheme.typography.bodyMedium)
-            }
+            // 目录链接始终可用，不因数量加载或失败增加文案，也不触发开关保存。
+            Text(stringResource(R.string.host_log_directory), color = linkColor,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.clickable(onClickLabel = stringResource(R.string.host_log_open_folder), onClick = onOpenFolder))
             when (state.toggle) {
                 LogToggleState.Loading -> Text(stringResource(R.string.host_log_settings_loading),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -78,14 +70,15 @@ internal fun LogSettingsEntryCard(
                 Text(stringResource(R.string.host_log_capture_failed), color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall)
             }
-            if (state.toggle == LogToggleState.Failed || state.files == LogFileCountState.Failed) {
+            // 重试仅对应仍然展示的设置读取失败，不暴露已移除的数量错误。
+            if (state.toggle == LogToggleState.Failed) {
                 TextButton(onClick = onRetry) { Text(stringResource(R.string.host_log_retry)) }
             }
         },
     )
 }
 
-/** 窄屏样本只用合成数量，验证目录换行和独立开关。 */
+/** 窄屏样本保留合成元数据，验证目录展示不依赖数量、可换行且开关独立。 */
 @Preview(widthDp = 320)
 @Composable
 private fun LogSettingsEntryCardPreview() {
@@ -94,7 +87,7 @@ private fun LogSettingsEntryCardPreview() {
     }
 }
 
-/** 深色/失败样本保护错误不是 0 和关闭后仍可浏览的视觉。 */
+/** 深色大字体样本验证设置失败仍可重试、目录可浏览且不展示数量。 */
 @Preview(widthDp = 320, fontScale = 1.5f)
 @Composable
 private fun LogSettingsEntryCardDarkPreview() {
