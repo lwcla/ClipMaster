@@ -1,0 +1,37 @@
+<resources>
+    <!-- 卡片内容与描边分别计入边距，匹配已确认预览。 -->
+    <dimen name="ad_admob_card_padding">12dp</dimen>
+    <dimen name="ad_admob_border">1dp</dimen>
+    <dimen name="ad_admob_card_radius">10dp</dimen>
+    <!-- 信息区、头部列及媒体列使用不同层级的间距。 -->
+    <dimen name="ad_admob_gap_small">4dp</dimen>
+    <dimen name="ad_admob_gap">8dp</dimen>
+    <dimen name="ad_admob_media_gap">12dp</dimen>
+    <dimen name="ad_admob_media_size">120dp</dimen>
+    <dimen name="ad_admob_media_text_min_width">144dp</dimen>
+    <dimen name="ad_admob_summary_icon">56dp</dimen>
+    <dimen name="ad_admob_video_icon">40dp</dimen>
+    <!-- 关闭图形贴右上，完整热区向左和向下延伸。 -->
+    <dimen name="ad_admob_touch_size">48dp</dimen>
+    <dimen name="ad_admob_close_icon">18dp</dimen>
+    <dimen name="ad_admob_close_top">2dp</dimen>
+    <dimen name="ad_admob_close_feedback">28dp</dimen>
+    <!-- CTA 显色高度至少 36dp，额外热区只向上扩展。 -->
+    <dimen name="ad_admob_action_height">36dp</dimen>
+    <dimen name="ad_admob_action_hit_inset">12dp</dimen>
+    <dimen name="ad_admob_action_min_width">128dp</dimen>
+    <dimen name="ad_admob_action_radius">6dp</dimen>
+    <dimen name="ad_admob_action_padding_horizontal">16dp</dimen>
+    <dimen name="ad_admob_action_padding_vertical">6dp</dimen>
+    <dimen name="ad_admob_badge_height">16dp</dimen>
+    <dimen name="ad_admob_badge_padding">3dp</dimen>
+    <dimen name="ad_admob_badge_radius">3dp</dimen>
+    <!-- 仅缺少有效图片尺寸时使用图标级兜底；整体留位由素材尺寸及文字测量决定。 -->
+    <dimen name="ad_admob_choices_fallback_icon">16dp</dimen>
+    <dimen name="ad_admob_choices_padding">2dp</dimen>
+    <!-- sp 资源保留系统字体缩放，不以缩字压低广告高度。 -->
+    <dimen name="ad_admob_headline_text">15sp</dimen>
+    <dimen name="ad_admob_body_text">12sp</dimen>
+    <dimen name="ad_admob_identity_text">11sp</dimen>
+    <dimen name="ad_admob_action_text">13sp</dimen>
+</resources>

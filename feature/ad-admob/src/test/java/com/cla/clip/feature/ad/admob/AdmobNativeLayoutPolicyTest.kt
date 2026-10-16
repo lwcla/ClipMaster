@@ -5,6 +5,37 @@ import org.junit.Test
 
 /** 保护媒体和正文展示契约，以及缺少广告选项内容时不能保留多余空白。 */
 class AdmobNativeLayoutPolicyTest {
+    /** 文字列刚好达到阈值才能横排，边界下方必须纵排。 */
+    @Test fun mediaColumnsRespectWidthBoundary() {
+        assertEquals(AdmobMediaArrangement.Stacked, AdmobNativeLayoutPolicy.mediaArrangement(143, 144, 1f, 60, 120))
+        assertEquals(AdmobMediaArrangement.SideBySide, AdmobNativeLayoutPolicy.mediaArrangement(144, 144, 1f, 60, 120))
+        assertEquals(AdmobMediaArrangement.SideBySide, AdmobNativeLayoutPolicy.mediaArrangement(145, 144, 1f, 60, 120))
+    }
+
+    /** 大字体按比例要求更宽的文字列，小字体不降低默认可读宽度。 */
+    @Test fun mediaColumnsScaleWithFont() {
+        assertEquals(AdmobMediaArrangement.Stacked, AdmobNativeLayoutPolicy.mediaArrangement(187, 144, 1.3f, 60, 120))
+        assertEquals(AdmobMediaArrangement.SideBySide, AdmobNativeLayoutPolicy.mediaArrangement(188, 144, 1.3f, 60, 120))
+        assertEquals(AdmobMediaArrangement.Stacked, AdmobNativeLayoutPolicy.mediaArrangement(143, 144, 0.8f, 60, 120))
+    }
+
+    /** 右侧内容放不下时纵排，不拉高媒体或裁掉正文。 */
+    @Test fun mediaColumnsRespectContentHeight() {
+        assertEquals(AdmobMediaArrangement.SideBySide, AdmobNativeLayoutPolicy.mediaArrangement(200, 144, 1f, 120, 120))
+        assertEquals(AdmobMediaArrangement.Stacked, AdmobNativeLayoutPolicy.mediaArrangement(200, 144, 1f, 121, 120))
+    }
+
+    /** 未知尺寸及非法字体采用保守纵排，不把无效数字视为可读横排。 */
+    @Test fun invalidMediaConstraintsFallBackToStacked() {
+        assertEquals(AdmobMediaArrangement.Stacked, AdmobNativeLayoutPolicy.mediaArrangement(0, 144, 1f, 0, 120))
+        assertEquals(AdmobMediaArrangement.Stacked, AdmobNativeLayoutPolicy.mediaArrangement(-1, 144, 1f, 0, 120))
+        assertEquals(AdmobMediaArrangement.Stacked, AdmobNativeLayoutPolicy.mediaArrangement(200, 144, Float.NaN, 0, 120))
+        assertEquals(AdmobMediaArrangement.Stacked, AdmobNativeLayoutPolicy.mediaArrangement(200, 144, Float.POSITIVE_INFINITY, 0, 120))
+        assertEquals(AdmobMediaArrangement.Stacked, AdmobNativeLayoutPolicy.mediaArrangement(200, 144, 1f, -1, 120))
+        assertEquals(AdmobMediaArrangement.Stacked, AdmobNativeLayoutPolicy.mediaArrangement(200, 0, 1f, 0, 120))
+        assertEquals(AdmobMediaArrangement.Stacked, AdmobNativeLayoutPolicy.mediaArrangement(200, 144, 1f, 0, 0))
+    }
+
     /** 视频和未知素材均必须保留媒体区域。 */
     @Test fun videoAndUnknownKeepMedia() {
         assertTrue(AdmobNativeLayoutPolicy.requiresMedia(true))

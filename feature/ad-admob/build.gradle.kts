@@ -26,6 +26,8 @@ android {
     defaultConfig {
         minSdk = 24
         consumerProguardFiles("consumer-rules.pro")
+        // 原生卡片几何与触摸边界在独立测试 APK 中验证，不启动真实广告请求。
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     sourceSets.getByName("main") {
         if (includeSdk) {
@@ -33,6 +35,8 @@ android {
             manifest.srcFile("src/sdk/AndroidManifest.xml")
         }
     }
+    // SDK 专用设备测试与真实实现一起启用，避免无广告根任务编译到 SDK 类型。
+    if (includeSdk) sourceSets.getByName("androidTest").java.srcDir("src/sdkAndroidTest/java")
     buildTypes {
         debug {
             // 调试包也使用自己的 App ID，确保 SDK 初始化与 UMP/Manifest 指向同一后台应用。
@@ -72,4 +76,7 @@ dependencies {
         implementation(libs.admob.ump)
     }
     testImplementation(libs.junit)
+    // 复用版本目录中现有设备测试依赖，不引入新的生产库。
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
 }

@@ -1,0 +1,7 @@
+<resources>
+    <!-- 模块内部直接定位非 SDK 素材控件，不遍历广告资产推断身份。 -->
+    <item type="id" name="ad_admob_dismiss" />
+    <item type="id" name="ad_admob_attribution" />
+    <!-- 主题快照仅存于当前 View，避免相同颜色重组时反复创建背景。 -->
+    <item type="id" name="ad_admob_style_colors" />
+</resources>

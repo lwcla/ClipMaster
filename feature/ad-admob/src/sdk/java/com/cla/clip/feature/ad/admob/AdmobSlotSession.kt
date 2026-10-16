@@ -165,7 +165,7 @@ internal class AdmobSlotSession(
         this.binding = null
         presented = false
         // 主线程解绑即移除关闭监听，缓存素材不保留离屏组合的页面引用。
-        view?.let { AdmobNativeAssets.updateDismissControl(it, false, onDismiss = {}) }
+        view?.let { AdmobDismissControl.update(it, false) }
         (view?.parent as? ViewGroup)?.removeView(view)
         request = request.copy(canReveal = false, canRevealNow = { false }, contentPresentable = false, contentPresentableNow = { false },
             onLayoutWillChange = {}, onLayoutChanged = {}, onDismiss = {}, interactionEnabled = false)

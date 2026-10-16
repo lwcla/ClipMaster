@@ -105,7 +105,7 @@ internal class AdmobAdSourceEntry @Inject constructor(
                 onRelease = { container ->
                     // 素材可能已搬到新外壳；旧 onRelease 只能清理自身或已解绑按钮的回调。
                     if (nativeView.parent == null || nativeView.parent === container) {
-                        AdmobNativeAssets.updateDismissControl(nativeView, false, onDismiss = {})
+                        AdmobDismissControl.update(nativeView, false)
                     }
                     container.removeAllViews()
                     container.canInteract = { false }
@@ -121,11 +121,11 @@ internal class AdmobAdSourceEntry @Inject constructor(
                     }
                     container.updateInteraction(container.canInteract())
                     // 关闭属于宿主操作，事件发生时读取最新绑定，不进入 SDK 广告点击回调。
-                    AdmobNativeAssets.updateDismissControl(nativeView, container.canInteract()) {
+                    AdmobDismissControl.update(nativeView, container.canInteract()) {
                         // 无障碍等直接调用按钮也要读取实时交互门，不能绕过临时遮挡。
                         if (container.canInteract()) latestRequest.onDismiss()
                     }
-                    AdmobNativeAssets.applyColors(
+                    AdmobNativeCardStyle.applyColors(
                         nativeView, colors.surface.toArgb(), colors.onSurface.toArgb(),
                         colors.onSurfaceVariant.toArgb(), colors.primary.toArgb(), colors.onPrimary.toArgb(),
                         outline = colors.outlineVariant.toArgb(),
