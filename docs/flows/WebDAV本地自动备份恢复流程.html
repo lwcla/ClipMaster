@@ -117,6 +117,21 @@
     </div>
   </header>
   <main>
+<h2>当前实现：网络失败有限补传</h2>
+<section class="diagram-card"><pre class="mermaid">flowchart TD
+    Enqueue[&quot;同一 ZIP 的上传任务入队&lt;br/&gt;CONNECTED 约束，已单测，接线编译验证&quot;] --&gt; Wait[&quot;等待网络约束和系统执行机会&lt;br/&gt;人工验证&quot;]
+    Wait --&gt; Upload[&quot;检查当前轮次并上传原包&lt;br/&gt;旧轮次直接跳过，已单测，接线编译验证&quot;]
+    Upload --&gt;|上传成功| Success[&quot;条件保存成功结果&lt;br/&gt;随后保留清理，已单测，接线编译验证&quot;]
+    Upload --&gt;|系统暂停| Pause[&quot;保留排队并传播取消&lt;br/&gt;不消耗业务重试次数，已单测，接线编译验证&quot;]
+    Pause --&gt; Wait
+    Upload --&gt;|真实失败| Eligible{&quot;属于可恢复网络异常？&lt;br/&gt;已单测，接线编译验证&quot;}
+    Eligible --&gt;|否| Failed[&quot;条件保存最终失败&lt;br/&gt;不再业务补传，已单测，接线编译验证&quot;]
+    Eligible --&gt;|是| Claim{&quot;事务核对轮次并申请重试额度&lt;br/&gt;最多批准两次，已单测，接线编译验证&quot;}
+    Claim --&gt;|批准并已落盘 queued| Retry[&quot;返回 Result.retry&lt;br/&gt;指数退避基础一分钟，已单测，接线编译验证&quot;]
+    Retry --&gt; Wait
+    Claim --&gt;|额度耗尽| Failed
+    Claim --&gt;|已过期或终态| Skip[&quot;跳过且不覆盖结果&lt;br/&gt;已单测，接线编译验证&quot;]
+    Claim --&gt;|存储失败| Store[&quot;终止并记录存储错误&lt;br/&gt;不继续重传，已单测，接线编译验证&quot;]</pre></section>
 <h2>当前实现：手动入队确认</h2>
 <section class="diagram-card"><pre class="mermaid">flowchart TD
     Manual[&quot;点击手动 WebDAV 备份&lt;br/&gt;编译验证，人工验证&quot;] --&gt; Submit[&quot;保存配置、校验并请求入队&lt;br/&gt;不显示进度弹窗，显示规则已单测，接线编译验证&quot;]
@@ -126,7 +141,7 @@
     Submit --&gt;|成功| Background[&quot;后台生成及分目标发布&lt;br/&gt;独立于弹窗，人工验证&quot;]</pre></section>
 <h2>当前实现：手动云端完成反馈</h2>
 <section class="diagram-card"><pre class="mermaid">flowchart TD
-    Finish[&quot;目标执行结束或中断&lt;br/&gt;接线编译验证，人工验证&quot;] --&gt; Pause{&quot;系统暂停等待重调度？&lt;br/&gt;已单测&quot;}
+    Finish[&quot;目标执行结束或中断&lt;br/&gt;接线编译验证，人工验证&quot;] --&gt; Pause{&quot;系统暂停或已批准网络补传？&lt;br/&gt;规则已单测&quot;}
     Pause --&gt;|是| Queued[&quot;返回排队，不写终态、不提示&lt;br/&gt;已单测，接线编译验证&quot;]
     Pause --&gt;|否| Record[&quot;条件提交真实成功或失败&lt;br/&gt;已单测，接线编译验证&quot;]
     Record --&gt;|存储失败| StoreFailed[&quot;保持结果存储失败契约，不提示&lt;br/&gt;已单测&quot;]
@@ -136,19 +151,23 @@
     Toast --&gt; Saved[&quot;显示和诊断异常隔离&lt;br/&gt;结果仍已保存，已单测&quot;]</pre></section>
 <h2>当前实现：单 ZIP 上传</h2>
 <section class="diagram-card"><pre class="mermaid">flowchart TD
-    Start[&quot;WebDAV Worker 获得执行机会&lt;br/&gt;人工验证&quot;] --&gt; Valid{&quot;最新任务、阶段和目标有效？&lt;br/&gt;已单测，接线编译验证&quot;}
+    Start[&quot;满足 CONNECTED 并获执行机会&lt;br/&gt;约束已单测，调度人工验证&quot;] --&gt; Valid{&quot;最新任务、阶段和目标有效？&lt;br/&gt;已单测，接线编译验证&quot;}
     Valid --&gt;|否| Skip[&quot;跳过或取消&lt;br/&gt;不覆盖新任务结果，已单测，接线编译验证&quot;]
     Valid --&gt;|是| Read[&quot;读取 taskId 本地描述和非空 ZIP&lt;br/&gt;不查云端、不重新打包，已单测，接线编译验证&quot;]
     Read --&gt;|包缺失或描述损坏| Failed[&quot;条件保存本轮失败&lt;br/&gt;不主动重试，已单测，接线编译验证&quot;]
     Read --&gt;|可读| Put[&quot;直接 PUT 正式 ZIP&lt;br/&gt;无目录预查、无独立摘要，已单测，接线编译验证&quot;]
     Put --&gt;|成功| Commit[&quot;事务内比较 taskId 并保存成功&lt;br/&gt;已单测，接线编译验证&quot;]
     Put --&gt;|404 或 409| Repair[&quot;申请共用的一次目录修复许可&lt;br/&gt;同 taskId 跨重调度不重置，已单测，接线编译验证&quot;]
-    Put --&gt;|其他真实失败| Failed
+    Put --&gt;|其他真实失败| Recover[&quot;分类并条件申请有限补传&lt;br/&gt;见网络失败恢复流程，已单测，接线编译验证&quot;]
+    Recover --&gt;|不可恢复或耗尽| Failed
+    Recover --&gt;|已批准| Wait[&quot;queued 并返回 Result.retry&lt;br/&gt;复用同包、等待系统，已单测，接线编译验证&quot;]
+    Recover --&gt;|轮次失效| Skip
     Repair --&gt;|实际修复完成| RetryCheck{&quot;协程有效且同一 ZIP 仍可读？&lt;br/&gt;已单测，接线编译验证&quot;}
     RetryCheck --&gt;|是| Put
     RetryCheck --&gt;|包缺失| Failed
     RetryCheck --&gt;|已取消| Stop
-    Repair --&gt;|许可已用、目录完整或修复失败| Failed
+    Repair --&gt;|许可已用或目录完整| Failed
+    Repair --&gt;|修复失败| Recover
     Commit --&gt;|成功保存| Prune[&quot;清理旧 ZIP&lt;br/&gt;清理失败不反转成功，已单测，接线编译验证&quot;]
     Commit --&gt;|任务已过期| Skip
     Commit --&gt;|存储失败| StoreFailed[&quot;保留 result_store_failed&lt;br/&gt;不自动重传，已单测，接线编译验证&quot;]
@@ -158,7 +177,8 @@
     Candidate[&quot;PUT 返回 404 或 409&lt;br/&gt;已单测，接线编译验证&quot;] --&gt; Claim{&quot;事务按 taskId 保存共用的一次处理许可&lt;br/&gt;跨重调度/重启不重置，已单测，接线编译验证&quot;}
     Claim --&gt;|首次成功登记| Query[&quot;PROPFIND 配置目录&lt;br/&gt;已单测，接线编译验证&quot;]
     Claim --&gt;|已使用或无法登记| Failed
-    Query --&gt;|目录存在或查询失败| Failed[&quot;结束本轮失败&lt;br/&gt;不做无进展重传，已单测，接线编译验证&quot;]
+    Query --&gt;|目录存在| Failed[&quot;向协调器交付失败&lt;br/&gt;按类型决定是否有限补传，已单测，接线编译验证&quot;]
+    Query --&gt;|查询失败| Failed
     Query --&gt;|明确返回 404| Create[&quot;正式上传逐级查询并 MKCOL 缺失层级，405 即结束&lt;br/&gt;已单测，接线编译验证、真实服务人工验证&quot;]
     Create --&gt;|失败或无实际创建| Failed
     Create --&gt;|实际创建完成| Check{&quot;协程有效且同一 ZIP 仍存在非空？&lt;br/&gt;已单测，接线编译验证&quot;}
@@ -169,7 +189,7 @@
 <section class="diagram-card"><pre class="mermaid">flowchart TD
     Stop[&quot;协程取消，联动 Call.cancel&lt;br/&gt;底层 Call.cancel 已单测，流释放依赖请求关闭&quot;] --&gt; Check{&quot;仍是有效未终结任务，且有系统暂停证据？&lt;br/&gt;包含抢占和系统处理，已单测，接线编译验证&quot;}
     Check --&gt;|否| End[&quot;保留成功，或跳过/取消/结束中断&lt;br/&gt;不因包存在复活，已单测，接线编译验证&quot;]
-    Check --&gt;|是| Queue[&quot;条件回到 queued&lt;br/&gt;保留目录修复标记及最近完成结果，已单测，接线编译验证&quot;]
+    Check --&gt;|是| Queue[&quot;条件回到 queued&lt;br/&gt;保留目录许可、重试次数和历史结果，已单测，接线编译验证&quot;]
     Queue --&gt; Schedule[&quot;等待 WorkManager 再次给出执行机会&lt;br/&gt;不调用 Result.retry，人工验证&quot;]
     Schedule --&gt; Enter[&quot;同 taskId 重新进入 Worker&lt;br/&gt;人工验证&quot;]
     Leftover[&quot;进程退出遗留 uploading&lt;br/&gt;系统重新进入，人工验证&quot;] --&gt; Enter

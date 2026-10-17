@@ -16,9 +16,73 @@ import java.io.DataInputStream
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.CopyOnWriteArrayList
+import com.cla.clip.base.general.backup.webdav.WebDavUploadRetryClassifier
 
 /** 合成 HTTP 响应保护传输和列表契约，不接触真实网络与凭据。 */
 class WebDavDirectUploadTest {
+    /** 服务端已收完包但响应丢失时，业务补传仍使用同一路径和字节，不依赖底层自动重发。 */
+    @Test fun lostResponseCanBeRetriedWithIdenticalPackageAndPath() = runBlocking {
+        /** 本机合成服务，绝不访问真实 WebDAV。 */
+        val server = ServerSocket().apply { bind(InetSocketAddress("127.0.0.1", 0)); soTimeout = 5000 }
+        /** 首次响应保持阻塞，直到客户端确认超时后显式放行。 */
+        val releaseFirst = CountDownLatch(1)
+        /** 服务端实际接收的路径及完整 payload，均为合成数据。 */
+        val received = CopyOnWriteArrayList<Pair<String, ByteArray>>()
+        /** 有界独立服务线程。 */
+        val executor = Executors.newSingleThreadExecutor()
+        /** 两次接收分别代表第一次请求和调用方明确发起的补传。 */
+        val serving = executor.submit<Unit> {
+            // attempt 是合成服务接收次数，不是生产重试计数。
+            repeat(2) { attempt ->
+                server.accept().use { socket ->
+                    socket.soTimeout = 5000
+                    /** 头读取不得吞掉二进制包内容。 */
+                    val input = DataInputStream(socket.getInputStream())
+                    /** 请求行只保存合成本机路径。 */
+                    val path = input.readAsciiHeaderLine().orEmpty()
+                    /** 当前请求的明确 Content-Length。 */
+                    var length = 0
+                    while (true) {
+                        /** 空行结束头部。 */
+                        val line = input.readAsciiHeaderLine() ?: break
+                        if (line.isEmpty()) break
+                        if (line.startsWith("Content-Length:", true)) length = line.substringAfter(':').trim().toInt()
+                    }
+                    /** 真实读取全部合成正文，证明响应丢失可能发生在完整上传之后。 */
+                    val payload = ByteArray(length)
+                    input.readFully(payload)
+                    received += path to payload
+                    if (attempt == 0) check(releaseFirst.await(5L, TimeUnit.SECONDS))
+                    else socket.getOutputStream().write("HTTP/1.1 201 Created\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII))
+                }
+            }
+        }
+        try {
+            /** 真实读超时仅用于有界回环测试，不改变产品超时配置。 */
+            val client = WebDavClient(OkHttpClient.Builder().readTimeout(1L, TimeUnit.SECONDS).callTimeout(4L, TimeUnit.SECONDS).build())
+            /** 无凭据且明确允许本机 HTTP。 */
+            val target = WebDavConfig("http://127.0.0.1:${server.localPort}", "", "", "/", true)
+            /** 两次请求必须复用同一对象和固定包。 */
+            val packageExport = export()
+            try { client.uploadBackup(target, packageExport, "A"); fail("首次应等待响应超时") }
+            catch (failure: BackupFailure.RemoteFailed) { assertTrue(WebDavUploadRetryClassifier.isRecoverable(failure)) }
+            assertEquals(1, received.size)
+            releaseFirst.countDown()
+            client.uploadBackup(target, packageExport, "A")
+            serving.get(5L, TimeUnit.SECONDS)
+            assertEquals(2, received.size)
+            assertEquals(received[0].first, received[1].first)
+            assertArrayEquals(packageExport.packageFile.readBytes(), received[0].second)
+            assertArrayEquals(received[0].second, received[1].second)
+        } finally {
+            releaseFirst.countDown()
+            server.close()
+            executor.shutdownNow()
+        }
+    }
+
     /** 本机 HTTP 服务穿过 OkHttp 的真实跟进层，503 提示也不能让同一 ZIP 重发。 */
     @Test fun serviceUnavailableRetryAfterZeroDoesNotRepeatZipPut() = runBlocking {
         assertSinglePutWithRetryAfter("synthetic.zip")

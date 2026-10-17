@@ -6,6 +6,8 @@ import com.cla.clip.base.general.utils.logW
 import com.cla.clip.base.general.backup.webdav.WebDavCallExecutor
 import com.cla.clip.base.general.backup.webdav.WebDavHttpFailure
 import com.cla.clip.base.general.backup.webdav.webDavEvidence
+import com.cla.clip.base.general.backup.webdav.WebDavRequestEventListener
+import com.cla.clip.base.general.backup.webdav.WebDavRequestTrace
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
@@ -44,6 +46,10 @@ class WebDavClient @Inject constructor(
         retryOnConnectionFailure(false)
         interceptors().removeAll { it is HttpLoggingInterceptor }
         networkInterceptors().removeAll { it is HttpLoggingInterceptor }
+        // call 只用于获取受控关联标签；每个监听器独占阶段，继续共享原连接池。
+        eventListenerFactory { call ->
+            WebDavRequestEventListener(call.request().tag(WebDavRequestTrace::class.java) ?: WebDavRequestTrace("unknown"))
+        }
     }.build()
     /** HTTP 生命周期下沉，协程停止可立即取消底层阻塞 IO。 */
     private val calls = WebDavCallExecutor(this.okHttpClient)
@@ -154,7 +160,7 @@ class WebDavClient @Inject constructor(
         validateWebDavEndpoint(config.endpoint, config.allowInsecureHttp)
         requireReadablePackage(export.packageFile)
         notifyUploadStage(onStage, "publishing_remote_zip")
-        try { uploadFile(config, export.fileName, export.packageFile) }
+        try { uploadFile(config, export.fileName, export.packageFile, taskId) }
         catch (failure: BackupFailure.RemoteFailed) {
             currentCoroutineContext().ensureActive()
             /** 只依赖类型化 PUT 状态，不能从异常文字推断目录缺失。 */
@@ -166,12 +172,12 @@ class WebDavClient @Inject constructor(
             }
             notifyUploadStage(onStage, "repairing_remote_directory")
             logD(TAG) { "开始唯一目录修复 ${backupTaskLogField(taskId)}repairCount=1 statusCode=${http?.statusCode}" }
-            if (!ensureDirectory(config)) throw failure
+            if (!ensureDirectory(config, taskId = taskId)) throw failure
             currentCoroutineContext().ensureActive()
             requireReadablePackage(export.packageFile)
             notifyUploadStage(onStage, "republishing_remote_zip")
             // 补传位于首次捕获分支内，不再次捕获为修复入口；404/409 也直接传播。
-            uploadFile(config, export.fileName, export.packageFile)
+            uploadFile(config, export.fileName, export.packageFile, taskId)
         }
         currentCoroutineContext().ensureActive()
         notifyUploadStage(onStage, "remote_files_published")
@@ -239,11 +245,11 @@ class WebDavClient @Inject constructor(
      * continueAfterMappedResource 仅供连接测试继续准备子目录，405 不计作创建且最终由探测验证可写；
      * 正式上传保持默认 false，任一层 405 立即结束，禁止用父级进展允许无进展补传。
      */
-    private suspend fun ensureDirectory(config: WebDavConfig, continueAfterMappedResource: Boolean = false): Boolean {
+    private suspend fun ensureDirectory(config: WebDavConfig, continueAfterMappedResource: Boolean = false, taskId: String? = null): Boolean {
         validateWebDavEndpoint(config.endpoint, config.allowInsecureHttp)
         /** 配置目录只有明确缺失才进入逐级检查。 */
         val remoteDir = normalizeWebDavRemoteDir(config.remoteDir)
-        if (webDavDirectoryExists(config, buildWebDavUrl(config))) return false
+        if (webDavDirectoryExists(config, buildWebDavUrl(config), taskId)) return false
         /** 只遍历受控路径片段，不越过配置 endpoint。 */
         val segments = remoteDir.trim('/').split('/').filter { it.isNotBlank() }
         /** 逐级累计路径，避免直接 MKCOL 多级缺失父目录。 */
@@ -255,10 +261,10 @@ class WebDavClient @Inject constructor(
             /** 当前父级配置及地址只用于请求，不进入诊断日志。 */
             val partialConfig = config.copy(remoteDir = partial)
             val url = buildWebDavUrl(partialConfig)
-            if (!webDavDirectoryExists(config, url)) {
+            if (!webDavDirectoryExists(config, url, taskId)) {
                 logD(TAG) { "WebDAV 目录不存在，开始创建 segmentLength=${segment.length} partialLength=${partial.length}" }
                 /** 当前层是否由本请求实际创建，405 只表示资源已映射，不能计作修复进展。 */
-                val createdCurrent = mkcol(config, url)
+                val createdCurrent = mkcol(config, url, taskId)
                 // 上传任一层未创建即结束；连接测试继续准备子层，由后续操作或最终探测拒绝不可写资源。
                 if (!createdCurrent && !continueAfterMappedResource) return false
                 created = created || createdCurrent
@@ -273,10 +279,10 @@ class WebDavClient @Inject constructor(
      * 只有服务端明确返回 404 时才认为目录缺失；TLS、认证、跳转失败或服务端错误都直接上抛，避免把连接问题误判为
      * “目录不存在”并继续发起 MKCOL。
      */
-    private suspend fun webDavDirectoryExists(config: WebDavConfig, url: String): Boolean {
+    private suspend fun webDavDirectoryExists(config: WebDavConfig, url: String, taskId: String? = null): Boolean {
         /** Depth 0 只判断配置目录，不额外列举包。 */
         val request = propfindRequest(config, url, depth = "0")
-        return calls.execute("directory_exists", request) { response ->
+        return calls.execute("directory_exists", request, taskId) { response ->
                 when {
                     response.code == 401 || response.code == 403 -> throw BackupFailure.AuthenticationFailed()
                     response.code == 404 -> false
@@ -290,12 +296,12 @@ class WebDavClient @Inject constructor(
     }
 
     /** 返回本请求是否成功创建目录；405 仅表示资源已映射，不算实际修复进展。 */
-    private suspend fun mkcol(config: WebDavConfig, url: String): Boolean {
+    private suspend fun mkcol(config: WebDavConfig, url: String, taskId: String? = null): Boolean {
         /** 连接探测兼容 405，但正式上传不能仅凭该状态盲目补传。 */
         val request = baseRequest(config, url)
             .method("MKCOL", null)
             .build()
-        return calls.execute("mkcol", request) { response ->
+        return calls.execute("mkcol", request, taskId) { response ->
                 if (response.code == 401 || response.code == 403) throw BackupFailure.AuthenticationFailed()
                 if (!response.isSuccessful && response.code != 201 && response.code != 405) {
                     logW(TAG) { "WebDAV 目录创建失败 statusCode=${response.code} reasonCode=webdav_directory_create_failed" }
@@ -356,12 +362,12 @@ class WebDavClient @Inject constructor(
     }
 
     /** 上传本地文件并提供准确 Content-Length，提升 WebDAV 大文件 PUT 兼容性。 */
-    private suspend fun uploadFile(config: WebDavConfig, fileName: String, file: File) = withContext(Dispatchers.IO) {
+    private suspend fun uploadFile(config: WebDavConfig, fileName: String, file: File, taskId: String? = null) = withContext(Dispatchers.IO) {
         /** 正式名称及一次性请求体固定，禁止底层协议跟进重复发送。 */
         val request = baseRequest(config, buildWebDavUrl(config, fileName))
             .put(file.asRequestBody(ZipMediaType))
             .build()
-        calls.execute("upload_file", request) { response -> requireSuccess(response.code, response.isSuccessful, "upload_file") }
+        calls.execute("upload_file", request, taskId) { response -> requireSuccess(response.code, response.isSuccessful, "upload_file") }
     }
 
     /** 解析目录中的文件；排除集合及目录路径，避免把同名目录当作 ZIP 递归清理。 */

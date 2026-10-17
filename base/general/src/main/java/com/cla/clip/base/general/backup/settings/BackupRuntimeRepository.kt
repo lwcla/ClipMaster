@@ -61,7 +61,7 @@ class BackupRuntimeRepository @Inject internal constructor(
     suspend fun replacePending(pending: BackupPendingUpload) {
         migrateLegacy()
         store.edit { preferences ->
-            /** 相同身份只是描述更新，只有新 taskId 才重置目录许可。 */
+            /** 相同身份只是描述更新，只有新 taskId 才重置目录许可及网络补传额度。 */
             val newTask = preferences[Keys.PENDING_ARTIFACT_ID] != pending.artifactId
             preferences[Keys.CURRENT_BACKUP_ROUND_ID] = pending.artifactId
             preferences[Keys.PENDING_ARTIFACT_ID] = pending.artifactId
@@ -71,13 +71,39 @@ class BackupRuntimeRepository @Inject internal constructor(
             preferences[Keys.PENDING_CREATED_AT] = pending.createdAt
             preferences[Keys.PENDING_LOCAL_TARGET] = pending.localTargetFingerprint
             preferences[Keys.PENDING_LOCAL_PHASE] = pending.localPhase
-            // 新任务身份才重置许可，阶段更新和系统重调度不写此字段。
-            if (newTask) preferences[Keys.PENDING_WEBDAV_DIRECTORY_RECOVERY_ATTEMPTED] = false
+            // 系统重调度和同身份描述更新不能重新获得目录许可或重试额度。
+            if (newTask) {
+                preferences[Keys.PENDING_WEBDAV_DIRECTORY_RECOVERY_ATTEMPTED] = false
+                preferences[Keys.PENDING_WEBDAV_NETWORK_RETRY_COUNT] = 0
+            }
         }
     }
 
     /** 两消费者开始前读取任务身份，不让旧请求借用新包。 */
     suspend fun isCurrentRound(roundId: String): Boolean = snapshot().currentRoundId == roundId
+
+    /** 同一事务校验最新完整包、消费额度并恢复 queued；写盘失败传播，绝不返回未持久化的批准。 */
+    suspend fun requestWebDavRetryIfCurrentRound(roundId: String): BackupWebDavRetryDecision {
+        /** 默认拒绝，只有事务接受的当前轮次才能改变该结果。 */
+        var decision: BackupWebDavRetryDecision = BackupWebDavRetryDecision.Obsolete
+        // preferences 是本次独占可写快照，检查与写入不能拆成两个存储操作。
+        store.edit { preferences ->
+            if (roundId.isNotBlank() && preferences[Keys.CURRENT_BACKUP_ROUND_ID] == roundId &&
+                preferences[Keys.PENDING_ARTIFACT_ID] == roundId &&
+                preferences[Keys.PENDING_PHASE] in setOf("ready", "queued", "uploading")) {
+                /** 缺键兼容旧安装，损坏数值收敛到固定业务上限。 */
+                val count = (preferences[Keys.PENDING_WEBDAV_NETWORK_RETRY_COUNT] ?: 0)
+                    .coerceIn(0, BackupWebDavRetryDecision.MAX_RETRIES)
+                decision = if (count >= BackupWebDavRetryDecision.MAX_RETRIES) BackupWebDavRetryDecision.Exhausted
+                else {
+                    preferences[Keys.PENDING_WEBDAV_NETWORK_RETRY_COUNT] = count + 1
+                    preferences[Keys.PENDING_PHASE] = "queued"
+                    BackupWebDavRetryDecision.Queued(count + 1)
+                }
+            }
+        }
+        return decision
+    }
 
     /** 404/409 共用一次目录许可，先在当前未终结任务的事务中落盘；写盘失败直接传播，不允许修复。 */
     suspend fun claimWebDavDirectoryRecoveryIfCurrentRound(roundId: String): Boolean {
@@ -152,6 +178,7 @@ class BackupRuntimeRepository @Inject internal constructor(
                 preferences.remove(Keys.PENDING_LOCAL_TARGET)
                 preferences.remove(Keys.PENDING_LOCAL_PHASE)
                 preferences.remove(Keys.PENDING_WEBDAV_DIRECTORY_RECOVERY_ATTEMPTED)
+                preferences.remove(Keys.PENDING_WEBDAV_NETWORK_RETRY_COUNT)
             }
         }
     }
@@ -192,7 +219,8 @@ class BackupRuntimeRepository @Inject internal constructor(
                 BackupPendingUpload(it, preferences[Keys.PENDING_TARGET].orEmpty(), preferences[Keys.PENDING_SOURCE].orEmpty(),
                     preferences[Keys.PENDING_PHASE].orEmpty(), preferences[Keys.PENDING_CREATED_AT] ?: 0L,
                     preferences[Keys.PENDING_LOCAL_TARGET].orEmpty(), preferences[Keys.PENDING_LOCAL_PHASE] ?: "unselected",
-                    preferences[Keys.PENDING_WEBDAV_DIRECTORY_RECOVERY_ATTEMPTED] ?: false)
+                    preferences[Keys.PENDING_WEBDAV_DIRECTORY_RECOVERY_ATTEMPTED] ?: false,
+                    (preferences[Keys.PENDING_WEBDAV_NETWORK_RETRY_COUNT] ?: 0).coerceIn(0, BackupWebDavRetryDecision.MAX_RETRIES))
             },
             webDavHealth = when (preferences[Keys.WEBDAV_HEALTH]) {
                 "available" -> BackupTargetHealth.Available

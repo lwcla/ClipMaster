@@ -11,11 +11,40 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
 import java.io.IOException
+import java.net.SocketTimeoutException
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 
 /** 合成响应验证请求序列和真实 DataStore 许可；不连接远端，也不模拟核心事务。 */
 class WebDavRecoveryTest {
+    /** 目录修复后的补传超时，再获业务额度也不能重新领取目录许可。 */
+    @Test fun networkRetryDoesNotResetDirectoryRecoveryPermit() = runBlocking {
+        /** 合成持久化生命周期。 */
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            /** 真实轮次和修复许可事务。 */
+            val runtime = BackupRuntimeRepository(createTestHostSettingsStore(scope, File(folder.root, "network-retry.preferences_pb")))
+            /** 固定包在两次业务调用之间不改变。 */
+            val export = export()
+            /** 记录跨重试请求序列，确认没有第二轮目录操作。 */
+            val requests = CopyOnWriteArrayList<String>()
+            runtime.replacePending(BackupPendingUpload("A", "hash", "auto", "uploading", 100L))
+            try {
+                scripted(requests, listOf(409, 404, 207, 404, 201, -1)).uploadBackup(config(), export, "A",
+                    claimDirectoryRecovery = { runtime.claimWebDavDirectoryRecoveryIfCurrentRound("A") })
+                fail("补传应超时")
+            } catch (failure: BackupFailure.RemoteFailed) { assertEquals("webdav_request_timeout", failure.backupReasonCode()) }
+            assertEquals(BackupWebDavRetryDecision.Queued(1), runtime.requestWebDavRetryIfCurrentRound("A"))
+            /** 第二轮开始前的请求总数，后续只允许一个 PUT。 */
+            val beforeRetry = requests.size
+            try {
+                scripted(requests, listOf(404)).uploadBackup(config(), export, "A",
+                    claimDirectoryRecovery = { runtime.claimWebDavDirectoryRecoveryIfCurrentRound("A") })
+                fail("不能再次修复目录")
+            } catch (failure: BackupFailure.RemoteFailed) { assertEquals("webdav_http_404", failure.backupReasonCode()) }
+            assertEquals(listOf("PUT /a/b/synthetic.zip"), requests.drop(beforeRetry))
+        } finally { scope.coroutineContext[Job]?.cancelAndJoin() }
+    }
     /** 父级在查询后被其他客户端创建时，连接测试仍须准备缺失子目录并执行实际可写探测。 */
     @Test fun connectionTestContinuesAfterParentWasCreatedElsewhere() = runBlocking {
         /** 方法和合成路径记录用于确认不会在父级 405 后直接上传到仍缺失的最终目录。 */
@@ -169,8 +198,11 @@ class WebDavRecoveryTest {
             requests += "${request.method} ${request.url.encodedPath}"
             /** 空合法目录用于 Depth 0，目录存在性只看状态。 */
             val body = "<d:multistatus xmlns:d=\"DAV:\"/>"
+            /** -1 是仅测试使用的真实请求超时触发，其余值为 HTTP 状态。 */
+            val status = statuses.getOrElse(index.getAndIncrement()) { 500 }
+            if (status == -1) throw SocketTimeoutException("synthetic")
             Response.Builder().request(request).protocol(Protocol.HTTP_1_1)
-                .code(statuses.getOrElse(index.getAndIncrement()) { 500 }).message("synthetic")
+                .code(status).message("synthetic")
                 .body(body.toResponseBody()).build()
         }.build())
     }

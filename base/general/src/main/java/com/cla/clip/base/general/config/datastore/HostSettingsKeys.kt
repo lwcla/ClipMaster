@@ -88,4 +88,6 @@ internal object HostSettingsKeys {
     val PENDING_CREATED_AT = longPreferencesKey("backup_pending_created_at")
     /** 同一 taskId 的 PUT 404/409 共用一次目录处理许可，安装内临时状态，不备份。 */
     val PENDING_WEBDAV_DIRECTORY_RECOVERY_ATTEMPTED = booleanPreferencesKey("backup_pending_webdav_directory_recovery_attempted")
+    /** 本轮已批准的网络补传次数；只有新轮次重置，不进入用户或系统备份。 */
+    val PENDING_WEBDAV_NETWORK_RETRY_COUNT = intPreferencesKey("backup_pending_webdav_network_retry_count")
 }

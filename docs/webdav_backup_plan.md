@@ -4,6 +4,145 @@
 
 <!-- flow-title: WebDAV本地自动备份恢复流程 -->
 
+## 自动 WebDAV 网络失败修复方案（2026-10-17）
+
+本节状态：已完成（代码、JVM 回归、Debug 编译、Release/R8 与独立复核已通过；隔离设备及小米真机验收待完成）。2026-10-17 用户已确认执行，并再次明确新一轮开始即取消旧任务，只保留最新一轮。本节已替代上传目标原“不等待网络、不主动重试”的策略；下方取证与历史设计保留故障版本背景，当前行为以本节为准。属于现有三 Worker 链路内的有界修复，不重做备份系统。
+
+**目标**：自动上传遇到暂时断网、DNS 失败或请求超时后，保留同一份 ZIP 等待有限补传，避免一次网络异常就使本轮永远 FAILED；本地保存继续独立完成。
+
+**架构**：复用 WorkManager 网络约束和退避、现有固定包存储、轮次条件事务与完成反馈。失败类型分类放在 base:general 的 WebDAV 域，重试次数及阶段事务放在既有运行态仓库，Coordinator 只编排结果，Worker 只映射调度返回值。
+
+**技术栈与执行入口**：沿用 Kotlin 协程、WorkManager 2.11.2、OkHttp 和 Preferences DataStore，不新增调度或网络库。本次使用 `superpowers:executing-plans` 按下列任务逐项实施；设计依据与实施记录均维护在本主文档，避免另建分叉文档。
+
+### 证据、方案比较与预期变化
+
+已确认的故障是两次 DNS 失败、一次请求超时，以及异常被保存为终态后系统再次调度无法执行。息屏/后台冻结或网络限制是优先排查方向，尚不能确定具体系统策略。修复先覆盖已确认的恢复缺口，并补足下一次定位所需证据。
+
+| 方案 | 收益与限制 | 结论 |
+| --- | --- | --- |
+| 仅添加 CONNECTED 网络约束 | 系统知道任务需要网络，离线时等待；已联网但 DNS/请求失败仍会终止，GreedyScheduler 也仍可能启动 | 不足以单独解决本次链路 |
+| 网络约束 + 有限重试 + 非终态等待 | 同时覆盖离线等待、短暂请求失败和系统暂停；继续复用固定包与轮次隔离 | 推荐 |
+| 改用常驻前台服务或扩大请求超时 | 增加持续通知/后台执行约束等成本；延长超时不能恢复已失败任务，也不能证明绕过厂商冻结 | 本轮不采用 |
+
+上传任务统一声明 `NetworkType.CONNECTED`，自动和手动共用同一规则；不限定 Wi-Fi，不增加充电条件。生成 Worker、本地发布 Worker 维持无网络约束。手动离线提交后显示已有“任务已创建”确认，实际上传等待联网。CONNECTED 表示系统网络约束满足，不代表服务器必然可达，也不保证只经 JobScheduler 执行或绕过所有厂商后台限制。
+
+### 重试、状态与数据边界
+
+1. **分类范围**：只允许 WebDAV 请求失败包装中的 `UnknownHostException`、`SocketTimeoutException`、`ConnectException`、`NoRouteToHostException` 触发本轮业务重试。复用 `webDavEvidence()` 有界展开，类型判断不依赖异常 message、混淆后类名或笼统的 `webdav_network_failed` 字符串。取消优先；TLS/证书失败、鉴权失败、HTTP 错误、未知 IO、本地包损坏/缺失和结果存储失败不新增重试。HTTP 404/409 继续走既有共用一次目录修复许可，HTTP 503 等仍保持单次调用不自动重发。
+2. **次数与退避**：每个 roundId 最多批准 **2 次网络失败后的业务重试**；没有系统中断和目录修复时，对应首次尝试加两次重试。上传 WorkRequest 使用指数退避、基础间隔 **1 分钟**，通常前两次约为 1、2 分钟，实际时间由系统、约束及 WorkManager 执行次数决定，不承诺准点。明确区分业务重试次数、WorkManager `runAttemptCount` 与 HTTP PUT 次数；系统暂停重入、唯一目录修复不属于这两次业务重试。约束不满足时不消耗业务次数，等待至联网或被新轮次替换。
+3. **先保存等待，再交回系统**：网络失败且尚有次数时，在同一 DataStore 事务内核对当前 roundId、待上传身份与非终态，增加次数并将 WebDAV 阶段写回 `queued`，保留历史结果。事务成功后 Coordinator 返回 `RetryScheduled`，Worker 返回 `Result.retry()`。禁止先写 `failed` 再返回 retry；禁止另建同 roundId WorkRequest、手写 delay/循环或在 Application/页面打开时补传。
+4. **终态处理**：次数耗尽或不可恢复错误沿用现有条件提交与 `Result.failure()`，保存最后一次真实 reasonCode。成功完成原有条件提交后才执行保留清理。重试事务因轮次过期或终态拒绝时返回 `Skipped`，Worker 正常退出且无新请求/结果/提示；事务 IO 失败必须终止并记录 `runtime_store_failed`，不能把未落盘的等待视为可重试，也不能无保护地重传已经发布的包。
+5. **取消与恢复**：先执行现有协程活跃检查，取消产生的迟到 IO 不计次、不触发业务 retry。已识别系统暂停继续复用 `BackupStopReasonMapper` 与 `finishInterruption()`，等待 WorkManager 恢复；用户取消、自动备份关闭、目标配置变化和新轮次替代沿用原有身份/配置检查。重试期间始终读取既有包，不再次导出数据库；新轮次依旧取消旧任务并清理旧内部包，旧任务的迟到事务必须被拒绝。
+6. **幂等与目录许可**：每次重试固定相同 roundId、文件名、ZIP 字节与目标指纹。服务端可能已收完 PUT 但响应丢失，补传覆盖同一路径，不生成新的备份名；不宣称服务端恰好写一次或不存在版本历史。`webDavDirectoryRecoveryAttempted` 不因网络重试、进程重建而重置，避免再次扩大 404/409 修复次数。
+7. **运行态字段**：在 `BackupPendingUpload` 增加默认 0 的 `webDavNetworkRetryCount`，固定持久化键为 `backup_pending_webdav_network_retry_count`，读取值限制在 0..2；只在新 roundId 或清除 pending 时重置/移除，相同身份更新不得清零。采用持久化业务计数，不把包含系统重新执行的 `runAttemptCount` 直接当业务失败次数。重试批准落盘后若进程退出，该次额度已消费；不保证跨两个存储系统崩溃窗口的精准退避时间，但不靠重启重置额度。
+8. **备份覆盖与升级**：新字段只用于本安装的任务恢复，不进入用户快照、导出模型或恢复报告，不修改 schemaVersion。它所在 `datastore/app_settings.preferences_pb` 已被系统云备份与设备迁移排除；ZIP 继续位于 `noBackupFilesDir`。旧安装缺键按 0 读取；旧 FAILED 轮次不自动复活，升级后的新轮次使用新策略。已登记的旧 WorkRequest 不自动获得新约束，验收必须检查新入队请求；恢复到新安装后不恢复重试任务。
+9. **展示与反馈**：复用 `queued → WaitingExecution` 和备份页当前任务详情，显示“等待执行”，不能仅凭 queued 声称“正在等待网络”。最近一次成功/失败与当前等待详情继续分开，等待不伪造新成功、不覆盖历史结果。自动备份始终无完成 Toast；手动只在最终结果实际落盘后按现有规则提示一次，重试中途不弹失败提示。无需新增弹窗、倒计时、设置开关或 Compose 组件。
+
+平台依据：[Android WorkManager 约束与退避说明](https://developer.android.com/develop/background-work/background-tasks/persistent/getting-started/define-work)描述约束失效后停止/恢复任务，以及 `Result.retry()` 的系统退避；它不保证实际执行时刻。网络约束和后台冻结机制的进一步证据见下方取证章节。
+
+### 复用检查、职责与接口
+
+已按备份 package → app Worker → base:general 备份/网络能力 → 全仓搜索检查。现有 `WebDavFailureEvidence`、`BackupPendingUploadStore`、`BackupRuntimeRepository`、`BackupStopReasonMapper`、`BackupPublicationCompletion`、结果 mapper 与统一日志可复用。其他下载/清理 Worker 的 retry 属于不同业务，没有可直接复用的备份次数/条件事务策略；不会将下载重试逻辑搬入备份或新增通用任务框架。
+
+以下路径均相对仓库根目录。接口名和默认值为本次实现约定，实施时不能只在 Worker 捕获异常后补一行 retry。
+
+| 文件 | 调整与接口边界 |
+| --- | --- |
+| `app/src/main/java/com/cla/clip/master/work/BackupAutoScheduler.kt`、`app/src/main/java/com/cla/clip/master/backup/BackupSchedulingPolicy.kt` | 云端 OneTimeWorkRequest 增加 CONNECTED 与指数退避 1 分钟；策略 `uploadRequiresNetwork` 改为 true。生成/本地请求不绑定网络 |
+| 新增 `base/general/src/main/java/com/cla/clip/base/general/backup/webdav/WebDavUploadRetryClassifier.kt` | `object WebDavUploadRetryClassifier`，`fun isRecoverable(failure: Throwable): Boolean`；复用同包可见的 evidence，跨模块只公开纯分类入口，不泄漏网络实现或敏感原因 |
+| `base/general/src/main/java/com/cla/clip/base/general/backup/settings/BackupTargetResult.kt`、`base/general/src/main/java/com/cla/clip/base/general/config/datastore/HostSettingsKeys.kt` | 加入上述运行态字段、固定 key 和中文注释；不保存 enum name、不新增序列化 keep |
+| 新增 `base/general/src/main/java/com/cla/clip/base/general/backup/settings/BackupWebDavRetryDecision.kt`，调整同目录 `BackupRuntimeRepository.kt` | 具名结果 `Queued(retryCount: Int)`、`Exhausted`、`Obsolete`；`suspend fun requestWebDavRetryIfCurrentRound(roundId: String): BackupWebDavRetryDecision` 封装最多 2 次的原子校验、计数及 queued 写入，IO 错误向调用方传播。仅 ready/queued/uploading 可批准，终态/错轮拒绝 |
+| 新增 `app/src/main/java/com/cla/clip/master/backup/BackupTargetPublicationResult.kt`、`upload/BackupUploadRetryRecovery.kt`，调整同目录 `BackupExecutionCoordinator.kt` | 内部结果 `Completed`、`RetryScheduled(retryCount)`、`Skipped`；`upload(roundId, trace, interruptedReason)` 返回该结果，恢复协作者负责分类与事务结果转换，Coordinator 在提交失败前分派结果。永久失败继续抛出；`publishLocal()` 保持 Unit 契约，不引入本地重试 |
+| `app/src/main/java/com/cla/clip/master/work/BackupWebDavUploadWorker.kt` | `RetryScheduled → Result.retry()`，Completed/Skipped → success；原有永久异常 → failure，取消原样传播。日志区分重试交回与结束 |
+| 新增 `base/general/src/main/java/com/cla/clip/base/general/backup/webdav/WebDavRequestEventListener.kt`，调整同目录 `WebDavCallExecutor.kt` 与上级 `WebDavClient.kt` | 为 WebDAV 派生客户端接入单请求 EventListener 与可注入单调时钟；通过请求 tag 传递 operation/低敏 taskId。每个 Call 独立跟踪阶段；不修改全局客户端或构建另一个连接池 |
+
+实际实现补充：请求 tag 的净化与关联字段集中到 `webdav/WebDavRequestTrace.kt`；操作名白名单、任务 ID 字符/长度校验防止地址进入日志。调度器抽出真实使用的 `createTargetRequest()`，Worker 抽出真实使用的 `executeUpload()`，分别验证实际约束/退避和取消/调度结果契约，不引入额外任务框架。
+
+### 日志与诊断计划
+
+继续复用统一 Logcat 和已有开关/轮转，不新增日志存储。网络分类与本次修复执行均保留 workId、roundId、source，HTTP 请求另有进程内 callId 关联，禁止以 URL 作为身份。
+
+- `INFO`：云端入队记录 `requiresNetwork=connected`、基础退避和上限；系统恢复沿用原 stopReason；结果真正保存后记录终态。不能将 Result.retry 输出为 worker_failed 或已完成。
+- `WARN`：可恢复请求失败及重试批准记录 operation、固定 detail/reasonCode、networkRetryCount、retryLimit=2、当前 HTTP 阶段；说明等待系统调度，不输出承诺的下次执行墙钟时间。耗尽只在终态路径记录一次失败。
+- `DEBUG`：EventListener 观察 DNS、连接、TLS、请求体写入、等待响应头及结束，使用阶段事件/耗时与请求体字节数。复用连接没有 DNS/连接事件时不能补造耗时；事件监听器只观察，不读取请求/响应体。按生命周期转换记录，不逐字节刷日志；callEnd/callFailed 汇总，取消仍以 cancelled 标记，不产生业务失败结论。
+- `ERROR`：次数/等待状态或最终结果持久化失败，输出固定 `runtime_store_failed` / `result_store_failed` 和阶段，不自动重传。
+- 隐私：不打印域名/IP、地址、路径、目标指纹、凭据、请求头/响应头、异常 message/原始堆栈、正文或备份内容。日志异常不得影响上传；日志中的“超时阶段”仅表示最后观测阶段，不把它自动归因于 Doze、冻结或服务端。
+- 验证：合成异常 message 放入敏感占位内容，断言所有输出不含占位文本；两个交错请求的阶段/callId 不串线；缺阶段、复用连接、取消/晚到异常均有回归。真实系统冻结/网络阻断仍需设备侧系统证据，不能由阶段日志单独证明。
+
+### 实施任务与选择性 TDD
+
+复核重点：取消与超时竞态、重试与新轮次竞争、进程重建后的次数、PUT 已到服务端但响应丢失、重试状态写盘失败。新增和修改的方法、变量、字段、阈值及分支均按仓库规则补贴近代码的简体中文注释。
+
+1. [x] **请求失败分类**：`WebDavUploadRetryClassifierTest` 先因分类入口缺失失败，再实现白名单并与 `WebDavFailureReasonTest` 一起通过。覆盖四类请求网络异常、裸本地 IO、HTTP/TLS/取消、嵌套包装、过深及循环证据。日志：`build/webdav-classifier-red.log`、`build/webdav-classifier-green.log`。
+2. [x] **持久化重试事务**：`BackupWebDavRetryStateTest` 先因事务/字段缺失失败，再实现并与原 `BackupTargetResultsTest` 一起通过。验证两次额度、并发申请有界、重建及同身份更新不清零、新轮次立即拒绝旧请求、阶段/身份白名单、缺键兼容、存储故障、目录许可及历史结果不变。日志：`build/webdav-state-red.log`、`build/webdav-state-green.log`。
+3. [x] **调度和执行接线**：`BackupUploadRetryRecoveryTest`、`BackupAutoSchedulerTest`、`BackupWebDavUploadWorkerTest` 先失败，再接入真实生产边界通过；分别验证持久化完成后才返回 retry、耗尽/过期/存储故障/取消分流，实际 WorkRequest 的 CONNECTED/EXPONENTIAL/60 秒及本地无约束，以及 Worker 的成功/跳过/重试/失败/取消返回值。复用既有 mapper 和反馈回归保护等待不覆盖历史、手动最终一次提示和自动静默。日志：`build/webdav-app-red.log`、`build/webdav-final-tests.log`。
+4. [x] **同包补传与诊断**：`WebDavRequestEventListenerTest` 先因观察器/tag 缺失失败，接入后验证阶段耗时、复用连接、交错请求、取消/迟到事件、日志接收器异常隔离和敏感内容不输出。扩展 `WebDavDirectUploadTest` 的有界回环服务确认首次完整接收后响应超时，显式第二次调用仍是同一路径和字节；`WebDavRecoveryTest` 确认目录修复后网络补传不重置许可。客户端单次请求和既有 503 不自动重发的测试继续通过。回环服务测试依赖真实有界 socket 超时，不连接外部服务；新增兼容性测试未驱动额外产品行为改动。
+5. **整体回归与发布验证**：
+   - [x] `.\gradlew.bat :base:general:testDebugUnitTest :app:testDebugUnitTest :app:compileDebugKotlin --console=plain` 通过。base:general 121 项、app 332 项，共 453 项，失败/错误/跳过均为 0；本次新增 20 项。完整日志 `build/webdav-final-tests.log`。首轮 app 测试方法因 runBlocking 推断非 Unit 返回而被 JUnit 拒绝，修正测试签名后全部通过。
+   - [x] 最终独立复核完成，未发现需要修正的生产缺陷；已复核次数/阶段事务、取消与旧轮次隔离、Worker 返回值、同包补传、目录许可和日志隐私。真实系统冻结、跨 DataStore/WorkManager 崩溃窗口的精确退避及服务端版本历史保留为已说明边界，不将推测记为缺陷或已验证结论。
+   - [x] `.\gradlew.bat :app:assembleRelease --console=plain` 通过，实际执行 `minifyReleaseWithR8`、资源收缩和 APK 打包，日志 `build/webdav-release.log`。新模型只在编译期调用，不增加宽泛 keep。构建仍输出未改动的 Shizuku `OnOpNotedListener` 接口匹配警告和现有 UI 弃用警告，未将构建成功解释为这些平台路径已通过真机测试。
+   - [ ] 使用无用户数据的隔离模拟器/独立 applicationId 验证实际 WorkManager：离线本地成功、云端排队，联网后上传，系统暂停/进程重建与新轮次替代。不得在现用安装上直接运行会卸载应用的 connected 测试。
+   - [ ] 小米 14 / Android 16 真机验收：新版本、新 WorkRequest 在息屏后台执行，包含正常联网和短暂网络故障后恢复，观察同 roundId 状态/补传/远端文件并保留系统证据。前台手动成功、其他手机成功及 JVM 通过不能替代此项。
+
+### 已知取舍与开放问题
+
+实施记录：采用 `BackupWebDavRetryStateTest` 独立承载事务回归，避免原 `BackupTargetResultsTest` 继续膨胀；恢复事务顺序与取消在 `BackupUploadRetryRecoveryTest` 覆盖，Worker 和实际请求构建分别由 `BackupWebDavUploadWorkerTest` / `BackupAutoSchedulerTest` 覆盖。未新增 UI 组件或资源，既有等待详情和最终完成反馈回归继续复用。包格式、恢复协议和系统备份 XML 不变；新字段沿用已排除系统备份的宿主 DataStore。
+
+- 本次目标是可恢复、次数有界的后台上传；真实调度时机受系统控制。若小米实测仍持续冻结/阻断，需要使用新增阶段证据与该机系统事件定位，再评估专项适配；目前不声称已经查实或修复厂商策略。
+- 暂不调整连接 60 秒、读写 120 秒，也不新增固定总请求时限，避免无依据截断更大的合法备份；33 分钟日志跨度本身不能证明这些配置需要扩大。超时参数是否需要按大小/进度进一步限制，留待实际请求阶段数据支持。
+- HTTP 临时状态码（例如 429/503）、通用 SocketException/EOF 的自动重试不在首轮白名单，后续若有相应故障证据再定义 Retry-After 与重放边界。
+- 本次仅在既有检出内修改备份相关文件，保留其他下载/图片等未提交改动；未创建新 worktree、未提交或推送。执行记录保存在 `build/webdav-repair-progress.md`，避免迁移未提交基线造成遗漏。
+
+本次实现验证（2026-10-17）：已完成生产接线、20 项新增测试及受影响两模块共 453 项 JVM 回归，Debug 编译、Release/R8 构建通过；独立复核无待修正项。`python -X utf8 tools/render_doc_flow_html.py --check docs/webdav_backup_plan.md` 与限定本次范围的 `git diff --check` 通过。新增/修改的方法、变量与关键分支已补简体中文注释；隔离设备和故障小米真机验收仍待完成，不以 JVM 测试声称厂商后台限制已解除。
+
+## 自动备份网络失败排查（2026-10-16—17，已取得应用日志）
+
+本节状态：已完成（0.9.4 故障版本的应用日志取证）。2026-10-17 已核对用户提供的 `clipmaster.txt`，确认三次自动云端失败、本地成功及失败终态阻止后续系统执行的链路；导致网络故障的具体系统策略仍未确定。以下“当前/现有/现行”均指本次取证的 0.9.4 基线，不代表顶部修复实施后的策略；修复与设备验收边界以顶部章节为准。
+
+### 已知事实与执行差异
+
+- 用户反馈小米 14、Android 16、ClipMaster 0.9.4 于 2026-10-16 21:15 提示自动 WebDAV 备份“请求超时”，应用在后台，手机应该处于熄屏状态；同一网络下测试连接及立即备份成功。时间按用户提供的北京时间记录，暂不等同于请求实际开始或结束时间，熄屏状态仍非日志确认。
+- 本机连接的是三星 SM-G9730、0.9.3 调试版，用户已确认不是故障设备；其公共日志目录不存在，备份标签 Logcat 无记录，不能用于解释另一台手机的失败。
+- 当前手动与自动生成均进入 `BackupAutoWorker` / `BackupExecutionCoordinator.generate()`，随后通过同一 `enqueueTarget()` 使用 `BackupWebDavUploadWorker` 和 `WebDavClient`。来源影响自动开关、备份类型及反馈，不选择不同的上传客户端或超时配置。连接测试走页面协程及空文件探测，不能代替完整上传验证。
+- WebDAV 继承连接 60 秒、读写各 120 秒配置，关闭连接失败自动重发；没有额外的完整请求总时限。`webdav_request_timeout` 来自 `SocketTimeoutException`，不同于 Worker 停止原因。真实请求超时结束当轮且不主动重试，之后打开页面或网络恢复不会自动补传该失败轮次。
+
+### 2026-10-17 日志取证结果
+
+用户文件约 2.1 MB，可见时间范围为 2026-10-14 11:59 至 2026-10-16 23:15，末行截断。共找到三次 `source=auto` 生成、两次 DNS 失败和一次请求超时；没有手动来源、连接测试成功或云端上传成功记录，因此手动成功仍作为用户提供的事实，不伪造同文件中的成功对照。原始日志只在用户指定位置读取，不复制进入仓库。
+
+| 时间 | 已确认事件 | 原始日志行号 |
+| --- | --- | --- |
+| 10-14 18:30:24.780 | 自动 ZIP PUT 的域名解析失败，`UnknownHostException>GaiException` / `dns_failed`；本地于 18:30:25.949 成功 | 2817、2827 |
+| 10-15 19:53:20.468 | 再次自动 ZIP PUT 域名解析失败，分类与前一天相同；本地于 19:53:21.603 成功 | 7477、7486 |
+| 10-16 21:15:49.500 | 上传由进程内 `WM-GreedyScheduler` 启动；此前 `.498` 的系统日志只是登记 Job，不是 `onStartJob` | 16822、16824 |
+| 10-16 21:15:49.555 | 进入 `publishing_remote_zip`，包大小 72,119 字节，生成和包交接已完成 | 16838、16839 |
+| 10-16 21:15:59.398 | 本地成功结果已保存，之后本地保留清理正常结束 | 16842—16850 |
+| 10-16 21:49:02.194 | 同一上传请求报 `SocketTimeoutException>ErrnoException` / `webdav_request_timeout`；阶段仍为首次 ZIP PUT | 16854、16856 |
+| 10-16 21:49:02.202 | 同一 PID 29178 的 `MainActivity.onCreate`，与请求失败相差 8 ms | 16857 |
+| 10-16 21:49:02.303—.335 | Worker 返回 FAILURE；系统 `.327` 才对同一 workId 调用 `onStartJob`，随后明确记录 `Status ... is FAILED ; not doing any work` | 17150、17159、17170 |
+
+用户所述 21:15 对应本轮开始，实际记录超时为 21:49:02。请求阶段跨度为 1,992.639 秒（约 33 分 13 秒），Worker 的 `elapsedMs=1992679` 与之吻合。当前诊断使用 [SystemClock.elapsedRealtime](https://developer.android.com/reference/android/os/SystemClock#elapsedRealtime())，包含休眠时间，不能解释成持续占用 CPU 或服务器连续处理了 33 分钟，也不能仅据此认定 Worker 达到系统执行时限。`stopReason=-256` 及本轮无暂停/停止事件没有提供系统中断证据；21:49 的 `onStopJob` 晚于失败终态，不能倒置为此前超时的原因。
+
+21:16:00.275 至 21:49:02.194 之间文件没有任何日志行，返回页面附近才同时出现超时和系统任务入口；21:15:48.834 另有显示屏 `old:2,new:4` 记录。按 [Display.STATE_DOZE_SUSPEND](https://developer.android.com/reference/android/view/Display#STATE_DOZE_SUSPEND)，4 是屏幕的挂起低功耗状态，但屏幕状态不等于已证明系统 DeviceIdle、应用待机或厂商冻结。结合用户描述，这些时序优先支持“后台休眠/冻结与联网条件异常”的方向；缺少 ActivityManager/网络策略/冻结事件和 HTTP 子阶段，仍不能排除其他网络原因或断言具体是哪一项小米限制。
+
+### 优先核实的后台网络假设
+
+上传请求未声明 `NetworkType.CONNECTED` 等网络约束。该策略源于此前已确认的“不等待网络、直接执行”设计，当前没有修改。缺少网络约束的影响不只是不等待联网：在 [Android 16 AOSP ConnectivityController](https://raw.githubusercontent.com/aosp-mirror/platform_frameworks_base/android16-release/apex/jobscheduler/service/java/com/android/server/job/controllers/ConnectivityController.java) 中，`evaluateStateLocked()` 对没有 connectivity constraint 的任务直接返回；具有该约束且其他条件及网络满足的任务，才经 `requestStandbyExceptionLocked()` 向网络策略申请 App Standby 临时豁免。这个机制不能泛化为所有省电、Doze 或厂商限制均会被豁免，也不保证设置 CONNECTED 后服务器一定可达。
+
+因此，若故障手机自动执行时处于后台联网受限状态，就存在“Worker 获得执行机会，但应用网络仍被限制；打开应用后手动上传成功”的解释。它是基于当前代码、用户反馈和平台机制的优先假设，不是这次事故的结论；服务器短暂无响应、网络切换及连接状态等可能性仍未排除。[Android 官方 Doze/App Standby 说明](https://developer.android.com/training/monitoring-device-state/doze-standby)确认后台网络与任务调度均受限制，不能仅凭手机显示已联网判断应用当时能联网。
+
+新增的实际调度证据收紧了上述判断：本次首先执行上传的是 `GreedyScheduler`，不能将其启动等同于系统 JobScheduler 已提供上传执行窗口。核对 [AndroidX GreedyScheduler 源码](https://raw.githubusercontent.com/androidx/androidx/androidx-main/work/work-runtime/src/main/java/androidx/work/impl/background/greedy/GreedyScheduler.java)，其无约束分支可以直接启动任务，类注释明确不主动持有 WakeLock。结合 [AOSP 缓存进程冻结机制](https://source.android.com/docs/core/perf/cached-apps-freezer)，后台进程可能保留在内存但暂停线程，页面或 JobService 生命周期可以使其恢复；这些机制解释了当前候选路径，但不能代替该设备的冻结证据。CONNECTED 本身也不禁止 GreedyScheduler 在它认为约束满足时执行，不能承诺增加一行约束就彻底解决厂商后台限制。
+
+可以确定的恢复缺口是：DNS/请求超时在现行代码中被提交为业务失败，Worker 返回 `Result.failure()`；即使系统稍后真正调度同一任务，也因其已 FAILED 而不再上传。这次日志确实出现了该路径。网络约束、后台暂停以及可恢复错误的重试/终态应一起评估；此前“无网即失败、不自动重试”的约定需要在实施方案中明确调整，不能偷偷改变，也不应只增大超时时间后声称已修复。
+
+### 日志与诊断计划、后续待办
+
+已按同一 `workId` / `artifactId` 串联用户文件的三次自动任务，无需再次索取相同文件。若继续验证系统触发原因，需要故障手机同轮的网络阻断/待机/冻结证据，或补最小 HTTP 子阶段与后台状态观测；对照实际成功的手动轮次及后台执行，避免把其他手机的测试结果当成故障验证。既有日志开关及大小轮转继续复用，不创建新的日志存储。
+
+现有 `WebDavCallExecutor` 的 `phase=request` 仅表示进入响应消费回调前失败，包含建立连接、写入请求及等待响应头，不能直接解释为“连接超时”或“写超时”。先用既有 WARN 请求分类及 INFO/ERROR 阶段日志确定操作与耗时；若仍不足，另行评估最小的 HTTP 阶段与后台网络状态诊断。日志继续禁止地址、IP、凭据、认证头、请求响应体及备份内容，不因排查开启完整 HTTP 日志。
+
+取证阶段仅更新分析，不调整超时、网络约束、重试、目录修复或备份协议，不访问用户服务器、不触发备份、不安装测试包。该阶段复用请求分类、阶段和 WorkManager 日志，无新增组件/类/方法、变量或代码注释，未新增单测或运行编译/R8；其静态校对不能代替故障手机复现。随后经用户确认实施的代码、测试及流程图变更见顶部修复章节。
+
 ## 设备测试后的数据恢复记录（2026-10-16）
 
 状态：已完成（指定备份恢复及媒体关联检查已执行，数据完整性边界见下文）。本次下载记录 Pager 修复的 `:app:connectedDebugAndroidTest` 在现用手机上运行，结束时卸载目标应用且未保留原数据库及设置。已重新安装修复包，主动向用户说明数据丢失；具体修复与验证边界见 [下载记录主方案](download_history_plan.md#pager-状态-key-闪退修复2026-10-16已完成)。
@@ -167,7 +306,7 @@ Android 官方 [Toast API](https://developer.android.com/reference/android/widge
 3. 只有目录查询明确返回 404，才逐级查询并 MKCOL 缺失目录；本请求实际创建缺失目录后重传同一 ZIP，再按新响应判断。目录已完整、查询/创建失败、协程取消或包缺失时结束当前修复；不在未发现缺失目录时重复 PUT。
 4. taskId 表示本地完整包身份，复用 roundId/artifactId；同任务文件名、ZIP 字节和目的地固定，系统恢复时重新 PUT 整个 ZIP。
 5. 本地包存在之外，还保留最新任务、未终结、目标配置和自动开关检查；旧包存在不能使过期或已成功任务复活。
-6. 系统停止可等待系统重新调度；真实 HTTP/网络失败结束本轮。继续不设置网络/Wi-Fi 约束，不调用 Result.retry()，不新增网络恢复监听或应用启动补传。
+6. 系统暂停继续等待系统调度。2026-10-17 调整为上传声明 CONNECTED，明确网络类型失败可在同轮次最多批准两次业务重试；先条件保存 queued 再返回 Result.retry，详见顶部修复方案。HTTP/TLS/未知 IO、耗尽及终态不补传，不新增网络恢复监听或应用启动补传。
 7. 自动备份仍为 24 小时周期，新轮次仍使旧轮次失效并清理旧内部包。生成、本地保存、恢复的数据范围与发布方式不在本轮重构范围。
 8. 不新增任务索引、任务领取协议、文件租约、引用计数、按目标锁池、远端临时包、latest.json 或上传后下载回读。
 9. “我的”页 WebDAV 失败摘要显示“上次备份失败：具体原因”，复用备份结果 reasonCode 和共享展示能力；已知原因不能全部降级为“备份失败”，没有可靠证据时明确显示原因未知。
@@ -187,9 +326,10 @@ Android 官方 [Toast API](https://developer.android.com/reference/android/widge
 | 同 taskId 第一次遇到 PUT 404/409，且成功登记共用处理许可，目录查询 404 | 逐级 MKCOL 后补传同包一次；跨重调度不重置许可 |
 | 同 taskId 已处理过 PUT 404 或 409，再遇到 PUT 404/409 | 结束并记录当前具体失败原因；无额外目录查询/MKCOL |
 | 进入修复分支后确认目录已存在 | 保留上传失败，不盲目 MKCOL 或重复 PUT |
-| 401/403、5xx、离线、TLS 或未取消时的超时/IOException | 结束本轮；不查询目录、不补传 |
-| 目录查询或 MKCOL 失败 | 结束本轮；不绕过失败重传 |
-| 修复后 PUT 失败 | 结束；保留当前 HTTP/网络原因，不重新修复 |
+| 401/403、5xx、TLS 或未知 IOException | 结束本轮；不新增业务补传 |
+| DNS、连接、路由不可达或未取消时的请求超时 | 依顶部规则条件申请最多两次业务补传；耗尽才保存失败，离线排队不消耗额度 |
+| 目录查询或 MKCOL 失败 | 按真实错误分类处理；网络补传也不重置已经消费的目录修复许可 |
+| 修复后 PUT 失败 | HTTP 错误终结；白名单网络失败可申请同包业务补传，保留当前原因且不重新修复目录 |
 | ZIP 缺失/空文件、描述损坏 | 中止并条件保存本轮文件错误；不重新生成包 |
 | 旧任务、已终结、自动关闭或目标改变 | 跳过/取消；不请求远端、不覆盖新轮次结果 |
 | 服务器接收成功，但结果存储失败 | 保留 result_store_failed 契约；不声称成功，不自动复活重传 |
@@ -224,7 +364,7 @@ taskId 使用现有 roundId/artifactId，与 Worker UUID 区分；每次系统�
 | succeeded / failed / cancelled / result_store_failed / unselected | 跳过；文件仍存在也不能重传 |
 | ZIP 请求成功并已保存 succeeded，随后清理被停止 | 保留成功；重调度不重复上传 |
 
-重新执行指完整同名 PUT，不是字节断点续传；若上次请求已到达服务器但客户端未保存成功，可能再次覆盖同名 ZIP。它不保证恰好发送一次或消除服务端版本历史。系统可能继续延后或停止；本轮不新增恢复次数/时限上限，最新轮次与现有终态决定有效期。升级前已记为 failed 的任务不批量复活，避免把历史真实网络失败当成系统暂停。
+重新执行指完整同名 PUT，不是字节断点续传；若上次请求已到达服务器但客户端未保存成功，可能再次覆盖同名 ZIP。它不保证恰好发送一次或消除服务端版本历史。系统可能继续延后或停止；系统暂停重入本身不增加业务重试次数，2026-10-17 新增的最多两次额度只针对白名单网络失败，最新轮次与终态继续决定有效期。升级前已记为 failed 的任务不批量复活。
 
 ### “我的”页直接显示 WebDAV 失败原因
 
@@ -362,7 +502,7 @@ BackupRestoreVm.previewRemoteBackup 继续按选中条目下载 ZIP，再调用�
 
 ## 最新轮次并行备份与 WebDAV 直接上传（2026-10-08）
 
-本节是 2026-10-08 已完成的历史基线；其独立 manifest PUT、目录/中断处理及失败摘要由顶部 2026-10-11 当前实现替代。最新轮次、目标独立与条件结果提交继续沿用。
+本节是 2026-10-08 已完成的历史基线；其独立 manifest PUT、目录/中断处理及失败摘要由 2026-10-11 实现替代；其中无网络约束/不主动重试策略又由顶部 2026-10-17 修复替代。以下旧策略只保留历史取舍，最新轮次、目标独立与条件结果提交继续沿用。
 
 本轮状态：已完成。2026-10-08 按用户授权的最新两个提交 d56d025、5b4262d 完成代码与 JVM/编译/R8 验证；设备验收另列待办。下方历史验证不作为本轮证据。保留生成/恢复锁，扩展现有运行态和包存储，新增一个本地 Worker，不建立额外协调框架。恢复、备份数据白名单等未改契约继续沿用原章节。
 
@@ -1099,7 +1239,27 @@ WebDAV：上次备份失败
 
 ## 流程图
 
-前七张图描述 2026-10-11 当前实现；入队确认 UI 与后台完成反馈分别成图，保持页面和后台的职责边界。纯规则、许可/包读取、请求序列、元数据清理和完成反馈判断有 JVM 回归，app 编排接线由编译验证，真实 Worker、服务端、SAF、系统 Toast 和 UI 视觉仍需人工验证。后续生成、本地保存、导航与恢复图沿用原有边界。
+第一张描述 2026-10-17 网络失败有限补传；随后七张以 2026-10-11 实现为基础同步本次网络约束和恢复分支。入队确认 UI 与后台完成反馈分别成图，保持页面和后台的职责边界。现有纯规则、许可/包读取、请求序列、元数据清理和完成反馈判断有 JVM 回归，app 编排接线由编译验证，真实 Worker、服务端、SAF、系统 Toast 和 UI 视觉仍需人工验证。后续生成、本地保存、导航与恢复图沿用原有边界。
+
+### 当前实现：网络失败有限补传
+
+```mermaid
+%% title: 当前实现：网络失败有限补传
+flowchart TD
+    Enqueue["同一 ZIP 的上传任务入队<br/>CONNECTED 约束，已单测，接线编译验证"] --> Wait["等待网络约束和系统执行机会<br/>人工验证"]
+    Wait --> Upload["检查当前轮次并上传原包<br/>旧轮次直接跳过，已单测，接线编译验证"]
+    Upload -->|上传成功| Success["条件保存成功结果<br/>随后保留清理，已单测，接线编译验证"]
+    Upload -->|系统暂停| Pause["保留排队并传播取消<br/>不消耗业务重试次数，已单测，接线编译验证"]
+    Pause --> Wait
+    Upload -->|真实失败| Eligible{"属于可恢复网络异常？<br/>已单测，接线编译验证"}
+    Eligible -->|否| Failed["条件保存最终失败<br/>不再业务补传，已单测，接线编译验证"]
+    Eligible -->|是| Claim{"事务核对轮次并申请重试额度<br/>最多批准两次，已单测，接线编译验证"}
+    Claim -->|批准并已落盘 queued| Retry["返回 Result.retry<br/>指数退避基础一分钟，已单测，接线编译验证"]
+    Retry --> Wait
+    Claim -->|额度耗尽| Failed
+    Claim -->|已过期或终态| Skip["跳过且不覆盖结果<br/>已单测，接线编译验证"]
+    Claim -->|存储失败| Store["终止并记录存储错误<br/>不继续重传，已单测，接线编译验证"]
+```
 
 ### 当前实现：手动入队确认
 
@@ -1118,7 +1278,7 @@ flowchart TD
 ```mermaid
 %% title: 当前实现：手动云端完成反馈
 flowchart TD
-    Finish["目标执行结束或中断<br/>接线编译验证，人工验证"] --> Pause{"系统暂停等待重调度？<br/>已单测"}
+    Finish["目标执行结束或中断<br/>接线编译验证，人工验证"] --> Pause{"系统暂停或已批准网络补传？<br/>规则已单测"}
     Pause -->|是| Queued["返回排队，不写终态、不提示<br/>已单测，接线编译验证"]
     Pause -->|否| Record["条件提交真实成功或失败<br/>已单测，接线编译验证"]
     Record -->|存储失败| StoreFailed["保持结果存储失败契约，不提示<br/>已单测"]
@@ -1133,19 +1293,23 @@ flowchart TD
 ```mermaid
 %% title: 当前实现：单 ZIP 上传
 flowchart TD
-    Start["WebDAV Worker 获得执行机会<br/>人工验证"] --> Valid{"最新任务、阶段和目标有效？<br/>已单测，接线编译验证"}
+    Start["满足 CONNECTED 并获执行机会<br/>约束已单测，调度人工验证"] --> Valid{"最新任务、阶段和目标有效？<br/>已单测，接线编译验证"}
     Valid -->|否| Skip["跳过或取消<br/>不覆盖新任务结果，已单测，接线编译验证"]
     Valid -->|是| Read["读取 taskId 本地描述和非空 ZIP<br/>不查云端、不重新打包，已单测，接线编译验证"]
     Read -->|包缺失或描述损坏| Failed["条件保存本轮失败<br/>不主动重试，已单测，接线编译验证"]
     Read -->|可读| Put["直接 PUT 正式 ZIP<br/>无目录预查、无独立摘要，已单测，接线编译验证"]
     Put -->|成功| Commit["事务内比较 taskId 并保存成功<br/>已单测，接线编译验证"]
     Put -->|404 或 409| Repair["申请共用的一次目录修复许可<br/>同 taskId 跨重调度不重置，已单测，接线编译验证"]
-    Put -->|其他真实失败| Failed
+    Put -->|其他真实失败| Recover["分类并条件申请有限补传<br/>见网络失败恢复流程，已单测，接线编译验证"]
+    Recover -->|不可恢复或耗尽| Failed
+    Recover -->|已批准| Wait["queued 并返回 Result.retry<br/>复用同包、等待系统，已单测，接线编译验证"]
+    Recover -->|轮次失效| Skip
     Repair -->|实际修复完成| RetryCheck{"协程有效且同一 ZIP 仍可读？<br/>已单测，接线编译验证"}
     RetryCheck -->|是| Put
     RetryCheck -->|包缺失| Failed
     RetryCheck -->|已取消| Stop
-    Repair -->|许可已用、目录完整或修复失败| Failed
+    Repair -->|许可已用或目录完整| Failed
+    Repair -->|修复失败| Recover
     Commit -->|成功保存| Prune["清理旧 ZIP<br/>清理失败不反转成功，已单测，接线编译验证"]
     Commit -->|任务已过期| Skip
     Commit -->|存储失败| StoreFailed["保留 result_store_failed<br/>不自动重传，已单测，接线编译验证"]
@@ -1160,7 +1324,8 @@ flowchart TD
     Candidate["PUT 返回 404 或 409<br/>已单测，接线编译验证"] --> Claim{"事务按 taskId 保存共用的一次处理许可<br/>跨重调度/重启不重置，已单测，接线编译验证"}
     Claim -->|首次成功登记| Query["PROPFIND 配置目录<br/>已单测，接线编译验证"]
     Claim -->|已使用或无法登记| Failed
-    Query -->|目录存在或查询失败| Failed["结束本轮失败<br/>不做无进展重传，已单测，接线编译验证"]
+    Query -->|目录存在| Failed["向协调器交付失败<br/>按类型决定是否有限补传，已单测，接线编译验证"]
+    Query -->|查询失败| Failed
     Query -->|明确返回 404| Create["正式上传逐级查询并 MKCOL 缺失层级，405 即结束<br/>已单测，接线编译验证、真实服务人工验证"]
     Create -->|失败或无实际创建| Failed
     Create -->|实际创建完成| Check{"协程有效且同一 ZIP 仍存在非空？<br/>已单测，接线编译验证"}
@@ -1176,7 +1341,7 @@ flowchart TD
 flowchart TD
     Stop["协程取消，联动 Call.cancel<br/>底层 Call.cancel 已单测，流释放依赖请求关闭"] --> Check{"仍是有效未终结任务，且有系统暂停证据？<br/>包含抢占和系统处理，已单测，接线编译验证"}
     Check -->|否| End["保留成功，或跳过/取消/结束中断<br/>不因包存在复活，已单测，接线编译验证"]
-    Check -->|是| Queue["条件回到 queued<br/>保留目录修复标记及最近完成结果，已单测，接线编译验证"]
+    Check -->|是| Queue["条件回到 queued<br/>保留目录许可、重试次数和历史结果，已单测，接线编译验证"]
     Queue --> Schedule["等待 WorkManager 再次给出执行机会<br/>不调用 Result.retry，人工验证"]
     Schedule --> Enter["同 taskId 重新进入 Worker<br/>人工验证"]
     Leftover["进程退出遗留 uploading<br/>系统重新进入，人工验证"] --> Enter
@@ -1834,6 +1999,14 @@ manifest 简化示例：
 - 2026-05-21：将媒体重新定位入口文案从“重新定位媒体”调整为“恢复本地媒体关联”，已运行 `./gradlew :app:compileDebugKotlin`、`./gradlew :app:testDebugUnitTest` 和 `git diff --check`，结果通过；原因是后者更贴近用户语言，也能避免误以为会恢复媒体文件本体。
 
 ## 变更记录
+
+- 2026-10-17：经用户确认完成网络失败有限补传，上传请求接入 CONNECTED 与指数退避，新增每轮最多两次的持久化条件事务，Worker 只在 queued 落盘后返回 retry，保留新轮次立即替代旧轮次、同包补传及目录许可不重置。补充脱敏 HTTP 阶段诊断与 20 项测试，共 453 项 JVM 回归、Debug 编译、Release/R8、最终独立复核及流程图/差异检查通过；未安装设备，保留隔离设备和小米息屏验收待办。原因：落实已确认修复方案，恢复短暂网络错误后的上传机会并避免旧任务继续重试或写回新状态。
+
+- 2026-10-17：按用户“给出修复方案”新增未实施草案，推荐上传 CONNECTED 约束、每轮最多两次网络失败业务重试、queued 条件事务与同包补传，明确替代原无等待/不重试约定的范围。补充类型白名单、跨进程次数、终态/取消/目录许可、幂等与备份排除、最小请求阶段日志、分步 TDD 和小米真机验收；新增独立草案图并同步 HTML。原因：修复日志已确认的失败终态阻断恢复链路，同时保留后台冻结原因尚未证实的边界；本轮不修改生产代码。
+
+- 2026-10-17：读取用户提供的应用日志，确认 10-14/15 自动 ZIP PUT 的 DNS 失败、10-16 21:15 开始且 21:49 报超时、本地成功，以及 GreedyScheduler 先执行、FAILED 后系统执行被跳过的链路。修正失败时间与此前“待取得日志”状态，说明 33 分钟包含休眠、前台回起与失败的时间关联、屏幕状态/系统冻结的证据边界和手动成功日志缺失。原因：以实际失败链路替代纯静态推测；本轮仅更新文档，后台网络/冻结仍为待验证机制，未修改上传策略。
+
+- 2026-10-16：记录小米 14、Android 16、0.9.4 在后台于 21:15 自动备份请求超时、测试连接及手动成功的反馈，确认故障设备与本机三星不同；核对共用 Worker/客户端、超时及不重试契约，并引用 Android 16 网络约束与 App Standby 临时豁免机制作为待验证假设。补齐日志阶段含义、设备取证和隐私边界；原因是不能用其他设备、前台成功或错误文案直接推断后台失败根因。本轮仅更新排查记录，未改生产代码或流程图。
 
 - 2026-10-13：按用户开始执行指令完成日志开关、实际计数/目录打开、原生 10 MiB/20 历史轮转及 WebDAV 固定分类；修复独立审查的目录重绑和未知设置展示。新增 17 项回归，最终 413 项单测、Debug、Release/R8 与差异检查通过；本轮平台验收边界和完整证据以应用日志主方案及执行记录为准。
 

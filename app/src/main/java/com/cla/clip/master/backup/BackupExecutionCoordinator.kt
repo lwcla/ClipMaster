@@ -9,6 +9,8 @@ import com.cla.clip.base.general.utils.logW
 import com.cla.clip.master.backup.local.LocalBackupDirectoryWriter
 import com.cla.clip.master.backup.upload.BackupPendingUploadStore
 import com.cla.clip.master.backup.upload.BackupUploadTargetFingerprint
+import com.cla.clip.master.backup.upload.BackupUploadRetryRecovery
+import com.cla.clip.master.backup.upload.BackupRetryPersistenceFailure
 import com.cla.clip.master.backup.diagnostics.*
 import com.cla.clip.master.backup.feedback.ManualBackupCompletionNotifier
 import com.cla.clip.master.work.BackupAutoScheduler
@@ -181,8 +183,9 @@ class BackupExecutionCoordinator @Inject internal constructor(
     }
 
     /** 本地消费固定包，不等待云端或进入生成/恢复锁。 */
-    internal suspend fun publishLocal(roundId: String, trace: BackupDiagnosticTrace) =
+    internal suspend fun publishLocal(roundId: String, trace: BackupDiagnosticTrace) {
         publishTarget(roundId, BackupResultTarget.Local, trace) { -256 }
+    }
 
     /** 云端消费固定包；旧 artifact_id 输入由 Worker 直接跳过。 */
     internal suspend fun upload(roundId: String, trace: BackupDiagnosticTrace, interruptedReason: () -> Int = { -256 }) =
@@ -190,7 +193,7 @@ class BackupExecutionCoordinator @Inject internal constructor(
 
     /** 开始固定身份与目标，副作用完成后事务比较 ID 保存结果。 */
     private suspend fun publishTarget(roundId: String, target: BackupResultTarget, trace: BackupDiagnosticTrace,
-        interruptedReason: () -> Int) = withContext(Dispatchers.IO) {
+        interruptedReason: () -> Int): BackupTargetPublicationResult = withContext(Dispatchers.IO) {
         /** 开始前一次快照检查；传输中不切换文件或持有状态锁。 */
         val snapshot = runtime.snapshot()
         /** 两目标共享文件身份，各自阶段独立。 */
@@ -198,7 +201,7 @@ class BackupExecutionCoordinator @Inject internal constructor(
         /** 本地或云端阶段，重复请求不能再次发布。 */
         val phase = if (target == BackupResultTarget.Local) pending?.localPhase else pending?.phase
         if (snapshot.currentRoundId != roundId || pending?.artifactId != roundId) {
-            trace.event("target_skipped", reasonCode = "superseded"); return@withContext
+            trace.event("target_skipped", reasonCode = "superseded"); return@withContext BackupTargetPublicationResult.Skipped
         }
         trace.bind(roundId, pending.source)
         /** 本地入队契约不变，云端仅在系统给出执行机会时允许消费遗留 uploading。 */
@@ -206,7 +209,7 @@ class BackupExecutionCoordinator @Inject internal constructor(
             else BackupSchedulingPolicy.canSchedule(phase.orEmpty())
         if (!executable) {
             if (phase == "publishing") commit(roundId, target, pending.source, "upload_interrupted")
-            trace.event("target_skipped", reasonCode = "already_finished"); return@withContext
+            trace.event("target_skipped", reasonCode = "already_finished"); return@withContext BackupTargetPublicationResult.Skipped
         }
         try {
             /** 云端实际请求时同次读取配置与密码，本地不解密。 */
@@ -219,10 +222,10 @@ class BackupExecutionCoordinator @Inject internal constructor(
             else settings.webDavEndpoint.isNotBlank() && pending.targetFingerprint == BackupUploadTargetFingerprint.of(settings)
             if (!targetMatches || (pending.source == "auto" && !settings.autoBackupEnabled)) {
                 runtime.updateTargetPhase(roundId, target, "cancelled")
-                trace.event("target_skipped", reasonCode = "configuration_changed"); return@withContext
+                trace.event("target_skipped", reasonCode = "configuration_changed"); return@withContext BackupTargetPublicationResult.Skipped
             }
             if (!runtime.updateTargetPhase(roundId, target, if (target == BackupResultTarget.Local) "publishing" else "uploading")) {
-                trace.event("target_skipped", reasonCode = "superseded"); return@withContext
+                trace.event("target_skipped", reasonCode = "superseded"); return@withContext BackupTargetPublicationResult.Skipped
             }
             trace.stage(if (target == BackupResultTarget.Local) "publishing_local" else "reading_upload_package")
             /** 只读取本请求目录，旧包被删允许失败，不重读业务数据库。 */
@@ -237,7 +240,10 @@ class BackupExecutionCoordinator @Inject internal constructor(
                 claimDirectoryRecovery = { runtime.claimWebDavDirectoryRecoveryIfCurrentRound(roundId) })
             currentCoroutineContext().ensureActive()
             trace.stage("committing_result")
-            if (!commit(roundId, target, pending.source)) { trace.event("result_skipped", reasonCode = "superseded"); return@withContext }
+            if (!commit(roundId, target, pending.source)) {
+                trace.event("result_skipped", reasonCode = "superseded")
+                return@withContext BackupTargetPublicationResult.Skipped
+            }
             trace.event("target_result_saved")
             // 成功实际落盘才清理历史备份，清理失败不能反转成功。
             try {
@@ -250,6 +256,7 @@ class BackupExecutionCoordinator @Inject internal constructor(
                 trace.event("retention_cleanup_failed", errorType = failure.javaClass.simpleName, reasonCode = "retention_cleanup_failed")
                 logW("BackupCoordinator") { "历史备份清理失败 target=$target reasonCode=retention_cleanup_failed" }
             }
+            BackupTargetPublicationResult.Completed
         } catch (caught: Throwable) {
             /** 协程停止优先于迟到网络异常；已确认结果存储故障仍保留“不自动重传”契约。 */
             val failure = if (caught is BackupResultPersistenceFailure) caught else try {
@@ -273,6 +280,31 @@ class BackupExecutionCoordinator @Inject internal constructor(
                     }
                 }
                 throw failure
+            }
+            if (target == BackupResultTarget.WebDav && failure !is BackupResultPersistenceFailure) {
+                /** 可恢复请求失败先申请持久化等待；任何批准之前均不写失败终态或完成提示。 */
+                val recovery = try {
+                    BackupUploadRetryRecovery.recover(failure) { runtime.requestWebDavRetryIfCurrentRound(roundId) }
+                } catch (storeFailure: BackupRetryPersistenceFailure) {
+                    trace.event("retry_store_failed", reasonCode = "runtime_store_failed")
+                    logE("BackupCoordinator") { "重试状态保存失败 reasonCode=runtime_store_failed" }
+                    // 尽力结束运行态；介质仍故障时保留原错误，Worker failure 阻止未受保护的重试。
+                    withContext(NonCancellable) {
+                        try { runtime.updateTargetPhase(roundId, target, "result_store_failed") }
+                        catch (_: Exception) { trace.event("retry_store_failed", reasonCode = "runtime_store_failed") }
+                    }
+                    throw storeFailure
+                }
+                if (recovery != null) {
+                    if (recovery is BackupTargetPublicationResult.RetryScheduled) {
+                        trace.event("target_retry_queued", reasonCode = failure.backupReasonCode())
+                        logW("BackupCoordinator") {
+                            "网络异常等待系统补传 roundId=$roundId networkRetryCount=${recovery.retryCount} " +
+                                "retryLimit=${BackupWebDavRetryDecision.MAX_RETRIES} reasonCode=${failure.backupReasonCode()}"
+                        }
+                    } else trace.event("target_skipped", reasonCode = "superseded")
+                    return@withContext recovery
+                }
             }
             /** 状态写盘故障不能将已经发布的文件伪造成发布失败。 */
             val reason = when (failure) {

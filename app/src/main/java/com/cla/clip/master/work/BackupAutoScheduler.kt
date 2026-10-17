@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.work.*
 import com.cla.clip.base.general.backup.settings.BackupResultTarget
 import com.cla.clip.base.general.backup.settings.BackupSettingsRepository
+import com.cla.clip.base.general.backup.settings.BackupWebDavRetryDecision
 import com.cla.clip.master.backup.BackupExecutionCoordinator
 import com.cla.clip.master.backup.BackupSchedulingPolicy
 import com.cla.clip.base.general.utils.logD
@@ -55,16 +56,29 @@ object BackupAutoScheduler {
         Unit
     }
 
-    /** 完整包就绪后分目标入队，双方均无网络约束，替换本目标旧请求。 */
+    /** 完整包就绪后独立入队；云端等待联网，本地离线执行，双方替换本目标旧请求。 */
     internal suspend fun enqueueTarget(context: Context, roundId: String, target: BackupResultTarget): String = withContext(Dispatchers.IO) {
         /** WorkData 只包含轮次 ID，不含路径、目标或密码。 */
-        val request = if (target == BackupResultTarget.Local)
-            OneTimeWorkRequestBuilder<BackupLocalPublishWorker>().setInputData(workDataOf("round_id" to roundId)).build()
-        else OneTimeWorkRequestBuilder<BackupWebDavUploadWorker>().setInputData(workDataOf("round_id" to roundId)).build()
+        val request = createTargetRequest(roundId, target)
         WorkManager.getInstance(context).enqueueUniqueWork(
             if (target == BackupResultTarget.Local) LOCAL_NAME else UPLOAD_NAME, ExistingWorkPolicy.REPLACE, request).result.get()
+        logD("BackupAutoScheduler") {
+            "目标任务已入队 roundId=$roundId target=$target requiresNetwork=${target == BackupResultTarget.WebDav} " +
+                "backoffSeconds=${BackupSchedulingPolicy.uploadBackoffSeconds} retryLimit=${BackupWebDavRetryDecision.MAX_RETRIES}"
+        }
         request.id.toString()
     }
+
+    /** 构建实际入队请求；纯构建边界供 JVM 验证网络约束及退避，不启动调度器。 */
+    internal fun createTargetRequest(roundId: String, target: BackupResultTarget): OneTimeWorkRequest =
+        if (target == BackupResultTarget.Local)
+            OneTimeWorkRequestBuilder<BackupLocalPublishWorker>().setInputData(workDataOf("round_id" to roundId)).build()
+        else OneTimeWorkRequestBuilder<BackupWebDavUploadWorker>()
+            .setInputData(workDataOf("round_id" to roundId))
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(
+                if (BackupSchedulingPolicy.uploadRequiresNetwork) NetworkType.CONNECTED else NetworkType.NOT_REQUIRED).build())
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, BackupSchedulingPolicy.uploadBackoffSeconds, TimeUnit.SECONDS)
+            .build()
 
     /** 尽力取消旧目标，仅等待取消登记，不等待旧 Worker 或 IO 退出。 */
     internal suspend fun cancelTargets(context: Context) = withContext(Dispatchers.IO) {

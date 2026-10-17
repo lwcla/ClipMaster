@@ -31,6 +31,8 @@ data class BackupPendingUpload(
     val localPhase: String = "unselected",
     /** 安装内当前任务的 404/409 共用处理标记，系统重调度不重置，也不进入备份。 */
     val webDavDirectoryRecoveryAttempted: Boolean = false,
+    /** 本轮已批准的网络失败补传次数，安装内运行态，不包含系统重入且不进入备份。 */
+    val webDavNetworkRetryCount: Int = 0,
 ) {
     /** 云端已结束时不再请求；共享包仍由下一轮清理。 */
     val terminal: Boolean get() = isTerminalPhase(phase)
