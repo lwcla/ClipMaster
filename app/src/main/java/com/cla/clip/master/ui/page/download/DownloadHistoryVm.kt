@@ -3,6 +3,7 @@ package com.cla.clip.master.ui.page.download
 import android.app.RecoverableSecurityException
 import android.content.ContentUris
 import android.content.Context
+import androidx.work.await
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
@@ -516,11 +517,12 @@ class DownloadHistoryVm @Inject constructor(
     fun retryVideo(taskId: Long) {
         viewModelScope.launch(Dispatchers.IO) {
             busy.value = true
+            // 独立身份保留原任务记录，入队落地后才导航避免短暂显示中断。
             val newTaskId = downloadRepository.createRetryTask(taskId)
             if (newTaskId == null) {
                 message.value = appContext.getString(R.string.base_general_the_download_task_was_not_found)
             } else {
-                DownloadVideoWorker.enqueue(appContext, newTaskId)
+                DownloadVideoWorker.enqueue(appContext, newTaskId).await()
                 _actions.emit(DownloadHistoryAction.NavigateVideoDownload(newTaskId))
             }
             busy.value = false

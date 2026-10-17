@@ -11,12 +11,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.cla.clip.base.general.dao.ImageExtractBatchData
-import com.cla.clip.base.general.dao.ImageExtractItemData
 import com.cla.clip.base.general.repository.ImageCandidateData
 import com.cla.clip.base.general.repository.ImageExtractRepository
 import com.cla.clip.base.general.utils.logD
-import com.cla.clip.base.general.utils.logE
 import com.cla.clip.master.utils.WebViewLinkPreviewExtractor
 import com.cla.clip.master.work.DownloadImagesWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -26,16 +23,18 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
-import okhttp3.Request
 import javax.inject.Provider
 import javax.inject.Inject
 
 /**
  * 图片提取页状态。
  *
- * Probing 表示 WebView 仍在加载和扫描网页，Extracted 表示候选已经落库并等待用户筛选确认，
+ * Probing 表示 WebView 仍在加载和扫描网页，Extracted 表示选中的候选已落库并提交下载，
  * Failed 用于提取超时、解析失败或没有可用图片时的重试入口。
  */
 sealed interface ImageProbeState {
@@ -48,15 +47,15 @@ sealed interface ImageProbeState {
     ) : ImageProbeState
 
     /**
-     * 图片候选已经落库，UI 可以根据批次 id 观察候选列表并让用户筛选。
+     * 已选图片已经落库，UI 根据批次 id 观察下载和发布结果。
      *
-     * `count` 是落库时的候选总数，用于提取完成的首屏反馈；后续用户取消选择不会回写这个状态对象。
+     * `count` 是本次确认提交的数量，筛选发生在落库之前。
      */
     data class Extracted(
         /** 当前图片提取批次 id，必须对应 `image_extract_batches` 中已存在的记录，UI 会用它继续观察图片项。 */
         val batchId: Long,
 
-        /** 本次落库的候选图片数量，取值不小于 0，仅用于提取完成提示，不代表用户最终选择下载的数量。 */
+        /** 本次落库的候选图片数量，取值不小于 0，仅用于提取完成提示，即用户最终选择下载的数量。 */
         val count: Int
     ) : ImageProbeState
 
@@ -109,8 +108,11 @@ data class ImagePreviewMeta(
 @HiltViewModel
 class ImageExtractVm @Inject constructor(
     @param:ApplicationContext private val appContext: Context,
+    // 批次与图片项读写复用现有事务和下载记录协议。
     private val imageExtractRepo: ImageExtractRepository,
+    // 客户端延迟取得，页面初始化不发网络请求。
     private val okHttpClient: Provider<OkHttpClient>,
+    // 网页摘要旁路补写，不决定提取能否完成。
     private val linkPreviewExtractor: WebViewLinkPreviewExtractor,
 ) : ViewModel() {
 
@@ -133,23 +135,38 @@ class ImageExtractVm @Inject constructor(
         /** 图片请求 Accept，和页面预览、Worker 下载保持一致，避免 CDN 按客户端能力返回不同动静态版本。 */
         private const val IMAGE_REQUEST_ACCEPT = "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
 
-        /** 实时候选发布到 Compose 的防抖时间，避免 WebView 高频网络回调造成网格重组抖动。 */
-        private const val CANDIDATE_PUBLISH_DEBOUNCE_MS = 250L
+        /** 实时候选发布到 Compose 的最短间隔，避免 WebView 高频网络回调造成网格重组抖动。 */
+        private const val CANDIDATE_PUBLISH_INTERVAL_MS = 250L
     }
 
     /** 当前图片提取页面状态，驱动 UI 在探测中、已提取、失败重试之间切换。 */
-    var probeState by mutableStateOf<ImageProbeState>(ImageProbeState.Idle)
+    internal val probeSession = ImageProbeSession()
+
+    /** 页面阶段只由会话控制器驱动。 */
+    val probeState: ImageProbeState get() = probeSession.state
 
     /** 当前探测会话编号，递增后会触发页面重新加载 WebView 并丢弃旧会话的超时结果。 */
-    var sessionId by mutableIntStateOf(0)
+    val sessionId: Int get() = probeSession.sessionId
 
-    /** WebView 网络层捕获到的图片候选，用 URL 去重后作为 DOM 扫描遗漏图片的补充来源。 */
-    private val networkCandidates = linkedMapOf<String, ImageCandidateData>()
+    /** 用户重新提取次数；后台恢复不改变网格和广告的内容身份。 */
+    var extractionId by mutableIntStateOf(0)
+        private set
+
+    /** 候选选择跨组合重建保留，只有显式重新提取清空。 */
+    internal val selection = ImageCandidateSelection()
+
+    /** 下载提交跨配置变化防重。 */
+    var isSubmitting by mutableStateOf(false)
+        private set
+
+    /** 等待 Room 首次返回时显示已确认的真实候选。 */
+    var submittedCandidates by mutableStateOf<List<ImageCandidateData>>(emptyList())
+        private set
 
     /**
      * 当前探测会话内已经发现的阶段性候选。
      *
-     * 只用于加载页进度、阶段性图片查看和手动结束提取，不直接写入 Room；正式批次仍在自动完成或用户手动结束时统一创建。
+     * 只用于加载页进度、阶段性图片查看和手动结束提取，不直接写入 Room；正式批次仅在用户确认下载时创建。
      */
     val probingCandidates = mutableStateListOf<ImageCandidateData>()
 
@@ -167,14 +184,49 @@ class ImageExtractVm @Inject constructor(
     /** 当前会话已去重的阶段性候选池，UI 状态从这里复制快照，保证后台回调不会直接修改 Compose 集合。 */
     private val probingCandidateMap = linkedMapOf<String, ImageCandidateData>()
 
-    /** 当前页面内的图片元信息缓存，避免底部预览反复探测同一张图片。 */
-    val previewMetaCache = mutableStateMapOf<Long, ImagePreviewMeta>()
+    /** 读取协作者无页面状态，只在弹层可见时创建实际网络请求。 */
+    private val previewMetadataReader = ImagePreviewMetadataReader { okHttpClient.get() }
 
     /** 当前页面内的候选预览元信息缓存，实时网格未落库前用稳定候选 key 记录预览信息。 */
     val candidatePreviewMetaCache = mutableStateMapOf<String, ImagePreviewMeta>()
 
-    /** 实时候选发布防抖任务；新候选快速到达时只保留最后一份快照刷新 UI。 */
+    /** 实时候选限频任务；持续请求也会每 250ms 发布最新快照。 */
     private var candidatePublishJob: Job? = null
+
+    /** 可见时仅恢复未完成扫描，保留候选和选择；新轮次只替换回调身份。 */
+    fun resumeProbe() {
+        if (probeState != ImageProbeState.Idle) return
+        probeSession.resume()
+        synchronized(probingCandidatesLock) { activeCandidateSessionId = sessionId }
+    }
+
+    /** 不可见时关闭发布和回调，已有候选、确认结果及下载批次保持不变。 */
+    fun pauseProbe() {
+        closeCandidateUpdates(sessionId)
+        candidatePublishJob?.cancel()
+        candidatePublishJob = null
+        probeSession.pause()
+    }
+
+    /** 用户明确重新提取时清空旧候选和选择，允许从任何批次或失败状态重新开始。 */
+    fun restartProbe() {
+        probeSession.restart()
+        resetProbeSession(sessionId)
+        selection.reset()
+        candidatePreviewMetaCache.clear()
+        submittedCandidates = emptyList()
+        extractionId += 1
+    }
+
+    /** 停止扫描立即冻结内存结果，不等待预览缓存写入，也不隐式创建下载任务。 */
+    fun finishProbe(expectedSessionId: Int, hasDomEvidence: Boolean = true) {
+        if (!probeSession.accepts(expectedSessionId)) return
+        // 最终快照先发布，防止尚在限频窗口内的图片被遗漏。
+        val snapshot = snapshotProbingCandidates()
+        publishProbingCandidatesImmediately(expectedSessionId, snapshot)
+        closeCandidateUpdates(expectedSessionId)
+        probeSession.finish(expectedSessionId, hasDomEvidence && snapshot.isNotEmpty())
+    }
 
     /**
      * 新一轮 WebView 探测开始前清空旧候选。
@@ -186,7 +238,6 @@ class ImageExtractVm @Inject constructor(
         candidatePublishJob = null
         synchronized(probingCandidatesLock) {
             activeCandidateSessionId = newSessionId
-            networkCandidates.clear()
             probingCandidateMap.clear()
         }
         probingCandidates.clear()
@@ -221,9 +272,6 @@ class ImageExtractVm @Inject constructor(
         return synchronized(probingCandidatesLock) {
             if (activeCandidateSessionId != expectedSessionId) return@synchronized null
             if (candidate.url.isBlank()) return@synchronized probingCandidateMap.values.sortedBy { it.displayOrder }
-            if (!networkCandidates.containsKey(candidate.url)) {
-                networkCandidates[candidate.url] = candidate.copy(displayOrder = Int.MAX_VALUE - networkCandidates.size)
-            }
             mergeProbingCandidateLocked(candidate.copy(displayOrder = probingCandidateMap.size))
             probingCandidateMap.values.toList()
         }
@@ -247,16 +295,19 @@ class ImageExtractVm @Inject constructor(
     }
 
     /** 将线程安全候选快照同步给 Compose 状态，只能在主线程调用。 */
-    fun publishProbingCandidates(expectedSessionId: Int, candidates: List<ImageCandidateData>) {
+    fun publishProbingCandidates(expectedSessionId: Int) {
         if (!isCandidateSessionActive(expectedSessionId)) return
-        val snapshot = candidates.toList()
-        candidatePublishJob?.cancel()
+        if (candidatePublishJob?.isActive == true) return
         candidatePublishJob = viewModelScope.launch(Dispatchers.Main) {
-            delay(CANDIDATE_PUBLISH_DEBOUNCE_MS)
+            delay(CANDIDATE_PUBLISH_INTERVAL_MS)
             if (!isCandidateSessionActive(expectedSessionId)) return@launch
-            probingCandidates.clear()
-            // 实时网格优先保持用户已经看到的候选位置稳定；最终下载排序仍在创建批次时按 displayOrder 处理。
-            probingCandidates.addAll(snapshot)
+            // 限频窗口结束取最新池快照，持续网络回调不会一直推迟首屏发布。
+            val latest = snapshotProbingCandidates()
+            if (probingCandidates != latest) {
+                probingCandidates.clear()
+                probingCandidates.addAll(latest)
+            }
+            selection.update(latest.map(::candidateKey))
         }
     }
 
@@ -267,44 +318,13 @@ class ImageExtractVm @Inject constructor(
         candidatePublishJob = null
         probingCandidates.clear()
         probingCandidates.addAll(candidates)
+        selection.update(candidates.map(::candidateKey))
     }
 
     /** 返回当前阶段性候选快照，供手动结束或失败兜底判断使用。 */
     fun snapshotProbingCandidates(): List<ImageCandidateData> {
         return synchronized(probingCandidatesLock) {
             probingCandidateMap.values.toList()
-        }
-    }
-
-    /**
-     * 自动完成或手动结束时保存最终候选。
-     *
-     * 保存前校验 session 和状态，避免旧协程在超时、重试或页面退出后迟到写库并覆盖新页面状态。
-     */
-    fun saveExtractedImagesIfActive(
-        expectedSessionId: Int,
-        pageUrl: String,
-        pageName: String,
-        domCandidates: List<ImageCandidateData>,
-    ) {
-        if (probeState != ImageProbeState.Probing(expectedSessionId)) return
-        closeProbeSession(expectedSessionId)
-        saveExtractedImages(expectedSessionId, pageUrl, pageName, domCandidates)
-    }
-
-    /** 当前探测确认失败时切换失败态，旧会话迟到调用会被 session 校验丢弃。 */
-    fun failProbeIfActive(expectedSessionId: Int) {
-        if (probeState == ImageProbeState.Probing(expectedSessionId)) {
-            closeProbeSession(expectedSessionId)
-            probeState = ImageProbeState.Failed
-        }
-    }
-
-    /** 自动完成时只停止探测并进入确认状态，不创建批次、不启动下载，避免绕过用户选择。 */
-    fun markProbeReadyIfActive(expectedSessionId: Int) {
-        if (probeState == ImageProbeState.Probing(expectedSessionId)) {
-            closeProbeSession(expectedSessionId)
-            probeState = ImageProbeState.ReadyToDownload
         }
     }
 
@@ -324,33 +344,8 @@ class ImageExtractVm @Inject constructor(
      * 这里只补写 `link_previews`，失败不会改变图片候选落库和下载流程。
      */
     suspend fun saveWebViewLinkPreview(webView: WebView, pageUrl: String, fallbackImageUrl: String? = null) {
-        linkPreviewExtractor.extractAndSave(webView, pageUrl, fallbackImageUrl)
-    }
-
-    /** 保存提取结果到数据库，页面退出后 Worker 仍能读取完整候选列表。 */
-    private fun saveExtractedImages(expectedSessionId: Int, pageUrl: String, pageName: String, domCandidates: List<ImageCandidateData>) {
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching {
-                val merged = mergeCandidates(domCandidates)
-                if (merged.isEmpty()) {
-                    withContext(Dispatchers.Main) {
-                        failProbeIfActive(expectedSessionId)
-                    }
-                    return@launch
-                }
-                val batchId = imageExtractRepo.createBatch(pageUrl, pageName, merged)
-                logD(TAG) { "saveExtractedImages: batchId=$batchId count=${merged.size}" }
-                withContext(Dispatchers.Main) {
-                    if (probeState == ImageProbeState.Probing(expectedSessionId)) {
-                        probeState = ImageProbeState.Extracted(batchId, merged.size)
-                    }
-                }
-            }.onFailure {
-                logE(TAG, it) { "saveExtractedImages: 保存图片候选失败" }
-                withContext(Dispatchers.Main) {
-                    failProbeIfActive(expectedSessionId)
-                }
-            }
+        kotlinx.coroutines.withTimeoutOrNull(1_500L) {
+            linkPreviewExtractor.extractAndSave(webView, pageUrl, fallbackImageUrl)
         }
     }
 
@@ -365,175 +360,99 @@ class ImageExtractVm @Inject constructor(
         pageName: String,
         selectedCandidateKeys: Set<String>,
     ): Boolean {
-        if (selectedCandidateKeys.isEmpty()) return false
-        return withContext(Dispatchers.IO) {
-            runCatching {
-                val selectedCandidates = snapshotProbingCandidates()
-                    .filter { it.stableKey() in selectedCandidateKeys }
-                    .sortedBy { it.displayOrder }
-                    .mapIndexed { index, candidate -> candidate.copy(displayOrder = index) }
-                if (selectedCandidates.isEmpty()) {
-                    return@withContext false
-                }
-                logD(TAG) {
-                    "createBatchAndStartDownload: 准备创建图片批次 pageUrl=$pageUrl pageName=$pageName " +
-                        "selectedKeyCount=${selectedCandidateKeys.size} selectedCandidateCount=${selectedCandidates.size}"
-                }
-                selectedCandidates.forEach { candidate ->
-                    logD(TAG) {
-                        "createBatchAndStartDownload: 选中候选 key=${candidate.stableKey()} order=${candidate.displayOrder} " +
-                            "url=${candidate.url} referer=${candidate.referer} userAgent=${candidate.userAgent} " +
-                            "cookie=${candidate.cookie.cookieLogSummary()} domSize=${candidate.width}x${candidate.height}"
-                    }
-                }
-                val batchId = imageExtractRepo.createBatch(pageUrl, pageName, selectedCandidates)
-                logD(TAG) { "createBatchAndStartDownload: 批次创建成功 batchId=$batchId count=${selectedCandidates.size}" }
-                DownloadImagesWorker.enqueue(appContext, batchId)
-                logD(TAG) { "createBatchAndStartDownload: Worker 已入队 batchId=$batchId" }
-                withContext(Dispatchers.Main) {
-                    probeState = ImageProbeState.Extracted(batchId, selectedCandidates.size)
-                }
+        if (probeState != ImageProbeState.ReadyToDownload || isSubmitting) return false
+        // 在提交瞬间固定选中内容，网络和后续 UI 变化不再影响本批次。
+        val selected = snapshotProbingCandidates()
+            .filter { it.stableKey() in selectedCandidateKeys }
+            .sortedBy { it.displayOrder }
+            .mapIndexed { index, candidate -> candidate.copy(displayOrder = index) }
+        if (selected.isEmpty()) return false
+        return submitBatch { imageExtractRepo.createBatch(pageUrl, pageName, selected) to selected }
+    }
+
+    /** 重试下载克隆现有批次，不重新抓网页，不覆盖旧记录或旧媒体。 */
+    suspend fun retryDownload(): Boolean {
+        // 只重试当前已提交批次；重新提取使用另一条明确事件。
+        val batch = probeState as? ImageProbeState.Extracted ?: return false
+        return submitBatch {
+            // 用仓库既有克隆能力复制请求上下文；无记录时保留原页面并报告失败。
+            val newId = imageExtractRepo.cloneBatchForRetry(batch.batchId) ?: return@submitBatch null
+            newId to submittedCandidates
+        }
+    }
+
+    /** 提交属于 VM 生命周期，旋转不会取消半途写入或丢失新批次身份；主线程防重。 */
+    private suspend fun submitBatch(create: suspend () -> Pair<Long, List<ImageCandidateData>>?): Boolean {
+        if (isSubmitting) return false
+        isSubmitting = true
+        return viewModelScope.async {
+            try {
+                // IO 只负责落库和入队，完成后回主线程发布界面快照。
+                val result = withContext(Dispatchers.IO) {
+                    val created = create() ?: return@withContext null
+                    DownloadImagesWorker.enqueue(appContext, created.first)
+                    created
+                } ?: return@async false
+                submittedCandidates = result.second
+                probeSession.submitted(result.first, result.second.size)
+                logD(TAG) { "图片下载已提交 batchId=${result.first} count=${result.second.size}" }
                 true
-            }.onFailure {
-                logE(TAG, it) { "createBatchAndStartDownload: 创建实时选择图片批次失败" }
-            }.getOrElse { false }
-        }
-    }
-
-    /**
-     * 用户确认选择后才启动 Worker。
-     *
-     * 这里会先删除未选中的候选并更新批次总数，确保下载进度、结果统计和用户真正选择的图片数量一致。
-     */
-    fun startDownload(batchId: Long, selectedItemIds: Set<Long>) {
-        if (selectedItemIds.isEmpty()) return
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching {
-                imageExtractRepo.keepSelectedItems(batchId, selectedItemIds)
-                DownloadImagesWorker.enqueue(appContext, batchId)
-            }.onFailure {
-                logE(TAG, it) { "startDownload: 确认图片选择失败" }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                logD(TAG) { "图片下载提交失败 type=${error.javaClass.simpleName}" }
+                false
+            } finally {
+                isSubmitting = false
             }
-        }
+        }.await()
     }
 
-    /** 观察批量任务状态，下载完成后展示成功/失败数量。 */
-    fun observeBatch(batchId: Long): Flow<ImageExtractBatchData?> {
-        return imageExtractRepo.observeBatch(batchId)
-    }
-
-    /** 观察本批次图片候选，UI 用它展示可勾选的缩略图列表。 */
-    fun observeItems(batchId: Long): Flow<List<ImageExtractItemData>> {
-        return imageExtractRepo.observeItems(batchId)
-    }
-
-    /** Coil 解码完成后回填尺寸，仅作为本次页面预览状态，不写入数据库。 */
-    fun updateDecodedSize(itemId: Long, width: Int?, height: Int?) {
-        if (width == null || height == null || width <= 0 || height <= 0) return
-        val old = previewMetaCache[itemId] ?: ImagePreviewMeta()
-        if (old.width == width && old.height == height) return
-        previewMetaCache[itemId] = old.copy(width = width, height = height)
+    /** 等两路数据库快照到齐后再发布，初始加载与查无批次明确区分。 */
+    internal fun observeBatchSnapshot(batchId: Long): Flow<ImageBatchSnapshot> = combine(
+        imageExtractRepo.observeBatch(batchId), imageExtractRepo.observeItems(batchId),
+    ) { batch, items -> ImageBatchSnapshot(batch, items) }.catch { error ->
+        if (error is kotlinx.coroutines.CancellationException) throw error
+        logD(TAG) { "批次读取失败 batchId=$batchId type=${error.javaClass.simpleName}" }
+        emit(ImageBatchSnapshot(null, emptyList(), readFailed = true))
     }
 
     /** 实时网格缩略图或预览解码成功后回填尺寸，仅在当前页面内存中使用。 */
     fun updateCandidateDecodedSize(candidateKey: String, width: Int?, height: Int?) {
         if (candidateKey.isBlank() || width == null || height == null || width <= 0 || height <= 0) return
+        // 已有候选或元信息只用于合并，不丢弃此前有效字段。
         val old = candidatePreviewMetaCache[candidateKey] ?: ImagePreviewMeta()
         if (old.width == width && old.height == height) return
         candidatePreviewMetaCache[candidateKey] = old.copy(width = width, height = height)
     }
 
-    /**
-     * 尽力探测图片响应头。
-     *
-     * HEAD 不可靠时降级到 Range GET，只读取服务端返回的头信息；如果仍然拿不到体积则保持未知，避免预览阶段提前下载完整文件。
-     */
-    fun loadPreviewMeta(item: ImageExtractItemData) {
-        val cached = previewMetaCache[item.id]
-        if (cached?.isLoading == true || cached?.mimeType != null && cached.contentLength != null) {
-            return
-        }
-
-        previewMetaCache[item.id] = (cached ?: ImagePreviewMeta()).copy(
-            width = cached?.width ?: item.width,
-            height = cached?.height ?: item.height,
-            mimeType = cached?.mimeType ?: guessMimeTypeFromUrl(item.url),
-            isLoading = true
-        )
-
-        viewModelScope.launch(Dispatchers.IO) {
-            val meta = runCatching { requestPreviewMeta(item) }
-                .getOrElse {
-                    // 元信息异常可能含外部地址，只保留类型。
-                    logD(TAG) { "loadPreviewMeta: 探测图片元信息失败 type=${it.javaClass.simpleName}" }
-                    ImagePreviewMeta(
-                        width = item.width,
-                        height = item.height,
-                        mimeType = guessMimeTypeFromUrl(item.url),
-                    )
-                }
-            previewMetaCache[item.id] = mergeMeta(previewMetaCache[item.id], meta).copy(isLoading = false)
-        }
-    }
-
-    /**
-     * 探测实时候选的预览元信息。
-     *
-     * 候选尚未落库，因此用稳定 key 作为缓存身份；请求头沿用 WebView 捕获的 Referer/User-Agent/Cookie。
-     */
-    fun loadCandidatePreviewMeta(candidate: ImageCandidateData) {
+    /** 只在预览可见时挂起读取，关闭弹层或离开前台立即取消底层 HTTP 请求。 */
+    suspend fun loadCandidatePreviewMeta(candidate: ImageCandidateData) {
+        // 稳定身份保持 URL 升级前后的尺寸缓存一致。
         val candidateKey = candidate.stableKey()
+        // 已有完整元信息无需重复联网。
         val cached = candidatePreviewMetaCache[candidateKey]
-        if (cached?.isLoading == true || cached?.mimeType != null && cached.contentLength != null) {
-            return
-        }
-
+        if (cached?.isLoading == true || cached?.mimeType != null && cached.contentLength != null) return
         candidatePreviewMetaCache[candidateKey] = (cached ?: ImagePreviewMeta()).copy(
-            width = cached?.width ?: candidate.width,
-            height = cached?.height ?: candidate.height,
-            mimeType = cached?.mimeType ?: guessMimeTypeFromUrl(candidate.url),
-            isLoading = true
+            width = cached?.width ?: candidate.width, height = cached?.height ?: candidate.height,
+            mimeType = cached?.mimeType ?: guessMimeTypeFromUrl(candidate.url), isLoading = true,
         )
-
-        viewModelScope.launch(Dispatchers.IO) {
-            val meta = runCatching { requestPreviewMeta(candidate) }
-                .getOrElse {
-                    // 候选读取失败同样不输出 message/URL。
-                    logD(TAG) { "loadCandidatePreviewMeta: 探测候选图片元信息失败 type=${it.javaClass.simpleName}" }
-                    ImagePreviewMeta(
-                        width = candidate.width,
-                        height = candidate.height,
-                        mimeType = guessMimeTypeFromUrl(candidate.url),
-                    )
-                }
-            candidatePreviewMetaCache[candidateKey] = mergeMeta(candidatePreviewMetaCache[candidateKey], meta).copy(isLoading = false)
-        }
-    }
-
-    /**
-     * 合并 DOM 扫描和网络拦截得到的图片候选。
-     *
-     * DOM 候选保留网页展示顺序，网络候选只补充 DOM 没发现的地址；这样既能覆盖懒加载或脚本动态请求的图片，
-     * 又不会让异步请求先后顺序打乱用户看到的图片排列和后续文件命名。
-     */
-    private fun mergeCandidates(domCandidates: List<ImageCandidateData>): List<ImageCandidateData> {
-        val result = linkedMapOf<String, ImageCandidateData>()
-        domCandidates.forEachIndexed { index, candidate ->
-            val url = candidate.url.trim()
-            if (url.isNotBlank()) {
-                putPreferredCandidate(result, candidate.copy(displayOrder = index))
+        try {
+            // 三秒只限制辅助信息，不影响预览图片显示或主提取流程。
+            val meta = kotlinx.coroutines.withTimeoutOrNull(3_000L) {
+                previewMetadataReader.read(candidate)
+            } ?: ImagePreviewMeta()
+            candidatePreviewMetaCache[candidateKey] = mergeMeta(candidatePreviewMetaCache[candidateKey], meta)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            logD(TAG) { "预览元信息不可用 type=${error.javaClass.simpleName}" }
+        } finally {
+            // 不恢复已经被重新提取清空的缓存；下次打开可重新请求。
+            candidatePreviewMetaCache[candidateKey]?.let { current ->
+                candidatePreviewMetaCache[candidateKey] = current.copy(isLoading = false)
             }
         }
-        synchronized(probingCandidatesLock) {
-            networkCandidates.values.forEach { candidate ->
-                val url = candidate.url.trim()
-                if (url.isNotBlank()) {
-                    // 网络补充图排在 DOM 图片后面，确保用户看到的页面顺序优先。
-                    putPreferredCandidate(result, candidate.copy(displayOrder = result.size))
-                }
-            }
-        }
-        return result.values.sortedBy { it.displayOrder }
     }
 
     /**
@@ -544,7 +463,9 @@ class ImageExtractVm @Inject constructor(
     private fun mergeProbingCandidateLocked(candidate: ImageCandidateData) {
         val url = candidate.url.trim()
         if (url.isBlank()) return
+        // 候选身份归一化后供去重和选择状态共同使用。
         val key = candidate.dedupKey()
+        // 已有候选或元信息只用于合并，不丢弃此前有效字段。
         val old = probingCandidateMap[key]
         probingCandidateMap[key] = if (old == null) {
             candidate
@@ -559,18 +480,6 @@ class ImageExtractVm @Inject constructor(
     }
 
     /**
-     * 写入最终候选 Map，并在同一资源存在原图和转码预览时保留更适合下载的地址。
-     *
-     * 普通 URL 仍按完整地址去重；只有 `@` 前已经是图片文件的样式/转码 URL 会回退到原图键。
-     * 这意味着多个不同 GIF 会各自保留，只有同一原图的 `xxx.gif`、`xxx.gif@...webp` 这类变体会合并。
-     */
-    private fun putPreferredCandidate(target: LinkedHashMap<String, ImageCandidateData>, candidate: ImageCandidateData) {
-        val key = candidate.dedupKey()
-        val old = target[key]
-        target[key] = if (old == null) candidate else mergePreferredCandidate(old, candidate)
-    }
-
-    /**
      * 合并同一图片资源的两个候选。
      *
      * 下载 URL 优先选择 GIF 原图或无样式后缀的原始地址；展示顺序取两者更靠前的位置，请求上下文和尺寸尽量互补。
@@ -578,13 +487,8 @@ class ImageExtractVm @Inject constructor(
      */
     private fun mergePreferredCandidate(old: ImageCandidateData, candidate: ImageCandidateData): ImageCandidateData {
         val preferred = preferredDownloadCandidate(old, candidate)
+        // 非首选候选仍可补充尺寸与下载所需请求头。
         val other = if (preferred === old) candidate else old
-        if (preferred.url != old.url) {
-            logD(TAG) {
-                "mergePreferredCandidate: 候选 URL 升级 key=${preferred.dedupKey()} old=${old.url} " +
-                    "new=${preferred.url} oldScore=${old.downloadPriorityScore()} newScore=${preferred.downloadPriorityScore()}"
-            }
-        }
         return preferred.copy(
             referer = preferred.referer ?: other.referer,
             userAgent = preferred.userAgent ?: other.userAgent,
@@ -603,6 +507,7 @@ class ImageExtractVm @Inject constructor(
      */
     private fun preferredDownloadCandidate(first: ImageCandidateData, second: ImageCandidateData): ImageCandidateData {
         val firstScore = first.downloadPriorityScore()
+        // 新地址只有严格优于旧地址时才升级，避免同分抖动。
         val secondScore = second.downloadPriorityScore()
         return if (secondScore > firstScore) second else first
     }
@@ -610,6 +515,7 @@ class ImageExtractVm @Inject constructor(
     /** 候选下载优先级；分值越高越适合作为最终保存地址。 */
     private fun ImageCandidateData.downloadPriorityScore(): Int {
         val normalized = url.substringBefore("?").substringBefore("#").lowercase()
+        // 按格式和站点变体累计优先级，不以到达顺序覆盖原图。
         var score = 0
         if (normalized.endsWith(".gif")) score += 100
         if (normalized.endsWith(".webp")) score += 40
@@ -629,9 +535,12 @@ class ImageExtractVm @Inject constructor(
      */
     private fun ImageCandidateData.dedupKey(): String {
         val uri = runCatching { android.net.Uri.parse(url) }.getOrNull()
+        // 域名只用于识别特定 CDN 的变体约定。
         val host = uri?.host.orEmpty().lowercase()
+        // 保留编码路径，避免破坏原始下载签名。
         val path = uri?.encodedPath.orEmpty()
         zhihuImageStableKey(uri, host, path)?.let { return it }
+        // 仅明确的样式图路径才回退到原图身份。
         val normalizedPath = normalizedImageStylePath(path)
         return if (normalizedPath != null) {
             uri!!
@@ -658,7 +567,9 @@ class ImageExtractVm @Inject constructor(
      */
     private fun ImageCandidateData.isStyledImageVariant(): Boolean {
         val uri = runCatching { android.net.Uri.parse(url) }.getOrNull() ?: return false
+        // 域名只用于识别特定 CDN 的变体约定。
         val host = uri.host.orEmpty().lowercase()
+        // 保留编码路径，避免破坏原始下载签名。
         val path = uri.encodedPath.orEmpty()
         return path.contains("@") && normalizedImageStylePath(path) != null ||
             host.endsWith("hdslb.com") && path.contains(BILI_BFS_PATH_MARKER) && path.contains("@")
@@ -672,10 +583,13 @@ class ImageExtractVm @Inject constructor(
      */
     private fun ImageCandidateData.zhihuImageDownloadPriorityBoost(): Int {
         val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return 0
+        // 域名只用于识别特定 CDN 的变体约定。
         val host = uri.host.orEmpty().lowercase()
         if (!host.endsWith(ZHIHU_IMAGE_HOST_SUFFIX)) return 0
+        // 解码路径只用于匹配资源身份，最终请求仍使用原 URL。
         val decodedPath = Uri.decode(uri.encodedPath.orEmpty()).lowercase()
         if (!decodedPath.contains("/v2-")) return 0
+        // 按格式和站点变体累计优先级，不以到达顺序覆盖原图。
         var score = 0
         if (decodedPath.endsWith(".gif")) score += 80
         if (decodedPath.endsWith(".gif") && decodedPath.contains("_b.")) score += 25
@@ -694,7 +608,9 @@ class ImageExtractVm @Inject constructor(
      */
     private fun zhihuImageStableKey(uri: Uri?, host: String, encodedPath: String): String? {
         if (uri == null || !host.endsWith(ZHIHU_IMAGE_HOST_SUFFIX)) return null
+        // 解码路径只用于匹配资源身份，最终请求仍使用原 URL。
         val decodedPath = Uri.decode(encodedPath)
+        // 无法识别稳定资源标识时交回普通 URL 去重。
         val match = ZHIHU_V2_IMAGE_PATH_REGEX.find(decodedPath) ?: return null
         return "zhimg:${match.groupValues[1].lowercase()}"
     }
@@ -707,102 +623,9 @@ class ImageExtractVm @Inject constructor(
      */
     private fun normalizedImageStylePath(path: String): String? {
         if (!path.contains("@")) return null
+        // 仅图片扩展名之前的路径可作为原图键。
         val rawPath = path.substringBefore("@")
         return rawPath.takeIf { IMAGE_FILE_PATH_REGEX.matches(Uri.decode(it)) }
-    }
-
-    /**
-     * 请求单张图片的预览元信息。
-     *
-     * 先尝试 HEAD 获取 Content-Type 和 Content-Length；部分站点禁用 HEAD 或不返回长度时，再用 Range GET
-     * 只请求第一个字节以读取响应头。这里不写数据库，失败也只影响预览弹窗里的类型/体积展示。
-     */
-    private fun requestPreviewMeta(item: ImageExtractItemData): ImagePreviewMeta {
-        val head = executeMetaRequest(item, "HEAD")
-        val response = if (head != null && (head.contentType != null || head.contentLength != null)) {
-            head
-        } else {
-            executeMetaRequest(item, "GET")
-        }
-        return ImagePreviewMeta(
-            width = item.width,
-            height = item.height,
-            mimeType = response?.contentType ?: guessMimeTypeFromUrl(item.url),
-            contentLength = response?.contentLength,
-        )
-    }
-
-    /** 请求实时候选图片的预览元信息；逻辑和已落库图片项保持一致，只是输入结构不同。 */
-    private fun requestPreviewMeta(candidate: ImageCandidateData): ImagePreviewMeta {
-        val head = executeMetaRequest(candidate, "HEAD")
-        val response = if (head != null && (head.contentType != null || head.contentLength != null)) {
-            head
-        } else {
-            executeMetaRequest(candidate, "GET")
-        }
-        return ImagePreviewMeta(
-            width = candidate.width,
-            height = candidate.height,
-            mimeType = response?.contentType ?: guessMimeTypeFromUrl(candidate.url),
-            contentLength = response?.contentLength,
-        )
-    }
-
-    /**
-     * 执行图片响应头探测请求。
-     *
-     * GET 模式会加 `Range: bytes=0-0`，目的是尽量只让服务端返回极小内容；请求会携带图片项记录的
-     * Referer、User-Agent 和 Cookie，保持预览探测与真实下载处在相近的反盗链上下文中。
-     */
-    private fun executeMetaRequest(item: ImageExtractItemData, method: String): HeaderMeta? {
-        val referer = item.referer
-        val userAgent = item.userAgent
-        val cookie = item.cookie
-        val request = Request.Builder()
-            .url(item.url)
-            .method(method, null)
-            .apply {
-                // 元信息探测也使用与正式下载一致的 Accept，避免预览展示的类型和 Worker 下载协商结果不一致。
-                header("Accept", IMAGE_REQUEST_ACCEPT)
-                if (method == "GET") header("Range", "bytes=0-0")
-                if (!referer.isNullOrBlank()) header("Referer", referer)
-                if (!userAgent.isNullOrBlank()) header("User-Agent", userAgent)
-                if (!cookie.isNullOrBlank()) header("Cookie", cookie)
-            }
-            .build()
-        return okHttpClient.get().newCall(request).execute().use { response ->
-            if (!response.isSuccessful && response.code != 206) return@use null
-            HeaderMeta(
-                contentType = response.header("Content-Type")?.substringBefore(";")?.trim()?.takeIf { it.isNotBlank() },
-                contentLength = parseContentLength(response.header("Content-Length"), response.header("Content-Range")),
-            )
-        }
-    }
-
-    /** 执行实时候选图片响应头探测请求，保留 WebView 捕获的反盗链上下文。 */
-    private fun executeMetaRequest(candidate: ImageCandidateData, method: String): HeaderMeta? {
-        val referer = candidate.referer
-        val userAgent = candidate.userAgent
-        val cookie = candidate.cookie
-        val request = Request.Builder()
-            .url(candidate.url)
-            .method(method, null)
-            .apply {
-                // 实时候选的 HEAD/Range 探测与 Worker 下载保持同一内容协商条件，便于排查动图是否被服务端降级。
-                header("Accept", IMAGE_REQUEST_ACCEPT)
-                if (method == "GET") header("Range", "bytes=0-0")
-                if (!referer.isNullOrBlank()) header("Referer", referer)
-                if (!userAgent.isNullOrBlank()) header("User-Agent", userAgent)
-                if (!cookie.isNullOrBlank()) header("Cookie", cookie)
-            }
-            .build()
-        return okHttpClient.get().newCall(request).execute().use { response ->
-            if (!response.isSuccessful && response.code != 206) return@use null
-            HeaderMeta(
-                contentType = response.header("Content-Type")?.substringBefore(";")?.trim()?.takeIf { it.isNotBlank() },
-                contentLength = parseContentLength(response.header("Content-Length"), response.header("Content-Range")),
-            )
-        }
     }
 
     /**
@@ -819,20 +642,6 @@ class ImageExtractVm @Inject constructor(
             contentLength = new.contentLength ?: old?.contentLength,
             isLoading = false,
         )
-    }
-
-    /**
-     * 从响应头解析图片体积。
-     *
-     * Range 请求成功时优先使用 `Content-Range` 的总长度，因为 `Content-Length` 可能只是当前 1 字节响应体长度；
-     * 普通 HEAD 或完整响应才退回读取 `Content-Length`。
-     */
-    private fun parseContentLength(contentLength: String?, contentRange: String?): Long? {
-        val rangeTotal = contentRange
-            ?.substringAfter("/", missingDelimiterValue = "")
-            ?.takeIf { it.isNotBlank() && it != "*" }
-            ?.toLongOrNull()
-        return rangeTotal ?: contentLength?.toLongOrNull()
     }
 
     /**
@@ -853,21 +662,4 @@ class ImageExtractVm @Inject constructor(
         }
     }
 
-    /** 日志中只记录 Cookie 是否存在和长度，不输出真实 Cookie 内容，避免泄露登录态。 */
-    private fun String?.cookieLogSummary(): String {
-        return if (isNullOrBlank()) "empty" else "present(length=$length)"
-    }
-
-    /**
-     * 图片响应头探测结果。
-     *
-     * `contentType` 是去掉 charset 等参数后的 MIME；`contentLength` 表示整张图片体积，可能因为服务端不返回长度而为空。
-     */
-    private data class HeaderMeta(
-        /** 响应头中的图片 MIME，已经去掉 `; charset=...` 等参数；为空表示响应头没有可用类型。 */
-        val contentType: String?,
-
-        /** 响应头推导出的完整图片体积，单位为字节；为空表示服务端没有暴露可用长度。 */
-        val contentLength: Long?,
-    )
 }

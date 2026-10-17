@@ -206,16 +206,6 @@ class ImageExtractRepository @Inject constructor(
         imageExtractDao.updateItemStatus(itemId, status, tempPath, outputUri, finalName, errorMsg)
     }
 
-    /**
-     * 用户确认下载前裁剪候选列表。
-     *
-     * 未选中的图片会从本批次删除，批次总数同步改为最终下载数量，这样 Worker 可以继续复用原有读取逻辑，
-     * 也避免把“用户主动取消”误算成下载失败或过滤数量。
-     */
-    suspend fun keepSelectedItems(batchId: Long, selectedItemIds: Set<Long>) {
-        imageExtractDao.keepSelectedItems(batchId, selectedItemIds)
-    }
-
     /** 精确删除选中图片批次；图片项只通过外键级联删除这些批次下的数据。 */
     suspend fun deleteBatches(batchIds: Set<Long>) {
         if (batchIds.isEmpty()) return

@@ -36,12 +36,12 @@ internal fun <T> MediaAdGrid(
     blocked: Boolean,
     adSession: PageAdSession? = null,
     modifier: Modifier = Modifier,
+    // 阶段切换可沿用页面滚动状态；独立调用保留原先的默认保存边界。
+    gridState: androidx.compose.foundation.lazy.grid.LazyGridState = rememberLazyGridState(),
     itemContent: @Composable (T) -> Unit,
 ) {
     // 优先使用页面共享会话；独立调用才按阶段创建会话，广告位身份负责隔离各阶段请求。
     val session = adSession ?: rememberPageAdSession(sessionKey to placement, enabled = placement != null)
-    // 状态不随候选追加或广告加载重建，稳定图片 key 与协调器共同保持业务锚点。
-    val gridState = rememberLazyGridState()
     // 同一快照同时提供 Lazy 数量、身份和媒体值，禁止延迟回调再访问持续变化的原列表。
     val renderedItems = snapshotMediaGridItems(items, itemKey)
     // 每张图片都是独立 Lazy 项，首行不再共用身份，广告也不再占用网格索引。

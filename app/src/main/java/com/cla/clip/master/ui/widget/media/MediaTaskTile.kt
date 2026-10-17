@@ -23,11 +23,13 @@ internal fun MediaTaskTile(
     status: String,
     name: String,
     onPreview: () -> Unit,
+    imageLoader: coil3.ImageLoader,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.clickable(onClick = onPreview)) {
         AsyncImage(
             model = model,
+            imageLoader = imageLoader,
             contentDescription = name,
             placeholder = rememberVectorPainter(Icons.Default.Image),
             error = rememberVectorPainter(Icons.Default.BrokenImage),

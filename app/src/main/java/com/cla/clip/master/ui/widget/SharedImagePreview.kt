@@ -155,6 +155,7 @@ internal fun rememberSharedImageRequest(
     userAgent: String?,
     cookie: String?,
     preview: Boolean,
+    placeholderKey: String? = null,
 ): ImageRequest {
     val context = LocalContext.current
     val size = if (preview) {
@@ -162,11 +163,12 @@ internal fun rememberSharedImageRequest(
     } else {
         SizeResolver(Size(SharedImagePreviewDefaults.ThumbnailSizePx, SharedImagePreviewDefaults.ThumbnailSizePx))
     }
-    return remember(url, referer, userAgent, cookie, preview) {
+    return remember(url, referer, userAgent, cookie, preview, placeholderKey) {
         ImageRequest.Builder(context)
             .data(url)
             .size(size)
             .allowHardware(false)
+            .placeholderMemoryCacheKey(placeholderKey)
             .httpHeaders(buildImageNetworkHeaders(referer, userAgent, cookie))
             .build()
     }
@@ -266,6 +268,7 @@ internal fun SharedImagePreviewBottomSheet(
     model: Any,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    imageLoader: ImageLoader = rememberAnimatedImageLoader(LocalContext.current),
 ) {
     // 跳过半展开态，打开后直接给图片预览尽量多的垂直空间；超出屏幕的部分交给图片区域滚动。
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -306,6 +309,7 @@ internal fun SharedImagePreviewBottomSheet(
             ) {
                 AsyncImage(
                     model = model,
+                    imageLoader = imageLoader,
                     contentDescription = null,
                     modifier = Modifier.fillMaxWidth(),
                     contentScale = ContentScale.FillWidth,

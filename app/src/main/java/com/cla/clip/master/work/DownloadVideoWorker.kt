@@ -74,20 +74,24 @@ class DownloadVideoWorker @AssistedInject constructor(
         /** 抖音无水印播放接口路径，连接失败时会回退到原始 playwm。 */
         private const val DOU_YIN_PLAY = "/play/"
 
-        // todo 不知道能不能设置为如果是同一个taskId，则keep，如果是不同的taskId，则排队
+        /** 入队、取消和状态观察必须使用同一唯一身份，避免出现找不到活动任务的假中断。 */
+        internal fun uniqueWorkName(taskId: Long): String = "${DOWNLOAD_VIDEO_TASK_TAG}:$taskId"
+
         /** 入队指定视频下载任务；同一 taskId 的未完成任务会被 KEEP，避免重复下载同一文件。 */
-        fun enqueue(context: Context, taskId: Long) {
+        fun enqueue(context: Context, taskId: Long): androidx.work.Operation {
             logD(TAG) { "enqueue: 启动下载 taskId=$taskId" }
+            // 只把数据库身份交给 Worker，下载鉴权从仓库读取。
             val data = workDataOf(KEY_TASK_ID to taskId)
 
+            // 同一任务 KEEP，调用方可等待入队落地后再进入观察页。
             val request = OneTimeWorkRequestBuilder<DownloadVideoWorker>()
                 .setInputData(data)
                 .addTag(DOWNLOAD_VIDEO_TASK_TAG)
-                .addTag("${DOWNLOAD_VIDEO_TASK_TAG}:$taskId")
+                .addTag(uniqueWorkName(taskId))
                 .build()
 
-            WorkManager.getInstance(context).enqueueUniqueWork(
-                "${DOWNLOAD_VIDEO_TASK_TAG}:$taskId",
+            return WorkManager.getInstance(context).enqueueUniqueWork(
+                uniqueWorkName(taskId),
                 ExistingWorkPolicy.KEEP, // 如果存在具有相同唯一名称的挂起（未完成）工作，则不执行任何操作。否则，插入新指定的作品
                 request
             )
@@ -100,7 +104,7 @@ class DownloadVideoWorker @AssistedInject constructor(
 
         /** 取消指定视频下载任务；下载记录页删除进行中记录时先调用它，避免 Worker 继续写入已删除记录。 */
         fun cancel(context: Context, taskId: Long) {
-            WorkManager.getInstance(context).cancelUniqueWork("${DOWNLOAD_VIDEO_TASK_TAG}:$taskId")
+            WorkManager.getInstance(context).cancelUniqueWork(uniqueWorkName(taskId))
         }
     }
 

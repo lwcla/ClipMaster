@@ -6,7 +6,7 @@ import com.cla.clip.master.entity.VideoDownloadState
 /** 提取阶段只有真实候选或缓存内容时展示广告；标题、纯加载和错误不构成展示资格。 */
 internal fun videoExtractAdPlacement(state: ProbeState, hasPreviewContent: Boolean): AdPlacement? = when (state) {
     is ProbeState.Success -> AdPlacement.VideoExtractNative
-    is ProbeState.HiddenProbing, is ProbeState.NeedUserPlay -> if (hasPreviewContent) AdPlacement.VideoExtractNative else null
+    is ProbeState.HiddenProbing -> if (hasPreviewContent) AdPlacement.VideoExtractNative else null
     else -> null
 }
 

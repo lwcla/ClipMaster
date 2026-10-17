@@ -2,15 +2,11 @@ package com.cla.clip.master.ui.page.image
 
 import androidx.compose.runtime.Composable
 import coil3.ImageLoader
-import com.cla.clip.base.general.dao.ImageExtractItemData
 import com.cla.clip.base.general.repository.ImageCandidateData
 import com.cla.clip.master.ui.widget.SelectableImageTile
 import com.cla.clip.master.ui.widget.SharedImagePreviewMeta
 import com.cla.clip.master.ui.widget.SharedImagePreviewSheetContent
 import com.cla.clip.master.ui.widget.rememberSharedImageRequest
-
-/** 图片候选网格固定列数；提取页按用户筛选效率固定一行四张，避免自适应列宽在不同状态下跳动。 */
-internal const val IMAGE_CANDIDATE_GRID_COLUMNS = 4
 
 /**
  * 实时候选缩略图。
@@ -38,71 +34,8 @@ internal fun LiveCandidateTile(
         selected = selected,
         imageLoader = imageLoader,
         failureTitle = failureTitle,
-        failureSubtitle = candidate.url.substringAfterLast('/').takeIf { it.isNotBlank() } ?: candidate.url,
+        failureSubtitle = null,
         onPreview = onPreview,
-        onToggleSelected = onToggleSelected,
-        onDecodedSize = onDecodedSize,
-    )
-}
-
-/**
- * 已落库图片候选网格项。
- *
- * 组件不直接理解数据库选择规则，只把 `ImageExtractItemData` 转成共享缩略图请求，确保图片提取页的 UI 细节复用共享实现。
- */
-@Composable
-internal fun ImageCandidateTile(
-    item: ImageExtractItemData,
-    selected: Boolean,
-    imageLoader: ImageLoader,
-    onPreview: () -> Unit,
-    onToggleSelected: () -> Unit,
-    onDecodedSize: (Int?, Int?) -> Unit,
-) {
-    SelectableImageTile(
-        model = rememberSharedImageRequest(
-            url = item.url,
-            referer = item.referer,
-            userAgent = item.userAgent,
-            cookie = item.cookie,
-            preview = false,
-        ),
-        selected = selected,
-        imageLoader = imageLoader,
-        onPreview = onPreview,
-        onToggleSelected = onToggleSelected,
-        onDecodedSize = onDecodedSize,
-    )
-}
-
-/**
- * 单张已落库图片预览底部弹窗内容。
- *
- * 弹窗主体由共享图片预览组件提供；本函数负责把图片提取页的实体和元信息缓存适配到共享 UI 契约。
- */
-@Composable
-internal fun ImagePreviewSheetContent(
-    item: ImageExtractItemData,
-    meta: ImagePreviewMeta,
-    selected: Boolean,
-    imageLoader: ImageLoader,
-    onToggleSelected: () -> Unit,
-    onDecodedSize: (Int?, Int?) -> Unit,
-) {
-    SharedImagePreviewSheetContent(
-        model = rememberSharedImageRequest(
-            url = item.url,
-            referer = item.referer,
-            userAgent = item.userAgent,
-            cookie = item.cookie,
-            preview = true,
-        ),
-        imageUrl = item.url,
-        displayWidth = meta.width ?: item.width,
-        displayHeight = meta.height ?: item.height,
-        meta = meta.toSharedPreviewMeta(),
-        selected = selected,
-        imageLoader = imageLoader,
         onToggleSelected = onToggleSelected,
         onDecodedSize = onDecodedSize,
     )

@@ -22,7 +22,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import com.cla.clip.base.general.dao.DownloadTaskData
 import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.emitAll
+import androidx.work.await
+import com.cla.clip.master.work.VideoDownloadWorkObserver
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
@@ -37,15 +42,18 @@ import javax.inject.Inject
  */
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @HiltViewModel
-class VideoDownloadVm @Inject constructor(
+class VideoDownloadVm @Inject internal constructor(
     /** 下载任务仓库，提供任务读取、进度重置和状态观察能力。 */
     private val downloadRepository: DownloadRepository,
 
     /** 应用级 Context，用于入队 Worker 和读取兜底错误文案。 */
-    @param:ApplicationContext val appContext: Context
+    @param:ApplicationContext val appContext: Context,
+    /** 页面可见时才观察指定任务的 Worker，识别冷启动取消留下的进度记录。 */
+    private val workObserver: VideoDownloadWorkObserver,
 ) : ViewModel() {
 
     companion object {
+        /** 下载页只记录任务身份、阶段及异常类型，不输出资源地址。 */
         private const val TAG = "VideoDownloadVm"
     }
 
@@ -65,53 +73,74 @@ class VideoDownloadVm @Inject constructor(
     /** 与状态流同时刷新同一数据库快照，避免为媒体信息建立第二个数据库观察。 */
     val taskData = _taskData.asStateFlow()
 
-    /** 保留原有空任务失败、准备状态及后台下载语义，仅同步记录实际媒体元数据。 */
+    /** 生命周期内合并业务进度与调度状态；无活动任务的遗留进度显示为可重试中断。 */
     val downloadState = _downloadState.transformLatest { taskId ->
-        downloadRepository.observeTask(taskId).collectLatest { taskData ->
-            _taskData.value = taskData
-            emit(taskData?.toUi() ?: VideoDownloadState.Failed(appContext.getString(R.string.base_general_the_download_task_was_not_found)))
-        }
+        emitAll(combine(downloadRepository.observeTask(taskId), workObserver.observeActiveWork(taskId)) { task, active ->
+            _taskData.value = task
+            when {
+                task == null -> VideoDownloadState.Failed(appContext.getString(R.string.base_general_the_download_task_was_not_found))
+                VideoDownloadStartPolicy.isInterrupted(task.status, active) -> VideoDownloadState.Failed("download_interrupted")
+                else -> task.toUi()
+            }
+        }.catch { error ->
+            if (error is kotlinx.coroutines.CancellationException) throw error
+            logD(TAG) { "下载状态读取失败 taskId=$taskId type=${error.javaClass.simpleName}" }
+            emit(VideoDownloadState.Failed("download_read_failed"))
+        })
     }.stateIn(
         CoroutineScope(viewModelScope.coroutineContext + Dispatchers.IO),
-        SharingStarted.WhileSubscribed(5000),
+        SharingStarted.WhileSubscribed(0),
         VideoDownloadState.Idle
     )
 
     /**
      * 下载触发轮次。
      *
-     * 页面通过递增它触发重试；和 lastSessionId 配合保证同一轮 Compose 重组不会重复入队 Worker。
+     * 页面通过递增它触发重试；和 lastRequest 配合保证同一轮 Compose 重组不会重复入队 Worker。
      */
     var sessionId by mutableIntStateOf(0)
 
     /** 上一次已处理的轮次，避免 `LaunchedEffect` 或生命周期恢复造成重复下载请求。 */
-    private var lastSessionId: Int? = null
+    private var lastRequest: Pair<Long, Int>? = null
+    /** 重试入队尚未落地时拒绝连点，防止两个 IO 分支先后把已开始的进度写回零。 */
+    private val retryInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
 
     /**
      * 启动或重试视频下载。
      *
-     * 在 Worker 入队前把进度重置为 0，避免失败/完成后的旧状态残留到新一轮下载；
-     * 当前实现暂不做断点续传，因此重试会从头开始。
+     * 首次进入只订阅；只有明确重试失败或中断任务才从 0 开始，不改变运行中下载或合并进度。
      */
     fun startDownload(id: Int, taskId: Long) {
-        if (lastSessionId == id) {
+        if (lastRequest == (taskId to id)) {
             // 不要重复触发下载
             logD(TAG) { "sessionId 没变，忽略重复的下载请求 id=$id" }
             return
         }
-        lastSessionId = id
+        if (id > 0 && !retryInFlight.compareAndSet(false, true)) return
+        lastRequest = taskId to id
 
         viewModelScope.launch(Dispatchers.IO) {
-            val task = downloadRepository.getTask(taskId)
-            if (task != null && task.status != com.cla.clip.base.general.dao.DownloadTaskData.STATUS_SUCCESS) {
-                // 开启下载任务之前，把之前的下载状态重置为 downloading，避免 UI 卡在完成或失败状态
-                // 已成功的历史记录只进入观察和播放，不自动重新下载；重新下载由下载记录页创建新任务后再进入本页。
-                downloadRepository.updateProgress(taskId, 0)
-                DownloadVideoWorker.enqueue(appContext, taskId)
+            try {
+                if (id > 0) {
+                    // 明确重试同时核对业务状态和调度器，运行中的 Worker 不会被重新归零。
+                    val task = downloadRepository.getTask(taskId)
+                    // 首份轻量调度快照即可判断，无需轮询或扫描所有下载记录。
+                    val active = workObserver.observeActiveWork(taskId).first()
+                    if (VideoDownloadStartPolicy.shouldRetry(task?.status, true, active)) {
+                        downloadRepository.updateProgress(taskId, 0)
+                        DownloadVideoWorker.enqueue(appContext, taskId).await()
+                    }
+                }
+                logD(TAG) { "下载页观察 sessionId=$id taskId=$taskId" }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                logD(TAG) { "下载重试失败 taskId=$taskId type=${error.javaClass.simpleName}" }
+            } finally {
+                // 重试失败也重新观察，缺失/中断/读取异常都能回到可行动提示。
+                _downloadState.tryEmit(taskId)
+                if (id > 0) retryInFlight.set(false)
             }
-
-            logD(TAG) { "startDownload 处理下载页进入，sessionId=$id, taskId=$taskId, taskStatus=${task?.status}" }
-            _downloadState.tryEmit(taskId)
         }
     }
 }

@@ -4,7 +4,6 @@ import android.webkit.WebView
 import com.cla.clip.base.general.dao.LinkPreviewData
 import com.cla.clip.base.general.repository.ClipRepository
 import com.cla.clip.base.general.utils.logD
-import com.cla.clip.base.general.utils.logE
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.json.JSONObject
 import org.json.JSONTokener
@@ -193,10 +192,11 @@ class WebViewLinkPreviewExtractor @Inject constructor(
             val result = webView.evaluateJavascriptAwait(EXTRACT_LINK_PREVIEW_JS)
             val preview = parsePreviewResult(result, sourceUrl, fallbackImageUrl) ?: return
             clipRepository.get().upsertLinkPreview(preview)
-            logD(TAG) { "extractAndSave: preview=$preview" }
+            logD(TAG) { "链接预览补全完成" }
         }.onFailure {
+            if (it is kotlinx.coroutines.CancellationException) throw it
             // 预览补全只是列表体验增强，失败不能影响图片/视频提取主流程。
-            logE(TAG, it) { "extractAndSave: 补全链接预览失败" }
+            logD(TAG) { "补全链接预览失败 type=${it.javaClass.simpleName}" }
         }
     }
 

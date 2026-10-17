@@ -495,28 +495,6 @@ interface ImageExtractDao {
         }
     }
 
-    /** 删除某批次全部图片项，通常在批次重建或用户未选择任何图片时使用。 */
-    @Query("DELETE FROM image_extract_items WHERE batch_id = :batchId")
-    suspend fun deleteItems(batchId: Long)
-
-    /** 删除用户未选择的图片项，只保留 keepItemIds 中的候选供 Worker 下载。 */
-    @Query("DELETE FROM image_extract_items WHERE batch_id = :batchId AND id NOT IN (:keepItemIds)")
-    suspend fun deleteItemsExcept(batchId: Long, keepItemIds: Set<Long>)
-
-    /** 更新批次总数，用户确认选择后用于让下载进度总数与实际下载数量一致。 */
-    @Query(
-        """
-            UPDATE image_extract_batches
-            SET total_count = :totalCount, update_time = :updateTime
-            WHERE id = :batchId
-        """
-    )
-    suspend fun updateBatchTotalCount(
-        batchId: Long,
-        totalCount: Int,
-        updateTime: Long = System.currentTimeMillis()
-    )
-
     /** 删除批次记录；图片项会因外键级联同步删除。 */
     @Query("DELETE FROM image_extract_batches WHERE id = :batchId")
     suspend fun deleteBatch(batchId: Long)
@@ -533,14 +511,4 @@ interface ImageExtractDao {
         return batchId
     }
 
-    /** 在同一事务中删除未选图片并更新批次总数，保证 UI 和 Worker 读取到一致的用户选择结果。 */
-    @Transaction
-    suspend fun keepSelectedItems(batchId: Long, keepItemIds: Set<Long>) {
-        if (keepItemIds.isEmpty()) {
-            deleteItems(batchId)
-        } else {
-            deleteItemsExcept(batchId, keepItemIds)
-        }
-        updateBatchTotalCount(batchId, keepItemIds.size)
-    }
 }

@@ -2,6 +2,63 @@
 
 # 下载记录页面方案
 
+## 加载与显示逻辑审查（2026-10-16）
+
+审查状态：已完成；本节修正建议尚未实施。以当前工作区为准，包含已有未提交的视频重试入队等待等改动；本轮只更新本文档。此前 Pager key 测试只证明空数据页面可进入、切换和保存恢复，不代表真实媒体状态、刷新和后台任务链路均正确。
+
+### 当前数据流
+
+1. 页面以生命周期方式收集 `uiState`，四路轻量 COUNT 提供两类总数和运行中数量；全选/清空另取 id，不依赖已加载列表。这些边界合理。
+2. 点击 Tab 先改 ViewModel，再执行 Pager 动画；滑动在 settledPage 变化后同步 ViewModel。仅稳定页创建 `LazyPagingItems`，两类滚动位置独立保存，稳定字符串 key 与跨分类选择隔离已有测试。
+3. 视频查询全部任务，图片排除 extracted，两者均按更新时间和 id 倒序。分页大小为 20、预取距离为 5，但未配置首次请求大小和缓存上限；本地 Paging 3.4.2 源码确认首次默认请求 60 条、默认不丢弃旧分页。
+4. 视频逐条完成存在性、大小、时长、首帧读取后才把分页交给 UI；图片逐批查询成功图片引用，再按批次终态校验本地媒体。映射结果缓存到 ViewModel。
+5. 首次加载/空态/首次失败/向后追加已有共享组件。视频任意 refresh loading 都替换旧列表；图片有旧数据则保留列表。图片进入组合与 ON_RESUME 均触发 refresh，视频没有外部媒体变化复查。
+
+### 确认的问题与修正方向
+
+| 优先级 | 触发条件与实际影响 | 代码证据 | 待实施方向 |
+| --- | --- | --- | --- |
+| 高 | 图片下载中、全部失败、全部过滤时，空 imageUris 一律显示“本地文件已删除”，甚至同时出现“正在下载”和“已删除”。 | `DownloadHistoryCards.kt:207`；`DownloadHistoryVm.kt:789` | 区分下载/发布、没有成功图片、媒体缺失和校验失败；不以空列表直接判断删除。 |
+| 高 | 图片重试按钮仅在 deletedLocal 时出现；完全失败或尚有可读图片的部分失败批次没有重试入口，尽管仓库已有克隆能力。 | `DownloadHistoryCards.kt:185`；`DownloadHistoryVm.kt:213,533` | 补失败态动作；部分失败/部分本地缺失的重新下载应明确是整批还是失败项，当前实现为整批。 |
+| 高 | 视频每次进度写库会使 Room 分页失效，refresh loading 移除旧列表，并重新执行媒体映射。下载期间容易反复出现加载画面。 | `DownloadDao.kt:198,237`；`DownloadVideoWorker.kt:268`；`DownloadHistoryChrome.kt:184`；`DownloadHistoryContent.kt:64` | 有内容时保留旧列表，独立表达刷新；进度更新与昂贵媒体读取分离。频率及实际闪动程度需设备测量。 |
+| 高 | 已加载的视频在系统相册被删除/回收，回到原页面后 Room 不变，仍使用缓存的可播放状态和首帧；图片有前台复查，视频没有。 | `DownloadHistoryContent.kt:218`；`DownloadHistoryVm.kt:350,767` | 统一可见性驱动的媒体复查，避免复查时无条件解码全部首帧。 |
+| 高 | 应用冷启动取消遗留视频 Worker，历史页仍只读数据库 downloading/merging，可能一直显示下载中且无重试。当前下载详情页已有 Worker 中断判定，历史页缺失。 | `App.kt:72`；`DownloadHistoryVm.kt:157`；`VideoDownloadVm.kt`；`DownloadHistoryCards.kt:129` | 复用调度状态/中断契约，按需核对任务，避免对全部历史永久订阅。 |
+| 中 | 图片页已 RESUMED 时进入组合，主动 refresh 与新增观察者补发 ON_RESUME 重叠，另有 Pager 首次加载。请求可能合并，也可能取消重建，不能把调用次数等同完整查询次数。 | `DownloadHistoryContent.kt:223,228`；本地 LifecycleRegistry 2.10.0 源码 | 收敛一次可见性刷新决策，区分初次加载、切回和外部变化。 |
+| 中 | 视频首批最多按默认请求处理 60 条；映射逐条做媒体 IO/解码，getFrameAtTime 先取原尺寸再缩小，Bitmap 随无上限分页缓存保留。图片首批也会逐批查询全部成功引用。 | `DownloadHistoryVm.kt:350,369,767,1041`；本地 PagingConfig 3.4.2 源码 | 先显示轻量记录，媒体按可见项加载并设预算；明确首次请求和缓存边界。开销存在，卡顿/内存峰值未实测。 |
+| 中 | 外层 flowWithLifecycle 停止消费，不保证 cachedIn(viewModelScope) 内已经启动的媒体映射在 STOP/切 Tab 时立即取消。 | `DownloadHistoryPage.kt:84`；`DownloadHistoryVm.kt:358,377`；本地 CachedPagingData/CachedPageEventFlow 源码 | 保留分页复用，将昂贵媒体任务放到可取消的可见性边界；不能宣称后台一定反复全量扫描。 |
+| 中 | 图片先检查旧 outputDir，目录无媒体就不再校验精确 URI；移动目录但 URI 仍有效的图片可能被误判缺失。权限/查询异常也被折叠为空或 false。 | `DownloadHistoryVm.kt:827,860,877` | 精确引用优先，区分缺失、无权限和读取错误；恢复后的模糊重新定位仍保留目录约束。 |
+| 中 | 图片网络阶段 successCount 表示临时文件就绪数；历史直接展示“正在下载 N/N”，发布阶段又未订阅单项状态，看起来完成却没有缩略图。 | `DownloadImagesWorker.kt:244,259`；`DownloadHistoryCards.kt:195,370` | 复用详情页下载/发布阶段语义，使用轻量聚合，避免常驻读取每批全部图片实体。 |
+| 中 | 新图片批次/重试批次默认 extracted，排队尚未运行时被历史过滤；提示已开始重新下载却没有新记录。Worker 改状态前启动失败也会留下不可见记录。 | `ImageExtractRepository.kt:53,111`；`ImageExtractDao.kt:391`；`DownloadImagesWorker.kt:72,119` | 区分未确认候选与已提交待执行，补排队/入队失败；若新增持久化状态，再评估数据库及备份兼容。 |
+| 中 | 有旧记录的 refresh error 被静默忽略，prepend 错误也没有提示/重试；统计 Flow 与图片引用读取缺少页面级失败状态。 | `DownloadHistoryContent.kt:69,113,165,208`；`DownloadHistoryVm.kt:380,387` | 分开首次、保留内容刷新、前后追加和统计错误，提供可行动的重试。 |
+| 中 | busy 遮罩不拦截输入，卡片/标题栏也未统一禁用；重试/删除没有互斥与统一 catch/finally，异常传播且可能跳过 busy 清理，连点可并发提交。 | `DownloadHistoryPage.kt:233`；`DownloadHistoryChrome.kt:201`；`DownloadHistoryVm.kt:517,533,599` | 单一操作状态、互斥入口、禁用/拦截输入、异常分类及 finally 复位，授权等待单独表达。 |
+
+### 冗余、取舍与后续待办
+
+- 图片下载中仍先查询 `getHistoryFileRefs`，映射随后直接丢弃；可先判断是否需要本地校验。
+- `shouldCheckLocalImages` 在实体扩展和 UI 模型重复维护，适合收敛为可测试纯规则。
+- `Scaffold.bottomBar` 已让位，两个列表仍保留 overlay 时期的多选 `96.dp` padding，形成重复底部留白。
+- 缩略图 `LazyRow.items(columns)` 缺稳定 key，移除图片或单双行变化后的身份/横向位置需回归。
+- Pager 仅绘制 settledPage，拖动目标页确定为空白；是否接受属于体验取舍，可评估缓存快照或轻量占位，按需加载不等于必须空白。
+- `selectedHasRunning` 只随 tab/ids 变化重查，任务后来完成时删除提示可能过期；全选异步结果也只检查 tab，用户取消选择后慢查询仍可能重新打开多选。
+- ViewModel 超过千行，混合 UI 模型、分页、解码、媒体校验、旧目录兼容、删除授权和重试。后续依次拆纯状态规则、媒体 reader、删除协作者，避免一次性重写整个流程。
+
+### 复用与实施边界
+
+保留现有 PagerPolicy、独立滚动状态、COUNT/id DAO、共享 Paging 状态、ImageThumbnailTile、SharedImagePreviewBottomSheet 和广告会话边界。视频详情的 VideoDownloadStartPolicy/VideoDownloadWorkObserver、图片详情的 ImageBatchPresentation 已有相近规则；跨页面复用时迁到领域目录，不能依赖另一页面专属 UI 状态。DownloadedMediaRelocator 只负责恢复后定位，不能直接用作普通历史刷新器。
+
+建议先以失败测试锁定占位/重试、中断、保留内容刷新，再收敛刷新触发与可见性取消，之后优化首屏/缓存和平台协作者，补齐操作互斥/失败恢复。数据库任务状态与本地媒体可用性分开表达。本轮没有确定新 schema、备份或外部协议。
+
+### 日志与诊断计划
+
+本轮仅审查文档，不新增运行时日志。后续加载以 DEBUG 记录 tab、触发原因、generation、数量、耗时和缓存命中；媒体查询异常以 WARN 记录 permission_denied/media_query_failed，缺失正常结果只做数量摘要；用户操作以 INFO 记录开始/结果，以 ERROR 记录不可恢复失败，共用短操作标识。禁止标题、完整路径/URI/URL、Cookie、Token、异常原文和逐项高频进度。现有目录查询吞异常、删除日志直接拼接 URI/路径应随对应协作者修复收敛。
+
+### 本轮验证
+
+- 静态追踪页面、Pager、卡片、ViewModel、DAO/Repository、Worker 和现有测试；核对本地 Paging 3.4.2、Lifecycle 2.10.0 源码。上游参考：[PagingConfig](https://github.com/androidx/androidx/blob/androidx-main/paging/paging-common/src/commonMain/kotlin/androidx/paging/PagingConfig.kt)、[CachedPagingData](https://github.com/androidx/androidx/blob/androidx-main/paging/paging-common/src/commonMain/kotlin/androidx/paging/CachedPagingData.kt)。
+- `.\gradlew.bat :app:testDebugUnitTest --tests 'com.cla.clip.master.ui.page.download.DownloadHistoryPagerPolicyTest' --console=plain` 成功，2 项测试通过，执行过程中 `:app:compileDebugKotlin` 成功；测试仅覆盖已有选择隔离/动作门，不覆盖本次全部缺陷。`git diff --check` 通过。
+- 本轮无生产或测试代码变更，不新增测试、不进入实现 TDD；后续修复上述纯状态、刷新触发、异常/互斥规则必须先补失败测试。现有空 Paging 设备回归不能代替真实状态测试。
+- 未执行安装、卸载或 connected 设备测试；首屏耗时、刷新频率、内存峰值、滑动观感和系统媒体访问仍需隔离设备/合成数据验证。没有 Android 实现或协议变更，不单独运行 release/R8。
+
 ## Pager 状态 key 闪退修复（2026-10-16，已完成）
 
 状态：已完成。真机从“我的 → 下载记录”进入时抛出 `Type of the key Video is not supported`。根因是 `DownloadHistoryPager` 把不可写入 Android Bundle 的 `DownloadHistoryTab` sealed 单例直接交给 `HorizontalPager.key`，异常在首次页面组合的状态保存容器中触发，不是视频记录或广告素材引起。现已使用分类对应的稳定字符串 key。
@@ -15,6 +72,8 @@
 - 验证事故与后续边界：上述 Gradle 宿主设备测试结束时卸载应用且未保留数据，原数据库与设置丢失，未达到原计划的保留数据验证。已重新安装修复包并向用户说明；用户确认后已在手机内恢复最近本地备份，恢复结果和未找回范围见 [备份主方案](webdav_backup_plan.md#设备测试后的数据恢复记录2026-10-16)。后续宿主设备测试须使用无用户数据的专用模拟器/设备或独立 applicationId；不得在现用数据安装上直接运行会卸载目标应用的 connected 测试。证据位于 Git 忽略的 `build/download-pager-key/`，不提交备份或用户数据。
 
 ## 当前状态
+
+以下记录已落地的页面结构与原设计目标；加载、媒体状态和异常分支的实际偏差，以顶部 2026-10-16 审查为准。尤其不能将外层生命周期收集视为完整取消保证，也不能将图片空缩略图视为已确认删除。
 
 应用已经有视频下载任务表 `download_tasks`、图片提取批次表 `image_extract_batches` 和图片项表 `image_extract_items`。视频下载完成后，Android 10 及以上会通过 MediaStore 写入公共媒体库，并把 `ContentResolver.insert()` 返回的 `content://` URI 记录到任务的 `savePath`；Android 10 以下记录真实文件路径。图片批量下载完成后，批次记录保存 `outputDir`，每张成功图片项保存 `output_uri`。
 
@@ -61,7 +120,7 @@
 - 下载记录的视频列表和图片列表普通态底部留白使用同一套 12dp 轻量间距；进入多选态后，页面底部删除条通过 `Scaffold.bottomBar` 参与布局，列表内容区自动让出对应空间，不再依赖额外叠加系统导航高度。
 - 下载记录页参考剪贴列表页的分页模式，视频和图片分页 Flow 在 ViewModel 内保持稳定并通过 `cachedIn(viewModelScope)` 缓存，页面层通过 `flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)` 绑定前台生命周期；`DownloadHistoryPager` 在横向 Pager 外只为 `settledPage` 对应的稳定 Tab 调用 `collectAsLazyPagingItems()`，避免邻页预组合或点击 Tab 后尚未停稳时提前加载另一分类，也不使用空 Flow 覆盖缓存。
 - 视频和图片列表分别持有独立的 `LazyListState`，并通过 `rememberSaveable` 保存首个可见项和偏移量；切换视频/图片 Tab、亮暗色主题重组或 Activity 重建后，已浏览过的分类应尽量保留原滚动位置。
-- 视频和图片都使用 PagingSource，每页 20 条、预取 5 条，避免一次性读取大量任务、批次、首帧和图片项。
+- 视频和图片都使用 PagingSource，分页大小 20、预取距离 5；默认首次请求 60 条，分页映射包含媒体 IO，并非仅处理屏幕可见卡片，问题与待优化边界见本次审查。
 - 标题栏按钮、清空数量和“是否包含进行中任务”使用数据库 `COUNT` 与 id 查询，不依赖已分页加载的可见列表，避免分页只加载部分数据时全选、清空或删除提示统计不完整。
 - 视频列表按下载记录更新时间倒序展示，使用数据库保存的媒体 URI/路径读取首帧、大小、时长和存在性；Android 10+ 严格以保存的 `content://` URI 为准。
 - 图片列表按批次更新时间倒序展示，缩略图读取每个成功图片项的可读引用：Android 10+ 使用 `output_uri`，Android 9 及以下用批次目录和 `finalName` 组合出的最终公开文件路径；8 张以内单行横向展示全部当前可读图片，超过 8 张后改为双行横向网格，`output_uri` 为空、文件不存在或 Android 11+ MediaStore 标记为已回收时会在批次标签中提示不可读取数量；图片卡片会独立多行展示批次输出文件夹名，避免长文件夹名被单行标签省略，方便相同标题的多次下载互相区分。
@@ -99,12 +158,12 @@
 ## 数据流
 
 - 下载记录页进入后，ViewModel 不在 `init` 中主动 collect 列表；ViewModel 只暴露稳定的 `pagedVideos` 与 `pagedImages` 分页 Flow，并使用 `cachedIn(viewModelScope)` 保留分页缓存。可选扩展 Tab 的分页 Flow 由扩展内容在当前 Tab 可见时自行收集。
-- 页面层参考剪贴列表页做法，先用 `flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)` 将分页 Flow 绑定页面生命周期，再在横向 Pager 外的稳定 Tab 分支调用 `collectAsLazyPagingItems()`；这样页面不可见时暂停收集，滑动尚未停稳时仍只为原 Tab 工作，真正切换时复用 `cachedIn` 缓存。
-- `DownloadDao.pagingHistory()` 和 `ImageExtractDao.pagingHistory()` 返回 `PagingSource`，分页查询按 `update_time DESC, id DESC` 排序；`Pager` 每页读取 20 条并缓存到 ViewModel 生命周期。
+- 页面层先用 `flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)` 限制外层分页消费，再由稳定 Tab 收集 LazyPagingItems，切换时复用 cachedIn 缓存。外层停止消费不保证缓存作用域内媒体任务立即取消，当前限制与修正方向见本次审查。
+- 两个 DAO 返回 PagingSource，按 `update_time DESC, id DESC` 排序；分页大小 20、默认首次请求 60，并缓存到 ViewModel 生命周期。
 - 视频和图片分别持有独立 `LazyListState`，列表滚动位置不依赖当前 Tab 的组合生命周期；主题切换等重组场景不会主动回到顶部。
 - 视频分页项在映射当前页数据时读取 `savePath`、`pendingOutputUri`、`updateTime` 和状态，并从本地媒体 URI/路径查询大小、时长与首帧；未进入当前页的数据不读取首帧。
 - 图片分页项在映射当前页批次时只读取成功图片项的轻量字段，并按批次输出文件夹做存在性短路判断，再批量校验可读图片，避免一个批次几百张图时逐张 `ContentResolver` 查询拖慢刷新；未进入当前页的批次不读取图片项和本地 URI。由于用户可能从系统相册外部删除图片且 Room 表不会自动变化，图片 Tab 进入组合或页面 `ON_RESUME` 时会调用 Paging `refresh()`，重新触发当前页 URI 可读性检查。
-- 图片本地存在性校验只作用于 `successCount > 0` 的终态批次；`STATUS_DOWNLOADING` 批次即使已经写入 `outputDir`，也可能尚未把图片发布到 MediaStore，因此跳过文件夹和图片可读性校验，继续展示下载中状态，避免误判为“本地文件已删除”。
+- 图片本地校验只作用于成功数大于 0 的成功/部分成功终态。下载中跳过校验原意是避免误判，但当前卡片仍把空缩略图统一展示为“本地文件已删除”，尚未达到该目标，见本次审查。
 - Android 10+ 图片校验先用批次 `outputDir` 对应的 `RELATIVE_PATH` 查询目标目录是否存在未回收站媒体项，Android 11+ 文件夹查询和 `_ID IN (...)` 批量查询都过滤 `IS_TRASHED != 1`；如果目录下没有可读媒体项，直接判定本批次无可读图片，目录存在时再用保存的标准 MediaStore 图片 URI 解析 `_ID` 并分块查询。
 - 恢复后媒体重新定位沿用同一文件夹前置规则：图片批次文件夹不存在或目录下没有可见媒体时，整批成功图片项直接判定未定位，不再按 `finalName` 全局搜索；文件夹存在时才在该文件夹内按 `finalName` 精确匹配，缺少 `finalName` 的图片项直接跳过。
 - Android 9 及以下不能把 `outputDir` 直接当作真实路径：批次记录形如 `DCIM/clipMaster/<folderName>`，而当前旧系统实际保存目录是 `Pictures/clipMaster/<folderName>`；校验时只从 `outputDir` 提取目录名，优先检查 `Pictures/clipMaster/<folderName>`，必要时兼容检查 `DCIM/clipMaster/<folderName>`，并通过一次 `listFiles()` 与图片项 `finalName` 对比。
@@ -209,6 +268,8 @@
 - 多选底部删除条的删除类图标通过 `SelectionActionBar` 接入 `DeleteActionIcon`，与列表菜单删除和详情页删除共用同款删除图形；“清空当前分类”继续使用 `DeleteSweep` 清空语义图标，仅统一为危险色。
 
 ## 变更记录
+
+- 2026-10-16：完成两类下载记录加载与显示审查，记录错误、缺失状态和冗余，纠正首批大小与生命周期取消边界的描述；原因是用户反馈页面仍异常。本轮只更新方案，未修改业务实现。
 
 - 2026-10-16：修复下载记录首次进入的 `Video`/`Image` key 闪退，复用 PagerPolicy 映射 Bundle 支持的稳定字符串；先复现两分支异常，再通过 2 项生产组件设备回归、304 项宿主单测、编译和打包。同步记录设备测试卸载导致的数据丢失及恢复跟踪，后续改用隔离测试设备；分页、选择态与广告代码保持原契约。
 

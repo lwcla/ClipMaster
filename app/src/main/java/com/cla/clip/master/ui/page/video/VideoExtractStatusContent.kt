@@ -101,9 +101,13 @@ internal fun Success(
         InlineSuccessState(text = stringResource(R.string.base_general_extract_the_video_address_success))
 
         Button(
-            onClick = { pendingCandidate = System.currentTimeMillis() to candidate }
+            onClick = { pendingCandidate = System.currentTimeMillis() to candidate },
+            enabled = pendingCandidate == null && !videoExtractVm.isSubmitting,
         ) {
-            Text(text = stringResource(R.string.base_general_to_download))
+            Text(text = stringResource(if (videoExtractVm.isSubmitting) R.string.base_general_preparing_download else R.string.base_general_to_download))
+        }
+        if (videoExtractVm.submissionFailed) {
+            InlineErrorState(text = stringResource(R.string.base_general_failed_to_create_the_download_task))
         }
     }
 }

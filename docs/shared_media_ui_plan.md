@@ -48,13 +48,18 @@
 
 ## 最终实现
 
+- 2026-10-16：`ProbeWebView` 是两页唯一 loadUrl 与释放入口，按目标/session 建立实例；内部重定向不重载入口，每次主文档导航的完成回调去重，新文档通知页面取消旧扫描。`onRelease` 先关回调，再 stop/destroy；`ProbeLifecycleEffect` 把 START/STOP/退出组合连接到业务会话，正式 Worker 不受其影响。
+- `MediaAdGrid` 接受外部 `LazyGridState`，默认仍自行记忆；图片页在候选和批次间复用状态，不改变其他调用方。`MediaTaskTile` 和预览弹层接受同一个动图 ImageLoader；`rememberSharedImageRequest` 的可选 placeholderKey 支持远端到本地切换的缓存占位。
+
 - `ui/widget/SharedImagePreview.kt` 负责图片预览底部弹层、可选中图片缩略图、普通图片缩略图、动图 ImageLoader、图片请求构建、请求头适配和媒体不可读占位。
 - 共享图片请求通过 `ImageRequestHeaderBuilder.IMAGE_REQUEST_ACCEPT` 复用 Worker 下载链路的图片 Accept，避免预览和下载内容协商规则分叉。
-- `ImagePreviewComponents.kt` 保留图片提取页的实体适配层，只把 `ImageExtractItemData` 和 `ImageCandidateData` 转成共享图片请求与共享预览元信息。
+- `ImagePreviewComponents.kt` 保留图片提取页的实体适配层，只把 `ImageCandidateData` 转成共享图片请求与共享预览元信息。
 - 下载记录页图片预览和历史缩略图接入共享图片预览/缩略图组件；下载记录卡片本身仍留在页面 package，因为它包含视频任务、图片批次、重试和多选语义。
 - `ui/widget/MediaStateContent.kt` 负责居中状态容器和行内加载/成功/失败状态。图片提取页与视频提取页接入该组件，页面只决定文案、点击回调和后续业务动作。
 
 ## 测试验证
+
+2026-10-16：app/base:general 共 433 条 JVM 测试、app Kotlin 和 AndroidTest Kotlin 编译通过；新增生命周期仪器用例仅编译，真实 WebView/Coil 与滚动体验待隔离设备验证。
 
 - 图片提取页实时网格和最终选择网格仍固定一行四张，新增候选默认选中，用户取消选择和滚动位置不因探测完成丢失。
 - 图片提取页缩略图点击仍打开带元信息和保留/移除按钮的底部预览，GIF/Animated WebP 尽量正常播放。
@@ -69,7 +74,13 @@
 - 下载记录页删除弹窗、选择操作条和历史卡片没有上移，因为它们绑定下载记录领域语义，跨页面复用价值不足。
 - 图片提取页的候选 key、默认选择、副作用和滚动状态仍在页面层，避免共享缩略图组件理解探测阶段状态机。
 
+## 日志与诊断计划
+
+共享组件不新增逐图片加载或逐次重组日志，避免 URL、Cookie 和高频噪声。业务提交/失败日志由页面协作者记录身份、计数和异常类型；WebView 完成去重与释放通过纯会话测试和 Compose 生命周期源码编译验证。真实重定向、GIF 解码、缓存命中与滚动连续性需要隔离设备验收，不以编译宣称视觉通过。
+
 ## 变更记录
+
+- 2026-10-16：统一探测实例加载/释放契约，增加可见性接线、外部网格状态与共享加载器/占位入口；原因是两下载页存在重载、后台工作和阶段切换割裂。保持其他共享组件调用方默认行为。
 
 - 2026-05-18：新增共享媒体 UI 主方案，并将图片预览、图片缩略图、媒体占位和轻量状态提示收敛到 `ui/widget`；原因是页面级拆分后仍存在跨页面组件被页面目录局部化的问题，需要按复用边界重新归位。
 - 2026-05-18：补充 Compose 组件默认公共化的归属规则；原因是后续新增或拆分页面组件时，需要优先按可复用 UI 契约设计，只把强绑定页面状态机和副作用的组件留在页面目录。

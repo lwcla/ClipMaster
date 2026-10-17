@@ -2,19 +2,16 @@ package com.cla.clip.master.ui.page.video
 
 import android.annotation.SuppressLint
 import android.net.Uri
-import android.view.ViewGroup
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
-import android.webkit.WebSettings
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.viewinterop.AndroidView
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.logW
@@ -52,8 +49,8 @@ private const val AUTO_PLAY_JS = """
 @Composable
 internal fun SharedVideoProbeWebViewLayer(
     targetUrl: String,
+    sessionId: Int,
     pageName: String,
-    onWebViewReady: (WebView) -> Unit,
     onSaveLinkPreview: suspend (WebView) -> Unit,
     onVideoCandidate: (VideoCandidate) -> Unit,
 ) {
@@ -61,6 +58,8 @@ internal fun SharedVideoProbeWebViewLayer(
     val tag = "webView"
     // 预览补全和候选回调使用探测层协程作用域，组件离开组合时取消未完成的任务。
     val coroutineScope = rememberCoroutineScope()
+    // 站内导航及时取消上一文档的辅助预览，不把旧 DOM 当作正文补写。
+    var previewJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
     ProbeWebView(
         targetUrl = targetUrl,
@@ -68,10 +67,12 @@ internal fun SharedVideoProbeWebViewLayer(
         modifier = Modifier.fillMaxSize().alpha(0f),
         // 用户触摸只交给前景页面，避免透明网页被误点、滚动或触发跳转。
         consumeUserTouch = true,
-        onWebViewReady = onWebViewReady,
+        sessionId = sessionId,
+        onWebViewReady = {},
+        onDocumentStarted = { previewJob?.cancel() },
         // 页面加载完成后补全预览并尝试触发视频请求，透明配置不改变原有执行时机。
         onPageFinished = { view, _ ->
-            coroutineScope.launch {
+            previewJob = coroutineScope.launch {
                 // WebView 真实加载后补齐链接预览，解决首轮 OkHttp/Jsoup 被 403 拦截时列表只有域名兜底的问题。
                 onSaveLinkPreview(view)
             }
@@ -88,7 +89,6 @@ internal fun SharedVideoProbeWebViewLayer(
             // 当前资源地址用于视频判断；请求头用于恢复下载请求的来源和客户端上下文。
             val reqUrl = request.url.toString()
             val headers = request.requestHeaders.orEmpty()
-            logD(tag) { "shouldInterceptRequest: reqUrl=$reqUrl" }
             if (isLikelyVideoRequest(request.url, headers)) {
                 // 候选资源的站点 Cookie 沿用既有鉴权透传，不因隐藏网页而清除。
                 val cookie = android.webkit.CookieManager.getInstance().getCookie(reqUrl)
@@ -103,138 +103,13 @@ internal fun SharedVideoProbeWebViewLayer(
                     )
                     // 候选持有 Cookie/网页标题，只记录成功事实，不展开对象。
                     logD(tag) { "视频候选识别成功" }
-                    coroutineScope.launch {
-                        // 候选命中后页面即将销毁，先抓取一次 DOM 预览，避免错过 WebView 阶段的封面信息。
-                        onSaveLinkPreview(view)
-                        onVideoCandidate(candidate)
-                    }
+                    // 候选立即驱动成功；预览只在页面完成时旁路补全，不阻塞主结果。
+                    onVideoCandidate(candidate)
                 }
             }
             null
         }
     )
-}
-
-/**
- * 旧版内联 WebView 探测层。
- *
- * 保留用于对比通用 ProbeWebView 的行为差异；如果通用组件稳定覆盖所有站点，这段可以后续删除。
- */
-@SuppressLint("SetJavaScriptEnabled")
-@Composable
-private fun VideoProbeWebViewLayer(
-    targetUrl: String,
-    pageName: String,
-    onWebViewReady: (WebView) -> Unit,
-    onVideoCandidate: (VideoCandidate) -> Unit,
-) {
-    val tag = "webView"
-
-    AndroidView(
-        modifier = Modifier.fillMaxSize(),
-        factory = { context ->
-            WebView(context).apply {
-                layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-                )
-
-                settings.apply {
-                    javaScriptEnabled = true
-                    domStorageEnabled = true
-                    databaseEnabled = true
-                    loadsImagesAutomatically = true
-                    mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                    // 使用 Android 移动 UA，让短视频站点返回移动端播放器资源，命中真实视频请求的概率更高。
-                    userAgentString = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Mobile Safari/537.36"
-//                    userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" // pc浏览器访问
-                    javaScriptCanOpenWindowsAutomatically = true
-                    allowContentAccess = true
-                    allowFileAccess = true
-                    cacheMode = WebSettings.LOAD_DEFAULT
-                    // 页面通常被前景遮罩覆盖，保留缩放/宽视口能力只用于调试手动播放阶段。
-                    builtInZoomControls = true
-                    layoutAlgorithm = WebSettings.LayoutAlgorithm.NORMAL
-                    useWideViewPort = true
-                    loadWithOverviewMode = true
-                    // 部分站点会根据定位权限或 API 判断播放能力，这里只开启 WebView 能力，不主动申请系统定位权限。
-                    setGeolocationEnabled(true)
-                    setSupportMultipleWindows(true)
-                    displayZoomControls = false
-                    mediaPlaybackRequiresUserGesture = true
-                }
-
-                val cm = android.webkit.CookieManager.getInstance()
-                // 第三方 Cookie 可能参与防盗链鉴权，下载任务会保存拦截时拿到的 Cookie。
-                cm.setAcceptCookie(true)
-                cm.setAcceptThirdPartyCookies(this, true)
-
-                webChromeClient = WebChromeClient()
-                webViewClient = object : WebViewClient() {
-                    override fun shouldOverrideUrlLoading(
-                        view: WebView,
-                        request: WebResourceRequest
-                    ): Boolean {
-                        val reqUrl = request.url
-                        val scheme = reqUrl.scheme?.lowercase().orEmpty()
-                        if (request.isForMainFrame && isExternalAppScheme(scheme)) {
-                            logD(tag) { "blocked non-web url: $reqUrl" }
-                            return true
-                        }
-                        return false
-                    }
-
-                    override fun onPageFinished(view: WebView, url: String?) {
-                        super.onPageFinished(view, url)
-                        // 页面加载完成后尝试触发播放，成功率取决于站点的自动播放策略。
-                        val progress = view.progress
-                        if (progress > 99) {
-                            logW(tag) { "onPageFinished: 去触发播放 progress=${progress}" }
-                            view.evaluateJavascript(AUTO_PLAY_JS, null)
-                        }
-                    }
-
-                    override fun shouldInterceptRequest(
-                        view: WebView,
-                        request: WebResourceRequest
-                    ): WebResourceResponse? {
-                        val reqUrl = request.url.toString()
-                        val headers = request.requestHeaders.orEmpty()
-                        logD(tag) { "shouldInterceptRequest: reqUrl=$reqUrl" }
-                        if (isLikelyVideoRequest(request.url, headers)) {
-                            val cookie = android.webkit.CookieManager.getInstance().getCookie(reqUrl)
-                            view.post {
-                                val candidate = VideoCandidate(
-                                    url = reqUrl,
-                                    referer = headers["Referer"],
-                                    userAgent = headers["User-Agent"],
-                                    cookie = cookie,
-                                    fileName = pageName
-                                )
-                                // 旧 WebView 分支遵守相同低敏日志契约。
-                                logD(tag) { "视频候选识别成功" }
-                                onVideoCandidate(candidate)
-                            }
-                        }
-                        return super.shouldInterceptRequest(view, request)
-                    }
-                }
-                onWebViewReady(this)
-            }
-        },
-        update = { webView ->
-            // 只有 URL 变化时再加载，避免重组反复 loadUrl。
-            val current = webView.url
-            if (targetUrl.isNotBlank() && current != targetUrl) {
-                webView.loadUrl(targetUrl)
-            }
-        }
-    )
-}
-
-/** 判断 URL scheme 是否应交给外部 App；探测页只允许 WebView 继续处理网页相关 scheme。 */
-private fun isExternalAppScheme(scheme: String): Boolean {
-    return scheme !in setOf("http", "https", "about", "data", "blob")
 }
 
 /**
@@ -257,7 +132,7 @@ private fun isLikelyVideoRequest(
             && (path.contains("/playwm/") || path.contains("/play/"))
             && (uri.getQueryParameter("video_id") != null)
     if (isDouyinPlayApi) {
-        logI("视频地址识别") { "isLikelyVideoRequest: 这是抖音的视频地址 uri=$uri" }
+        logI("视频地址识别") { "命中播放接口候选" }
         return true
     }
 

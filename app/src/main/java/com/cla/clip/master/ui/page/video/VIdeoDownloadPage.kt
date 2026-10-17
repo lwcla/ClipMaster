@@ -74,7 +74,7 @@ fun VideoDownloadPage(
         onBack()
     }
 
-    LaunchedEffect(downloadVm.sessionId) {
+    LaunchedEffect(taskId, downloadVm.sessionId) {
         // sessionId 只在首次进入和点击重试时变化，避免重组重复入队下载 Worker。
         downloadVm.startDownload(downloadVm.sessionId, taskId)
     }
@@ -92,7 +92,7 @@ fun VideoDownloadPage(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = contentModifier
             ) {
-                if (task != null && state !is VideoDownloadState.Failed && state !is VideoDownloadState.Idle) {
+                if (task != null) {
                     MediaSourceSummary(
                         title = task.fileName,
                         source = Uri.parse(task.referer ?: task.videoUrl).host,
@@ -124,6 +124,7 @@ fun VideoDownloadPage(
                     is VideoDownloadState.Failed -> {
                         Failed(
                             state,
+                            taskMissing = task == null && state.errorMsg != "download_read_failed",
                             retry = {
                                 // 通过改变 sessionId 触发 ViewModel 开启新一轮下载。
                                 downloadVm.sessionId++
@@ -146,11 +147,12 @@ fun VideoDownloadPage(
 @Composable
 private fun Failed(
     state: VideoDownloadState.Failed,
+    taskMissing: Boolean = false,
     retry: () -> Unit
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.clickable(onClick = { retry() })
+        modifier = Modifier.clickable(enabled = !taskMissing, onClick = { retry() })
     ) {
         Icon(
             painter = rememberVectorPainter(Icons.Default.Error),
@@ -162,7 +164,7 @@ private fun Failed(
         )
 
         Text(
-            text = stringResource(R.string.base_general_video_download_failed),
+            text = stringResource(videoDownloadFailureMessage(state.errorMsg, taskMissing)),
             color = MaterialTheme.colorScheme.error,
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(start = 0.dp, top = 12.dp, end = 12.dp, bottom = 12.dp)

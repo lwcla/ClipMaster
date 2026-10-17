@@ -1,94 +1,103 @@
 package com.cla.clip.master.ui.page.image
 
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import com.cla.clip.master.ad.PageAdSession
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.ImageLoader
 import com.cla.clip.base.general.R
 import com.cla.clip.base.general.dao.ImageExtractBatchData
 import com.cla.clip.base.general.dao.ImageExtractItemData
-import com.cla.clip.master.ui.widget.CenteredStateContent
-import com.cla.clip.master.ui.widget.InlineLoadingState
-import com.cla.clip.master.ui.widget.SharedImagePreviewBottomSheet
-import com.cla.clip.master.ui.widget.rememberSharedImageRequest
+import com.cla.clip.base.general.repository.ImageCandidateData
+import com.cla.clip.master.ad.PageAdSession
+import com.cla.clip.master.ui.widget.*
 import com.cla.clip.master.ui.widget.media.MediaAdGrid
 import com.cla.clip.master.ui.widget.media.MediaTaskTile
 
-/** 批次页仅在可见生命周期观察已有记录，图片请求由惰性网格按可见项执行。 */
+/** 批次页保留媒体内容，阶段变化只更新摘要；生命周期只约束观察，不取消 Worker。 */
 @Composable
 internal fun BatchStatusContent(
     state: ImageProbeState.Extracted,
     viewModel: ImageExtractVm,
     onRetry: () -> Unit,
+    onExtractAgain: () -> Unit,
     onOpen: (String?) -> Unit,
     adSession: PageAdSession,
+    gridState: LazyGridState,
+    imageLoader: ImageLoader,
 ) {
-    // 记住数据库 Flow 身份，避免每个进度重组重新订阅；离开前台自动停止收集。
-    val batchFlow = remember(viewModel, state.batchId) { viewModel.observeBatch(state.batchId) }
-    // 批次汇总来自既有 Room 观察，计数不依赖网格已加载的缩略图。
-    val batch by batchFlow.collectAsStateWithLifecycle(initialValue = null)
-    // 当前快照便于空值分支智能转换，不额外持久化页面状态。
-    val current = batch
-    if (current == null || current.status == ImageExtractBatchData.STATUS_EXTRACTED) {
-        CenteredStateContent { InlineLoadingState(stringResource(R.string.base_general_preparing_download)) }
-        return
-    }
-    if (current.status == ImageExtractBatchData.STATUS_FAILED || current.status == ImageExtractBatchData.STATUS_FILTERED) {
-        // 纯失败和全部过滤没有成功媒体结果，保留原先无广告的重试/统计界面。
-        CenteredStateContent {
-            if (current.status == ImageExtractBatchData.STATUS_FAILED) {
-                FailedText(onRetry, buildImageDownloadResultText(current, includeOpenText = false))
-            } else {
-                SuccessText(buildImageDownloadResultText(current, includeOpenText = false))
+    // 两路数据库流合成一次快照，初始未读与查询结果缺失分别展示。
+    // 读取失败只重新订阅，不重建下载批次或重复入队。
+    var readRevision by remember(state.batchId) { mutableIntStateOf(0) }
+    val snapshotFlow = remember(viewModel, state.batchId, readRevision) { viewModel.observeBatchSnapshot(state.batchId) }
+    // 生命周期停止数据库订阅，正在执行的后台 Worker 保持独立。
+    val snapshot by snapshotFlow.collectAsStateWithLifecycle(initialValue = null)
+    // 纯展示模型不修改数据库，不借用临时文件完成数冒充已保存。
+    val presentation = presentImageBatch(snapshot)
+    // 批次汇总只用于标题、结果和操作资格。
+    val batch = snapshot?.batch
+    // 提交后 Room 首帧仍使用已选候选，不先把整块网格换成加载画面。
+    val items = if (snapshot == null || presentation.phase == ImageBatchPhase.Queued) {
+        viewModel.submittedCandidates.mapIndexed { index, candidate ->
+            ImageExtractItemData(batchId = state.batchId, url = candidate.url, referer = candidate.referer,
+                userAgent = candidate.userAgent, cookie = candidate.cookie, displayOrder = index,
+                width = candidate.width, height = candidate.height)
+        }
+    } else snapshot!!.items
+    // 预览只属于当前批次，切换新批次时关闭。
+    var previewItem by remember(state.batchId) { mutableStateOf<ImageExtractItemData?>(null) }
+    // 成功和部分成功仍遵循原广告资格，失败与缺失不展示广告。
+    val placement = batch?.let { imageBatchAdPlacement(it.status, items.isNotEmpty()) }
+    Column(Modifier.fillMaxSize()) {
+        Text(batch?.pageName ?: stringResource(R.string.base_general_image_extract_title),
+            style = MaterialTheme.typography.titleMedium, maxLines = 3,
+            overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(16.dp))
+        when (presentation.phase) {
+            ImageBatchPhase.Loading -> InlineLoadingState(stringResource(R.string.base_general_preparing_download))
+            ImageBatchPhase.ReadError -> InlineErrorState(stringResource(R.string.base_general_media_read_failed))
+            ImageBatchPhase.Missing -> InlineErrorState(stringResource(R.string.base_general_the_download_task_was_not_found))
+            ImageBatchPhase.Queued -> InlineLoadingState(stringResource(R.string.base_general_media_task_queued))
+            ImageBatchPhase.Downloading -> InlineLoadingState(stringResource(R.string.base_general_image_download_progress, presentation.processed, presentation.total))
+            ImageBatchPhase.Publishing -> InlineLoadingState(stringResource(R.string.base_general_image_publish_progress, presentation.processed, presentation.total))
+            ImageBatchPhase.Result -> if (batch != null) {
+                if (batch.status == ImageExtractBatchData.STATUS_FAILED) {
+                    InlineErrorState(buildImageDownloadResultText(batch, includeOpenText = false))
+                } else {
+                    SuccessText(buildImageDownloadResultText(batch, includeOpenText = batch.successCount > 0),
+                        onOpen = if (batch.successCount > 0) ({ onOpen(batch.outputDir) }) else null)
+                }
             }
         }
-        return
-    }
-    // 复用当前批次元数据观察；不加载其他批次，不为广告扫描相册或探测远端信息。
-    val itemsFlow = remember(viewModel, state.batchId) { viewModel.observeItems(state.batchId) }
-    // 实际媒体项作为网格唯一数据源，广告不参与计数或任务状态。
-    val items by itemsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
-    // 预览属于当前页面临时状态；退出页面或更换批次即清空。
-    var previewItem by remember(state.batchId) { mutableStateOf<ImageExtractItemData?>(null) }
-    // 阶段边界由同一会话连接标题操作和网格，所有按压都延迟广告高度变化。
-    val placement = imageBatchAdPlacement(current.status, items.isNotEmpty())
-    Column(modifier = Modifier.fillMaxSize()) {
-        Text(current.pageName, style = MaterialTheme.typography.titleMedium, maxLines = 3,
-            overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(16.dp))
-        if (current.status == ImageExtractBatchData.STATUS_DOWNLOADING) {
-            InlineLoadingState(stringResource(R.string.base_general_image_download_progress,
-                current.successCount + current.failedCount + current.filteredCount, current.totalCount))
-        } else {
-            SuccessText(buildImageDownloadResultText(current, includeOpenText = true)) { onOpen(current.outputDir) }
+        if (presentation.phase == ImageBatchPhase.ReadError) {
+            TextButton(onClick = { readRevision += 1 }) { Text(stringResource(R.string.base_general_click_retry)) }
         }
-        MediaAdGrid(
-            items = items,
-            itemKey = { it.id },
-            sessionKey = state.batchId,
-            placement = placement,
-            adSession = adSession,
-            blocked = previewItem != null,
-        ) { item ->
+        if (presentation.phase == ImageBatchPhase.Result || presentation.phase == ImageBatchPhase.Missing) {
+            Row {
+                if (batch != null && batch.failedCount > 0) {
+                    TextButton(onClick = onRetry, enabled = !viewModel.isSubmitting) {
+                        Text(stringResource(if (viewModel.isSubmitting) R.string.base_general_preparing_download else R.string.base_general_media_retry_batch))
+                    }
+                }
+                TextButton(onClick = onExtractAgain, enabled = !viewModel.isSubmitting) {
+                    Text(stringResource(R.string.base_general_re_extract_images))
+                }
+            }
+        }
+        MediaAdGrid(items = items, itemKey = { viewModel.candidateKey(it.asCandidate()) },
+            sessionKey = viewModel.extractionId, placement = placement, adSession = adSession,
+            gridState = gridState, blocked = previewItem != null || viewModel.isSubmitting) { item ->
             MediaTaskTile(
-                model = rememberSharedImageRequest(
-                    url = item.outputUri ?: item.url,
-                    referer = item.referer,
-                    userAgent = item.userAgent,
-                    cookie = item.cookie,
-                    preview = false,
-                ),
+                model = rememberSharedImageRequest(url = item.outputUri ?: item.url,
+                    referer = item.referer, userAgent = item.userAgent, cookie = item.cookie,
+                    preview = false, placeholderKey = item.url),
+                imageLoader = imageLoader,
                 status = stringResource(when (item.status) {
                     ImageExtractItemData.STATUS_SUCCESS -> R.string.base_general_download_completed
                     ImageExtractItemData.STATUS_FAILED -> R.string.base_general_download_failed
@@ -96,21 +105,19 @@ internal fun BatchStatusContent(
                     ImageExtractItemData.STATUS_TEMP_READY -> R.string.base_general_media_task_publishing
                     else -> R.string.base_general_media_task_pending
                 }),
-                name = item.finalName ?: ((item.displayOrder + 1).toString()),
+                name = item.finalName ?: (item.displayOrder + 1).toString(),
                 onPreview = { previewItem = item },
             )
         }
     }
     previewItem?.let { item ->
         SharedImagePreviewBottomSheet(
-            model = rememberSharedImageRequest(
-                url = item.outputUri ?: item.url,
-                referer = item.referer,
-                userAgent = item.userAgent,
-                cookie = item.cookie,
-                preview = true,
-            ),
+            model = rememberSharedImageRequest(item.outputUri ?: item.url, item.referer, item.userAgent, item.cookie, true),
+            imageLoader = imageLoader,
             onDismiss = { previewItem = null },
         )
     }
 }
+
+/** 薄适配复用候选稳定身份，数据库 id 产生后不改变网格 key。 */
+private fun ImageExtractItemData.asCandidate() = ImageCandidateData(url, referer, userAgent, cookie, displayOrder, width, height)
