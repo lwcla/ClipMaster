@@ -10,6 +10,25 @@
 
 ## 目标与范围
 
+### 0.9.5 源码版本准备（2026-10-17，已完成）
+
+- 本次提交保留工作区已有的 `versionName=0.9.5`、`versionCode=41`，同步版本码中文注释；上一版 `0.9.4 / 40` 的发布结果仍为历史记录。
+- 复用既有 BuildConfig、版本比较、APK 命名和备份应用版本元数据，无新增组件、类、方法、数据协议或反混淆规则。本次 Git 提交与推送不代表已经发布 `v0.9.5` Release。
+- 测试门禁：版本配置仅改变元数据，不新增单测或采用 TDD；运行 `.\gradlew.bat :app:testDebugUnitTest :base:general:testDebugUnitTest :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin :app:minifyReleaseWithR8 --offline --console=plain --no-parallel --max-workers=2` 成功，app 332 项、base:general 121 项测试全部通过，无失败、错误或跳过。Debug/Release BuildConfig 均确认为 `0.9.5 / 41`；备份流程图同步检查与 `git diff --check` 通过。保留既有 Gradle/Kotlin 弃用提示和 Shizuku R8 接口警告。
+- 日志与诊断沿用本文既有计划，不新增运行时日志；备份 schema、恢复规则和外部协议不受版本元数据影响。真机覆盖安装、WebView/媒体交互及后台网络验收仍需单独完成。
+
+### 0.9.4 双源发布（2026-10-16，已完成）
+
+- 按用户要求把 `versionName` 从 `0.9.3` 更新为 `0.9.4`，`versionCode` 从 `39` 单调递增至 `40`，基于当前工作区构建正式签名 APK。
+- 复用现有 BuildConfig、APK 命名和 `scripts/publish_github_release_windows.cmd` / `scripts/publish_github_release.sh`，同步发布到既定 GitHub、Gitee Release 仓库；继续使用当前 domestic 渠道和广告开关，不新增组件、类、方法或外部协议。
+- 测试门禁：本次只改版本元数据，没有新增业务规则，不新增单测、不采用 TDD；运行既有 `:app:testDebugUnitTest`、发布脚本 dry-run（含 `:app:assembleRelease` 和 R8）、APK 版本/签名/SHA256 核对与 `git diff --check`，再执行真实双端上传并核对附件。
+- 日志与诊断沿用下方既有发布计划，不新增运行时日志；凭据仅供现有脚本读取，不写入文档或发布产物。无备份 schema、恢复规则、序列化或反射契约变化，不调整备份与 keep 规则。
+- 验证结果：`.\gradlew.bat :app:testDebugUnitTest --offline --console=plain --no-parallel --max-workers=2` 成功，67 个测试套件共 304 项测试全部通过，无失败、错误或跳过；原发布脚本的 `:app:assembleRelease`（含 R8、资源压缩与 lintVital）成功。`apksigner verify --verbose` 和 `aapt dump badging` 确认 APK 签名有效、包名 `com.cla.clip.master`、版本 `0.9.4 / 40`；`git diff --check` 通过。
+- 发布结果：2026-10-16 已上传 GitHub 与 Gitee 的 `v0.9.4`，两端 latest 均指向该版本，均包含 `ClipMaster-v0.9.4-admob.apk`、`update.json` 和 `sha256.txt`。APK 为 5,510,174 字节，SHA256 为 `6c98f3dfaec198871b433a0d081859ad738ca39eff258187c79038b00327d561`；三个附件的 GitHub 服务端摘要与本地一致，三个 Gitee 附件回下载后的 SHA256 也与本地一致。
+- 发布地址：[GitHub v0.9.4](https://github.com/clip-master-2/ClipMaster-Releases/releases/tag/v0.9.4)、[Gitee v0.9.4](https://gitee.com/clip-master-2/clip-master-releases/releases/tag/v0.9.4)。当前 APK 延续 AdMob 开关，文件名保留 `-admob`；mapping 与最终清单按版本保留在本地 `build/github-gitee-release/v0.9.4/`，mapping 不上传公开仓库。
+- 环境例外：Windows 沙箱拒绝 Git Bash 创建 MSYS 系统对象，本轮经执行权限放行后构建与上传。该机 `bash -l <script>` 在自检和 dry-run 成功后仍返回 1；对照验证 `bash -l -c 'bash "$@"' clipmaster-release <script>` 返回 0，因此本轮只在内存调整 Windows 包装层的 Bash 启动参数，并显式选择已安装 Python，继续执行原 Bash 发布脚本及原有编码兼容/日志逻辑；dry-run 和真实双端发布最终均返回 0，仓库脚本未修改。后续维护 Windows 双击入口时应为此环境补回归验证。
+- 本轮未做真机覆盖安装和应用内更新交互验收；既有 Gradle 弃用提示和 Shizuku `OnOpNotedListener` R8 警告仍保留，未导致构建失败。
+
 ### 上架前默认渠道恢复（2026-10-07，已完成）
 
 - 当前尚未正式上架 Google Play，仓库默认 `appDistribution=domestic`；debug/release 均生成 `IS_PLAY_DISTRIBUTION=false`，手动检查走 Gitee 优先、GitHub 兜底，自动检查继续受“我的”页可见生命周期和 24 小时限频约束。
@@ -164,7 +183,7 @@ public 仓库 README 作为人可读发布页维护，至少包含最新版版�
 - 第一版展示 SHA256 摘要但不做 App 内下载校验；后续若接入直接下载，必须在下载完成后做 SHA256 校验并重新评估安装权限、文件存储和失败恢复。
 - Gitee Release 下载 APK 时存在浏览器把文件保存为 `.apk.zip` 的平台侧问题；当前先在弹窗中保留短提示，不在客户端引导解压，也不改变发布脚本的附件上传契约。
 - 第一版不做启动时全局检查，优先把任务绑定到“我的”页可见生命周期，降低不可见页面网络消耗。
-- `update.json` 解析 DTO 使用 `@Serializable` 和 `@SerialName` 固定外部字段名；当前 release/R8 验证未在本次任务中执行，发布前仍需补跑混淆构建确认序列化模型可解析。
+- `update.json` 解析 DTO 使用 `@Serializable` 和 `@SerialName` 固定外部字段名；0.9.4 发布已通过 release/R8 构建与远端清单一致性核验，混淆包中的运行时解析和旧版 App 更新交互仍需真机验收。
 
 ## 开放问题
 
@@ -173,6 +192,10 @@ public 仓库 README 作为人可读发布页维护，至少包含最新版版�
 - 是否需要把发布页入口放到关于页或错误弹窗外的常驻位置，方便两个自动源都不可达时用户主动查看。
 
 ## 变更记录
+
+- 2026-10-17：按用户提交并推送主分支的要求，纳入已有 `0.9.5 / 41` 版本准备并同步中文注释，补充当前源码版本、验证范围及尚未发布 Release 的边界；原因是工作区版本已更新，而注释和版本方案仍停在上一版。
+
+- 2026-10-16（已完成）：按用户要求将版本从 `0.9.3 / 39` 升至 `0.9.4 / 40`，基于当前工作区构建正式签名 AdMob APK 并通过原发布脚本上传 GitHub、Gitee；304 项宿主单测、Release/R8、签名、版本、GitHub 三附件服务端摘要及 Gitee 三附件回下载 SHA256 均通过，两个 latest 均为 `v0.9.4`。复用既有能力，无新增类/方法/测试或运行时日志，版本配置简体中文注释已同步；记录本机 Git Bash 启动方式的临时兼容措施、mapping 留存和未做真机验收的边界。
 
 - 2026-10-11：按用户要求提交并推送已有版本准备改动，`versionCode` 从 37 增至 38，`versionName` 从 0.7.3 更新为 0.8.3，并同步版本码中文注释。复用现有 BuildConfig、版本比较、备份应用版本元数据和 APK 命名规则，无新增组件、类、方法或协议字段。仅改变构建元数据，无新的独立业务规则，不新增单测或采用 TDD。执行 `.\gradlew.bat :app:generateDebugBuildConfig :app:generateReleaseBuildConfig :app:processDebugMainManifest --offline --console=plain --no-parallel --max-workers=1 --no-daemon '-Pkotlin.compiler.execution.strategy=in-process'` 成功，Release BuildConfig 核对为 `38 / 0.8.3`，`git diff --check` 通过；Debug BuildConfig 与 Manifest 产物在收尾核对时缺失，不能确认其最终产物。完整 Debug Kotlin 编译未通过：首次因 `shizuku` 的 `R.jar` 缺失失败，重跑 `shizuku` 与 `base:hidden-api` 的资源生成后，AAPT 又因无法写入资源输出目录中的 `R.txt` 失败；没有扩大源码修改范围，发布前需要补验完整编译及生成产物。沿用既有日志与诊断计划，不新增运行时日志；没有备份 schema、恢复规则或反射/序列化契约变化，不重复运行业务单测或 release/R8。源码版本提交不代表公开 Release 已发布，设备升级与真实网络验证留待发布验收。
 
