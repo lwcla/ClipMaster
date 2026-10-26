@@ -10,6 +10,19 @@
 
 ## 目标与范围
 
+### 0.9.8 双源发布（2026-10-26，已完成）
+
+- 按用户要求将 `versionName` 从 `0.9.7` 递增至 `0.9.8`，`versionCode` 从 `43` 递增至 `44`，发布 `bcb2f03` 已提交的广告正文检查移除实现；搜索、共享列表和详情不再根据剪贴关键词切换广告资格。
+- 复用现有版本配置、APK 命名、Windows/Bash 发布脚本及上一版已验证的本机 PowerShell 7 兼容入口，向既定 GitHub/Gitee Release 仓库发布正式签名 APK、`update.json` 和 `sha256.txt`；沿用 domestic 分发、internal 更新渠道和 AdMob 开关，不新增组件、类、方法或协议。
+- 单元测试门禁：本轮只改版本元数据，无新增业务规则，不新增单测或采用 TDD。沿用本次广告改动已通过的 392 项单测，版本更新后运行 app 单测，执行原发布脚本 dry-run（含 `:app:assembleRelease`、R8）、APK 版本/签名/SHA256 核验及 `git diff --check`，再执行真实双源上传与远端附件验证。
+- 日志与诊断计划：继续使用原发布日志与构建诊断，不新增 App 运行时日志；凭据仅由原脚本在本机读取，不写入输出或公开产物。按版本保留 APK、最终清单、metadata、mapping 和日志，mapping 只保存在本地。
+- 版本配置中文注释同步更新，无数据库、备份或反射契约变化，无需调整备份和 keep 规则；保留原有 Windows 登录 Bash 启动兼容方式，仓库发布脚本不变。设备覆盖安装及应用内更新交互不在本次自动发布验证范围内。
+- 验证结果：`.\gradlew.bat :app:testDebugUnitTest --offline --console=plain --no-parallel --max-workers=2` 成功，311 项测试全部通过，失败/错误/跳过均为 0；原发布脚本 `:app:assembleRelease` 含 Kotlin 编译、R8、资源压缩与 lintVital 成功（预演 4m43s）。`apksigner verify --verbose --print-certs` 确认 v2 签名有效，证书与 `0.9.7` 一致；`aapt dump badging`、构建 metadata 与 Release BuildConfig 均确认为 `com.cla.clip.master / 0.9.8 / 44`，`git diff --check` 通过。
+- 发布结果：GitHub/Gitee latest 均指向 `v0.9.8`，均包含 `ClipMaster-v0.9.8-admob.apk`、`update.json` 和 `sha256.txt`；GitHub 三附件服务端摘要及 Gitee 三附件回下载 SHA256 均与本地一致。APK 为 5,368,030 字节，SHA256 为 `23ba4d68a4dc2eca0cfcf71e5c0d2b3349de9f830d7a08dc1b2d9fe856c9b57a`。
+- 发布地址：[GitHub v0.9.8](https://github.com/clip-master-2/ClipMaster-Releases/releases/tag/v0.9.8)、[Gitee v0.9.8](https://gitee.com/clip-master-2/clip-master-releases/releases/tag/v0.9.8)。本版 APK、最终清单、校验文件、metadata、mapping 与预演/发布/核验日志归档到 `build/github-gitee-release/v0.9.8/`；mapping 仅保存在本地。
+- 环境例外：首次单测因沙箱无法访问 E 盘 Gradle 缓存锁而失败，执行权限放行后同一命令成功；沿用既有 PowerShell 7/Bash 本机兼容入口，预演和真实发布均返回 0。既有 Gradle/Kotlin 弃用提示和 Shizuku R8 接口警告保留，未导致构建失败。
+- 变更记录：2026-10-26，按用户要求完成 `0.9.8 / 44` 双源发布，补录 311 项 app 单测、正式构建、签名一致性及远端附件摘要验证结果；未执行设备覆盖安装或应用内更新交互验收。
+
 ### 0.9.7 双源发布（2026-10-26，已完成）
 
 - 按用户要求将 `versionName` 从 `0.9.6` 递增至 `0.9.7`，`versionCode` 从 `42` 递增至 `43`，发布已提交的首页列表广告移除实现；详情、搜索、折叠等其他位置的广告保持现有接入。
