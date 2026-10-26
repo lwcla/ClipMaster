@@ -246,17 +246,13 @@
     subgraph BackupGroup[同一导航组实例]
         Group --&gt; Backup[起点：备份页 人工验证]:::manual
         Backup --&gt; Restore[独立恢复页 人工验证]:::manual
-        Restore --&gt; Media[独立媒体关联页 人工验证]:::manual
-        Media --&gt;|普通返回| Restore
         Restore --&gt;|普通返回| Backup
-        Session[图作用域轻量会话：请求与回显 已单测]:::unit
+        Session[图作用域轻量会话：请求所有权 已单测]:::unit
         Backup -.-&gt;|提交恢复请求| Session
-        Session -.-&gt;|接管请求及读取回显| Restore
-        Media -.-&gt;|同步写入关联状态| Session
+        Session -.-&gt;|接管及释放请求| Restore
     end
     Backup --&gt;|返回退出组| Entry
     Restore --&gt;|结果完成退出组| Close[关闭会话并移除整个父图 人工验证]:::manual
-    Media --&gt;|成功或无需处理：完成| Close
     Close --&gt; Entry
     classDef unit fill:#dff5e7,stroke:#26804b,color:#16351f;
     classDef manual fill:#e8f1ff,stroke:#2b6cb0,color:#17375e;
@@ -294,92 +290,27 @@
   Feature --&gt;|&quot;功能库阶段失败&quot;| Partial
   Settings[&quot;最后提交 DataStore 设置白名单&lt;br/&gt;独立提交 编译验证&quot;]:::compile --&gt; Success
   Settings --&gt;|&quot;设置阶段失败&quot;| Partial[&quot;Result：部分成功&lt;br/&gt;保留已确认报告，标记失败阶段 已单测&quot;]:::unit
-  Partial --&gt; Retry[&quot;可重试同一备份或完成退出&lt;br/&gt;媒体关联入口暂不开放 人工验证&quot;]:::manual
+  Partial --&gt; Retry[&quot;可重试同一备份或完成退出&lt;br/&gt;人工验证&quot;]:::manual
   Retry --&gt;|&quot;重试：重新执行合并恢复&quot;| Start
-  Success[&quot;Result：全部成功&lt;br/&gt;展示新增 / 更新 / 跳过 人工验证&quot;]:::manual --&gt; Register
-  Register[&quot;登记 Result.taskId&lt;br/&gt;允许媒体关联 已单测&quot;]:::unit --&gt; Actions
-  Actions[&quot;选择：恢复本地媒体关联&lt;br/&gt;完成退出 / 返回备份页 人工验证&quot;]:::manual
-  Actions --&gt;|&quot;恢复本地媒体关联&quot;| Media[&quot;打开独立媒体关联页&lt;br/&gt;只传任务身份 编译验证&quot;]:::compile
-  Media --&gt;|&quot;普通返回&quot;| Echo[&quot;匹配 taskId 的状态与摘要回显&lt;br/&gt;扫描细节见下方独立流程 已单测&quot;]:::unit
-  Echo --&gt; Actions
+  Success[&quot;Result：全部成功&lt;br/&gt;展示新增 / 更新 / 跳过 人工验证&quot;]:::manual --&gt; Actions
+  Actions[&quot;完成退出 / 返回备份页&lt;br/&gt;人工验证&quot;]:::manual
 
   classDef unit fill:#dff5e7,stroke:#26804b,color:#16351f;
   classDef manual fill:#e8f1ff,stroke:#2b6cb0,color:#17375e;
   classDef compile fill:#efe8ff,stroke:#6b46c1,color:#2d1f53;</pre></section>
 <h2>恢复页面：返回、完成与取消清理</h2>
 <section class="diagram-card"><pre class="mermaid">flowchart TD
-  Back[&quot;顶部返回 / 系统返回&lt;br/&gt;人工验证&quot;]:::manual --&gt; Running
-  Done[&quot;Result 底部完成&lt;br/&gt;扫描中按钮禁用 人工验证&quot;]:::manual --&gt; DoneGuard
-  Running{&quot;会话中的媒体关联正在扫描？&lt;br/&gt;已单测&quot;}:::unit
-  Running --&gt;|&quot;是&quot;| Stay[&quot;提示扫描中并留在当前流程&lt;br/&gt;人工验证&quot;]:::manual
-  Running --&gt;|&quot;否&quot;| Busy{&quot;当前为 Reading 或 Restoring？&lt;br/&gt;人工验证&quot;}:::manual
+  Back[&quot;顶部返回 / 系统返回&lt;br/&gt;人工验证&quot;]:::manual --&gt; Busy
+  Busy{&quot;当前为 Reading 或 Restoring？&lt;br/&gt;人工验证&quot;}:::manual
   Busy --&gt;|&quot;是&quot;| Confirm[&quot;显示退出二次确认&lt;br/&gt;人工验证&quot;]:::manual
   Confirm --&gt;|&quot;继续等待&quot;| Keep[&quot;关闭确认弹窗，任务继续&lt;br/&gt;人工验证&quot;]:::manual
   Confirm --&gt;|&quot;确认退出&quot;| Cancel[&quot;取消本页协程&lt;br/&gt;不撤销已提交阶段 人工验证&quot;]:::manual
   Busy --&gt;|&quot;否&quot;| Clean
-  Cancel --&gt; Clean[&quot;释放请求及媒体回显&lt;br/&gt;清理临时目录 编译验证&quot;]:::compile
+  Cancel --&gt; Clean[&quot;释放请求、清理临时目录&lt;br/&gt;编译验证&quot;]:::compile
   Clean --&gt; Backup[&quot;只弹恢复页，回备份页&lt;br/&gt;人工验证&quot;]:::manual
-  DoneGuard{&quot;同步会话检查是否允许退出？&lt;br/&gt;已单测&quot;}:::unit
-  DoneGuard --&gt;|&quot;扫描中&quot;| Stay
-  DoneGuard --&gt;|&quot;允许&quot;| DoneClean[&quot;清理恢复状态及临时包&lt;br/&gt;关闭会话，弹出整个备份导航组 编译验证&quot;]:::compile
-  DoneClean --&gt; Entry[&quot;回到进入备份前的页面&lt;br/&gt;不固定跳首页 Tab 人工验证&quot;]:::manual
-
-  classDef unit fill:#dff5e7,stroke:#26804b,color:#16351f;
-  classDef manual fill:#e8f1ff,stroke:#2b6cb0,color:#17375e;
-  classDef compile fill:#efe8ff,stroke:#6b46c1,color:#2d1f53;</pre></section>
-<h2>本地媒体关联流程</h2>
-<section class="diagram-card"><pre class="mermaid">flowchart TD
-  subgraph RestoreBoundary[&quot;来自恢复流程的交互&quot;]
-    FromRestore[&quot;恢复结果页入口&lt;br/&gt;恢复流程传入 restoreTaskId&lt;br/&gt;人工验证&quot;]:::manual
-    BackToRestore[&quot;同步保存会话媒体状态后由 StateFlow 回显&lt;br/&gt;Incomplete / Running / Terminal / Interrupted&lt;br/&gt;已单测&quot;]:::unit
-  end
-
-  subgraph MediaPage[&quot;独立媒体关联页 BackupMediaRelocationRoute / BackupMediaRelocationVm&quot;]
-    LaunchMedia[&quot;launchSingleTop 打开媒体关联独立页&lt;br/&gt;编译验证&quot;]:::compile
-    Estimate[&quot;数据库 COUNT 轻量预估待恢复媒体&lt;br/&gt;待补测&quot;]:::todo
-    NoNeed[&quot;预估为 0：不申请权限、不扫描&lt;br/&gt;编译验证&quot;]:::compile
-    OldRefCheck[&quot;验证旧 savePath / outputUri 与无权限可见候选&lt;br/&gt;待补测&quot;]:::todo
-    Permission{&quot;是否需要共享媒体库权限？&lt;br/&gt;人工验证&quot;}:::manual
-    PermissionRequest[&quot;按需申请图片或视频读取权限&lt;br/&gt;人工验证&quot;]:::manual
-    PermissionChecking[&quot;权限返回后复查候选可见性&lt;br/&gt;人工验证&quot;]:::manual
-    PermissionDenied[&quot;权限不足：展示摘要，可再次申请&lt;br/&gt;人工验证&quot;]:::manual
-    ScanConfirm{&quot;用户确认正式扫描？&lt;br/&gt;人工验证&quot;}:::manual
-    Running[&quot;正式扫描中不可返回、不可离开&lt;br/&gt;恢复页完成按钮禁用&lt;br/&gt;人工验证&quot;]:::manual
-    Scan[&quot;扫描 MediaStore / 公共目录候选&lt;br/&gt;人工验证&quot;]:::manual
-    Relink[&quot;高可信唯一匹配后分批写回引用&lt;br/&gt;待补测&quot;]:::todo
-    Terminal[&quot;完成 / 失败 / 权限不足 / 无需扫描&lt;br/&gt;生成结构化 summary&lt;br/&gt;编译验证&quot;]:::compile
-    SuccessCloseStack[&quot;完成或无须处理后点击底部完成&lt;br/&gt;关闭备份恢复链路&lt;br/&gt;编译验证&quot;]:::compile
-    BackOneLevel[&quot;顶部返回或系统返回&lt;br/&gt;回恢复结果页查看回显&lt;br/&gt;人工验证&quot;]:::manual
-    Interrupted[&quot;onCleared 兜底 Interrupted&lt;br/&gt;避免恢复页永久 Running&lt;br/&gt;编译验证&quot;]:::compile
-  end
-
-  FromRestore --&gt; LaunchMedia
-  LaunchMedia --&gt; Estimate
-  Estimate --&gt;|&quot;无待恢复媒体&quot;| NoNeed
-  Estimate --&gt;|&quot;存在待恢复媒体&quot;| OldRefCheck
-  NoNeed --&gt; Terminal
-  OldRefCheck --&gt; Permission
-  Permission --&gt;|&quot;需要&quot;| PermissionRequest
-  Permission --&gt;|&quot;不需要&quot;| ScanConfirm
-  PermissionRequest --&gt; PermissionChecking
-  PermissionChecking --&gt;|&quot;候选仍不足&quot;| PermissionDenied
-  PermissionChecking --&gt;|&quot;候选已足够或权限完整&quot;| OldRefCheck
-  PermissionDenied --&gt; PermissionRequest
-  ScanConfirm --&gt; Running
-  Running --&gt; Scan
-  Scan --&gt; Relink
-  Relink --&gt; Terminal
-  Scan --&gt; Terminal
-  Running --&gt; Interrupted
-  Terminal --&gt;|&quot;完成或无须处理后返回&quot;| SuccessCloseStack
-  Terminal --&gt;|&quot;顶部或系统返回&quot;| BackOneLevel
-  Estimate --&gt; BackToRestore
-  Running --&gt; BackToRestore
-  Terminal --&gt; BackToRestore
-  Interrupted --&gt; BackToRestore
-
-  classDef unit fill:#dff5e7,stroke:#26804b,color:#16351f;
-  classDef todo fill:#fff1cc,stroke:#b7791f,color:#3d2a05;
+  Done[&quot;Result 底部完成&lt;br/&gt;人工验证&quot;]:::manual --&gt; DoneClean
+  DoneClean[&quot;释放请求并关闭会话&lt;br/&gt;移除整个备份导航组 编译验证&quot;]:::compile --&gt; Entry
+  Entry[&quot;回到进入备份前的页面&lt;br/&gt;不固定跳首页 Tab 人工验证&quot;]:::manual
   classDef manual fill:#e8f1ff,stroke:#2b6cb0,color:#17375e;
   classDef compile fill:#efe8ff,stroke:#6b46c1,color:#2d1f53;</pre></section>
   </main>

@@ -10,8 +10,6 @@ import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Transaction
-import androidx.room.Update
-import androidx.paging.PagingSource
 import kotlinx.coroutines.flow.Flow
 
 @Entity(
@@ -196,49 +194,6 @@ data class ImageExtractItemData(
     }
 }
 
-/**
- * 图片下载历史列表校验本地文件时使用的轻量投影。
- *
- * 下载记录页只需要最终媒体身份、最终文件名和网页顺序来判断图片是否还可读取；不读取 URL、请求头、尺寸和错误信息，
- * 可以避免一个批次包含几百张图片时把完整实体全部加载到内存后再做存在性判断。
- */
-data class ImageHistoryFileRef(
-    /** 图片项自增主键，用于调试和后续必要时定位单张图片，不直接参与 UI 展示。 */
-    @ColumnInfo(name = "id")
-    val id: Long,
-
-    /** 最终保存到 MediaStore 后的 URI；Android 10 以下直接写文件时可能为空。 */
-    @ColumnInfo(name = "output_uri")
-    val outputUri: String?,
-
-    /** 最终公开文件名，旧系统需要用它和批次目录组合定位图片文件。 */
-    @ColumnInfo(name = "final_name")
-    val finalName: String?,
-
-    /** 图片在网页中的展示顺序，列表缩略图需要继续保持用户下载时的顺序。 */
-    @ColumnInfo(name = "display_order")
-    val displayOrder: Int,
-)
-
-/** 恢复后媒体重新定位按图片批次处理时使用的统计投影。 */
-data class ImageRelocationBatchSummary(
-    /** 图片批次 id，用于后续分页读取批次和成功图片项。 */
-    @ColumnInfo(name = "batch_id")
-    val batchId: Long,
-
-    /** 当前批次成功图片项数量；预估和进度展示使用该值。 */
-    @ColumnInfo(name = "success_item_count")
-    val successItemCount: Int,
-)
-
-/** 恢复后媒体重新定位写回图片本地引用的最小更新模型。 */
-data class ImageMediaReferenceUpdate(
-    /** 图片项 id，只用于精确写回当前图片的媒体引用。 */
-    val itemId: Long,
-    /** 高可信重新定位得到的可读 URI。 */
-    val outputUri: String,
-)
-
 @Dao
 /**
  * 图片提取 DAO。
@@ -251,194 +206,21 @@ interface ImageExtractDao {
     @Insert
     suspend fun insertBatch(batch: ImageExtractBatchData): Long
 
-    /**
-     * 备份恢复批量写入图片下载批次。
-     *
-     * 批次 id 会保留在备份包中；重复恢复时通过 Upsert 覆盖同一批次，保证图片项外键关系仍可重建。
-     */
-    @androidx.room.Upsert
-    suspend fun upsertBatchesForBackup(batches: List<ImageExtractBatchData>)
-
     /** 批量插入图片项；冲突时忽略，避免同一批次重复 URL 或顺序导致任务失败。 */
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertItems(items: List<ImageExtractItemData>)
-
-    /**
-     * 备份恢复批量写入图片项。
-     *
-     * 图片项使用 Upsert 而不是 IGNORE，确保同一备份重复恢复时可以修正旧数据，但 mapper 会清理临时路径和 Cookie。
-     */
-    @androidx.room.Upsert
-    suspend fun upsertItemsForBackup(items: List<ImageExtractItemData>)
-
-    /** 更新完整批次对象，适合 Repository 已经拿到最新对象后整体回写。 */
-    @Update
-    suspend fun updateBatch(batch: ImageExtractBatchData)
 
     /** 按 id 读取批次，Worker 启动和 Repository 业务判断时使用。 */
     @Query("SELECT * FROM image_extract_batches WHERE id = :batchId")
     suspend fun getBatch(batchId: Long): ImageExtractBatchData?
 
-    /**
-     * 备份导出读取全部图片提取/下载批次。
-     *
-     * 未确认下载的 extracted 批次也保留在数据库中，因此第一版作为元数据一起导出，后续可按产品决策裁剪。
-     */
-    @Query("SELECT * FROM image_extract_batches ORDER BY id ASC")
-    suspend fun loadAllBatchesForBackup(): List<ImageExtractBatchData>
-
-    /** 备份流式导出开始时读取当前最大批次 id，作为本次图片批次快照边界。 */
-    @Query("SELECT COALESCE(MAX(id), 0) FROM image_extract_batches")
-    suspend fun maxBatchIdForBackup(): Long
-
-    /** 按 high-water mark 分页导出图片批次，避免一次性读取全部历史批次。 */
-    @Query("SELECT * FROM image_extract_batches WHERE id > :lastId AND id <= :maxId ORDER BY id ASC LIMIT :limit")
-    suspend fun loadBatchesPageForBackup(lastId: Long, maxId: Long, limit: Int): List<ImageExtractBatchData>
-
-    /**
-     * 备份导出读取全部图片项。
-     *
-     * 具体敏感字段过滤由备份 mapper 负责，DAO 只提供一致性快照。
-     */
-    @Query("SELECT * FROM image_extract_items ORDER BY id ASC")
-    suspend fun loadAllItemsForBackup(): List<ImageExtractItemData>
-
-    /** 备份流式导出开始时读取当前最大图片项 id，作为本次图片项快照边界。 */
-    @Query("SELECT COALESCE(MAX(id), 0) FROM image_extract_items")
-    suspend fun maxItemIdForBackup(): Long
-
-    /** 按 high-water mark 分页导出图片项，避免一个批次包含大量图片时占满内存。 */
-    @Query("SELECT * FROM image_extract_items WHERE id > :lastId AND id <= :maxId ORDER BY id ASC LIMIT :limit")
-    suspend fun loadItemsPageForBackup(lastId: Long, maxId: Long, limit: Int): List<ImageExtractItemData>
-
-    /** 统计恢复后媒体重新定位需要检查的图片批次数量；只读 COUNT，不访问媒体库。 */
-    @Query(
-        """
-            SELECT COUNT(DISTINCT b.id)
-            FROM image_extract_batches AS b
-            INNER JOIN image_extract_items AS i ON i.batch_id = b.id
-            WHERE b.status IN (:statuses) AND i.status = :successStatus
-        """
-    )
-    suspend fun countBatchesForMediaRelocation(
-        statuses: List<String> = listOf(ImageExtractBatchData.STATUS_SUCCESS, ImageExtractBatchData.STATUS_PARTIAL_SUCCESS),
-        successStatus: String = ImageExtractItemData.STATUS_SUCCESS
-    ): Int
-
-    /** 统计恢复后媒体重新定位需要检查的成功图片项数量；只读 COUNT，不访问媒体库。 */
-    @Query(
-        """
-            SELECT COUNT(*)
-            FROM image_extract_batches AS b
-            INNER JOIN image_extract_items AS i ON i.batch_id = b.id
-            WHERE b.status IN (:statuses) AND i.status = :successStatus
-        """
-    )
-    suspend fun countItemsForMediaRelocation(
-        statuses: List<String> = listOf(ImageExtractBatchData.STATUS_SUCCESS, ImageExtractBatchData.STATUS_PARTIAL_SUCCESS),
-        successStatus: String = ImageExtractItemData.STATUS_SUCCESS
-    ): Int
-
-    /** 按批次 id 分页读取需要媒体重新定位的图片批次摘要，避免一次性加载全部图片项。 */
-    @Query(
-        """
-            SELECT b.id AS batch_id, COUNT(i.id) AS success_item_count
-            FROM image_extract_batches AS b
-            INNER JOIN image_extract_items AS i ON i.batch_id = b.id
-            WHERE b.status IN (:statuses) AND i.status = :successStatus AND b.id > :lastBatchId
-            GROUP BY b.id
-            ORDER BY b.id ASC
-            LIMIT :limit
-        """
-    )
-    suspend fun loadBatchSummariesForMediaRelocation(
-        lastBatchId: Long,
-        limit: Int,
-        statuses: List<String> = listOf(ImageExtractBatchData.STATUS_SUCCESS, ImageExtractBatchData.STATUS_PARTIAL_SUCCESS),
-        successStatus: String = ImageExtractItemData.STATUS_SUCCESS
-    ): List<ImageRelocationBatchSummary>
-
-    /**
-     * 备份恢复前按 id 批量读取已有图片批次。
-     *
-     * 用于冲突合并时保护本地较新的批次状态。
-     */
-    @Query("SELECT * FROM image_extract_batches WHERE id IN (:batchIds)")
-    suspend fun loadBatchesByIdsForBackup(batchIds: List<Long>): List<ImageExtractBatchData>
-
-    /**
-     * 备份恢复前按 id 批量读取已有图片项。
-     *
-     * 用于重复恢复时跳过本地较新的单项结果，避免旧备份覆盖新下载结果。
-     */
-    @Query("SELECT * FROM image_extract_items WHERE id IN (:itemIds)")
-    suspend fun loadItemsByIdsForBackup(itemIds: List<Long>): List<ImageExtractItemData>
-
-    /** 批量读取选中的图片下载批次，供删除、清空和重新下载前组装精确操作范围。 */
-    @Query("SELECT * FROM image_extract_batches WHERE id IN (:batchIds)")
-    suspend fun getBatches(batchIds: Set<Long>): List<ImageExtractBatchData>
-
     /** 观察批次变化，图片提取页用它刷新下载进度和结果统计。 */
     @Query("SELECT * FROM image_extract_batches WHERE id = :batchId")
     fun observeBatch(batchId: Long): Flow<ImageExtractBatchData?>
 
-    /** 观察图片下载历史；保留给少量全量观察场景，下载记录列表优先使用分页接口。 */
-    @Query("SELECT * FROM image_extract_batches WHERE status != :extractedStatus ORDER BY update_time DESC, id DESC")
-    fun observeHistory(extractedStatus: String = ImageExtractBatchData.STATUS_EXTRACTED): Flow<List<ImageExtractBatchData>>
-
-    /** 分页加载图片下载历史；未确认下载的提取候选批次不进入下载记录页，避免一次性读取大量批次。 */
-    @Query("SELECT * FROM image_extract_batches WHERE status != :extractedStatus ORDER BY update_time DESC, id DESC")
-    fun pagingHistory(extractedStatus: String = ImageExtractBatchData.STATUS_EXTRACTED): PagingSource<Int, ImageExtractBatchData>
-
-    /** 观察图片下载历史总数；只读取 COUNT，用于标题栏按钮和清空确认数量。 */
-    @Query("SELECT COUNT(*) FROM image_extract_batches WHERE status != :extractedStatus")
-    fun observeHistoryCount(extractedStatus: String = ImageExtractBatchData.STATUS_EXTRACTED): Flow<Int>
-
-    /** 观察仍在下载的图片批次数量，用于清空当前分类前提示会先停止后台任务。 */
-    @Query("SELECT COUNT(*) FROM image_extract_batches WHERE status = :downloadingStatus")
-    fun observeRunningHistoryCount(downloadingStatus: String = ImageExtractBatchData.STATUS_DOWNLOADING): Flow<Int>
-
-    /** 按当前排序读取全部图片历史批次 id；只在全选或清空时调用，避免常规浏览加载完整实体。 */
-    @Query("SELECT id FROM image_extract_batches WHERE status != :extractedStatus ORDER BY update_time DESC, id DESC")
-    suspend fun getHistoryIds(extractedStatus: String = ImageExtractBatchData.STATUS_EXTRACTED): List<Long>
-
-    /** 统计选中图片批次中仍在下载的任务数量，供删除确认文案判断是否需要提示停止下载。 */
-    @Query("SELECT COUNT(*) FROM image_extract_batches WHERE id IN (:batchIds) AND status = :downloadingStatus")
-    suspend fun countRunningBatches(
-        batchIds: Set<Long>,
-        downloadingStatus: String = ImageExtractBatchData.STATUS_DOWNLOADING
-    ): Int
-
     /** 按网页顺序读取批次内全部图片项，Worker 下载前使用。 */
     @Query("SELECT * FROM image_extract_items WHERE batch_id = :batchId ORDER BY display_order ASC")
     suspend fun getItems(batchId: Long): List<ImageExtractItemData>
-
-    /** 读取某批次的成功图片项，供恢复后媒体重新定位按文件夹和 finalName 精确匹配。 */
-    @Query(
-        """
-            SELECT * FROM image_extract_items
-            WHERE batch_id = :batchId AND status = :successStatus
-            ORDER BY display_order ASC
-        """
-    )
-    suspend fun getSuccessfulItemsForMediaRelocation(
-        batchId: Long,
-        successStatus: String = ImageExtractItemData.STATUS_SUCCESS
-    ): List<ImageExtractItemData>
-
-    /** 读取下载记录页存在性校验所需的成功图片轻量字段，避免历史列表加载完整图片项实体。 */
-    @Query(
-        """
-            SELECT id, output_uri, final_name, display_order
-            FROM image_extract_items
-            WHERE batch_id = :batchId AND status = :successStatus
-            ORDER BY display_order ASC
-        """
-    )
-    suspend fun getHistoryFileRefs(
-        batchId: Long,
-        successStatus: String = ImageExtractItemData.STATUS_SUCCESS
-    ): List<ImageHistoryFileRef>
 
     /** 观察批次图片项列表，选择页用它展示候选网格。 */
     @Query("SELECT * FROM image_extract_items WHERE batch_id = :batchId ORDER BY display_order ASC")
@@ -483,26 +265,6 @@ interface ImageExtractDao {
         errorMsg: String?
     )
 
-    /** 只写回恢复后媒体重新定位得到的图片 URI，不修改状态、文件名或错误信息。 */
-    @Query("UPDATE image_extract_items SET output_uri = :outputUri WHERE id = :itemId")
-    suspend fun updateOutputUriForMediaRelocation(itemId: Long, outputUri: String)
-
-    /** 按 chunk 写回图片重新定位结果；单个 chunk 失败时调用方可以只标记这批失败。 */
-    @Transaction
-    suspend fun updateMediaReferencesForRelocation(updates: List<ImageMediaReferenceUpdate>) {
-        updates.forEach { update ->
-            updateOutputUriForMediaRelocation(update.itemId, update.outputUri)
-        }
-    }
-
-    /** 删除批次记录；图片项会因外键级联同步删除。 */
-    @Query("DELETE FROM image_extract_batches WHERE id = :batchId")
-    suspend fun deleteBatch(batchId: Long)
-
-    /** 精确删除选中的图片下载批次；图片项仅通过外键级联删除这些批次下的数据。 */
-    @Query("DELETE FROM image_extract_batches WHERE id IN (:batchIds)")
-    suspend fun deleteBatches(batchIds: Set<Long>)
-
     /** 在同一事务中创建批次并写入图片项，保证 Worker 不会看到只有批次没有图片项的中间状态。 */
     @Transaction
     suspend fun replaceBatchItems(batch: ImageExtractBatchData, items: List<ImageExtractItemData>): Long {
@@ -510,5 +272,4 @@ interface ImageExtractDao {
         insertItems(items.map { it.copy(batchId = batchId) })
         return batchId
     }
-
 }

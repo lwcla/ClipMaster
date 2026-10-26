@@ -1,12 +1,8 @@
 package com.cla.clip.base.general.repository
 
-import androidx.paging.PagingSource
 import com.cla.clip.base.general.dao.ImageExtractBatchData
 import com.cla.clip.base.general.dao.ImageExtractDao
-import com.cla.clip.base.general.dao.ImageHistoryFileRef
 import com.cla.clip.base.general.dao.ImageExtractItemData
-import com.cla.clip.base.general.dao.ImageMediaReferenceUpdate
-import com.cla.clip.base.general.dao.ImageRelocationBatchSummary
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -72,37 +68,6 @@ class ImageExtractRepository @Inject constructor(
         return batchId
     }
 
-    /** 观察图片下载历史；Repository 隐藏“未确认提取批次不展示”的 SQL 细节，页面只关心历史列表。 */
-    fun observeHistory(): Flow<List<ImageExtractBatchData>> {
-        return imageExtractDao.observeHistory()
-    }
-
-    /** 分页加载图片下载历史，避免下载记录页一次性读取大量批次和图片项。 */
-    fun pagingHistory(): PagingSource<Int, ImageExtractBatchData> {
-        return imageExtractDao.pagingHistory()
-    }
-
-    /** 观察图片历史总数；用于标题栏动作可用性和清空确认，不触发批次实体全量加载。 */
-    fun observeHistoryCount(): Flow<Int> {
-        return imageExtractDao.observeHistoryCount()
-    }
-
-    /** 观察进行中的图片批次数量；用于清空当前分类前提示会先停止后台任务。 */
-    fun observeRunningHistoryCount(): Flow<Int> {
-        return imageExtractDao.observeRunningHistoryCount()
-    }
-
-    /** 按当前排序读取全部图片历史批次 id；只在全选或清空时调用。 */
-    suspend fun getHistoryIds(): List<Long> {
-        return imageExtractDao.getHistoryIds()
-    }
-
-    /** 统计选中图片批次中仍在下载的数量；用于删除确认提示。 */
-    suspend fun countRunningBatches(batchIds: Set<Long>): Int {
-        if (batchIds.isEmpty()) return 0
-        return imageExtractDao.countRunningBatches(batchIds)
-    }
-
     /**
      * 基于旧图片批次创建重新下载批次。
      *
@@ -144,43 +109,6 @@ class ImageExtractRepository @Inject constructor(
         return batch to imageExtractDao.getItems(batchId)
     }
 
-    /** 统计恢复后媒体重新定位需要检查的图片批次和成功图片项数量；只做数据库预估。 */
-    suspend fun countImagesForMediaRelocation(): Pair<Int, Int> {
-        return imageExtractDao.countBatchesForMediaRelocation() to imageExtractDao.countItemsForMediaRelocation()
-    }
-
-    /** 按批次分页读取恢复后媒体重新定位候选，避免一次性加载全部图片历史。 */
-    suspend fun loadImageBatchSummariesForMediaRelocation(lastBatchId: Long, limit: Int): List<ImageRelocationBatchSummary> {
-        return imageExtractDao.loadBatchSummariesForMediaRelocation(lastBatchId, limit)
-    }
-
-    /** 读取批次和成功图片项，供 app 层媒体定位器按文件夹和 finalName 精确匹配。 */
-    suspend fun getBatchWithSuccessfulItemsForMediaRelocation(batchId: Long): Pair<ImageExtractBatchData, List<ImageExtractItemData>>? {
-        val batch = imageExtractDao.getBatch(batchId) ?: return null
-        return batch to imageExtractDao.getSuccessfulItemsForMediaRelocation(batchId)
-    }
-
-    /** 按 chunk 写回高可信重新定位出的图片 URI；不修改图片项状态或批次状态。 */
-    suspend fun updateImageMediaReferencesForRelocation(updates: List<ImageMediaReferenceUpdate>) {
-        if (updates.isEmpty()) return
-        imageExtractDao.updateMediaReferencesForRelocation(updates)
-    }
-
-    /** 读取图片下载历史页校验本地文件所需的轻量图片引用，避免列表分页映射完整加载每张图片实体。 */
-    suspend fun getHistoryFileRefs(batchId: Long): List<ImageHistoryFileRef> {
-        return imageExtractDao.getHistoryFileRefs(batchId)
-    }
-
-    /** 批量读取批次及其图片项，供下载记录页删除本地文件和生成缩略图列表。 */
-    suspend fun getBatchesWithItems(batchIds: Set<Long>): List<Pair<ImageExtractBatchData, List<ImageExtractItemData>>> {
-        if (batchIds.isEmpty()) return emptyList()
-        val batches = imageExtractDao.getBatches(batchIds).associateBy { it.id }
-        return batchIds.mapNotNull { id ->
-            val batch = batches[id] ?: return@mapNotNull null
-            batch to imageExtractDao.getItems(id)
-        }
-    }
-
     /** 更新批量任务汇总状态，让 UI 和通知能看到最新结果。 */
     suspend fun updateBatchStatus(
         batchId: Long,
@@ -206,9 +134,4 @@ class ImageExtractRepository @Inject constructor(
         imageExtractDao.updateItemStatus(itemId, status, tempPath, outputUri, finalName, errorMsg)
     }
 
-    /** 精确删除选中图片批次；图片项只通过外键级联删除这些批次下的数据。 */
-    suspend fun deleteBatches(batchIds: Set<Long>) {
-        if (batchIds.isEmpty()) return
-        imageExtractDao.deleteBatches(batchIds)
-    }
 }

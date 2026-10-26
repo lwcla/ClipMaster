@@ -24,7 +24,6 @@ import com.cla.clip.feature.torrent.search.api.TorrentSearchFeatureEntry
 import com.cla.clip.feature.torrent.search.api.TorrentSearchLaunchSource
 import com.cla.clip.master.ad.DetailAdSensitivityPolicy
 import com.cla.clip.master.ui.page.detail.DetailPage
-import com.cla.clip.master.ui.page.download.DownloadHistoryPage
 import com.cla.clip.master.ui.page.image.ImageExtractPage
 import com.cla.clip.master.ui.page.list.ClipListPage
 import com.cla.clip.master.ui.page.list.FoldedClipListPage
@@ -194,15 +193,7 @@ fun AppNavigation(
             )
         }
 
-        // 下载记录页
-        composable<DownloadHistoryRoute> {
-            DownloadHistoryPage(
-                onBack = onBack,
-                onNavigate = onNavigate
-            )
-        }
-
-        // 折叠数据页
+        // 折叠剪贴列表沿用原导航入口。
         composable<FoldedClipsRoute> {
             FoldedClipListPage(
                 onBack = onBack,

@@ -7,17 +7,14 @@ import kotlinx.serialization.Serializable
 /** 备份文件格式标识，用于恢复前快速判断用户选择的备份包是否属于本应用。 */
 const val BACKUP_FORMAT = "clip_master_backup"
 
-/** 当前备份协议版本；v4 将可选功能数据从 base 固定表切换为 feature contributor JSONL entry。 */
-const val BACKUP_SCHEMA_VERSION = 4
+/** 当前备份协议版本；v5 仅保留跨安装业务数据，不备份媒体下载运行态，也不兼容旧格式。 */
+const val BACKUP_SCHEMA_VERSION = 5
 
 /** 第一版备份不加密，但保留协议字段，后续可以平滑扩展到密码加密格式。 */
 const val BACKUP_ENCRYPTION_NONE = "none"
 
 /** 当前备份以 zip 包承载多个 JSON 数据文件；zip 只是包格式，不代表备份包已经加密。 */
 const val BACKUP_COMPRESSION_ZIP = "zip"
-
-/** v1 备份包内列表文件格式，使用完整 JSON 数组；仅用于旧备份导入兼容。 */
-const val BACKUP_DATA_FORMAT_JSON_ARRAY = "json_array"
 
 /** v2 备份包内列表文件格式，使用一行一条记录的 JSONL。 */
 const val BACKUP_DATA_FORMAT_JSONL = "jsonl"
@@ -68,72 +65,6 @@ enum class BackupKind {
     @SerialName("safety")
     Safety,
 }
-
-/**
- * 统一备份快照的内存聚合模型。
- *
- * 当前落盘格式不是单个 JSON，而是 zip 包里的 `manifest.json` 和多个 `data/xxx.json`；该模型用于导出后聚合、
- * 预检和恢复 mapper，字段仍按外部协议固定，方便后续需要时生成兼容摘要或测试对象。
- */
-@Keep
-@Serializable
-data class BackupSnapshot(
-    /** 固定格式标识，恢复前必须等于 `clip_master_backup`。 */
-    @SerialName("format")
-    val format: String = BACKUP_FORMAT,
-
-    /** 创建备份时的应用 id，用于避免误导入其他 App 的备份包。 */
-    @SerialName("application_id")
-    val applicationId: String,
-
-    /** 备份协议版本，不直接等同 Room 数据库版本。 */
-    @SerialName("schema_version")
-    val schemaVersion: Int = BACKUP_SCHEMA_VERSION,
-
-    /** 加密格式；第一版固定为 `none`。 */
-    @SerialName("encryption")
-    val encryption: String = BACKUP_ENCRYPTION_NONE,
-
-    /** 备份包承载格式；当前固定为 `zip`。 */
-    @SerialName("compression")
-    val compression: String = BACKUP_COMPRESSION_ZIP,
-
-    /** 备份创建时间，单位毫秒；列表排序优先使用该值。 */
-    @SerialName("created_at")
-    val createdAt: Long,
-
-    /** 创建备份时的应用 versionCode，用于问题排查和未来兼容判断。 */
-    @SerialName("app_version_code")
-    val appVersionCode: Int,
-
-    /** 创建备份时的应用 versionName，用于预检摘要展示。 */
-    @SerialName("app_version_name")
-    val appVersionName: String,
-
-    /** 脱敏安装标识，只使用 pid 前缀，不直接暴露设备名称。 */
-    @SerialName("device_label")
-    val deviceLabel: String,
-
-    /** 本次备份来源，用于列表和恢复报告展示。 */
-    @SerialName("source")
-    val source: BackupSource,
-
-    /** 备份类型，用于区分手动备份、自动备份，并兼容识别旧版 safety 文件。 */
-    @SerialName("backup_kind")
-    val backupKind: BackupKind = BackupKind.Manual,
-
-    /** 数据文件清单汇总 SHA-256，用于判断备份包是否损坏或被截断。 */
-    @SerialName("checksum")
-    val checksum: String,
-
-    /** 备份摘要，只保存数量和轻量信息，列表可读 manifest 而不下载完整备份。 */
-    @SerialName("summary")
-    val summary: BackupSummary,
-
-    /** 真实业务数据区，恢复 mapper 只从这里读取业务字段。 */
-    @SerialName("data")
-    val data: BackupData,
-)
 
 /**
  * zip 备份包中的单个业务数据文件描述。
@@ -224,9 +155,9 @@ data class BackupManifest(
     @SerialName("files")
     val files: List<BackupPackageFile> = emptyList(),
 
-    /** 包内列表数据格式；v1 旧备份缺失时按 JSON 数组兼容读取。 */
+    /** 包内列表数据格式；当前只接受 JSONL，缺失时按无效格式拒绝。 */
     @SerialName("data_format")
-    val dataFormat: String = BACKUP_DATA_FORMAT_JSON_ARRAY,
+    val dataFormat: String = "",
 
     /** 轻量数量摘要。 */
     @SerialName("summary")
@@ -253,62 +184,9 @@ data class BackupSummary(
     @SerialName("search_history_count")
     val searchHistoryCount: Int = 0,
 
-    /** 视频下载记录数量。 */
-    @SerialName("video_download_count")
-    val videoDownloadCount: Int = 0,
-
-    /** 图片下载批次数量。 */
-    @SerialName("image_batch_count")
-    val imageBatchCount: Int = 0,
-
-    /** 图片项数量。 */
-    @SerialName("image_item_count")
-    val imageItemCount: Int = 0,
-
     /** 可选功能模块的脱敏数量摘要，key 由对应模块声明为稳定 code。 */
     @SerialName("feature_counts")
     val featureCounts: Map<String, Int> = emptyMap(),
-)
-
-/**
- * 备份数据区。
- *
- * 各列表字段都给默认空集合，确保未来旧备份缺字段时仍可解析；恢复时只读取白名单字段。
- */
-@Keep
-@Serializable
-data class BackupData(
-    /** 剪贴记录备份。 */
-    @SerialName("clips")
-    val clips: List<BackupClip> = emptyList(),
-
-    /** 来源 App 缓存备份。 */
-    @SerialName("source_apps")
-    val sourceApps: List<BackupSourceApp> = emptyList(),
-
-    /** 链接预览缓存备份。 */
-    @SerialName("link_previews")
-    val linkPreviews: List<BackupLinkPreview> = emptyList(),
-
-    /** 搜索历史备份。 */
-    @SerialName("search_histories")
-    val searchHistories: List<BackupSearchHistory> = emptyList(),
-
-    /** 跨安装有意义的用户偏好。 */
-    @SerialName("settings")
-    val settings: BackupSettings = BackupSettings(),
-
-    /** 视频下载记录元数据备份。 */
-    @SerialName("video_downloads")
-    val videoDownloads: List<BackupVideoDownload> = emptyList(),
-
-    /** 图片下载批次备份。 */
-    @SerialName("image_batches")
-    val imageBatches: List<BackupImageBatch> = emptyList(),
-
-    /** 图片项备份。 */
-    @SerialName("image_items")
-    val imageItems: List<BackupImageItem> = emptyList(),
 )
 
 /** 剪贴记录备份字段，保留用户可见状态，不导出可重新计算的派生字段作为恢复依据。 */
@@ -369,59 +247,6 @@ data class BackupSettings(
     @SerialName("recycle_bin_retention_days") val recycleBinRetentionDays: Int? = null,
     /** 剪贴来源 App 过滤包名名单；只保存包名，不保存 App 名称、图标或安装列表。 */
     @SerialName("blocked_clip_source_packages") val blockedClipSourcePackages: List<String> = emptyList(),
-)
-
-/** 视频下载记录备份字段；敏感请求头和 pending 输出不会进入备份包。 */
-@Keep
-@Serializable
-data class BackupVideoDownload(
-    @SerialName("id") val id: Long,
-    @SerialName("video_url") val videoUrl: String,
-    @SerialName("progress") val progress: Int = 0,
-    @SerialName("status") val status: String,
-    @SerialName("error_msg") val errorMsg: String? = null,
-    @SerialName("save_path_hint") val savePathHint: String? = null,
-    @SerialName("total_size") val totalSize: Long = 0,
-    @SerialName("downloaded_size") val downloadedSize: Long = 0,
-    @SerialName("create_time") val createTime: Long,
-    @SerialName("update_time") val updateTime: Long,
-    @SerialName("file_name") val fileName: String,
-)
-
-/** 图片下载批次备份字段；输出目录只作为重新定位 hint。 */
-@Keep
-@Serializable
-data class BackupImageBatch(
-    @SerialName("id") val id: Long,
-    @SerialName("page_url") val pageUrl: String,
-    @SerialName("page_name") val pageName: String,
-    @SerialName("status") val status: String,
-    @SerialName("total_count") val totalCount: Int,
-    @SerialName("success_count") val successCount: Int = 0,
-    @SerialName("failed_count") val failedCount: Int = 0,
-    @SerialName("filtered_count") val filteredCount: Int = 0,
-    @SerialName("output_dir_hint") val outputDirHint: String? = null,
-    @SerialName("error_msg") val errorMsg: String? = null,
-    @SerialName("create_time") val createTime: Long,
-    @SerialName("update_time") val updateTime: Long,
-)
-
-/** 图片项备份字段；Cookie、临时下载路径和其它登录态不进入备份包。 */
-@Keep
-@Serializable
-data class BackupImageItem(
-    @SerialName("id") val id: Long,
-    @SerialName("batch_id") val batchId: Long,
-    @SerialName("url") val url: String,
-    @SerialName("referer") val referer: String? = null,
-    @SerialName("user_agent") val userAgent: String? = null,
-    @SerialName("display_order") val displayOrder: Int,
-    @SerialName("width") val width: Int? = null,
-    @SerialName("height") val height: Int? = null,
-    @SerialName("status") val status: String,
-    @SerialName("output_uri_hint") val outputUriHint: String? = null,
-    @SerialName("final_name") val finalName: String? = null,
-    @SerialName("error_msg") val errorMsg: String? = null,
 )
 
 /**
@@ -567,12 +392,6 @@ enum class BackupProgressCategory {
     SearchHistories,
     /** 用户设置。 */
     Settings,
-    /** 视频下载记录。 */
-    VideoDownloads,
-    /** 图片下载批次。 */
-    ImageBatches,
-    /** 图片下载项。 */
-    ImageItems,
 }
 
 /** 内置备份恢复分类的稳定 code。 */
@@ -584,9 +403,6 @@ fun BackupProgressCategory.reportCode(): String {
         BackupProgressCategory.LinkPreviews -> "link_previews"
         BackupProgressCategory.SearchHistories -> "search_histories"
         BackupProgressCategory.Settings -> "settings"
-        BackupProgressCategory.VideoDownloads -> "video_downloads"
-        BackupProgressCategory.ImageBatches -> "image_batches"
-        BackupProgressCategory.ImageItems -> "image_items"
     }
 }
 

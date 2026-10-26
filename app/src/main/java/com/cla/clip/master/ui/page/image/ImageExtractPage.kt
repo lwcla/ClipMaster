@@ -169,7 +169,7 @@ fun ImageExtractPage(
                     if (!imageExtractVm.isSubmitting) {
                         if (state is ImageProbeState.Extracted) {
                             scope.launch {
-                                if (!imageExtractVm.retryDownload()) context.toast(R.string.base_general_download_history_retry_failed)
+                                if (!imageExtractVm.retryDownload()) context.toast(R.string.base_general_image_download_retry_failed)
                             }
                         } else if (imageExtractVm.probingCandidates.isNotEmpty()) showRetryConfirm = true
                         else restartProbe()

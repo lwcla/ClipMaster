@@ -15,17 +15,21 @@ import org.junit.Test
 /**
  * 备份包底层协议测试。
  *
- * 这里只覆盖纯文件协议，不依赖 Room、Hilt 或 Android 运行时；目标是确保 v2 JSONL zip、manifest checksum
+ * 这里只覆盖纯文件协议，不依赖 Room、Hilt 或 Android 运行时；目标是确保 v5 JSONL zip、manifest checksum
  * 和 zip entry 路径安全边界在普通 JVM 单元测试中也能被快速验证。
  */
 class BackupPackageIoTest {
-    /** v2 Writer 生成的 zip 必须能通过 manifest、数据格式、文件清单和 checksum 校验。 */
+    /** v5 Writer 生成的 zip 必须能通过 manifest、数据格式、文件清单和 checksum 校验。 */
     @Test
-    fun writerCreatesValidV2JsonlPackage() {
+    fun writerCreatesValidV5JsonlPackage() {
+        // 此用例的合成备份目录，结束后只清理该目录。
         val taskDir = createTempDir(prefix = "backup-package-test-")
         try {
+            // 真实协议写入器，覆盖最终 ZIP 文件而非模拟结果。
             val writer = BackupPackageWriter()
+            // 当前临时目录中的独立写入会话。
             val session = writer.begin(taskDir, taskId = "unit-test", fileName = "clip_master_backup_test.zip")
+            // 唯一合成剪贴项的 JSONL 文件描述。
             val clipFile = session.writeJsonLines(
                 path = CLIPS_JSONL_PATH,
                 serializer = BackupClip.serializer(),
@@ -38,17 +42,16 @@ class BackupPackageIoTest {
                     )
                 )
             )
+            // 五个宿主条目与一个可选模块条目，不含媒体数据。
             val files = listOf(
                 clipFile,
                 session.writeJsonLines(SOURCE_APPS_JSONL_PATH, BackupSourceApp.serializer(), emptySequence()),
                 session.writeJsonLines(LINK_PREVIEWS_JSONL_PATH, BackupLinkPreview.serializer(), emptySequence()),
                 session.writeJsonLines(SEARCH_HISTORIES_JSONL_PATH, BackupSearchHistory.serializer(), emptySequence()),
                 session.writeJsonObject(SETTINGS_PATH, BackupJson.encodeSettings(BackupSettings())),
-                session.writeJsonLines(VIDEO_DOWNLOADS_JSONL_PATH, BackupVideoDownload.serializer(), emptySequence()),
-                session.writeJsonLines(IMAGE_BATCHES_JSONL_PATH, BackupImageBatch.serializer(), emptySequence()),
-                session.writeJsonLines(IMAGE_ITEMS_JSONL_PATH, BackupImageItem.serializer(), emptySequence()),
                 session.writeJsonLines("data/unit_feature.jsonl", BackupSearchHistory.serializer(), emptySequence())
             )
+            // 格式 5 的实际文件清单和摘要。
             val manifest = BackupManifest(
                 applicationId = BuildConfig.APPLICATION_ID,
                 schemaVersion = BACKUP_SCHEMA_VERSION,
@@ -65,7 +68,10 @@ class BackupPackageIoTest {
                 summary = BackupSummary(clipCount = 1)
             )
 
+            // 完成打包后的文件，交给真实校验器读取。
+
             val result = writer.finish(session, manifest)
+            // 通过版本、大小、路径和摘要校验的协议对象。
             val validated = result.packageFile.validateBackupPackageFile(BuildConfig.APPLICATION_ID)
 
             assertEquals(BACKUP_SCHEMA_VERSION, validated.schemaVersion)

@@ -157,7 +157,6 @@ fun MinePage(
 
             item { MineSectionHeader(title = stringResource(R.string.base_general_mine_data_management_section)) }
             item { BackupEntry(state = backupEntryState, onNavigate = onNavigate) }
-            item { DownloadHistoryEntry(onNavigate = onNavigate) }
             item { FoldedClipsEntry(foldedClipCount = foldedClipCount, onNavigate = onNavigate) }
             item { RecycleBinEntry(recycleBinCount = recycleBinCount, onNavigate = onNavigate) }
 

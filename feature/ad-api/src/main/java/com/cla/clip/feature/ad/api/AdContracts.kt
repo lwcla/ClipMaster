@@ -36,16 +36,10 @@ enum class AdPlacement(
     ImageDownloadProgressNative("image_download_progress_native"),
     /** 图片下载结果广告位。 */
     ImageDownloadResultNative("image_download_result_native"),
-    /** 视频历史广告位。 */
-    VideoHistoryNative("video_history_native"),
-    /** 图片历史广告位。 */
-    ImageHistoryNative("image_history_native"),
     /** 备份总览广告位。 */
     BackupOverviewNative("backup_overview_native"),
     /** 备份恢复广告位。 */
     BackupRestoreNative("backup_restore_native"),
-    /** 恢复本地媒体关联页的确认说明与结果广告位；稳定 code 不包含任务标识。 */
-    BackupMediaRelocationNative("backup_media_relocation_native"),
 }
 
 /**

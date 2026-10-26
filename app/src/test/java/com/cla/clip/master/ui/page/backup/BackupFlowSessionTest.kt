@@ -4,7 +4,7 @@ import com.cla.clip.base.general.backup.RemoteBackupFile
 import org.junit.Assert.*
 import org.junit.Test
 
-/** 保护图会话的请求所有权、迟到回调和无订阅者时的结果保存契约。 */
+/** 保护图会话的请求所有权与关闭契约。 */
 class BackupFlowSessionTest {
     /** 待接管请求不能被第二次点击覆盖，接管后同一恢复目的地仍独占会话。 */
     @Test
@@ -45,74 +45,6 @@ class BackupFlowSessionTest {
         assertSame(second, session.requests.value)
     }
 
-    /** 图会话之间无共享槽位，同名任务的迟到回调也不能跨实例污染。 */
-    @Test
-    fun sessionsKeepRequestsAndResultsIsolated() {
-        /** 两个实例代表两次进入导航组，目标及摘要均为合成值。 */
-        val first = readySession()
-        /** 后一请求或会话，独立保存新一轮目标。 */
-        val second = BackupFlowSession()
-        assertTrue(first.publishMediaEvent(BackupMediaRelocationEvent.Running("restore-test")))
-        assertNull(second.mediaState.value.restoreTaskId)
-        assertEquals(MediaRelocationEntryState.NotStarted, second.mediaState.value.entryState)
-        assertFalse(second.publishMediaEvent(BackupMediaRelocationEvent.Running("restore-test")))
-    }
-
-    /** 终态没有 UI collector 也必须保存，稍后返回恢复页能直接读取。 */
-    @Test
-    fun terminalResultSurvivesWithoutSubscribers() {
-        /** 空报告足够验证状态保存，不模拟真实扫描算法。 */
-        val session = readySession()
-        /** 结构化合成终态摘要，用于验证回显保存。 */
-        val summary = MediaRelocationSummary(MediaRelocationSummaryType.Completed)
-        assertTrue(session.publishMediaEvent(BackupMediaRelocationEvent.Terminal("restore-test", summary)))
-        assertEquals(MediaRelocationEntryState.Terminal, session.mediaState.value.entryState)
-        assertSame(summary, session.mediaState.value.lastTerminalSummary)
-        assertTrue(session.canOpenMedia("restore-test"))
-    }
-
-    /** 正式扫描期间禁止重复进入，任务身份不匹配时也禁止打开。 */
-    @Test
-    fun runningAndWrongTaskRejectMediaNavigation() {
-        /** 当前会话已接管恢复并登记结果身份。 */
-        val session = readySession()
-        assertFalse(session.canOpenMedia("old-task"))
-        assertTrue(session.publishMediaEvent(BackupMediaRelocationEvent.Running("restore-test")))
-        assertFalse(session.canOpenMedia("restore-test"))
-        assertTrue(session.matchesRestoreTask("restore-test"))
-    }
-
-    /** 关闭立即撤销写权限，不依赖父图 VM 稍后 onCleared 的时机。 */
-    @Test
-    fun closedSessionRejectsLateRequestsAndEvents() {
-        /** 旧会话结束后仍可能有权限/协程回调到达。 */
-        val session = readySession()
-        session.close()
-        assertFalse(session.submitRequest(request()))
-        assertFalse(session.publishMediaEvent(BackupMediaRelocationEvent.Running("restore-test")))
-        assertFalse(session.matchesRestoreTask("restore-test"))
-        assertFalse(session.canOpenMedia("restore-test"))
-        assertNull(session.requests.value)
-        assertNull(session.mediaState.value.restoreTaskId)
-    }
-
-    /** 扫描启动与界面重组之间仍必须同步拒绝退出，终态后重新允许普通返回。 */
-    @Test
-    fun mediaExitChecksLatestStateBeforeUiCollectorUpdates() {
-        /** 保存旧展示状态，模拟 Compose 尚未观察到刚写入的 Running。 */
-        val session = readySession()
-        /** 界面尚未收集更新时的旧值，模拟重组延迟。 */
-        val staleDisplayState = session.mediaState.value
-        assertTrue(session.canLeaveMedia("restore-test"))
-        session.publishMediaEvent(BackupMediaRelocationEvent.Running("restore-test"))
-        assertFalse(staleDisplayState.entryState.isRunning)
-        assertFalse(session.canLeaveMedia("restore-test"))
-        session.publishMediaEvent(BackupMediaRelocationEvent.Interrupted("restore-test", MediaRelocationSummary(MediaRelocationSummaryType.Interrupted)))
-        assertTrue(session.canLeaveMedia("restore-test"))
-        session.close()
-        assertFalse(session.canLeaveMedia("restore-test"))
-    }
-
     /** 退出转场期间重复完成只允许第一次领取弹栈许可，不能继续弹出组外页面。 */
     @Test
     fun groupClosePermissionCanOnlyBeClaimedOnce() {
@@ -122,29 +54,27 @@ class BackupFlowSessionTest {
         assertFalse(session.close())
     }
 
-    /** 开始下一次恢复前清除旧摘要，旧任务登记不能覆盖新的活动请求。 */
+    /** 两次打开导航组的请求槽相互独立，关闭后拒绝新请求与迟到接管。 */
     @Test
-    fun nextRestoreClearsSummaryAndRejectsOldOwner() {
-        /** 同组内先退出恢复页，再选择另一备份。 */
-        val session = BackupFlowSession()
-        /** 前一请求或会话，用于验证旧身份不会污染后续流程。 */
-        val first = request()
-        /** 后一请求或会话，独立保存新一轮目标。 */
-        val second = request()
-        session.submitRequest(first)
-        session.acknowledgeRequest(first.requestId)
-        assertTrue(session.registerRestoreTask(first.requestId, "first-task"))
-        session.publishMediaEvent(BackupMediaRelocationEvent.Terminal("first-task", MediaRelocationSummary(MediaRelocationSummaryType.Completed)))
-        session.finishRestore(first.requestId)
-        session.submitRequest(second)
-        session.acknowledgeRequest(second.requestId)
-        assertFalse(session.registerRestoreTask(first.requestId, "first-task"))
-        assertTrue(session.registerRestoreTask(second.requestId, "second-task"))
-        assertNull(session.mediaState.value.lastTerminalSummary)
-        assertFalse(session.publishMediaEvent(BackupMediaRelocationEvent.Running("first-task")))
+    fun sessionsRemainIsolatedAndClosedSessionRejectsRequests() {
+        // 第一个会话已经接管请求，第二个会话仍可接受自己的目标。
+        val first = readySession()
+        // 新图会话没有旧实例的请求状态。
+        val second = BackupFlowSession()
+        // 仅使用合成目标，不打开文件或网络。
+        val pending = request()
+        assertNull(second.requests.value)
+        assertTrue(second.submitRequest(pending))
+        assertTrue(first.close())
+        assertFalse(first.submitRequest(request()))
+        assertFalse(first.acknowledgeRequest(pending.requestId))
+        assertSame(pending, second.requests.value)
+        assertTrue(second.close())
+        assertNull(second.requests.value)
+        assertFalse(second.acknowledgeRequest(pending.requestId))
     }
 
-    /** 构造可进入关联阶段的会话，所有状态通过真实请求接管接口建立。 */
+    /** 构造已接管恢复请求的会话，所有状态通过真实请求接管接口建立。 */
     private fun readySession(): BackupFlowSession {
         /** 合成请求只携带无效的测试文件名，不访问服务端。 */
         val session = BackupFlowSession()
@@ -152,7 +82,6 @@ class BackupFlowSessionTest {
         val request = request()
         assertTrue(session.submitRequest(request))
         assertTrue(session.acknowledgeRequest(request.requestId))
-        assertTrue(session.registerRestoreTask(request.requestId, "restore-test"))
         return session
     }
 

@@ -101,7 +101,7 @@ internal fun BatchStatusContent(
                 status = stringResource(when (item.status) {
                     ImageExtractItemData.STATUS_SUCCESS -> R.string.base_general_download_completed
                     ImageExtractItemData.STATUS_FAILED -> R.string.base_general_download_failed
-                    ImageExtractItemData.STATUS_FILTERED -> R.string.base_general_download_history_filtered
+                    ImageExtractItemData.STATUS_FILTERED -> R.string.base_general_image_download_filtered
                     ImageExtractItemData.STATUS_TEMP_READY -> R.string.base_general_media_task_publishing
                     else -> R.string.base_general_media_task_pending
                 }),

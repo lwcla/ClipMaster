@@ -226,7 +226,7 @@ data class BackupPackageRef(
 /**
  * 文件型备份包读取器。
  *
- * Reader 负责 manifest、checksum 和 JSONL/旧 JSON 数组兼容读取；业务恢复规则仍由 Repository 决定。
+ * Reader 负责 manifest、checksum 和当前 JSONL 读取；业务恢复规则仍由 Repository 决定。
  */
 @Singleton
 class BackupPackageReader @Inject constructor() {

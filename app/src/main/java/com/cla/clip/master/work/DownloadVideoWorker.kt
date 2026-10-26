@@ -102,10 +102,6 @@ class DownloadVideoWorker @AssistedInject constructor(
             WorkManager.getInstance(context).cancelAllWorkByTag(DOWNLOAD_VIDEO_TASK_TAG)
         }
 
-        /** 取消指定视频下载任务；下载记录页删除进行中记录时先调用它，避免 Worker 继续写入已删除记录。 */
-        fun cancel(context: Context, taskId: Long) {
-            WorkManager.getInstance(context).cancelUniqueWork(uniqueWorkName(taskId))
-        }
     }
 
     /**

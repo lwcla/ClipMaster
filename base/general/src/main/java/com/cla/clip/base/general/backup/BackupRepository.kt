@@ -1,7 +1,5 @@
 package com.cla.clip.base.general.backup
 
-import com.cla.clip.base.general.BuildConfig
-import com.cla.clip.base.general.utils.logE
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -22,14 +20,9 @@ class BackupRepository @Inject constructor(
     private val snapshotExporter: BackupSnapshotExporter,
     /** 备份快照恢复器，负责事务恢复、幂等合并和分类报告。 */
     private val snapshotRestorer: BackupSnapshotRestorer,
-    /** 文件型备份包读取器，负责 manifest、checksum 和 JSONL/v1 兼容读取。 */
+    /** 文件型备份包读取器，负责 manifest、checksum 和当前 JSONL 读取。 */
     private val packageReader: BackupPackageReader,
 ) {
-    companion object {
-        /** 日志标签，只记录脱敏状态，不输出剪贴内容或账号密码。 */
-        private const val TAG = "BackupRepository"
-    }
-
     /**
      * 全局备份恢复互斥锁。
      *
@@ -71,20 +64,6 @@ class BackupRepository @Inject constructor(
         )
     }
 
-    /** 旧字节数组预览兼容入口；仅用于测试或短期过渡，主流程应使用文件引用。 */
-    suspend fun previewSnapshot(packageBytes: ByteArray): BackupPreview = withContext(Dispatchers.Default) {
-        val snapshot = decodeAndValidateSnapshot(packageBytes)
-        BackupPreview(
-            createdAt = snapshot.createdAt,
-            appVersionName = snapshot.appVersionName,
-            schemaVersion = snapshot.schemaVersion,
-            deviceLabel = snapshot.deviceLabel,
-            backupKind = snapshot.backupKind,
-            checksumValid = true,
-            summary = snapshot.summary
-        )
-    }
-
     /**
      * 恢复完整备份。
      *
@@ -92,42 +71,15 @@ class BackupRepository @Inject constructor(
      */
     suspend fun restoreSnapshot(ref: BackupPackageRef): BackupRestoreReport = withContext(Dispatchers.IO) {
         backupMutex.withLock {
+            // 再次校验文件协议，防止绕过预览直接写库。
             val manifest = packageReader.preview(ref)
+            // 统一恢复时间边界，继续保护本地较新的用户状态。
             val timeNormalizer = BackupRestoreTimeNormalizer(
                 restoreStartedAt = System.currentTimeMillis(),
                 manifestCreatedAt = manifest.createdAt
             )
-            if (manifest.schemaVersion <= 1 || manifest.dataFormat == BACKUP_DATA_FORMAT_JSON_ARRAY) {
-                val snapshot = ref.requireReadable().readBytes().decodeBackupPackage()
-                snapshot.validateForRestore(BuildConfig.APPLICATION_ID)
-                return@withContext snapshotRestorer.restoreSnapshot(snapshot, timeNormalizer)
-            }
             snapshotRestorer.restorePackage(ref, manifest, timeNormalizer)
         }
     }
 
-    /** 旧字节数组恢复兼容入口；仅用于测试或短期过渡，主流程应使用文件引用。 */
-    suspend fun restoreSnapshot(packageBytes: ByteArray): BackupRestoreReport = withContext(Dispatchers.IO) {
-        backupMutex.withLock {
-            val snapshot = decodeAndValidateSnapshot(packageBytes)
-            val timeNormalizer = BackupRestoreTimeNormalizer(
-                restoreStartedAt = System.currentTimeMillis(),
-                manifestCreatedAt = snapshot.createdAt
-            )
-            snapshotRestorer.restoreSnapshot(snapshot, timeNormalizer)
-        }
-    }
-
-    /** 解码并校验快照，统一处理 kotlinx.serialization 抛出的解析异常。 */
-    private fun decodeAndValidateSnapshot(packageBytes: ByteArray): BackupSnapshot {
-        val snapshot = runCatching { packageBytes.decodeBackupPackage() }
-            .getOrElse { throwable ->
-                logE(TAG, throwable) {
-                    "备份包解析失败 reasonCode=${throwable.backupReasonCode()} type=${throwable::class.simpleName}"
-                }
-                if (throwable is BackupFailure) throw throwable else throw BackupFailure.ParseFailed(throwable)
-            }
-        snapshot.validateForRestore(BuildConfig.APPLICATION_ID)
-        return snapshot
-    }
 }

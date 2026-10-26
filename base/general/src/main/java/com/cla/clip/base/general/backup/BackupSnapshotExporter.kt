@@ -1,6 +1,5 @@
 package com.cla.clip.base.general.backup
 
-import androidx.room.withTransaction
 import com.cla.clip.base.general.BuildConfig
 import com.cla.clip.base.general.config.clip.ClipSettingsRepository
 import com.cla.clip.base.general.config.installation.InstallationIdentityRepository
@@ -42,7 +41,7 @@ class BackupSnapshotExporter @Inject constructor(
     /**
      * 生成完整备份快照和 manifest。
      *
- * 导出开始时读取 high-water mark，后续分页只导出这些边界内的数据；新增变化在下一次每日或手动备份中读取。
+     * 导出开始时读取 high-water mark，后续分页只导出这些边界内的数据；新增变化在下一次每日或手动备份中读取。
      */
     suspend fun export(
         source: BackupSource,
@@ -53,69 +52,72 @@ class BackupSnapshotExporter @Inject constructor(
         /** 本次快照的独立临时目录；后续任何准备或导出失败都须清理。 */
         val taskDir = tempFileStore.createExportDir(taskId)
         return try {
-        tempFileStore.ensureAvailableSpace(BackupPackageWriter.MAX_BACKUP_PACKAGE_BYTES)
-        /** 快照名称使用本机安装 ID，不写入备份设置白名单。 */
-        val deviceLabel = buildBackupDeviceLabel(installationIdentityRepository.getOrCreateInstallId())
-        /** 导出开始时读取一次已提交设置，避免 ZIP 内字段跨不同写入时刻。 */
-        val backupSettings = clipSettingsRepository.snapshot().toBackupSettings()
-        // 文件名前缀包含任务身份；即使两轮在同一秒生成，也不会覆盖对方的正式 ZIP/manifest。
-        val fileName = buildBackupFileName("${deviceLabel}_$taskId", now, backupKind)
-        val session = packageWriter.begin(taskDir, taskId, fileName)
-        val highWater = readHighWaterMarks()
-        logD(TAG) {
-            "备份导出读取 highWater taskId=$taskId clipMaxId=${highWater.clipMaxId} " +
-                "searchHistoryMaxId=${highWater.searchHistoryMaxId} videoDownloadMaxId=${highWater.videoDownloadMaxId} " +
-                "imageBatchMaxId=${highWater.imageBatchMaxId} imageItemMaxId=${highWater.imageItemMaxId} " +
-                "featureContributors=${highWater.featureMarks.keys.sorted()}"
-        }
-        val entryFiles = mutableListOf<BackupPackageFile>()
-        val summaryBuilder = BackupSummaryBuilder()
-        run {
-            entryFiles += exportClipLines(session, highWater.clipMaxId, summaryBuilder)
-            entryFiles += exportSourceAppLines(session, summaryBuilder)
-            entryFiles += exportLinkPreviewLines(session, summaryBuilder)
-            entryFiles += exportSearchHistoryLines(session, highWater.searchHistoryMaxId, summaryBuilder)
-            entryFiles += session.writeJsonObject(SETTINGS_PATH, BackupJson.encodeSettings(backupSettings))
-            entryFiles += exportVideoDownloadLines(session, highWater.videoDownloadMaxId, summaryBuilder)
-            entryFiles += exportImageBatchLines(session, highWater.imageBatchMaxId, summaryBuilder)
-            entryFiles += exportImageItemLines(session, highWater.imageItemMaxId, summaryBuilder)
-            featureContributors.sortedBy { it.contributorId }.forEach { contributor ->
-                entryFiles += contributor.exportJsonl(
-                    session = session,
-                    highWaterMarks = highWater.featureMarks[contributor.contributorId].orEmpty(),
-                    featureCounts = summaryBuilder.featureCounts
+            tempFileStore.ensureAvailableSpace(BackupPackageWriter.MAX_BACKUP_PACKAGE_BYTES)
+            /** 快照名称使用本机安装 ID，不写入备份设置白名单。 */
+            val deviceLabel = buildBackupDeviceLabel(installationIdentityRepository.getOrCreateInstallId())
+            /** 导出开始时读取一次已提交设置，避免 ZIP 内字段跨不同写入时刻。 */
+            val backupSettings = clipSettingsRepository.snapshot().toBackupSettings()
+            // 文件名前缀包含任务身份；即使两轮在同一秒生成，也不会覆盖对方的正式 ZIP/manifest。
+            val fileName = buildBackupFileName("${deviceLabel}_$taskId", now, backupKind)
+            // 本轮独立写入会话，临时文件只在完整打包后发布。
+            val session = packageWriter.begin(taskDir, taskId, fileName)
+            // 当前可备份表的读取上界，不访问三张媒体任务表。
+            val highWater = readHighWaterMarks()
+            logD(TAG) {
+                "备份导出读取 highWater taskId=$taskId clipMaxId=${highWater.clipMaxId} " +
+                    "searchHistoryMaxId=${highWater.searchHistoryMaxId} " +
+                    "featureContributors=${highWater.featureMarks.keys.sorted()}"
+            }
+            // 宿主和可选模块已写完的文件清单。
+            val entryFiles = mutableListOf<BackupPackageFile>()
+            // 只统计本轮实际写出的数据。
+            val summaryBuilder = BackupSummaryBuilder()
+            run {
+                entryFiles += exportClipLines(session, highWater.clipMaxId, summaryBuilder)
+                entryFiles += exportSourceAppLines(session, summaryBuilder)
+                entryFiles += exportLinkPreviewLines(session, summaryBuilder)
+                entryFiles += exportSearchHistoryLines(session, highWater.searchHistoryMaxId, summaryBuilder)
+                entryFiles += session.writeJsonObject(SETTINGS_PATH, BackupJson.encodeSettings(backupSettings))
+                featureContributors.sortedBy { it.contributorId }.forEach { contributor ->
+                    entryFiles += contributor.exportJsonl(
+                        session = session,
+                        highWaterMarks = highWater.featureMarks[contributor.contributorId].orEmpty(),
+                        featureCounts = summaryBuilder.featureCounts
+                    )
+                }
+                // 写入 manifest 的稳定摘要。
+                val summary = summaryBuilder.toSummary()
+                // 当前版本的外部文件协议，清单和 checksum 在发布前确定。
+                val manifest = BackupManifest(
+                    applicationId = BuildConfig.APPLICATION_ID,
+                    schemaVersion = BACKUP_SCHEMA_VERSION,
+                    createdAt = now,
+                    appVersionCode = BuildConfig.VERSION_CODE,
+                    appVersionName = BuildConfig.VERSION_NAME,
+                    deviceLabel = deviceLabel,
+                    source = source,
+                    backupKind = backupKind,
+                    snapshotFileName = fileName,
+                    checksum = entryFiles.calculateManifestChecksum(),
+                    files = entryFiles,
+                    dataFormat = BACKUP_DATA_FORMAT_JSONL,
+                    summary = summary
+                )
+                // 完成后的 ZIP 与 sidecar 摘要，由调用方继续发布。
+                val packageResult = packageWriter.finish(session, manifest)
+                logD(TAG) {
+                    "备份快照已生成 source=${source.logCode()} backupKind=${backupKind.logCode()} " +
+                        "fileSize=${packageResult.fileSize} ${summary.toLogFields()}"
+                }
+                BackupExportResult(
+                    packageFile = packageResult.packageFile,
+                    manifest = packageResult.manifest,
+                    manifestJson = packageResult.manifestJson,
+                    fileName = packageResult.fileName,
+                    manifestFileName = packageResult.manifestFileName,
+                    taskDir = packageResult.taskDir
                 )
             }
-            val summary = summaryBuilder.toSummary()
-            val manifest = BackupManifest(
-                applicationId = BuildConfig.APPLICATION_ID,
-                schemaVersion = BACKUP_SCHEMA_VERSION,
-                createdAt = now,
-                appVersionCode = BuildConfig.VERSION_CODE,
-                appVersionName = BuildConfig.VERSION_NAME,
-                deviceLabel = deviceLabel,
-                source = source,
-                backupKind = backupKind,
-                snapshotFileName = fileName,
-                checksum = entryFiles.calculateManifestChecksum(),
-                files = entryFiles,
-                dataFormat = BACKUP_DATA_FORMAT_JSONL,
-                summary = summary
-            )
-            val packageResult = packageWriter.finish(session, manifest)
-            logD(TAG) {
-                "备份快照已生成 source=${source.logCode()} backupKind=${backupKind.logCode()} " +
-                    "fileSize=${packageResult.fileSize} ${summary.toLogFields()}"
-            }
-            BackupExportResult(
-                packageFile = packageResult.packageFile,
-                manifest = packageResult.manifest,
-                manifestJson = packageResult.manifestJson,
-                fileName = packageResult.fileName,
-                manifestFileName = packageResult.manifestFileName,
-                taskDir = packageResult.taskDir
-            )
-        }
         } catch (failure: Throwable) {
             runCatching { tempFileStore.cleanupTaskDir(taskDir, taskId) }
                 .onFailure { cleanupFailure ->
@@ -125,50 +127,11 @@ class BackupSnapshotExporter @Inject constructor(
         }
     }
 
-    /** 使用 v1 内存模型生成测试或旧兼容快照；主流程不再调用该方法。 */
-    internal suspend fun createLegacySnapshot(
-        source: BackupSource,
-        backupKind: BackupKind,
-        now: Long,
-    ): BackupSnapshot {
-        /** DataStore 不参与 Room 事务，先捕获独立的设置快照。 */
-        val backupSettings = clipSettingsRepository.snapshot().toBackupSettings()
-        /** 旧内存备份路径仍只将 Room 查询组成一次事务。 */
-        val data = appDatabase.withTransaction {
-            BackupData(
-                clips = appDatabase.clipDao().loadAllClipsForBackup().map { it.toBackupClip() },
-                sourceApps = appDatabase.sourceAppDao().loadAllForBackup().map { it.toBackupSourceApp() },
-                linkPreviews = appDatabase.linkPreviewDao().loadAllForBackup().map { it.toBackupLinkPreview() },
-                searchHistories = appDatabase.searchHistoryDao().loadAllForBackup().map { it.toBackupSearchHistory() },
-                settings = backupSettings,
-                videoDownloads = appDatabase.downloadDao().loadAllTasksForBackup().map { it.toBackupVideoDownload() },
-                imageBatches = appDatabase.imageExtractDao().loadAllBatchesForBackup().map { it.toBackupImageBatch() },
-                imageItems = appDatabase.imageExtractDao().loadAllItemsForBackup().map { it.toBackupImageItem() }
-            )
-        }
-        return BackupSnapshot(
-            applicationId = BuildConfig.APPLICATION_ID,
-            schemaVersion = 1,
-            createdAt = now,
-            appVersionCode = BuildConfig.VERSION_CODE,
-            appVersionName = BuildConfig.VERSION_NAME,
-            deviceLabel = buildBackupDeviceLabel(installationIdentityRepository.getOrCreateInstallId()),
-            source = source,
-            backupKind = backupKind,
-            checksum = data.calculateChecksum(),
-            summary = data.toSummary(),
-            data = data
-        )
-    }
-
     /** 读取各表 high-water mark，本次导出只包含这些边界内的记录。 */
     private suspend fun readHighWaterMarks(): BackupHighWaterMarks {
         return BackupHighWaterMarks(
             clipMaxId = appDatabase.clipDao().maxClipIdForBackup(),
             searchHistoryMaxId = appDatabase.searchHistoryDao().maxIdForBackup(),
-            videoDownloadMaxId = appDatabase.downloadDao().maxTaskIdForBackup(),
-            imageBatchMaxId = appDatabase.imageExtractDao().maxBatchIdForBackup(),
-            imageItemMaxId = appDatabase.imageExtractDao().maxItemIdForBackup(),
             featureMarks = featureContributors
                 .sortedBy { it.contributorId }
                 .associate { contributor -> contributor.contributorId to contributor.readHighWaterMarks() }
@@ -313,108 +276,4 @@ class BackupSnapshotExporter @Inject constructor(
         }
     }
 
-    /** 分页导出视频下载记录为 JSONL。 */
-    private suspend fun exportVideoDownloadLines(
-        session: BackupPackageBuildSession,
-        maxId: Long,
-        summary: BackupSummaryBuilder,
-    ): BackupPackageFile {
-        var exportedCount = 0
-        return session.writeJsonLines(VIDEO_DOWNLOADS_JSONL_PATH, BackupVideoDownload.serializer()) { sink ->
-            var lastId = 0L
-            while (true) {
-                val page = appDatabase.downloadDao().loadTasksPageForBackup(lastId, maxId, EXPORT_PAGE_SIZE)
-                if (page.isEmpty()) break
-                page.forEach { data ->
-                    sink.write(data.toBackupVideoDownload())
-                    summary.videoDownloadCount += 1
-                    exportedCount += 1
-                }
-                lastId = page.last().id
-            }
-            if (exportedCount == 0) {
-                // 下载记录恢复价值高；分页通道读空时兜底旧全量查询，同时 mapper 仍会过滤敏感字段。
-                val fallback = appDatabase.downloadDao().loadAllTasksForBackup()
-                if (fallback.isNotEmpty()) {
-                    logW(TAG) {
-                        "视频下载分页导出为空，已使用全量查询兜底 reasonCode=paged_export_empty maxId=$maxId fallbackCount=${fallback.size}"
-                    }
-                    fallback.forEach { data ->
-                        sink.write(data.toBackupVideoDownload())
-                        summary.videoDownloadCount += 1
-                    }
-                }
-            }
-        }
-    }
-
-    /** 分页导出图片批次为 JSONL。 */
-    private suspend fun exportImageBatchLines(
-        session: BackupPackageBuildSession,
-        maxId: Long,
-        summary: BackupSummaryBuilder,
-    ): BackupPackageFile {
-        var exportedCount = 0
-        return session.writeJsonLines(IMAGE_BATCHES_JSONL_PATH, BackupImageBatch.serializer()) { sink ->
-            var lastId = 0L
-            while (true) {
-                val page = appDatabase.imageExtractDao().loadBatchesPageForBackup(lastId, maxId, EXPORT_PAGE_SIZE)
-                if (page.isEmpty()) break
-                page.forEach { data ->
-                    sink.write(data.toBackupImageBatch())
-                    summary.imageBatchCount += 1
-                    exportedCount += 1
-                }
-                lastId = page.last().id
-            }
-            if (exportedCount == 0) {
-                // 图片批次是媒体记录的父级数据；分页读空时兜底全量查询，保证批次和图片项恢复关系仍可重建。
-                val fallback = appDatabase.imageExtractDao().loadAllBatchesForBackup()
-                if (fallback.isNotEmpty()) {
-                    logW(TAG) {
-                        "图片批次分页导出为空，已使用全量查询兜底 reasonCode=paged_export_empty maxId=$maxId fallbackCount=${fallback.size}"
-                    }
-                    fallback.forEach { data ->
-                        sink.write(data.toBackupImageBatch())
-                        summary.imageBatchCount += 1
-                    }
-                }
-            }
-        }
-    }
-
-    /** 分页导出图片项为 JSONL。 */
-    private suspend fun exportImageItemLines(
-        session: BackupPackageBuildSession,
-        maxId: Long,
-        summary: BackupSummaryBuilder,
-    ): BackupPackageFile {
-        var exportedCount = 0
-        return session.writeJsonLines(IMAGE_ITEMS_JSONL_PATH, BackupImageItem.serializer()) { sink ->
-            var lastId = 0L
-            while (true) {
-                val page = appDatabase.imageExtractDao().loadItemsPageForBackup(lastId, maxId, EXPORT_PAGE_SIZE)
-                if (page.isEmpty()) break
-                page.forEach { data ->
-                    sink.write(data.toBackupImageItem())
-                    summary.imageItemCount += 1
-                    exportedCount += 1
-                }
-                lastId = page.last().id
-            }
-            if (exportedCount == 0) {
-                // 图片项可能很多，正常必须走分页；只有分页异常完全读空时才兜底旧全量查询，避免生成无图片记录的备份。
-                val fallback = appDatabase.imageExtractDao().loadAllItemsForBackup()
-                if (fallback.isNotEmpty()) {
-                    logW(TAG) {
-                        "图片项分页导出为空，已使用全量查询兜底 reasonCode=paged_export_empty maxId=$maxId fallbackCount=${fallback.size}"
-                    }
-                    fallback.forEach { data ->
-                        sink.write(data.toBackupImageItem())
-                        summary.imageItemCount += 1
-                    }
-                }
-            }
-        }
-    }
 }

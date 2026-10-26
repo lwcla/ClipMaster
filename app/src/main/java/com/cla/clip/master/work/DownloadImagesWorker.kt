@@ -84,10 +84,6 @@ class DownloadImagesWorker @AssistedInject constructor(
             )
         }
 
-        /** 取消指定图片批量下载任务；删除进行中批次前必须先取消，避免 Worker 迟到回写已删除批次。 */
-        fun cancel(context: Context, batchId: Long) {
-            WorkManager.getInstance(context).cancelUniqueWork("${DOWNLOAD_IMAGES_TASK_TAG}:$batchId")
-        }
     }
 
     /**

@@ -1,6 +1,183 @@
-状态：实现中
+状态：已完成
 
 # 下载记录页面方案
+
+## 下载媒体记录功能移除方案（2026-10-26）
+
+本节为已完成的移除实现；设备验收仍待进行，具体边界见实施记录。用户明确开发阶段无需旧数据兼容，2026-10-26 授权实施。下方原页面设计、审查和验证均为已废弃功能的历史背景，不再代表当前实现或待办；本轮不清理设备数据。
+
+**目标**：移除宿主视频/图片下载历史管理及其备份、恢复、媒体重新定位负担，保留正常提取、下载和当前任务结果体验。
+
+**架构**：沿用 Room + Repository + WorkManager 的下载执行链路，把三张相关表限定为本机任务数据；删除历史页面及专属查询，备份恢复只处理保留的数据类别。不引入替代历史页、功能开关、新任务框架或跨模块反向依赖。
+
+**技术栈**：继续使用 Kotlin、Compose、Room、WorkManager、kotlinx.serialization 和现有 ZIP/JSONL 备份器，无新增生产依赖。
+
+**设计依据与执行方式**：本节承载删除范围与任务计划；备份协议细节只在 [备份主方案](webdav_backup_plan.md#下载媒体任务退出备份恢复方案2026-10-26) 维护。本次按 `superpowers:executing-plans` 在专用分支内执行，最终做一次独立审查。
+
+### 已确认前提与方案取舍
+
+| 做法 | 影响 | 本次选择 |
+| --- | --- | --- |
+| 只隐藏入口 | 历史查询、媒体关联和备份协议继续存在，维护负担没有消失 | 不采用 |
+| 删除历史功能及备份耦合，保留下载所需本机任务表 | 下载体验可延续，主要历史管理复杂度被移除，改动范围可控 | 已确认，按此实现 |
+| 同时删除任务表、把下载完全改成内存状态 | 需重做 Worker 输入、进度、重试、进程恢复及 pending 输出清理，扩大为下载架构重构 | 不纳入本次 |
+
+用户已确认无需旧数据兼容，并进一步明确不得影响 Android 系统自动备份；允许系统恢复时带回多余任务数据，不为此增加排除、迁移或清理机制。具体删除边界与自定义备份格式 5 已按下列任务落地，验证状态见实施记录。无需为旧历史记录、旧路由或旧备份制作迁移、降级读取、占位页面和兼容字段；也不借本次任务清理全仓其他领域的历史迁移。
+
+### 额外保留与自主取舍复核（2026-10-26）
+
+| 项目 | 原方案的处理 | 性质与原因 |
+| --- | --- | --- |
+| 已完成任务行 | 不新增立即删除或定期清理 | 属于暂缓清理的保守取舍；避免当前结果、重试及 pending 输出清理失去输入。旧行允许存在，不增加后台保留策略 |
+| 任务表字段与索引 | 保留现有实体结构，未单独做字段/索引瘦身 | 属于范围收敛的保守取舍；例如视频表仍有 `total_size`、`downloaded_size` 预留字段。本轮未承诺它们全部必要，也未逐项证明可删；这是不同于保留任务表本身的决定 |
+| 三张任务表、当前重试、共享组件、恢复请求会话 | 继续保留仍有消费者的部分 | 当前功能的实际依赖，并非为了兼容旧数据；删除它们会改变下载或恢复的现有执行链路 |
+| 自定义备份格式 5 与旧包拒绝 | 协议升级并复用现有不支持版本错误 | 是额外确定的协议边界，不是旧数据兼容方案；不新增升级转换、历史读取或回填 |
+| 已发布媒体、既有备份文件、其他功能迁移 | 不主动删除或顺带重构 | 不属于宿主历史页面代码退役的清理目标；旧备份不承诺可读，也不为保存文件增加兼容实现 |
+
+本次修订只撤回改变 Android 系统备份的建议，并把上述自主取舍显式列出；未把任务容量清理、表结构瘦身或新取消按钮悄悄加入实施范围。测试、checksum 与恢复阶段失败处理属于剩余功能的正确性验证，不因开发阶段而替换为无校验流程。
+
+### 用户体验与数据边界
+
+1. “我的”页不再显示“下载记录”，应用中不再提供视频/图片历史 Tab、历史缩略图浏览、历史批量删除和历史重新下载。
+2. 视频/图片提取、确认下载、前台进度、失败重试及当前页面结果展示保持；下载成功的文件仍由系统相册或文件管理器管理。当前主动取消下载依赖历史页“删除进行中记录”，详情页和进度通知没有独立取消按钮；该用户入口随历史页一起移除，详情页返回仍按现有行为让下载继续。本次建议接受这一功能减少，不额外增加取消 UI 或全局任务中心；底层取消传播、冷启动现有策略和失败清理保留。
+3. 保留 `download_tasks`、`image_extract_batches`、`image_extract_items` 及任务执行必需字段。它们同时承载 Worker 输入、状态、图片候选、输出引用和当前页面结果，不是可以整体删除的“历史专用表”。本次不改 Room 实体结构，因此不需要新增 Room 迁移或重置数据库版本。
+4. 删除功能不删除已发布媒体，不调用 MediaStore 删除授权，也不扫描相册。当前任务失败后处理 pending 输出、临时文件和网络取消的既有行为仍保留。
+5. 本机任务行暂时沿用现有保留方式，不在 Worker 完成或页面离开时立即删除，避免丢失当前结果、图片重试输入和异常输出清理依据。本次不新增自动清理 Worker；任务行仍可能累积，这是明确的范围取舍，不能宣称“所有下载数据都已删除”。后续若容量成为问题，再设计基于活动任务与页面持有状态的独立清理策略。
+6. 应用内新生成的本地/WebDAV 备份不含上述三类数据，自定义恢复结果不再出现媒体重新定位入口、媒体读取授权、匹配进度及关联结果。Android 系统自动备份和设备迁移配置保持现状，允许其整库恢复带回任务行；不因此增加额外恢复处理。具体边界以备份主方案为准。
+7. TorrentSearch 的独立下载/历史、可选功能备份参与者不属于宿主媒体历史，继续保留；不把“下载记录”文本匹配当作全仓删除依据。
+
+### 复用检查与保留清单
+
+按页面 package → app 模块 → base/feature 共享模块 → 全仓引用核查，得到以下边界：
+
+| 能力 | 决策及代码证据 |
+| --- | --- |
+| 视频下载 Repository、DAO、Worker、状态观察 | 保留。`DownloadVideoWorker.doWork()` 读取任务和最近任务的 pending 输出；`VideoDownloadVm.startDownload()` 仍观察和重试当前任务；`VideoDownloadWorkObserver` 与 `VideoDownloadStartPolicy` 继续提供中断/重试规则 |
+| 图片批次与条目、`cloneBatchForRetry` | 保留。`ImageExtractVm.retryDownload()` 仍调用 `ImageExtractRepository.cloneBatchForRetry()`，不能随历史页一起删除 |
+| `createRetryTask`、历史 Paging/COUNT/id 批量接口 | 删除前再次核对调用方；当前视频历史克隆、历史查询和多选删除接口随历史功能退役，单任务接口按剩余调用保留 |
+| 按 taskId/batchId 取消的用户入口 | `DownloadHistoryVm` 在删除记录前调用两类 Worker 的 cancel；详情页和通知未提供相同动作。本次随历史管理退役，不宣称主动取消体验保持；保留仍被系统/冷启动/执行链路使用的取消能力 |
+| `ImageHistoryFileRef`、`VideoMediaReferenceUpdate`、`ImageMediaReferenceUpdate`、`ImageRelocationBatchSummary` | 在历史页和重新定位消费者删除后，删除无其他调用的模型与查询；不迁入新的万能工具类 |
+| 共享图片预览、媒体网格、分页状态、选择操作条与卡片外壳 | 保留其他页面仍使用的实现。共享组件主文档只减少调用方，不重新描述其完整契约 |
+| `base_general_download_history_retry_failed`、`base_general_download_history_filtered` | 图片提取页仍使用；迁到图片下载语义的资源 key 并修改引用，再删除旧 key，保留现有显示文案 |
+| `BackupPackageWriter`、文件型 Reader、任务互斥、分阶段恢复与报告 | 复用现有能力，只收缩数据类别；保持 Room、可选模块、DataStore 的阶段失败边界 |
+| 每日备份与 dirty | 当前 `BackupAutoWorker` 已不读取业务 dirty，普通业务保存不触发备份。本次无需新增或删除 dirty 机制，WebDAV 表单的 draft dirty 状态与此无关 |
+
+### 文件与职责清单
+
+以下路径均相对仓库根目录；前缀 A 为 `app/src/main/java/com/cla/clip/master/`，G 为 `base/general/src/main/java/com/cla/clip/base/general/`。
+
+| 范围 | 文件与处理 |
+| --- | --- |
+| 历史页面 | 删除 A 下 `ui/page/download/DownloadHistoryPage.kt`、`DownloadHistoryVm.kt`、`DownloadHistoryContent.kt`、`DownloadHistoryChrome.kt`、`DownloadHistoryCards.kt`、`DownloadHistoryDialogs.kt`、`DownloadHistoryPagerPolicy.kt` |
+| 页面入口与路由 | 修改 A 下 `ui/page/mine/MinePage.kt`、`MineEntries.kt`、`ui/navigation/Routes.kt`、`AppNavigation.kt`，移除 `DownloadHistoryEntry`、`DownloadHistoryRoute` 和目的地注册 |
+| 媒体重新定位 | 删除 A 下 `media/DownloadedMediaRelocator.kt`、`ui/page/backup/BackupMediaRelocationPage.kt`、`BackupMediaRelocationContent.kt`、`BackupMediaRelocationVm.kt`、`BackupMediaRelocationEvents.kt`、`BackupMediaRelocationStateReducer.kt`、`BackupMediaRelocationAdPolicy.kt` |
+| 恢复页面与会话 | 修改 A 下 `ui/navigation/BackupNavigation.kt`、`Routes.kt`、`ui/page/backup/BackupRestoreState.kt`、`BackupRestoreVm.kt`、`BackupRestoreFlowPage.kt`、`BackupRestoreFlowContent.kt`、`BackupFlowSession.kt`；按引用调整 `BackupFlowVm.kt`，保留请求提交、接管、释放、关闭与迟到请求隔离 |
+| 任务数据接口 | 修改 G 下 `dao/DownloadDao.kt`、`dao/ImageExtractDao.kt`、`repository/DownloadRepository.kt`、`repository/ImageExtractRepository.kt`，删除历史/备份/重新定位专属方法；实体和下载执行接口保留 |
+| 备份模型与数据链路 | 修改 G 下 `backup/BackupModels.kt`、`BackupJson.kt`、`BackupExportModels.kt`、`BackupEntityMappers.kt`、`BackupSnapshotExporter.kt`、`BackupSnapshotRestorer.kt`、`BackupPackageIo.kt`，按调用删除 `BackupRepository.kt` 中仅为旧格式保留的入口；协议细节见备份主方案 |
+| 文案与图片页面 | 修改 `base/general/src/main/res/values/strings.xml`、A 下 `ui/page/image/ImageExtractPage.kt`、`ImageBatchStatusContent.kt`，删除专属文案、修正预检/进度/报告文本，迁移两条复用资源 |
+| 广告位 | 删除 `feature/ad-api/src/main/java/com/cla/clip/feature/ad/api/AdContracts.kt` 中 `VideoHistoryNative`、`ImageHistoryNative`、`BackupMediaRelocationNative`；同步 `feature/ad-admob/src/sdk/java/com/cla/clip/feature/ad/admob/AdmobAdSourceEntry.kt` 和 `gradle/admob-ad-config.gradle.kts`，保留下载进度和结果广告位 |
+| 权限与系统备份 | `app/src/main/AndroidManifest.xml` 只删除媒体重新定位专属权限及说明；保留 `allowBackup`、备份规则资源引用、`backup_rules.xml` 与 `data_extraction_rules.xml` 的现有内容 |
+| 失效测试 | 删除 `app/src/test/java/com/cla/clip/master/ui/page/download/DownloadHistoryPagerPolicyTest.kt`、`app/src/androidTest/java/com/cla/clip/master/ui/page/download/DownloadHistoryPagerStateTest.kt`、`app/src/test/java/com/cla/clip/master/ui/page/backup/BackupMediaRelocationStateReducerTest.kt`；其他测试只移除已退役场景，保留有效回归 |
+
+### 生命周期、权限与规则约束
+
+- 不改变下载页面的可见性收集、Worker 后台执行、重试互斥和临时文件清理边界；不在 ViewModel 初始化时新增扫描或全库任务观察。
+- Android 13+ 的 `READ_MEDIA_IMAGES`、`READ_MEDIA_VIDEO`、`READ_MEDIA_VISUAL_USER_SELECTED` 在当前宿主中用于重新定位，随该功能及 Manifest 说明一起移除；实施时检查 merged manifest 和所有模块消费者。Android 12 及以下读写权限按现有媒体/文件能力保留，本次不泛化清理旧存储授权。
+- 普通下载文件写入与读取当前自有结果继续沿用已有实现。恢复只需要备份文件的 SAF/网络访问，不再为了历史媒体读取请求相册权限。
+- 删除导航类型与序列化模型后检查 `@SerialName`、`@Keep` 和 consumer/R8 规则，仅删已无消费者的专属项，不扩大 keep 范围；最终做 Release/R8 验证。
+- 后续修改的方法、变量、字段、回调和关键分支按仓库要求补齐简体中文注释。大类本次以删减职责为主，不为删除功能新建框架；若为状态规则测试确需抽取，只抽单一职责协作者。
+
+### 实施任务与验证门禁
+
+这些任务依次落地；备份模型与 UI 分类消费者在相邻步骤同步删除，阶段验证由基础模块逐步扩展到 app。默认不提交 Git；若用户另行要求提交，再按任务边界使用简体中文标题和正文。
+
+#### 任务 1：收缩备份协议和媒体数据读写
+
+**接口**：沿用 `BackupSnapshotExporter.export(source, backupKind, now, taskId): BackupExportResult`、`BackupPackageReader.preview(ref): BackupManifest` 及文件型恢复入口；改为备份主方案定义的格式 5，不再读取或写入三张任务表。
+
+- [x] 先在 `base/general/src/test/java/com/cla/clip/base/general/backup/BackupCurrentFormatTest.kt` 添加 `acceptsVersionFiveWithoutMediaEntries`：五个宿主必需 entry 即可通过预检，清单/摘要不含视频、图片批次和图片项；可选模块 entry 仍可存在。
+- [x] 添加 `rejectsOlderSchema` 与 `rejectsNewerSchema`：合成 schema 4 和 6 的包均抛 `BackupFailure.UnsupportedSchema`；不要求保留旧包可读。保留 checksum、坏路径、缺失必需 entry 和损坏 JSONL 的失败测试。
+- [x] 先运行上述用例，确认当前格式 4/必需媒体 entry 使目标行为失败；随后按备份主方案删除模型、编解码、导出/恢复分支、摘要和报告类别，更新所有构造处与测试 fixture，再删除三张表的备份专属 DAO 方法。
+- [ ] 保留可选 feature contributor、剪贴/来源/预览/搜索/设置恢复及幂等规则。为真实表隔离新增 `base/general/src/androidTest/java/com/cla/clip/base/general/backup/BackupRuntimeMediaIsolationTest.kt`，复用既有 in-memory Room 测试方式；断言导出含用户数据但无任务数据、重复恢复幂等、恢复不修改预先存在的活动任务。实现与测试源码编译已完成；本机没有隔离 AVD，仪器用例未执行，不能把源码编译当作测试通过。
+- [x] 运行受影响模块单测与编译，确认格式 5 回归通过。此时历史页仍可使用本机记录，阶段性移除备份不影响下载。
+
+#### 任务 2：删除恢复后的媒体重新定位
+
+**接口**：`BackupFlowSession` 仅保留 `submitRequest`、`acknowledgeRequest`、`clearPendingRequest`、`finishRestore`、`close` 及恢复请求流；删除媒体状态流、媒体事件和媒体导航门禁。恢复成功/部分成功报告仍由既有状态模型表达。
+
+- [x] 在 `app/src/test/java/com/cla/clip/master/ui/page/backup/BackupFlowSessionTest.kt` 保留并补齐请求重复提交拒绝、接管后占用、完成释放、关闭后迟到请求拒绝场景；移除 `registerRestoreTask`、`publishMediaEvent` 等退役契约的断言。若抽出新的退出或状态规则，先写失败测试。
+- [x] 删除文件清单中的重新定位实现、路由、按钮、状态、协程、权限 launcher、summary 回显和运行中阻止退出分支。移除“完整恢复之后才能关联媒体”的额外状态门禁。
+- [x] 保留读取/校验/恢复期间的既有忙碌门禁、取消处理、临时包释放、普通返回和完成退出整组逻辑；删除仅含媒体场景的 `BackupRestoreStateTest.kt`，保留 `BackupPartialRestoreOutcomeTest.kt`，不能把 Room 已提交而设置失败改成完全失败。
+- [x] 删除专属 reducer 测试，运行 `:app:testDebugUnitTest` 与 `:app:compileDebugKotlin`。
+- [ ] 隔离设备验收成功、失败、部分成功均无媒体关联入口且返回正常。
+
+#### 任务 3：移除历史页面，清理数据接口与资源
+
+**接口**：保留 `observeTask(taskId)`、任务写入/查询及 `cloneBatchForRetry(batchId)` 等当前下载消费者所需接口；不新增替代历史接口。
+
+- [x] 删除历史页面七个文件、我的页入口、路由和两个历史页测试；这部分是功能删除和薄接线，不写“源码中不包含某字符串”式单测。
+- [x] 由当前调用方反查 DAO/Repository，删除历史 Paging、COUNT、id 列表、多选删除、历史视频克隆和重新定位接口；保留下载详情重试、图片克隆、pending 输出与批次观察能力。
+- [x] 将两条图片页面复用资源改为 `base_general_image_download_retry_failed`、`base_general_image_download_filtered`，迁移引用后删除旧 key；只删已无调用的其余历史/媒体关联文案。
+- [x] 移除三个专属广告 placement、SDK 分支和构建配置；删除无使用的 import/资源，不改其他广告会话策略。检查共享 UI 的剩余调用，不能连同共享组件一起删除。
+- [x] 运行核心单测、编译、AndroidTest 源码编译；保留 `VideoDownloadStartPolicyTest`、`VideoDownloadFailureMessageTest`、`ImageBatchPresentationTest` 和图片提取会话回归。
+
+#### 任务 4：收口媒体权限与文档，保持系统备份
+
+- [x] 删除仅重新定位使用的 Android 13+ 媒体读取权限和注释；Debug/Release merged manifest 已核对。
+- [ ] 实际发布/预览在目标系统版本验收。
+- [x] 核对本次差异未修改 `allowBackup`、备份资源引用、`backup_rules.xml`、`data_extraction_rules.xml`；不增加主库/sidecar 排除，不拆新任务库，不实现 BackupAgent 或系统恢复后的任务清理。现有敏感数据排除保持原状。
+- [x] 更新本主文档、备份、我的页、图片/视频、广告和单测主文档；共享媒体/表单/卡片文档只减少已退役调用方。将本节状态推进为实现中/已完成，并明确旧页面方案已废弃；清理历史页专属测试债。
+- [x] 已更新备份导航组、恢复结果和媒体关联 Mermaid 图并重新生成 HTML。
+
+#### 任务 5：完整回归与交付
+
+- [x] `.\gradlew.bat :base:general:testDebugUnitTest :app:testDebugUnitTest :app:compileDebugKotlin :base:general:compileDebugAndroidTestKotlin :app:compileDebugAndroidTestKotlin --console=plain`，期望全部成功。
+- [x] `.\gradlew.bat :app:assembleRelease --console=plain`，期望打包及 R8 成功并保留 mapping；覆盖删除导航/序列化/广告分支后的正式变体。
+- [ ] 仅在无用户数据的专用设备/模拟器运行 `.\gradlew.bat :base:general:connectedDebugAndroidTest '-Pandroid.testInstrumentationRunnerArguments.class=com.cla.clip.base.general.backup.BackupRuntimeMediaIsolationTest' --console=plain`；不在现用手机运行可能卸载应用的 connected 测试。
+- [ ] 人工验收：无历史入口；视频下载成功/失败重试、返回后仍按原行为下载；图片单批成功、部分失败、重试和结果预览；系统中断/冷启动的既有取消与清理不回归；文件仍在相册；本地/WebDAV 新包往返恢复、旧格式拒绝、部分成功与返回；恢复不请求相册权限。确认历史页主动取消入口已随功能删除，不以不存在的详情取消按钮作验收项。设备不可用的项目逐项列为未验证。
+- [x] 全仓引用扫描核对 `DownloadHistory`、`BackupMediaRelocation`、`DownloadedMediaRelocator` 和三个退役 placement 仅剩明确历史文档，TorrentSearch 与保留能力允许相关通用“下载”命名继续存在。
+- [x] `python -X utf8 tools/render_doc_flow_html.py --check docs/webdav_backup_plan.md`、`git diff --check` 均通过，审查只包含授权范围。
+
+### 重点复核场景
+
+1. 当前图片失败后重试仍能复制批次，不能因 `cloneBatchForRetry` 名似历史能力被误删；由任务 3 既有回归和专用设备当前任务验收覆盖。
+2. 恢复时已有下载活动，恢复不改其 id、状态和输出引用；由任务 1 Room 隔离测试覆盖。
+3. 格式 5 包没有媒体 entry 也能恢复，可选模块数据仍走既有 contributor；由任务 1 包测试及模块合成回归覆盖。
+4. Room 已提交而设置失败仍呈现部分成功，完成与返回不依赖已删除的媒体状态；由任务 2 状态和会话测试覆盖。
+5. 删除历史页后媒体文件仍存在，预览和旧系统存储能力正常；由任务 4 merged manifest 检查、任务 5 专用设备验收覆盖。
+
+### 日志与诊断计划
+
+本次不新增运行时日志；既有恢复、下载和会话诊断已经覆盖保留流程。随代码删除历史分页、解码、文件存在性扫描、批量删除、媒体匹配和权限流程的日志点，不为已移除流程保留空日志。
+
+- 下载保留既有开始、阶段、终态、取消及临时输出清理诊断；本次触及的日志只允许 taskId/batchId、状态、数量、耗时、异常类型和 reasonCode，禁止任务对象、来源标题、完整 URL/路径/URI、Cookie 和请求上下文原文。
+- 备份保留 INFO 完成摘要、DEBUG 阶段数量和 WARN/ERROR 分类失败；删除媒体类别及“待关联数量”，版本不支持记录 `schema_unsupported` 与版本号，校验失败发生在写库之前。
+- 会话保留 DEBUG 请求提交/接管/释放/关闭和 WARN 迟到拒绝；移除媒体事件、媒体导航状态日志，不打印恢复请求携带的文件 URI。
+- 验证日志字段与终态和报告一致；网络重试、本地/WebDAV 并行、取消与部分成功诊断继续由既有测试和人工检查覆盖，进度不逐项刷屏。
+
+### 后续待办与本轮验证边界
+
+- 任务行的容量和过期清理单独评估，本轮不凭时间或页面退出删除仍可能被 Worker/结果页使用的数据。
+- 未来只有出现明确的历史查询需求才重新设计此功能；源码由 Git 历史保留，不留隐藏页面、配置开关或备用实现。
+- 本轮已经修改生产代码和测试，不对设备媒体、数据库和既有备份文件做删除。设备验收未执行，不能把源码编译视为运行通过。
+- 本轮文档验证：相对链接与标题锚点检查通过（8 项），文件/类型清单已与代码核对；`git diff --check` 与 `python -X utf8 tools/render_doc_flow_html.py --check docs/webdav_backup_plan.md` 通过。只读设计检查发现主动取消入口原本属于历史页，已修正范围与验收；方案阶段测试尚未执行；实施结果以下方记录为准。
+
+### 实施记录（2026-10-26）
+
+- 分支 `codex/remove-media-download-history`，基线 `6ad16a5`。沿用当前目录以保留本任务七份未提交方案，未创建物理 worktree；所有差异按授权范围复核，未提交或推送。
+- 格式 5 回归先红后绿：新增 7 项协议测试，旧实现 5 项按预期失败；删除媒体备份与旧数组入口后基础模块单测通过。app 删除链路后编译和现有单测通过。
+- 删除历史页与媒体重新定位、专属 DAO/Repository/Worker 单任务取消入口、三个广告位及资源；图片当前批次重试、视频当前任务重试、Worker 执行和冷启动全局取消保持原实现。
+- `BackupRestoreStateTest` 实际全部为媒体 UI/广告场景，随功能整文件删除；请求所有权测试保留并增加会话隔离与关闭后拒绝，部分成功测试保留。
+- 新增 `BackupRuntimeMediaIsolationTest`，使用内存 Room 和独占临时 DataStore；编译验证中修正合成 ClipData 必填字段。无隔离 AVD，未运行仪器测试，因此这一项不宣称 TDD 红绿或运行通过。
+- 验证通过：`:base:general:testDebugUnitTest` 128 项、`:app:testDebugUnitTest` 316 项、`:feature:ad-api:testDebugUnitTest` 19 项、`:feature:ad-admob:testDebugUnitTest` 16 项、`:feature:torrent-search:testDebugUnitTest --tests '*BackupModelsTest'` 4 项，共 483 项，失败/错误/跳过均为 0。
+- 编译/构建通过：`:app:compileDebugKotlin`、`:base:general:compileDebugAndroidTestKotlin`、`:app:compileDebugAndroidTestKotlin`、`:app:assembleRelease`（含 R8）。保留 release APK 与 `app/build/outputs/mapping/release/mapping.txt`；构建有 Shizuku `OnOpNotedListener` 类型警告，不影响本次构建成功。
+- 范围核验通过：三张实体的字段/索引声明与基线相同，`AppDatabase.kt` 未改；两份系统备份 XML 和三个 Manifest 备份属性逐项一致；Debug/Release 合并 Manifest 无三项退役媒体权限。退役类型/资源/placement 在生产代码中无引用。
+- 文档验证：HTML 生成及 `--check`、`git diff --check` 通过；当前导航/恢复图没有媒体步骤。
+- 独立最终审查未发现 Critical/Important 回归；唯一 Minor 是单测计划仍列旧协议兼容和媒体重新定位，已核实并清理，连同历史页 ViewModel 测试债一起移除。审查中未重新评价的任务行累积、系统恢复多余行、旧路由/旧包兼容、替代取消 UI 和 TorrentSearch 自身行为均符合本次已确认边界，接受该范围划分。
+- 规则边界：UI 删除/资源重命名不新增镜像测试；协议规则采用 TDD，Room 集成用例因无隔离设备未运行，也未宣称失败先行；无新增运行时日志，因为保留流程已有诊断并已删除退役日志。新增/调整方法与声明补充简体中文说明，不新增生产框架。真实媒体下载/重试、SAF/WebDAV 往返、权限和页面返回仍待隔离设备验收，本轮未安装/卸载用户手机应用。
+- 测试与执行证据保存在 Git 忽略的 `build/download-history-removal/`。未提交、未推送。
+
+## 原功能设计与审查记录（历史背景）
 
 ## 加载与显示逻辑审查（2026-10-16）
 
@@ -268,6 +445,14 @@
 - 多选底部删除条的删除类图标通过 `SelectionActionBar` 接入 `DeleteActionIcon`，与列表菜单删除和详情页删除共用同款删除图形；“清空当前分类”继续使用 `DeleteSweep` 清空语义图标，仅统一为危险色。
 
 ## 变更记录
+
+- 2026-10-26：实现收尾完成，483 项单测、源码编译与 Release/R8 通过；记录独立审查修正文档项和隔离设备未执行边界。
+
+- 2026-10-26：用户确认执行移除方案，状态转为实现中；删除功能及备份耦合，保留系统备份、任务表和当前下载能力，并记录测试边界。
+
+- 2026-10-26：按用户反馈撤回系统主库备份排除建议，明确保留 Android 自动备份/设备迁移并接受恢复额外任务行；同时列明任务行保留、表结构暂不瘦身等自主取舍，区分实际运行依赖和旧数据兼容。本轮仍只更新方案。
+
+- 2026-10-26：新增下载媒体记录移除草案及实施任务，明确开发阶段无需旧数据兼容、保留下载任务表和当前下载体验、删除历史页面与媒体重新定位；备份契约归口备份主文档。原因是功能使用价值有限，却增加页面维护与恢复操作复杂度。本轮仅改方案。
 
 - 2026-10-16：完成两类下载记录加载与显示审查，记录错误、缺失状态和冗余，纠正首批大小与生命周期取消边界的描述；原因是用户反馈页面仍异常。本轮只更新方案，未修改业务实现。
 

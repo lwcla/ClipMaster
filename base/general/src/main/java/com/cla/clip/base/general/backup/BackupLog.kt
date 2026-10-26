@@ -53,6 +53,7 @@ fun BackupSource.logCode(): String {
 
 /** 将备份摘要转成脱敏数量字段；只包含数量，不包含剪贴内容、搜索词或下载 URL。 */
 fun BackupSummary.toLogFields(): String {
+    // 模块摘要按稳定标识排序，只记录数量。
     val featureCountFields = featureCounts
         .toSortedMap()
         .entries
@@ -60,8 +61,7 @@ fun BackupSummary.toLogFields(): String {
         .takeIf { featureCounts.isNotEmpty() }
         .orEmpty()
     return "clips=$clipCount sourceApps=$sourceAppCount linkPreviews=$linkPreviewCount " +
-        "searchHistories=$searchHistoryCount videos=$videoDownloadCount " +
-        "imageBatches=$imageBatchCount imageItems=$imageItemCount$featureCountFields"
+        "searchHistories=$searchHistoryCount$featureCountFields"
 }
 
 /** 备份失败的稳定 reasonCode，用于日志、重试判断和排障搜索。 */

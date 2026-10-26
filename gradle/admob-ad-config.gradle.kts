@@ -43,9 +43,8 @@ val admobPlacementNames = listOf(
     "DetailNative", "HomeFeedNative", "SearchFeedNative", "FoldedFeedNative",
     "FoldedSearchNative", "RecycleFeedNative", "VideoExtractNative",
     "VideoDownloadProgressNative", "VideoDownloadResultNative", "ImageExtractNative",
-    "ImageDownloadProgressNative", "ImageDownloadResultNative", "VideoHistoryNative",
-    "ImageHistoryNative", "BackupOverviewNative", "BackupRestoreNative",
-    "BackupMediaRelocationNative",
+    "ImageDownloadProgressNative", "ImageDownloadResultNative",
+    "BackupOverviewNative", "BackupRestoreNative",
 )
 /** 官方测试发布者；两个变体都使用用户自己的单元，拒绝回退到任何官方样例 ID。 */
 val samplePublisher = "ca-app-pub-3940256099942544"

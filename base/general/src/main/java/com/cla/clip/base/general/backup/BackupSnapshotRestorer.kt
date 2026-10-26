@@ -6,9 +6,6 @@ import com.cla.clip.base.general.config.ClipSourceBlockRules
 import com.cla.clip.base.general.config.clip.ClipSettingsRepository
 import com.cla.clip.base.general.dao.AppDatabase
 import com.cla.clip.base.general.dao.ClipData
-import com.cla.clip.base.general.dao.DownloadTaskData
-import com.cla.clip.base.general.dao.ImageExtractBatchData
-import com.cla.clip.base.general.dao.ImageExtractItemData
 import com.cla.clip.base.general.dao.LinkPreviewData
 import com.cla.clip.base.general.dao.SearchHistoryData
 import com.cla.clip.base.general.dao.SourceAppData
@@ -58,25 +55,6 @@ class BackupSnapshotRestorer @Inject constructor(
         private const val WRITE_CHUNK_SIZE = 300
     }
 
-    /** 先提交 Room，再提交独立设置存储；设置失败向上报告供用户重试。 */
-    internal suspend fun restoreSnapshot(
-        snapshot: BackupSnapshot,
-        timeNormalizer: BackupRestoreTimeNormalizer,
-    ): BackupRestoreReport {
-        /** 完整 Room 恢复报告；事务成功后才允许写设置。 */
-        val report = appDatabase.withTransaction {
-            restoreSnapshotInTransaction(snapshot, timeNormalizer)
-        }
-        try {
-            restoreSettings(snapshot.data.settings)
-        } catch (failure: Throwable) {
-            if (failure is CancellationException) throw failure
-            logW(TAG) { "备份设置阶段失败 reasonCode=settings_restore_failed type=${failure::class.simpleName} roomInserted=${report.insertedCount}" }
-            throw BackupSettingsRestoreFailure(report, failure)
-        }
-        return report
-    }
-
     /** 读取设置白名单，再依次提交 Room 与 DataStore；两种存储不宣称原子恢复。 */
     internal suspend fun restorePackage(
         ref: BackupPackageRef,
@@ -110,102 +88,46 @@ class BackupSnapshotRestorer @Inject constructor(
         return report
     }
 
-    /** 在事务内执行实际恢复，调用方必须已经持有 Room transaction。 */
-    private suspend fun restoreSnapshotInTransaction(
-        snapshot: BackupSnapshot,
-        timeNormalizer: BackupRestoreTimeNormalizer,
-    ): BackupRestoreReport {
-        var inserted = 0
-        var updated = 0
-        var skipped = 0
-
-        val sourceAppRestore = restoreSourceAppEntities(snapshot.data.sourceApps.map { it.toEntity() })
-        inserted += sourceAppRestore.inserted
-        updated += sourceAppRestore.updated
-        skipped += sourceAppRestore.skipped
-
-        val linkPreviewRestore = restoreLinkPreviewEntities(snapshot.data.linkPreviews.map { it.toEntity() })
-        inserted += linkPreviewRestore.inserted
-        updated += linkPreviewRestore.updated
-        skipped += linkPreviewRestore.skipped
-
-        val clipRestore = restoreClips(snapshot, timeNormalizer)
-        inserted += clipRestore.inserted
-        updated += clipRestore.updated
-        skipped += clipRestore.skipped
-
-        val historyRestore = restoreSearchHistoryEntities(snapshot.data.searchHistories.map { it.toEntity() })
-        inserted += historyRestore.inserted
-        updated += historyRestore.updated
-        skipped += historyRestore.skipped
-
-        val videoRestore = restoreVideoDownloads(snapshot)
-        inserted += videoRestore.inserted
-        updated += videoRestore.updated
-        skipped += videoRestore.skipped
-
-        val imageBatchRestore = restoreImageBatches(snapshot)
-        inserted += imageBatchRestore.inserted
-        updated += imageBatchRestore.updated
-        skipped += imageBatchRestore.skipped
-
-        val imageItemRestore = restoreImageItems(snapshot)
-        inserted += imageItemRestore.inserted
-        updated += imageItemRestore.updated
-        skipped += imageItemRestore.skipped
-
-        logD(TAG) {
-            "备份恢复写库完成 inserted=$inserted updated=$updated skipped=$skipped " +
-                "futureTimeNormalized=${timeNormalizer.normalizedFieldCount} clockSkewMs=${timeNormalizer.clockSkewMillis}"
-        }
-        return BackupRestoreReport(
-            insertedCount = inserted,
-            updatedCount = updated,
-            skippedCount = skipped,
-            categoryReports = listOf(
-                BackupRestoreCategoryReport(BackupProgressCategory.SourceApps, sourceAppRestore.inserted, sourceAppRestore.updated, sourceAppRestore.skipped),
-                BackupRestoreCategoryReport(BackupProgressCategory.LinkPreviews, linkPreviewRestore.inserted, linkPreviewRestore.updated, linkPreviewRestore.skipped),
-                BackupRestoreCategoryReport(BackupProgressCategory.Clips, clipRestore.inserted, clipRestore.updated, clipRestore.skipped),
-                BackupRestoreCategoryReport(BackupProgressCategory.SearchHistories, historyRestore.inserted, historyRestore.updated, historyRestore.skipped),
-                BackupRestoreCategoryReport(BackupProgressCategory.VideoDownloads, videoRestore.inserted, videoRestore.updated, videoRestore.skipped),
-                BackupRestoreCategoryReport(BackupProgressCategory.ImageBatches, imageBatchRestore.inserted, imageBatchRestore.updated, imageBatchRestore.skipped),
-                BackupRestoreCategoryReport(BackupProgressCategory.ImageItems, imageItemRestore.inserted, imageItemRestore.updated, imageItemRestore.skipped)
-            )
-        )
-    }
-
-    /** 在事务内执行 v2 文件型备份恢复，调用方必须已经完成 manifest/checksum 校验。 */
+    /** 在事务内恢复格式 5 的宿主业务数据，完全不读写下载运行态；，调用方必须已经完成 manifest/checksum 校验。 */
     private suspend fun restorePackageInTransaction(
         ref: BackupPackageRef,
         manifest: BackupManifest,
         timeNormalizer: BackupRestoreTimeNormalizer,
     ): BackupRestoreReport {
+        // 同包来源缓存，同时用于重建剪贴搜索文本。
         val sourceApps = mutableListOf<BackupSourceApp>()
         packageReader.readJsonLines(ref, SOURCE_APPS_JSONL_PATH, BackupSourceApp.serializer()) { sourceApps += it }
+        // 来源表本次实际新增、更新和跳过统计。
         val sourceAppRestore = restoreSourceAppEntities(sourceApps.map { it.toEntity() })
+
+        // 同包链接缓存，用于恢复记录及搜索派生字段。
 
         val linkPreviews = mutableListOf<BackupLinkPreview>()
         packageReader.readJsonLines(ref, LINK_PREVIEWS_JSONL_PATH, BackupLinkPreview.serializer()) { linkPreviews += it }
+        // 链接预览表的实际恢复统计。
         val linkPreviewRestore = restoreLinkPreviewEntities(linkPreviews.map { it.toEntity() })
 
+        // 以包名关联同包来源信息。
+
         val sourceAppsByPackage = sourceApps.associateBy { it.packageName }
+        // 以原链接关联同包预览信息。
         val linkPreviewsByLink = linkPreviews.associateBy { it.link }
+        // 保留时间归一化及较新本地状态保护。
         val clipRestore = restoreJsonlClips(ref, manifest, sourceAppsByPackage, linkPreviewsByLink, timeNormalizer)
+        // 按既有唯一键恢复搜索历史。
         val historyRestore = restoreJsonlSearchHistories(ref)
-        val videoRestore = restoreJsonlVideoDownloads(ref, manifest)
-        val imageBatchRestore = restoreJsonlImageBatches(ref, manifest)
-        val imageItemRestore = restoreJsonlImageItems(ref)
+        // 仅包含宿主可备份业务类别，不读写下载任务表。
         val reports = listOf(
             BackupRestoreCategoryReport(BackupProgressCategory.SourceApps, sourceAppRestore.inserted, sourceAppRestore.updated, sourceAppRestore.skipped),
             BackupRestoreCategoryReport(BackupProgressCategory.LinkPreviews, linkPreviewRestore.inserted, linkPreviewRestore.updated, linkPreviewRestore.skipped),
             BackupRestoreCategoryReport(BackupProgressCategory.Clips, clipRestore.inserted, clipRestore.updated, clipRestore.skipped),
             BackupRestoreCategoryReport(BackupProgressCategory.SearchHistories, historyRestore.inserted, historyRestore.updated, historyRestore.skipped),
-            BackupRestoreCategoryReport(BackupProgressCategory.VideoDownloads, videoRestore.inserted, videoRestore.updated, videoRestore.skipped),
-            BackupRestoreCategoryReport(BackupProgressCategory.ImageBatches, imageBatchRestore.inserted, imageBatchRestore.updated, imageBatchRestore.skipped),
-            BackupRestoreCategoryReport(BackupProgressCategory.ImageItems, imageItemRestore.inserted, imageItemRestore.updated, imageItemRestore.skipped)
         )
+        // 本事务已新增的真实总数。
         val inserted = reports.sumOf { it.insertedCount }
+        // 本事务已更新的真实总数。
         val updated = reports.sumOf { it.updatedCount }
+        // 本事务重复或较新本地数据的跳过总数。
         val skipped = reports.sumOf { it.skippedCount }
         logD(TAG) {
             "备份宿主 Room 阶段完成 inserted=$inserted updated=$updated skipped=$skipped schema=${manifest.schemaVersion} " +
@@ -388,273 +310,6 @@ class BackupSnapshotRestorer @Inject constructor(
             }
         }
         return counter
-    }
-
-    /** 从 JSONL 恢复视频下载记录，按 chunk 查询已有记录。 */
-    private suspend fun restoreJsonlVideoDownloads(ref: BackupPackageRef, manifest: BackupManifest): RestoreCounter {
-        var counter = RestoreCounter()
-        val chunk = mutableListOf<BackupVideoDownload>()
-        packageReader.readJsonLines(ref, VIDEO_DOWNLOADS_JSONL_PATH, BackupVideoDownload.serializer()) { item ->
-            chunk += item
-            if (chunk.size >= WRITE_CHUNK_SIZE) {
-                counter += restoreVideoDownloadChunk(chunk, manifest)
-                chunk.clear()
-            }
-        }
-        if (chunk.isNotEmpty()) counter += restoreVideoDownloadChunk(chunk, manifest)
-        return counter
-    }
-
-    /** 恢复视频下载 chunk；旧备份中的运行中任务在 mapper 中降级为失败。 */
-    private suspend fun restoreVideoDownloadChunk(backups: List<BackupVideoDownload>, manifest: BackupManifest): RestoreCounter {
-        val existing = appDatabase.downloadDao().loadTasksByIdsForBackup(backups.map { it.id }).associateBy { it.id }
-        val toWrite = mutableListOf<DownloadTaskData>()
-        var inserted = 0
-        var updated = 0
-        var skipped = 0
-        backups.forEach { backup ->
-            val entity = backup.toEntity()
-            val local = existing[entity.id]
-            when {
-                local == null -> {
-                    inserted++
-                    toWrite += entity
-                }
-                local.updateTime > manifest.createdAt || local.updateTime >= entity.updateTime -> skipped++
-                else -> {
-                    updated++
-                    toWrite += entity
-                }
-            }
-        }
-        if (toWrite.isNotEmpty()) appDatabase.downloadDao().upsertTasksForBackup(toWrite)
-        return RestoreCounter(inserted, updated, skipped)
-    }
-
-    /** 从 JSONL 恢复图片批次，按 chunk 查询已有记录。 */
-    private suspend fun restoreJsonlImageBatches(ref: BackupPackageRef, manifest: BackupManifest): RestoreCounter {
-        var counter = RestoreCounter()
-        val chunk = mutableListOf<BackupImageBatch>()
-        packageReader.readJsonLines(ref, IMAGE_BATCHES_JSONL_PATH, BackupImageBatch.serializer()) { item ->
-            chunk += item
-            if (chunk.size >= WRITE_CHUNK_SIZE) {
-                counter += restoreImageBatchChunk(chunk, manifest)
-                chunk.clear()
-            }
-        }
-        if (chunk.isNotEmpty()) counter += restoreImageBatchChunk(chunk, manifest)
-        return counter
-    }
-
-    /** 恢复图片批次 chunk；本地较新的批次状态会保留。 */
-    private suspend fun restoreImageBatchChunk(backups: List<BackupImageBatch>, manifest: BackupManifest): RestoreCounter {
-        val existing = appDatabase.imageExtractDao().loadBatchesByIdsForBackup(backups.map { it.id }).associateBy { it.id }
-        val toWrite = mutableListOf<ImageExtractBatchData>()
-        var inserted = 0
-        var updated = 0
-        var skipped = 0
-        backups.forEach { backup ->
-            val entity = backup.toEntity()
-            val local = existing[entity.id]
-            when {
-                local == null -> {
-                    inserted++
-                    toWrite += entity
-                }
-                local.updateTime > manifest.createdAt || local.updateTime >= entity.updateTime -> skipped++
-                else -> {
-                    updated++
-                    toWrite += entity
-                }
-            }
-        }
-        if (toWrite.isNotEmpty()) appDatabase.imageExtractDao().upsertBatchesForBackup(toWrite)
-        return RestoreCounter(inserted, updated, skipped)
-    }
-
-    /** 从 JSONL 恢复图片项，按 chunk 查询已有 id。 */
-    private suspend fun restoreJsonlImageItems(ref: BackupPackageRef): RestoreCounter {
-        var counter = RestoreCounter()
-        val chunk = mutableListOf<BackupImageItem>()
-        packageReader.readJsonLines(ref, IMAGE_ITEMS_JSONL_PATH, BackupImageItem.serializer()) { item ->
-            chunk += item
-            if (chunk.size >= WRITE_CHUNK_SIZE) {
-                counter += restoreImageItemChunk(chunk)
-                chunk.clear()
-            }
-        }
-        if (chunk.isNotEmpty()) counter += restoreImageItemChunk(chunk)
-        return counter
-    }
-
-    /** 恢复图片项 chunk；只有元数据确实变化时才写入，重复恢复同一备份会计入跳过。 */
-    private suspend fun restoreImageItemChunk(backups: List<BackupImageItem>): RestoreCounter {
-        val entities = backups.map { it.toEntity() }
-        val existing = appDatabase.imageExtractDao().loadItemsByIdsForBackup(entities.map { it.id }).associateBy { it.id }
-        val toWrite = mutableListOf<ImageExtractItemData>()
-        var inserted = 0
-        var updated = 0
-        var skipped = 0
-        entities.forEach { entity ->
-            val local = existing[entity.id]
-            when {
-                local == null -> {
-                    inserted++
-                    toWrite += entity
-                }
-                local.sameBackupContent(entity) -> skipped++
-                else -> {
-                    updated++
-                    toWrite += entity
-                }
-            }
-        }
-        if (toWrite.isNotEmpty()) appDatabase.imageExtractDao().upsertItemsForBackup(toWrite)
-        return RestoreCounter(inserted, updated, skipped)
-    }
-
-    /** 恢复剪贴记录，并保护本地较新的状态不被旧备份覆盖。 */
-    private suspend fun restoreClips(
-        snapshot: BackupSnapshot,
-        timeNormalizer: BackupRestoreTimeNormalizer,
-    ): RestoreCounter {
-        val backupClips = snapshot.data.clips
-        if (backupClips.isEmpty()) return RestoreCounter()
-        val existing = appDatabase.clipDao()
-            .loadClipsByIdsForBackup(backupClips.map { it.id })
-            .associateBy { it.id }
-        val toWrite = mutableListOf<ClipData>()
-        var inserted = 0
-        var updated = 0
-        var skipped = 0
-        val sourceApps = snapshot.data.sourceApps.associateBy { it.packageName }
-        val linkPreviews = snapshot.data.linkPreviews.associateBy { it.link }
-        backupClips.forEach { backup ->
-            val entity = backup.toEntity(
-                sourceApp = backup.sourceAppPackage?.let { sourceApps[it] },
-                linkPreview = backup.link?.let { linkPreviews[it] },
-                timeNormalizer = timeNormalizer
-            )
-            val local = existing[entity.id]
-            when {
-                local == null -> {
-                    inserted++
-                    toWrite += entity
-                }
-
-                local.lastUserStateTime() > timeNormalizer.normalizedManifestCreatedAt -> {
-                    skipped++
-                }
-
-                local.lastUserStateTime() >= entity.lastUserStateTime() -> {
-                    skipped++
-                }
-
-                else -> {
-                    updated++
-                    toWrite += entity
-                }
-            }
-        }
-        toWrite.chunked(WRITE_CHUNK_SIZE).forEach { appDatabase.clipDao().upsertClipsForBackup(it) }
-        return RestoreCounter(inserted, updated, skipped)
-    }
-
-    /** 恢复视频下载记录；旧备份中的运行中任务会降级为失败状态。 */
-    private suspend fun restoreVideoDownloads(snapshot: BackupSnapshot): RestoreCounter {
-        val backups = snapshot.data.videoDownloads
-        if (backups.isEmpty()) return RestoreCounter()
-        val existing = appDatabase.downloadDao()
-            .loadTasksByIdsForBackup(backups.map { it.id })
-            .associateBy { it.id }
-        val toWrite = mutableListOf<DownloadTaskData>()
-        var inserted = 0
-        var updated = 0
-        var skipped = 0
-        backups.forEach { backup ->
-            val entity = backup.toEntity()
-            val local = existing[entity.id]
-            when {
-                local == null -> {
-                    inserted++
-                    toWrite += entity
-                }
-
-                local.updateTime > snapshot.createdAt || local.updateTime >= entity.updateTime -> {
-                    skipped++
-                }
-
-                else -> {
-                    updated++
-                    toWrite += entity
-                }
-            }
-        }
-        toWrite.chunked(WRITE_CHUNK_SIZE).forEach { appDatabase.downloadDao().upsertTasksForBackup(it) }
-        return RestoreCounter(inserted, updated, skipped)
-    }
-
-    /** 恢复图片批次；本地较新的批次状态会保留。 */
-    private suspend fun restoreImageBatches(snapshot: BackupSnapshot): RestoreCounter {
-        val backups = snapshot.data.imageBatches
-        if (backups.isEmpty()) return RestoreCounter()
-        val existing = appDatabase.imageExtractDao()
-            .loadBatchesByIdsForBackup(backups.map { it.id })
-            .associateBy { it.id }
-        val toWrite = mutableListOf<ImageExtractBatchData>()
-        var inserted = 0
-        var updated = 0
-        var skipped = 0
-        backups.forEach { backup ->
-            val entity = backup.toEntity()
-            val local = existing[entity.id]
-            when {
-                local == null -> {
-                    inserted++
-                    toWrite += entity
-                }
-
-                local.updateTime > snapshot.createdAt || local.updateTime >= entity.updateTime -> {
-                    skipped++
-                }
-
-                else -> {
-                    updated++
-                    toWrite += entity
-                }
-            }
-        }
-        toWrite.chunked(WRITE_CHUNK_SIZE).forEach { appDatabase.imageExtractDao().upsertBatchesForBackup(it) }
-        return RestoreCounter(inserted, updated, skipped)
-    }
-
-    /** 恢复图片项；只有元数据确实变化时才写入，重复恢复同一备份会计入跳过。 */
-    private suspend fun restoreImageItems(snapshot: BackupSnapshot): RestoreCounter {
-        val entities = snapshot.data.imageItems.map { it.toEntity() }
-        if (entities.isEmpty()) return RestoreCounter()
-        val existing = appDatabase.imageExtractDao()
-            .loadItemsByIdsForBackup(entities.map { it.id })
-            .associateBy { it.id }
-        val toWrite = mutableListOf<ImageExtractItemData>()
-        var inserted = 0
-        var updated = 0
-        var skipped = 0
-        entities.forEach { entity ->
-            val local = existing[entity.id]
-            when {
-                local == null -> {
-                    inserted++
-                    toWrite += entity
-                }
-                local.sameBackupContent(entity) -> skipped++
-                else -> {
-                    updated++
-                    toWrite += entity
-                }
-            }
-        }
-        toWrite.chunked(WRITE_CHUNK_SIZE).forEach { appDatabase.imageExtractDao().upsertItemsForBackup(it) }
-        return RestoreCounter(inserted, updated, skipped)
     }
 
     /** 恢复跨安装设置白名单，并保留本机新增的来源过滤规则。 */

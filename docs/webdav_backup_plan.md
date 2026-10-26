@@ -4,6 +4,64 @@
 
 <!-- flow-title: WebDAV本地自动备份恢复流程 -->
 
+## 下载媒体任务退出备份恢复方案（2026-10-26）
+
+本节状态：已完成（代码、单测、编译和 Release/R8；设备验收未执行）。用户明确当前开发阶段不要求兼容旧数据；完整功能删除范围与执行任务见 [下载记录主方案](download_history_plan.md#下载媒体记录功能移除方案2026-10-26)。本文只维护备份契约及恢复流程影响。当前代码采用格式 5，导航/恢复图已同步删除媒体流程。下方带日期的早期媒体设计只作历史记录；当前契约以本节为准。
+
+### 覆盖决策与数据流
+
+`download_tasks`、`image_extract_batches`、`image_extract_items` 作为下载执行及当前结果展示使用的任务数据，不纳入应用自定义的本地/WebDAV 备份；自定义恢复不读写这些表。按用户明确要求，Android 系统自动备份和设备迁移保持现状，允许其整库恢复带回任务行，不为这些多余行新增屏蔽或清理。媒体文件本体继续由系统相册/文件管理器管理，不纳入应用自定义备份、不扫描、不因功能移除而删除。三张表保留现有结构，无新增 Room 迁移；本次也不主动清空当前设备的数据。
+
+当前自定义备份流为：读取剪贴、来源、链接预览、搜索历史和设置白名单 → 可选 feature contributor → 写 ZIP/manifest/checksum → 本地与 WebDAV 分目标发布。当前恢复流为：选择包 → 校验当前版本和完整性 → 预览 → Room、可选模块、设置分阶段恢复 → 展示真实完整/部分成功结果 → 返回或完成；不再有本地媒体关联步骤。
+
+### 协议、摘要与失败契约
+
+1. `BACKUP_SCHEMA_VERSION` 从 4 升为 **5**。所有外部包预检入口只接受 `schemaVersion == 5`，而不是仅拒绝大于当前版本；非当前版本统一返回现有 `BackupFailure.UnsupportedSchema` / `schema_unsupported`，发生在任何业务写入之前。版本变更用于清晰区分协议，不包含旧数据转换或迁移。
+2. 宿主必需 entry 为 `data/clips.jsonl`、`data/source_apps.jsonl`、`data/link_previews.jsonl`、`data/search_histories.jsonl`、`data/settings.json`。删除 `data/video_downloads.jsonl`、`data/image_batches.jsonl`、`data/image_items.jsonl`，也不保留空文件或兼容占位；相应旧 `.json` 数组路径和旧版本必需路径分支退役。
+3. 删除 `BackupVideoDownload`、`BackupImageBatch`、`BackupImageItem`，以及 `BackupData`、`BackupSummary`、`BackupHighWaterMarks`、`BackupSummaryBuilder`、进度类别和报告中对应字段。预检、导出进度、恢复进度、完成报告与资源占位参数同步收口，不能残留零条视频/图片的说明。
+4. 删除上述模型的 serializer/mapper、媒体导出分页、恢复冲突合并、时间归一化和打断状态转换分支；删除三张任务表的备份专属 DAO 查询和写入。剩余白名单、稳定 id 合并、当前格式重复恢复幂等与时间归一化继续有效。
+5. 文件型 Reader 和 ZIP 校验保留；不再保留只为格式 1–4 服务的 JSON 数组读取、旧宿主磁力必需路径和降级读取分支。已删除仅被旧链路使用的 `BackupSnapshot`、`BackupData`、字节数组预览/恢复入口及 legacy 导出器。所有当前文件预检通过 `BackupManifest.validatePackageMetadata()` 拒绝非 5 版本以及非 JSONL 格式。
+6. 可选 `BackupFeatureContributor` 的 entry、独立 schema、保留/跳过报告与校验仍按现有契约运行，不能把五个宿主必需文件误做成唯一允许 entry 列表。TorrentSearch 的历史和下载记录不属于本次宿主媒体移除范围。
+7. 保留格式、应用身份、checksum、文件大小、缺失 entry、非法路径、损坏内容校验；不因无需旧兼容而放松坏包校验或让部分写入先于版本拒绝。远端目录中已有旧包不主动删除，用户选择时正常拒绝不支持的版本即可，不增加列表兼容探测。
+
+### 恢复 UI 与会话职责
+
+- 删除 `BackupMediaRelocationRoute`、独立页面/ViewModel、`DownloadedMediaRelocator`、关联事件/归约/结果模型、权限 launcher 与专属广告配置。
+- `BackupFlowSession` 保留恢复请求单槽、接管所有权、关闭门禁和迟到拒绝，删除媒体状态流、`registerRestoreTask` 及媒体导航/离开许可；不把整个会话误删，因为备份页和恢复页仍共用它。
+- `BackupRestoreVm` 和恢复 UI 不再观察/展示媒体事件，不再因媒体运行状态阻止返回或完成。保留真实读取/恢复的忙碌状态、取消边界、预检临时文件清理、Room/feature/设置分阶段失败和部分成功报告。
+- 自定义恢复不会创建视频/图片任务；若系统恢复已带回任务行或当前安装已有任务，自定义恢复同样不改写、覆盖、清空这些表。不再承诺新装后的任务表一定为空。普通返回、完成退出导航组和会话关闭继续验证。
+
+### 系统备份保持现状（2026-10-26，用户已确认）
+
+当前 `allowBackup=true`，两份 XML 已排除敏感 DataStore 等文件，但没有排除 `DatabaseModule` 使用的 `clip_master_database`。下载任务与剪贴等数据同库；仅缩小自定义 ZIP 范围并不能阻止系统复制这三张表。
+
+原草案提出排除整个主库及 sidecar，该建议已按用户要求撤回。保持 `allowBackup`、Manifest 的规则资源引用、`app/src/main/res/xml/backup_rules.xml`、`data_extraction_rules.xml` 中现有规则不变；不新增主库排除、不拆分任务库、不增加逐表 BackupAgent，现有敏感数据排除也不放宽。
+
+用户接受开发阶段系统恢复带回多余下载任务数据，本次不为其新增过滤、回填、扫描或清理，也不取消剪贴等数据原有系统备份资格。本次“排除媒体任务”只指应用自定义 ZIP/JSONL 备份及恢复链路；验收检查差异未改变系统备份配置，不额外搭建系统备份测试工程。
+
+### 调度、日志与诊断计划
+
+- 当前 `BackupAutoWorker` 已不读取业务 dirty，普通下载更新不负责调度备份；保留每日生成、手动触发、最新轮次、两目标独立发布、WebDAV 有限补传和保留清理，不新增变化观察器。
+- 保留备份开始/阶段/终态诊断。INFO 记录完成与有效数据类别数量；DEBUG 记录阶段、schemaVersion、entry 数量、耗时；WARN/ERROR 记录 `schema_unsupported`、校验/写入/取消/设置失败等已有 reasonCode。移除媒体导出/恢复数量及媒体关联日志点。
+- 允许字段为 taskId/roundId/sessionId、版本、状态、数量、大小、耗时和异常类型；禁止备份正文、网页标题、完整 URL/URI/路径、凭据和原始异常正文。进度仍限频，版本错误不得先有数据库提交日志。
+- 本次沿用既有诊断，不新增运行时日志；检查低敏日志与报告一致，不为删除功能新增持久化诊断存储。
+
+### 测试与验收
+
+协议、恢复隔离和状态规则采用选择性 TDD，任务与精确文件路径见下载记录主方案；协议 7 项新增回归已先红后绿；Room 隔离测试已补充，设备执行未完成。主要断言如下：
+
+- 格式 5 的五个宿主必需 entry 可以通过校验；包和序列化摘要均不含三个媒体类别；可选 contributor 数据仍可往返。
+- 合成格式 4 与未来格式包都在写库前被拒绝；无旧格式可读要求，但继续验证 checksum、坏路径、坏 JSONL、缺失必需数据等安全边界。
+- in-memory Room 合成数据库包含可备份数据及活动下载数据；导出排除下载，恢复只影响白名单，重复恢复幂等，活动任务行保持完全一致。
+- 完整成功与部分成功均无媒体关联步骤；重复请求、迟到请求和导航返回的所有权门禁保持有效。
+- 新备份的本地/WebDAV 往返、正式 R8 序列化、系统规则和媒体权限边界按任务清单验证；不在有用户数据的现用设备运行 connected 测试。
+
+本轮同步收缩导航/恢复图并删除媒体关联图，重新生成离线 HTML。文档同步检查使用 `python -X utf8 tools/render_doc_flow_html.py --check docs/webdav_backup_plan.md`。
+
+### 本轮实施验证（2026-10-26）
+
+格式 5 回归先红后绿；核心及广告/可选功能合计 483 项 JVM 单测通过，Debug 与 AndroidTest 源码编译、Release/R8 通过。Room 隔离测试只完成源码编译，无隔离 AVD，未运行设备用例。系统规则和实体结构均与基线一致；独立审查无阻断项，过期测试债已清理。精确命令、计数、构建警告和人工验收边界统一见 [下载记录主方案的实施记录](download_history_plan.md#实施记录2026-10-26)。
+
 ## 自动 WebDAV 网络失败修复方案（2026-10-17）
 
 本节状态：已完成（代码、JVM 回归、Debug 编译、Release/R8 与独立复核已通过；隔离设备及小米真机验收待完成）。2026-10-17 用户已确认执行，并再次明确新一轮开始即取消旧任务，只保留最新一轮。本节已替代上传目标原“不等待网络、不主动重试”的策略；下方取证与历史设计保留故障版本背景，当前行为以本节为准。属于现有三 Worker 链路内的有界修复，不重做备份系统。
@@ -783,7 +841,9 @@ Android 官方说明网络约束不再满足、显式替换/取消或系统执�
 - 三星真实自动任务完成远端发布；截图设备的历史失败已确认 upload_interrupted。本轮补齐中断/交接提示和低敏停止原因诊断，不改变失败/重试策略。后续修复仍需区分平台可恢复停止与明确取消/真正失败，保护“不重新导出、不复活明确失败”的现行约定；待办为实际后台留证、依据证据决定恢复策略及发布后临时清理失败隔离。
 - 凭据、待上传身份、停止原因和诊断日志仍属于本安装的敏感或可派生运行态，不纳入自定义备份；既有字段白名单和系统 Auto Backup 排除范围保持。
 
-## 备份、恢复与媒体关联导航组改造（2026-10-02）
+## 备份、恢复与媒体关联导航组改造（2026-10-02，历史设计）
+
+2026-10-26：本节媒体状态、页面和测试已退役；当前父图只包含备份页与恢复页，请求所有权仍沿用本节设计。
 
 本轮状态：已完成。2026-10-02 用户确认按本方案修改代码；保留现有工作区中尚未提交的方案及用户其他改动，就地实施，不创建提交。导航组、共享轻量会话及三个独立业务 VM 已接入；既有每日备份、恢复及媒体关联算法继续复用，下文同步为当前实现。app 单测、Kotlin 编译、R8 和独立代码复审通过；设备生命周期与真实权限交互验收另列待办。
 
@@ -1157,19 +1217,19 @@ WebDAV：上次备份失败
 
 2026-09-30 提交前最终复核：app Kotlin 编译、app 150 项单测及 base/general 64 项单测全部通过，失败、错误和跳过均为 0；`git diff --check` 通过。密码表单映射回归已包含在 app 单测中；真实 WebDAV 连接、显隐与布局交互仍需设备验收。
 
-项目当前数据主要存放在 Room 数据库和宿主 Preferences DataStore 中：剪贴数据、来源 App、链接预览、搜索历史、视频下载记录、图片下载记录由 base 主库承载；剪贴快捷动作、回收站保留天数、剪贴来源 App 过滤名单等轻量设置由 `ClipSettingsRepository` 承载。TorrentSearch 已通过 feature-local `BackupFeatureContributor` 以字段白名单参与 `schemaVersion = 4` 的备份预检、计数和恢复报告，书签、搜索历史、已查看和非敏感排序设置可恢复，旧磁力 entry 一律视为不兼容并跳过。06D 的 Provider 开关、Torznab 配置及密钥、安全模式、DoH 和披露确认均属于本机网络/隐私状态，不进入备份或 dirty；仅默认排序条件与方向属于非敏感设置白名单。统一备份恢复支持本地手动导出/导入预检恢复，以及 WebDAV 手动测试、上传、列表、预览和恢复；旧 v1/v2 备份按既有兼容策略只读处理。
+项目当前数据主要存放在 Room 数据库和宿主 Preferences DataStore 中：剪贴数据、来源 App、链接预览、搜索历史、视频与图片下载运行态由 base 主库承载；剪贴快捷动作、回收站保留天数、剪贴来源 App 过滤名单等轻量设置由 `ClipSettingsRepository` 承载。TorrentSearch 已通过 feature-local `BackupFeatureContributor` 以字段白名单参与 `schemaVersion = 5` 的备份预检、计数和恢复报告，书签、搜索历史、已查看和非敏感排序设置可恢复，旧磁力 entry 一律视为不兼容并跳过。06D 的 Provider 开关、Torznab 配置及密钥、安全模式、DoH 和披露确认均属于本机网络/隐私状态，不进入备份或 dirty；仅默认排序条件与方向属于非敏感设置白名单。统一备份恢复支持本地手动导出/导入预检恢复，以及 WebDAV 手动测试、上传、列表、预览和恢复；只接受当前格式 5，不兼容旧包。
 
-本方案新增统一 `BackupSnapshot` 备份包，同一套导出、预检、恢复和报告逻辑同时服务本地文件备份与 WebDAV 备份。第一版定位是“备份/恢复”，不是多设备实时同步；多个设备可以共用同一 WebDAV 目录并看到彼此备份，但不保证自动双向同步或冲突同步。
+本方案新增统一 ZIP/JSONL 备份包，同一套导出、预检、恢复和报告逻辑同时服务本地文件备份与 WebDAV 备份。第一版定位是“备份/恢复”，不是多设备实时同步；多个设备可以共用同一 WebDAV 目录并看到彼此备份，但不保证自动双向同步或冲突同步。
 
 恢复剪贴记录时会对 `timestamp`、`pinned_time`、`folded_at`、`deleted_at` 做本机时间轴归一化：如果备份来自时钟偏快的设备，先按 manifest 创建时间和本机恢复时间的正向偏移整体平移，再把仍落在未来的字段限制到恢复开始时间以内；本地较新状态保护也使用归一化后的备份创建时间，避免远端数据长期显示“现在”并压过后续新复制内容。
 
-当前代码组织已将备份包 IO、导出、恢复和 mapper 拆到独立协作者：`BackupPackageWriter` / `BackupPackageReader` 负责 JSONL、zip、manifest 和 checksum，`BackupSnapshotExporter` 负责分页导出、high-water mark、设置白名单读取、可选 `BackupFeatureContributor` 扩展和 manifest 组装，`BackupSnapshotRestorer` 负责 v1/v2/v4 预检后的事务恢复、chunk 写库、幂等报告、本地较新保护和可选功能恢复参与者调用，`BackupEntityMappers` 负责 base Room 实体与备份协议模型转换，`BackupRepository` 聚焦对外 API、互斥和预检委托。TorrentSearch 已通过 feature-local `TorrentSearchBackupContributor` 注册到这些扩展点，保留书签、搜索历史、已查看和默认排序的导出恢复，但删除保存副作用中的版本标记；旧磁力备份仍由预检统一分类为不兼容跳过，而非可选功能恢复参与者。
+当前代码组织已将备份包 IO、导出、恢复和 mapper 拆到独立协作者：`BackupPackageWriter` / `BackupPackageReader` 负责 JSONL、zip、manifest 和 checksum，`BackupSnapshotExporter` 负责分页导出、high-water mark、设置白名单读取、可选 `BackupFeatureContributor` 扩展和 manifest 组装，`BackupSnapshotRestorer` 负责 格式 5 预检后的事务恢复、chunk 写库、幂等报告、本地较新保护和可选功能恢复参与者调用，`BackupEntityMappers` 负责 base Room 实体与备份协议模型转换，`BackupRepository` 聚焦对外 API、互斥和预检委托。TorrentSearch 已通过 feature-local `TorrentSearchBackupContributor` 注册到这些扩展点，保留书签、搜索历史、已查看和默认排序的导出恢复，但删除保存副作用中的版本标记；旧磁力备份仍由预检统一分类为不兼容跳过，而非可选功能恢复参与者。
 
 ## 目标
 
 - 完成“导出备份 → 卸载重装 → 恢复数据”的可靠闭环。
 - 第一版支持本地手动导出/导入、WebDAV 手动备份/恢复、恢复前预检和恢复后报告。
-- 当前阶段补齐 WebDAV/本地每日同包备份、分目标结果、普通备份保留份数、大数据量导出/导入流式化和恢复后的下载媒体重新定位入口；后续阶段再补齐前台通知、首次恢复引导和分类恢复。
+- 当前阶段补齐 WebDAV/本地每日同包备份、分目标结果、普通备份保留份数、大数据量导出/导入流式化；后续阶段再补齐前台通知、首次恢复引导和分类恢复。
 - 备份包不加密；当前以 `.zip` 承载 `manifest.json`、设置 JSON 和多个业务 JSONL 文件，用户界面必须提示备份文件包含剪贴内容，应保存到可信位置。
 
 ## 范围
@@ -1183,11 +1243,10 @@ WebDAV：上次备份失败
 - 搜索历史。
 - 启用 TorrentSearch 时，任务 7 将由 `BackupFeatureContributor` 按字段白名单导出书签、搜索历史、已查看和非敏感排序设置；Provider 本机选择、安全模式状态及完整 DataStore 文件不恢复，完整字段与幂等规则以 [TorrentSearch 主方案](magnet_search_plan.md) 为准。
 - 核心用户偏好，包括剪贴快捷动作、回收站保留天数和剪贴来源 App 过滤包名名单。
-- 下载记录元数据，包括视频下载任务和图片提取/下载批次、图片项。
 
 第一版不备份：
 
-- 视频/图片媒体文件本体。
+- 视频/图片媒体文件本体以及三张下载任务表的全部运行态。
 - TorrentSearch 的 Provider 缓存、临时文件、WebView 数据、Provider 健康和旧 Academic Torrents 缓存。
 - TorrentSearch 的 API Key、Cookie、NSFW/安全模式状态、Provider 本机开关、SAF URI、缓存和设备绑定密文；独立数据库与 DataStore 已从系统云备份及设备迁移按精确路径整文件排除，自定义白名单恢复尚待任务 7。
 - TorrentSearch 06C 的书签 SAF JSON 导入导出是一次性用户文档传输，不属于 WebDAV/本地备份包发布协议；取得流后的取消会把唯一关闭所有权移交独立后台调度，不让生命周期 Main 同步等待阻塞 close，但外部 Provider 的 `openInputStream`/`openOutputStream` 尚未返回时还没有对象可关闭，不能承诺立即中断打开阶段。若 Provider 已接受部分字节，应用也无法保证原子删除或回滚半成品，不会把目标 URI、半成品信息或原始文件纳入备份。任务 7 的正式备份发布仍必须保持“完整写入并校验后才发布”的独立原子边界。
@@ -1216,21 +1275,12 @@ WebDAV：上次备份失败
 - 当前实现：手动 WebDAV 提交后台生成请求，成功入队后展示可关闭的任务已创建弹窗；入队不表示生成或上传成功。后台分目标更新真实结果，仅对本轮已保存的手动 WebDAV 终态尝试成功/失败 Toast，自动任务无完成 Toast。独立系统文件导出仍按该入口的实际完成结果提示。
 - 恢复链路使用真正的独立导航页面，用户选择本地文件、本地备份目录条目或 WebDAV 条目后进入恢复页读取状态，页面内部在读取、预览、恢复中、恢复完成和恢复失败之间切换，避免 BottomSheet 下滑误关闭。
 - 备份页和恢复页不共享 `BackupVm`；三个页面通过父图作用域 `BackupFlowVm` 共用一个 `BackupFlowSession`。备份页把恢复请求写入会话单槽 StateFlow，独立 `BackupRestoreVm` 首次 RESUMED 时接管读取、下载、预览、恢复和临时文件清理。建立 Reading 后按 requestId 确认清空请求，关闭页面或 ViewModel 销毁时按匹配身份清理，避免长期持有 URI、WebDAV 条目或备份页状态。
-- 备份页和恢复流程页已接入 `SecondaryPageScaffold` 二级页面骨架，标题栏、页面背景、Snackbar 和底部操作入口跟随本轮固定品牌主题；备份导出、WebDAV、恢复预检、恢复写库和媒体关联状态机不变。
 - 恢复流程底部操作区的导航栏避让由公共二级骨架统一负责，`BackupRestoreFlowActions` 不再局部添加系统 padding；媒体重新关联页仍使用原生 Scaffold，保留原有处理。共享契约、测试及日志边界以 [UI 主方案](app_ui_refresh_plan.md#页面骨架导航栏-insets-契约2026-09-30) 为准，不改变备份数据或恢复动作。
 - 恢复页导航栏标题固定为“恢复备份”，不随读取、预览、恢复结果变化；正文顶部状态行展示当前状态，并按读取、预览、恢复中、成功和失败使用不同图标与颜色，让用户能快速识别当前阶段。
 - 读取中和恢复中点击返回需要二次确认；确认退出会取消当前读取/恢复协程并清理临时预览状态。若恢复已经进入数据库事务，事务由底层恢复逻辑完成或回滚。
 - 恢复前在恢复流程页内展示轻量预检摘要：打开来源、备份类型、文件名、备份时间、App 版本、schemaVersion、文件大小、设备标识、checksum 结果和各类数据数量。
 - 恢复不再自动创建恢复前安全快照；恢复采用合并策略并在 Room 事务中写库，失败会回滚。用户如果担心当前数据，可先手动导出普通备份。
 - 恢复后在同一个恢复流程页内展示结果报告：恢复文件名、恢复完成时间、总新增/更新/跳过，以及按类别新增/更新/跳过；跳过是正常结果，不使用警告样式。恢复结果页底部“完成”关闭恢复页和备份页，回到进入备份前的页面状态；顶部返回和系统返回只退回备份页，方便用户继续查看或发起其他备份恢复操作。
-- 恢复完成页提供“恢复本地媒体关联”手动入口。入口只负责进入独立媒体关联页面，触发当前数据库里所有成功/部分成功下载媒体的本地引用验证和关联恢复，不限定本次恢复包；恢复完成后不自动跳转、不自动预估，App 重新进入、进程重启或回到恢复页后都不会自动触发或自动续跑该任务。若独立媒体关联页进入成功完成或无须处理终态，用户点击底部“完成”时只关闭 `BackupRoute` / `BackupRestoreRoute` / `BackupMediaRelocationRoute` 组成的备份恢复链路，回到进入备份前的页面状态；点击顶部返回或系统返回时只退回恢复结果页，方便查看恢复报告和媒体关联回显。失败、权限不足、预估、权限请求和待确认阶段仍返回恢复页，方便重试或继续处理。
-- 恢复完成页同时展示媒体关联的一行简洁摘要和视频/图片详细分类数字；摘要来自恢复页 ViewModel 中保存的结构化 `MediaRelocationSummary`，不保存已格式化文案，UI 通过字符串资源展示。新一轮预估、待确认或扫描中不清空上一轮终态摘要，直到新的终态或异常中断摘要替换。
-- 媒体关联由独立 `BackupMediaRelocationRoute(restoreTaskId)` 和 `BackupMediaRelocationVm` 承载；恢复页入口点击做防抖，`BackupMediaRelocationRoute` 作为目标页统一使用 `launchSingleTop` 导航，正式扫描中入口禁用。真正防止旧流程串写由恢复页 ViewModel 收到事件后校验 `restoreTaskId` 完成。
-- 媒体 VM 通过 `BackupMediaRelocationEvent` 的 Incomplete、Running、Terminal 和 Interrupted 同步归约当前会话的媒体状态；恢复 VM 绑定会话后持续观察轻量 StateFlow，按 restoreTaskId 映射入口与终态摘要。没有 UI 订阅者时关键结果也已保存；不存在全局 SharedFlow 发送器或通用 EventBus。
-- 媒体重新定位启动前在独立页面展示轻量预估，统计待恢复关联视频数、图片批次数和成功图片项数，并用“预计几秒 / 可能几十秒 / 可能 1 分钟以上”这类保守区间提示耗时。预估为 0 时直接展示暂无需要恢复关联，不申请权限，也不进入不可退出流程。
-- 媒体重新定位按“预估 → 验证旧引用和无权限可见候选 → 按需权限请求 → 用户确认 → 正式扫描”执行；预估、权限请求和用户确认阶段允许返回恢复页，再次进入可重新预估，不承诺复用上一次 `MediaRelocationPreparation`。正式扫描开始后媒体关联页不可中断、不可退出，顶部返回、系统返回和离开入口全部拦截；恢复页底部“完成”按钮禁用。成功完成或无须处理终态表示恢复补充流程已闭环，底部“完成”不再回到恢复完成页，而是只收起 `BackupRoute` / `BackupRestoreRoute` / `BackupMediaRelocationRoute` 链路，让导航自然落回进入备份前的页面状态；顶部返回和系统返回仍只回恢复结果页。Android Home 键、进程被杀、系统回收和关机无法阻止，异常中断后不自动续跑，用户可再次手动触发。
-- 媒体重新定位完成、无需扫描、失败、权限不足或异常中断后，独立页面展示简洁摘要和详细分类数字，并通过 `Terminal` 或 `Interrupted` 事件回显到恢复页；恢复页入口按钮文案改为“再次恢复关联”。完成和无需扫描属于正向闭环，`BackupMediaRelocationVm` 在发送对应终态 summary 时同步记录“完成应关闭恢复链路”，底部“完成”进入页面 `requestDone()` 并优先读取该标记，避免 Compose 本地 state 尚未切到 `Result/NoWork` 时落回普通返回；顶部返回和系统返回进入 `requestBack()`，只回恢复页查看回显摘要；`MediaRelocationUiState` 相关派生属性集中放在状态模型文件，导航收栈细节封装为命名函数；失败、权限不足、异常中断或非终态返回恢复页时，入口文案为“继续恢复关联”或“再次恢复关联”，方便用户重试或继续进入该功能流程，不表示复用上一次准备态。
-- 媒体重新定位不会修改下载记录状态，不会重新下载，不会恢复媒体文件本体；它只在高可信唯一匹配时写回新的本地媒体引用。未找到时下载记录仍保持原 success/partial_success 等历史语义，记录页继续展示本地文件不可读并保留重新下载入口。
 - 自动备份默认关闭。用户开启时必须至少配置一个备份目标；完整包生成后向已配置目标分别登记一次性任务，本地与 WebDAV 可独立完成。
 - 自动备份页内配置统一开关和普通备份保留份数；页面展示本地/WebDAV 最近完成结果和 WebDAV 健康状态缓存，等待或运行不覆盖历史结果。
 - 分目标完成时间、失败标志、低敏 reasonCode、待上传身份/阶段和 WebDAV 健康状态由 `BackupRuntimeRepository` 保存固定字段到宿主 DataStore，不进入备份包，也不依赖枚举名的 R8 稳定性。
@@ -1414,7 +1464,7 @@ flowchart TD
     Write -->|失败| Failure
 ```
 
-下图表示已接入的父图、请求及回显边界；会话和归约有 JVM 回归，导航实际返回、owner 释放及进程重建仍待设备验收。后续备份、恢复和媒体关联图同步采用本组会话，不再依赖 Singleton 发送器。
+下图表示 2026-10-26 的父图与请求所有权边界；会话有 JVM 回归，导航实际返回、owner 释放及进程重建仍待设备验收。
 
 ```mermaid
 %% title: 备份恢复导航组
@@ -1423,17 +1473,13 @@ flowchart TD
     subgraph BackupGroup[同一导航组实例]
         Group --> Backup[起点：备份页 人工验证]:::manual
         Backup --> Restore[独立恢复页 人工验证]:::manual
-        Restore --> Media[独立媒体关联页 人工验证]:::manual
-        Media -->|普通返回| Restore
         Restore -->|普通返回| Backup
-        Session[图作用域轻量会话：请求与回显 已单测]:::unit
+        Session[图作用域轻量会话：请求所有权 已单测]:::unit
         Backup -.->|提交恢复请求| Session
-        Session -.->|接管请求及读取回显| Restore
-        Media -.->|同步写入关联状态| Session
+        Session -.->|接管及释放请求| Restore
     end
     Backup -->|返回退出组| Entry
     Restore -->|结果完成退出组| Close[关闭会话并移除整个父图 人工验证]:::manual
-    Media -->|成功或无需处理：完成| Close
     Close --> Entry
     classDef unit fill:#dff5e7,stroke:#26804b,color:#16351f;
     classDef manual fill:#e8f1ff,stroke:#2b6cb0,color:#17375e;
@@ -1442,7 +1488,7 @@ flowchart TD
 
 ### 恢复流程
 
-以下三张图按 2026-10-10 当前代码梳理，分别表达读取与预览、分阶段恢复、返回与清理。原图将取消等同失败、将所有恢复阶段描述为一次事务，并遗漏部分成功；本轮以 `BackupRestoreFlowPage`、`BackupRestoreVm`、`BackupNavigation` 和 `BackupSnapshotRestorer` 的实际行为为准，只修正文档，不调整运行时代码。
+以下三张图按 2026-10-26 实现表达读取与预览、分阶段恢复、返回与清理。当前只接受格式 5；已删除媒体入口和媒体运行状态对返回的限制，保留真实恢复期间的门禁和部分成功。
 
 页面状态为 `Hidden → Reading → Preview → Restoring → Result / Error`。`Hidden` 是首次请求检查前的等待状态以及退出后的清理状态；读取失败直接进入 `Error`，功能库或设置阶段失败且携带已提交报告时进入部分成功的 `Result`。
 
@@ -1474,7 +1520,7 @@ flowchart TD
 
 请求先被当前导航组会话接受，再打开恢复页；系统文件选择器取消不提交请求。预览保留同一份私有临时包，显示文件信息、来源、备份时间、版本、校验结果和分类数量。按钮直接启动合并恢复，没有额外的恢复确认弹窗，也不自动生成安全快照。
 
-#### 执行、部分成功与媒体关联入口
+#### 执行与部分成功
 
 ```mermaid
 %% title: 恢复页面：执行与结果分支
@@ -1489,111 +1535,41 @@ flowchart TD
   Feature -->|"功能库阶段失败"| Partial
   Settings["最后提交 DataStore 设置白名单<br/>独立提交 编译验证"]:::compile --> Success
   Settings -->|"设置阶段失败"| Partial["Result：部分成功<br/>保留已确认报告，标记失败阶段 已单测"]:::unit
-  Partial --> Retry["可重试同一备份或完成退出<br/>媒体关联入口暂不开放 人工验证"]:::manual
+  Partial --> Retry["可重试同一备份或完成退出<br/>人工验证"]:::manual
   Retry -->|"重试：重新执行合并恢复"| Start
-  Success["Result：全部成功<br/>展示新增 / 更新 / 跳过 人工验证"]:::manual --> Register
-  Register["登记 Result.taskId<br/>允许媒体关联 已单测"]:::unit --> Actions
-  Actions["选择：恢复本地媒体关联<br/>完成退出 / 返回备份页 人工验证"]:::manual
-  Actions -->|"恢复本地媒体关联"| Media["打开独立媒体关联页<br/>只传任务身份 编译验证"]:::compile
-  Media -->|"普通返回"| Echo["匹配 taskId 的状态与摘要回显<br/>扫描细节见下方独立流程 已单测"]:::unit
-  Echo --> Actions
+  Success["Result：全部成功<br/>展示新增 / 更新 / 跳过 人工验证"]:::manual --> Actions
+  Actions["完成退出 / 返回备份页<br/>人工验证"]:::manual
 
   classDef unit fill:#dff5e7,stroke:#26804b,color:#16351f;
   classDef manual fill:#e8f1ff,stroke:#2b6cb0,color:#17375e;
   classDef compile fill:#efe8ff,stroke:#6b46c1,color:#2d1f53;
 ```
 
-当前 JSONL 备份按宿主 Room、可选功能库、DataStore 设置的顺序恢复，三者不组成跨库事务。旧 v1 / JSON 数组备份走兼容入口，宿主 Room 完成后提交设置。宿主事务失败会回滚该事务；功能库或设置失败保留此前已提交的数据，部分结果只承诺异常明确携带的报告，不推测失败阶段写入了多少。部分成功重试会重新执行整个合并恢复，依赖既有幂等规则跳过相同数据，并非仅重试失败阶段。未知异常仍进入 `Error`。
+当前 JSONL 备份按宿主 Room、可选功能库、DataStore 设置的顺序恢复，三者不组成跨库事务。非当前版本在预检阶段拒绝，不再存在旧数组恢复入口。宿主事务失败会回滚该事务；功能库或设置失败保留此前已提交的数据，部分结果只承诺异常明确携带的报告，不推测失败阶段写入了多少。部分成功重试会重新执行整个合并恢复，依赖既有幂等规则跳过相同数据，并非仅重试失败阶段。未知异常仍进入 `Error`。
 
 #### 返回、完成与取消清理
 
 ```mermaid
 %% title: 恢复页面：返回、完成与取消清理
 flowchart TD
-  Back["顶部返回 / 系统返回<br/>人工验证"]:::manual --> Running
-  Done["Result 底部完成<br/>扫描中按钮禁用 人工验证"]:::manual --> DoneGuard
-  Running{"会话中的媒体关联正在扫描？<br/>已单测"}:::unit
-  Running -->|"是"| Stay["提示扫描中并留在当前流程<br/>人工验证"]:::manual
-  Running -->|"否"| Busy{"当前为 Reading 或 Restoring？<br/>人工验证"}:::manual
+  Back["顶部返回 / 系统返回<br/>人工验证"]:::manual --> Busy
+  Busy{"当前为 Reading 或 Restoring？<br/>人工验证"}:::manual
   Busy -->|"是"| Confirm["显示退出二次确认<br/>人工验证"]:::manual
   Confirm -->|"继续等待"| Keep["关闭确认弹窗，任务继续<br/>人工验证"]:::manual
   Confirm -->|"确认退出"| Cancel["取消本页协程<br/>不撤销已提交阶段 人工验证"]:::manual
   Busy -->|"否"| Clean
-  Cancel --> Clean["释放请求及媒体回显<br/>清理临时目录 编译验证"]:::compile
+  Cancel --> Clean["释放请求、清理临时目录<br/>编译验证"]:::compile
   Clean --> Backup["只弹恢复页，回备份页<br/>人工验证"]:::manual
-  DoneGuard{"同步会话检查是否允许退出？<br/>已单测"}:::unit
-  DoneGuard -->|"扫描中"| Stay
-  DoneGuard -->|"允许"| DoneClean["清理恢复状态及临时包<br/>关闭会话，弹出整个备份导航组 编译验证"]:::compile
-  DoneClean --> Entry["回到进入备份前的页面<br/>不固定跳首页 Tab 人工验证"]:::manual
-
-  classDef unit fill:#dff5e7,stroke:#26804b,color:#16351f;
+  Done["Result 底部完成<br/>人工验证"]:::manual --> DoneClean
+  DoneClean["释放请求并关闭会话<br/>移除整个备份导航组 编译验证"]:::compile --> Entry
+  Entry["回到进入备份前的页面<br/>不固定跳首页 Tab 人工验证"]:::manual
   classDef manual fill:#e8f1ff,stroke:#2b6cb0,color:#17375e;
   classDef compile fill:#efe8ff,stroke:#6b46c1,color:#2d1f53;
 ```
 
 读取/恢复失败先保留错误页；部分成功保留临时包供重试，不在进入失败或结果状态时立即删除。普通返回、确认取消、完成以及恢复 VM 的 `onCleared()` 负责本次临时文件清理。取消只表示取消当前任务；已提交的 Room、功能库或设置不会被整组回滚。页面离开前台不会重复启动读取，也不把已确认任务自动变为后台可续跑任务；进程死亡丢失内存请求和报告后退回备份起点，已提交数据仍保留。
 
-本轮复用主方案和既有离线 HTML 生成器，不新建重复恢复文档、不修改组件/类/方法。按 `$repo-unit-test-gate` 判断，纯流程说明和图块调整无需新增单测、选择性 TDD、Android 编译或 R8；验证重点为源码分支核对、生成同步和 Mermaid 渲染。测试徽标表示既有覆盖范围，不表示本轮重新执行 Android 测试；实际导航、SAF、WebDAV 和取消期间的设备行为仍按原验收边界人工验证。日志与诊断沿用下方现有计划，本轮无新增运行时副作用或日志点，也不改变备份覆盖、格式和恢复协议。
-
-### 本地媒体关联流程
-
-```mermaid
-%% title: 本地媒体关联流程
-flowchart TD
-  subgraph RestoreBoundary["来自恢复流程的交互"]
-    FromRestore["恢复结果页入口<br/>恢复流程传入 restoreTaskId<br/>人工验证"]:::manual
-    BackToRestore["同步保存会话媒体状态后由 StateFlow 回显<br/>Incomplete / Running / Terminal / Interrupted<br/>已单测"]:::unit
-  end
-
-  subgraph MediaPage["独立媒体关联页 BackupMediaRelocationRoute / BackupMediaRelocationVm"]
-    LaunchMedia["launchSingleTop 打开媒体关联独立页<br/>编译验证"]:::compile
-    Estimate["数据库 COUNT 轻量预估待恢复媒体<br/>待补测"]:::todo
-    NoNeed["预估为 0：不申请权限、不扫描<br/>编译验证"]:::compile
-    OldRefCheck["验证旧 savePath / outputUri 与无权限可见候选<br/>待补测"]:::todo
-    Permission{"是否需要共享媒体库权限？<br/>人工验证"}:::manual
-    PermissionRequest["按需申请图片或视频读取权限<br/>人工验证"]:::manual
-    PermissionChecking["权限返回后复查候选可见性<br/>人工验证"]:::manual
-    PermissionDenied["权限不足：展示摘要，可再次申请<br/>人工验证"]:::manual
-    ScanConfirm{"用户确认正式扫描？<br/>人工验证"}:::manual
-    Running["正式扫描中不可返回、不可离开<br/>恢复页完成按钮禁用<br/>人工验证"]:::manual
-    Scan["扫描 MediaStore / 公共目录候选<br/>人工验证"]:::manual
-    Relink["高可信唯一匹配后分批写回引用<br/>待补测"]:::todo
-    Terminal["完成 / 失败 / 权限不足 / 无需扫描<br/>生成结构化 summary<br/>编译验证"]:::compile
-    SuccessCloseStack["完成或无须处理后点击底部完成<br/>关闭备份恢复链路<br/>编译验证"]:::compile
-    BackOneLevel["顶部返回或系统返回<br/>回恢复结果页查看回显<br/>人工验证"]:::manual
-    Interrupted["onCleared 兜底 Interrupted<br/>避免恢复页永久 Running<br/>编译验证"]:::compile
-  end
-
-  FromRestore --> LaunchMedia
-  LaunchMedia --> Estimate
-  Estimate -->|"无待恢复媒体"| NoNeed
-  Estimate -->|"存在待恢复媒体"| OldRefCheck
-  NoNeed --> Terminal
-  OldRefCheck --> Permission
-  Permission -->|"需要"| PermissionRequest
-  Permission -->|"不需要"| ScanConfirm
-  PermissionRequest --> PermissionChecking
-  PermissionChecking -->|"候选仍不足"| PermissionDenied
-  PermissionChecking -->|"候选已足够或权限完整"| OldRefCheck
-  PermissionDenied --> PermissionRequest
-  ScanConfirm --> Running
-  Running --> Scan
-  Scan --> Relink
-  Relink --> Terminal
-  Scan --> Terminal
-  Running --> Interrupted
-  Terminal -->|"完成或无须处理后返回"| SuccessCloseStack
-  Terminal -->|"顶部或系统返回"| BackOneLevel
-  Estimate --> BackToRestore
-  Running --> BackToRestore
-  Terminal --> BackToRestore
-  Interrupted --> BackToRestore
-
-  classDef unit fill:#dff5e7,stroke:#26804b,color:#16351f;
-  classDef todo fill:#fff1cc,stroke:#b7791f,color:#3d2a05;
-  classDef manual fill:#e8f1ff,stroke:#2b6cb0,color:#17375e;
-  classDef compile fill:#efe8ff,stroke:#6b46c1,color:#2d1f53;
-```
+本轮复用既有离线 HTML 生成器；测试与设备验收边界见顶部本次实施记录。已删除媒体关联流程图。
 
 ## 数据流
 
@@ -1608,7 +1584,7 @@ flowchart TD
 ### 本地备份文件夹
 
 1. 用户通过系统目录选择器选择本地备份文件夹，应用保存持久化读写授权 URI，并尽量解析目录 displayName 或 URI 尾段作为页面展示路径。
-2. 本地备份文件夹 URI 只保存在本机配置，不进入 `BackupSnapshot`，系统 Auto Backup 也需要排除。
+2. 本地备份文件夹 URI 只保存在本机配置，不进入备份包，系统 Auto Backup 也需要排除。
 3. 后续 WebDAV 手动备份或自动备份复用该目录时，必须用同一份 `BackupExportResult` 写入 `.zip` 文件和 manifest sidecar，确保本地与远端备份内容一致。
 4. 本地授权失效或发布失败时仅结束本地目标；云端已独立登记，两目标互不覆盖。
 
@@ -1662,40 +1638,14 @@ flowchart TD
 3. 用户预览指定备份时下载完整 `.zip` 快照并执行同本地导入的预检流程。
 4. 用户确认后执行合并恢复。
 
-### 恢复后的媒体重新定位
-
-1. 恢复结果页的“恢复本地媒体关联”只作为手动入口；点击后进入 `BackupMediaRelocationRoute(restoreTaskId)`，实际扫描当前数据库内所有成功视频记录、成功/部分成功图片批次和成功图片项，不限定本次恢复包。
-2. 媒体关联页使用独立 `BackupMediaRelocationVm` 承载预估、权限、确认、扫描、进度和写回；`BackupRestoreVm` 只维护恢复页回显，不直接执行媒体扫描。三个页面共用父图 `BackupFlowVm` 持有的 `BackupFlowSession`，请求和回显仅属于当前导航组实例。
-3. 媒体事件在会话内同步写入事实状态，再由只读 StateFlow 观察，不做通用 EventBus。`onCleared()` 中 Interrupted 也同步写回，不依赖正在取消的协程或 tryEmit；关闭/错任务返回 false 并记录低敏 reasonCode。
-4. 恢复 VM 显式绑定会话后持续观察轻量媒体状态，匹配 restoreTaskId 后投影到本地 `mediaRelocationEntryState` 和 `lastTerminalMediaRelocationSummary`。请求则仅在恢复目的地首次 RESUMED 接管，不在 VM init 启动预检 IO。
-5. `mediaRelocationEntryState` 只表达入口状态：`NotStarted` 显示“恢复本地媒体关联”，`Incomplete` 显示“继续恢复关联”，`Running` 禁用入口并显示扫描中，`Terminal` 显示“再次恢复关联”。`lastTerminalMediaRelocationSummary` 保存结构化结果，用于恢复页一行简洁摘要和视频/图片详细分类数字；新一轮 `Incomplete` 或 `Running` 不清空上一轮结果。
-6. 首次进入媒体关联页时执行一次预估；重组、屏幕方向切换或权限页返回不重复触发。入口双击通过按钮防抖和 `launchSingleTop` 避免重复打开页面；`BackupMediaRelocationVm` 仍需要用当前 job 或状态门禁保证 `estimate()`、权限回调和 `startScan()` 幂等。
-7. 第一阶段只做数据库 COUNT 和轻量分组统计，生成待恢复关联视频数、图片批次数、图片项数和保守耗时区间；这一阶段不访问 MediaStore。进入非终态流程时发送 `Incomplete`，但不发送或清空终态 summary。
-8. 用户确认前先验证既有媒体引用：视频验证 `savePath`，图片验证 `outputUri`；旧引用仍可读时计入 `existing_readable`，不扫描、不申请权限、不写回。Android 10+ 在缺少媒体读取权限时，还会先尝试查询当前应用仍可见的 MediaStore 候选；如果候选已经足够唯一定位，也不申请权限。
-9. 只有存在不可读旧引用、无权限可见候选仍不足以定位，且继续扫描共享媒体库确实需要系统授权时才按需申请权限：只有图片需要授权时只申请图片媒体权限，只有视频需要授权时只申请视频媒体权限；Android 14+ 用户选择“部分照片/视频”只授予有限媒体集合，不能支持按目录批量扫描，权限回调后先展示“正在确认媒体权限”的过渡态并重新探测候选可见性，仍不足时继续停留在权限请求态并展示权限不足摘要，用户可直接再次申请，不需要重新预估。第一版不申请全文件访问权限。
-10. 预估、权限请求和用户确认阶段允许返回恢复页；如果媒体关联页 ViewModel 已销毁，再次进入可重新预估，不跨页面保存 `MediaRelocationPreparation`。权限页返回后仍停留在媒体关联页并继续展示当前状态。完成或无须处理终态点击底部“完成”时，应退出本地媒体关联页、恢复页和备份页，不再回到已经完成的恢复页，也不强制跳到固定首页 Tab；点击顶部返回或系统返回时只回恢复结果页。
-11. 正式扫描由 app 层 `DownloadedMediaRelocator` 承接，因为它依赖 `Context`、运行时权限、MediaStore 和旧系统公共路径；`BackupSnapshotRestorer` 继续只负责备份数据入库。正式扫描开始时发送 `Running`，顶部返回、系统返回和离开入口全部拦截；恢复页底部“完成”按钮禁用，避免用户误以为可以离开。
-12. 视频只在应用保存目录 `DCIM/clipMaster` 中查找，候选文件名限定为 `fileName.mp4` 或 `fileName_N.mp4`；有可用大小信息时必须匹配，候选唯一且可信时写回 `savePath` 并清空 `pendingOutputUri`。
-13. 图片以批次为单位处理并按批次展示进度；先规范化 `outputDir` 得到目标文件夹。Android 10+ 先查 MediaStore `RELATIVE_PATH` 是否存在未回收站可见图片；Android 9 及以下先查 `Pictures/clipMaster/<folderName>`，必要时兼容 `DCIM/clipMaster/<folderName>`。
-14. 图片批次文件夹不存在或目录下没有可见媒体时，整批成功图片项直接判定未定位，不再按 `finalName` 全局搜索；文件夹存在时只在该文件夹内按 `finalName` 匹配，宽高可用时必须一致，Android 11+ 排除 `IS_TRASHED`。
-15. 图片项缺少 `finalName` 时直接跳过，不用 URL、顺序号、页面标题或模糊相似度猜测文件名，避免误绑用户相册里的同名旧文件。
-16. 写回按 100 条一组的小事务执行；单个 chunk 失败只影响当前 chunk。完成报告按视频和图片分开展示已可用、已恢复关联、未定位、整批失效、多候选、权限不足和写回失败数量，并先映射为结构化 `MediaRelocationSummary`，再由 UI formatter 本地化展示。
-17. 完成、无需扫描、失败或权限不足后展示简洁摘要和详细分类数字，并发送 `Terminal(restoreTaskId, summary)`。`BackupMediaRelocationVm.onCleared()` 若发现仍处于 `Running`，发送 `Interrupted(restoreTaskId, summary)` 兜底，恢复页收敛为可重试/中断摘要，避免“完成”按钮永久禁用。
-18. 第一版不清理旧失效 URI/路径，只有高可信定位到新引用时才覆盖旧 hint；成功写回媒体引用只提交业务数据，下一次每日或手动备份读取新的 hint。
-19. `outputDir`、`finalName` 和 `savePath` 只是定位线索，不承诺跨设备一定找回媒体；如果媒体文件本体没有同步到当前设备，相同目录或文件名也只会作为候选，不会被当成已恢复。
-
 ## 备份格式
 
-当前 v1 备份文件是单个 `.zip` 包，对系统文件选择器和 WebDAV 来说仍是一个文件，但包内已经文件化，避免把所有数据放进一条巨大 JSON。包内结构固定如下：
+当前使用格式 5 的单个 ZIP 包；只接受 JSONL，不再读取旧数组协议。完整宿主 entry 清单和可选 contributor 边界以顶部协议章节为准。
 
-- `manifest.json`：格式标识、schemaVersion、应用版本、创建时间、总摘要、每个业务数据文件的大小和 checksum。
-- `data/settings.json`：跨安装有意义的用户偏好。
-- `data/settings.json` 中的 `blocked_clip_source_packages` 只保存规范化包名，不保存 App 名称、图标、安装列表或拦截次数；恢复时与本机已有名单取并集，不覆盖本机新增规则，并按同一规则裁剪到 500 个。
-- `data/clips.json`、`data/source_apps.json`、`data/link_previews.json`、`data/search_histories.json`：核心剪贴与检索数据。
-- `data/video_downloads.json`、`data/image_batches.json`、`data/image_items.json`：下载记录元数据。
-- `schemaVersion = 4` 起，TorrentSearch 通过 `BackupFeatureContributor` 以字段白名单追加自己的版本 1 数据分类，并在 `feature_counts` 与恢复报告中单列。携带旧磁力 JSONL 的历史包不迁移，预检和报告均标记为“不兼容并跳过”，不计入恢复成功。
-
-当前 base 新导出实际使用 JSONL 文件名：`data/clips.jsonl`、`data/source_apps.jsonl`、`data/link_previews.jsonl`、`data/search_histories.jsonl`、`data/video_downloads.jsonl`、`data/image_batches.jsonl` 和 `data/image_items.jsonl`；TorrentSearch 的文件命名、版本和字段由其 `BackupFeatureContributor` 固定，完整契约以主方案为准；v1 JSON 数组文件名仅用于旧包兼容导入。
+- `manifest.json` 保存格式、版本、摘要、业务文件大小与 checksum；`data_format` 为 `jsonl`。
+- 剪贴、来源 App、链接预览与搜索历史使用 `.jsonl`；设置使用 `data/settings.json`。
+- 设置中的 `blocked_clip_source_packages` 只保存规范化包名，恢复时与本机名单取并集并裁剪到 500 个。
+- 下载任务不进入 ZIP、摘要或恢复报告；可选 TorrentSearch 的版本与字段仍由其 contributor 定义。
 
 当前 `source_apps` 保存历史来源名称，并保留旧图标元数据字段兼容备份；Shizuku 图标同步和图标预热写库链路已停止，新内存图标与主色不会写入此表。升级前或旧备份中可能仍有仅由旧预热链路生成、没有现存剪贴记录的来源缓存，沿用现有恢复和候选规则，不自动过滤、清洗或删除这些历史数据。
 
@@ -1707,7 +1657,8 @@ manifest 简化示例：
 {
   "format": "clip_master_backup",
   "application_id": "com.cla.clip.master",
-  "schema_version": 4,
+  "schema_version": 5,
+  "data_format": "jsonl",
   "encryption": "none",
   "compression": "zip",
   "created_at": 1716000000000,
@@ -1721,7 +1672,7 @@ manifest 简化示例：
   "checksum": "sha256-hex",
   "files": [
     {
-      "path": "data/clips.json",
+      "path": "data/clips.jsonl",
       "size": 1234,
       "checksum": "sha256-hex"
     }
@@ -1731,9 +1682,6 @@ manifest 简化示例：
     "source_app_count": 3,
     "link_preview_count": 2,
     "search_history_count": 5,
-    "video_download_count": 1,
-    "image_batch_count": 1,
-    "image_item_count": 8,
     "feature_counts": {
       "torrent_search_count": 3
     }
@@ -1741,7 +1689,7 @@ manifest 简化示例：
 }
 ```
 
-`checksum` 对包内各业务数据文件的路径、大小和文件 SHA-256 生成汇总 SHA-256，用来发现半截文件、业务文件缺失或服务端异常改写。恢复时必须先校验 manifest、逐文件 checksum 和 App 身份，再按事务分批恢复，避免半包数据写入本地。后续可继续扩展媒体目录、流式 JSON、gzip 压缩和备份包加密，但不能回退成单条 JSON 保存所有业务数据。
+`checksum` 对包内各业务数据文件的路径、大小和文件 SHA-256 生成汇总 SHA-256，用来发现半截文件、业务文件缺失或服务端异常改写。恢复时必须先校验 manifest、逐文件 checksum 和 App 身份，再按事务分批恢复，避免半包数据写入本地。后续可按需求评估压缩或备份包加密，但不能回退成单条 JSON 保存所有业务数据。
 
 ## 恢复规则
 
@@ -1749,12 +1697,10 @@ manifest 简化示例：
 - 同一条剪贴记录按内容、来源包名和时间状态构造稳定去重 key；字段冲突默认按更新时间较新者优先。
 - 来源 App 按包名幂等恢复；链接预览按链接 URL 幂等恢复；搜索历史按“搜索范围 + 规范化关键词”幂等恢复。恢复报告必须按真实新增、更新、跳过统计，不能把 `upsert` 写入条数直接当成新增数量。
 - 恢复后的剪贴数据继续使用当前入库规则参与后续复制去重：已有来源为空、`Unknown` 或“未知”的同内容记录可被后续明确来源覆盖升级；不同明确来源的同内容记录可以并存；本次未知来源遇到已有明确来源时跳过。
-- 图片项按 id 恢复，但报告必须先比较备份白名单元数据；只有状态、尺寸、顺序、输出位置、最终文件名或错误信息等元数据确实变化时才计入更新，重复恢复相同备份应计入跳过。
 - 本地在备份创建时间之后产生的新状态不被旧备份覆盖；若备份 manifest 创建时间来自未来设备，则先归一到本机恢复开始时间再参与比较。
 - 恢复剪贴数据时保留备份内时间的相对顺序，但会把远端未来时间归一到本机时间轴，避免 `timestamp` 或置顶/折叠/删除时间一直显示“现在”并影响列表排序。
 - 回收站剪贴数据继续备份，恢复后仍在回收站。
-- 彻底删除的剪贴数据、已删除的下载记录不会进入新的备份；恢复旧备份可能带回旧数据。
-- 下载中/合并中的旧下载记录恢复后不恢复后台任务，统一转为已中断或失败状态。
+- 彻底删除的剪贴数据不会进入新的备份；恢复格式 5 的较早快照可能带回旧数据。
 - 恢复剪贴数据时重新计算 `searchText` 等派生字段，不盲信旧备份中的派生值。
 - TorrentSearch 恢复按其稳定 infoHash、规范化查询等键幂等合并，并由恢复报告单列新增、更新和跳过；旧磁力 JSONL 无论功能开关均标记为“不兼容并跳过”，不得迁移或计入成功。
 - checksum、格式标识或 `applicationId` 校验失败时禁止导入。
@@ -1772,11 +1718,11 @@ manifest 简化示例：
 
 宿主设置设计见 [MMKV 替换为 DataStore 方案](datastore_replacement_plan.md)。导出读取 `ClipSettingsRepository` 的一次性白名单快照；恢复按宿主 Room、可选功能库、DataStore 设置分阶段提交，后续阶段失败携带已完成报告，页面显示部分成功并提供幂等重试。WebDAV 编辑使用内存草稿，测试连接或上传前成组提交配置与加密凭据；表单直接按当前地址、用户名和密码保存并连接，不要求账号变更时再次输入密码，也不在页面额外拦截。网络操作从同一磁盘快照取得目标和凭据，避免错配。已配置远端即使健康缓存为 unknown 也计入自动备份目标；每次执行读取最新数据，分目标提交结果，不再维护变更或确认版本。宿主 DataStore 文件被系统云备份和设备迁移排除。
 
-备份页首次读取失败提供重试；页面读取已保存密码并回填输入框，默认遮蔽，右侧按钮切换明文与遮蔽显示。密码仅在备份页 ViewModel 内存状态中保留，不使用 SavedStateHandle 或 rememberSaveable 保存；提交成功后回填已提交密码，不再清空输入框。用户编辑中的草稿不被异步读取覆盖；页面不展示“已保存密码”说明或“移除已保存密码”按钮，不保留待移除状态或专门的密码编辑标记。表单提交始终使用输入框当前密码，清空输入框就提交空密码，不再表示保留旧密码。修改账号或地址后仍使用当前密码尝试连接，认证是否成功交给服务端和既有连接错误提示。密码解密失败保留密文并提示重新输入，不阻止用户编辑和修复配置。手动文件导出更新本地结果；手动 WebDAV 的本地镜像与远端上传分别更新结果。部分恢复时暂不开放依赖完整报告的媒体关联入口。独立存储与系统任务队列间仍有中断窗口，按文件身份和持久阶段核对；无变化时会增加备份 IO。
+备份页首次读取失败提供重试；页面读取已保存密码并回填输入框，默认遮蔽，右侧按钮切换明文与遮蔽显示。密码仅在备份页 ViewModel 内存状态中保留，不使用 SavedStateHandle 或 rememberSaveable 保存；提交成功后回填已提交密码，不再清空输入框。用户编辑中的草稿不被异步读取覆盖；页面不展示“已保存密码”说明或“移除已保存密码”按钮，不保留待移除状态或专门的密码编辑标记。表单提交始终使用输入框当前密码，清空输入框就提交空密码，不再表示保留旧密码。修改账号或地址后仍使用当前密码尝试连接，认证是否成功交给服务端和既有连接错误提示。密码解密失败保留密文并提示重新输入，不阻止用户编辑和修复配置。手动文件导出更新本地结果；手动 WebDAV 的本地镜像与远端上传分别更新结果。完整或部分恢复后均直接展示报告，没有媒体关联步骤。独立存储与系统任务队列间仍有中断窗口，按文件身份和持久阶段核对；无变化时会增加备份 IO。
 
 ## TorrentSearch 备份接入影响（已实施）
 
-备份协议已使用 `schemaVersion = 4`。启用 TorrentSearch 实现时，`TorrentSearchBackupContributor` 通过 `BackupFeatureContributor` 扩展点，仅以字段白名单导出版本 1 的书签、搜索历史、已查看和非敏感默认排序设置，并在预检、`feature_counts` 与恢复报告中单列该分类；三张表使用 high-water mark + keyset 分页，恢复按 infoHash、规范化查询等稳定键幂等合并，同页重复键只保留时间最新项并把其余项计为 skipped。Torznab/API Key、Cookie、NSFW、SAF URI、Provider 健康、缓存、临时文件、新数据库、DataStore 和 WebView 数据均不导出，并由系统 Auto Backup 排除。
+备份协议已使用 `schemaVersion = 5`。启用 TorrentSearch 实现时，`TorrentSearchBackupContributor` 通过 `BackupFeatureContributor` 扩展点，仅以字段白名单导出版本 1 的书签、搜索历史、已查看和非敏感默认排序设置，并在预检、`feature_counts` 与恢复报告中单列该分类；三张表使用 high-water mark + keyset 分页，恢复按 infoHash、规范化查询等稳定键幂等合并，同页重复键只保留时间最新项并把其余项计为 skipped。Torznab/API Key、Cookie、NSFW、SAF URI、Provider 健康、缓存、临时文件、新数据库、DataStore 和 WebView 数据均不导出，并由系统 Auto Backup 排除。
 
 任务 06A 新增的 Provider 选择初始化哨兵、首次多源隐私披露确认和安全模式开关均属于本机隐私/安全决策，不进入自定义备份，也不触发 dirty；排序字段仍属于任务 7 计划导出的非敏感设置。独立 DataStore 已按任务 05B 从系统云备份和设备迁移整文件排除，因此本切片不新增备份代码或 schema 字段。
 
@@ -1800,10 +1746,6 @@ manifest 简化示例：
 - 备份 zip 组装阶段不再把真实 `fileSize` 写回包内 manifest；包内 manifest 固定 `fileSize = 0`，避免 fileSize 字段改变 JSON 长度后影响 zip 压缩结果并产生大小震荡。当前实现保留本地目录 sidecar、私有描述、导出摘要和阶段日志中的真实文件大小，WebDAV 不独立发布 sidecar，不需要另一份共享摘要；日志字段包含 `taskId`、文件名、真实文件大小、包内 manifest fileSize 和 entry 数量，不输出临时目录绝对路径和备份内容。
 - 恢复流程记录 `restore start/success/failed`，字段包括备份类型、文件大小、预检数量摘要、新增/更新/跳过数量、未来时间归一化字段数、正向时钟偏移毫秒数和耗时；失败日志输出 reasonCode 和异常类型，不输出备份内容。
 - 来源过滤名单恢复裁剪时记录 `reasonCode=backup_blocked_packages_trimmed`、本机数量、备份数量和合并后数量；禁止记录具体包名列表、App 名称或拦截次数。
-- 备份恢复流程页状态切换记录 `restore_flow_state_change`，字段包括 `taskId`、`fromState`、`toState`、`sourceType` 和 `reasonCode`；feature 内部恢复请求流只记录 `requestId`、请求类型和消费/清理时机，不记录本地 URI、WebDAV 地址或远端路径；读取/恢复中二次确认退出记录 `flow_closed` 或用户确认退出日志；恢复结果页底部“完成”记录低敏完成关闭链路日志，字段只包含当前状态、是否存在运行中的媒体关联和 reasonCode；不记录剪贴内容、搜索词、完整 URL 或备份包内容。
-- 媒体重新定位准备阶段记录低敏诊断摘要：API level、缺失图片/视频权限布尔值、旧引用不可读视频数、不可读图片批次数和图片项数、无权限可见唯一候选数、需要授权后继续扫描的数量、缺少搜索线索数量和多候选/元数据不符等授权不可恢复数量；Android 14+ 权限回调后重新执行同一准备探测，用于识别部分媒体访问不足；不输出 URI、路径、文件名、目录名、页面标题或 URL。
-- 当前导航组媒体会话只记录低敏状态转换：sessionId、restoreTaskId、eventType、fromState、toState、summaryType 和 reasonCode；不输出文件名、路径、URI、目录名、页面标题或 URL。同步 publish 返回 false 时记录 session_closed / restore_task_mismatch；`onCleared()` 的 Interrupted 同步解除 Running，不再依赖 tryEmit 或被取消的协程。
-- 媒体关联页导航防抖、`launchSingleTop` 命中、返回请求时的低敏 UI state/返回目标、完成请求时的关闭链路标记、正向终态或恢复完成关闭备份恢复链路、`restoreTaskId` 不匹配忽略事件和 Running 状态拦截返回都按 `logD`/`logW` 输出结构化低敏日志；返回和完成请求日志的关键字段先在普通代码路径计算，再交给 `logD` 惰性输出，避免日志开关关闭时影响断点判断。高频进度继续沿用既有节流策略，只记录阶段、已处理数量和耗时，不按单个媒体项输出日志。
 - 导出职责拆分后，`BackupSnapshotExporter` 继续复用既有 high-water mark、分页兜底和快照生成日志；本轮不新增新的敏感字段，也不记录单条业务 JSONL 内容。
 - 恢复职责拆分后，`BackupSnapshotRestorer` 继续复用既有恢复写库完成日志和解析失败日志；本轮不新增新的敏感字段，也不记录单条恢复内容。
 - 本地和 WebDAV 保留清理记录候选数量、待删除数量、成功删除数量、备份类型、保留份数和删除失败 reasonCode；只记录本 App 生成的备份文件名，不记录目录 URI 或 WebDAV URL。
@@ -1835,8 +1777,8 @@ manifest 简化示例：
 ### 当前阶段：大数据量备份导出/导入流式化
 
 - 本地对外仍保持单个 `.zip` 备份文件和 manifest sidecar，WebDAV 对外只发布单 `.zip`，不改成本地目录包，不备份媒体文件本体。
-- 新导出使用 `schemaVersion = 2` 和 JSONL 数据文件；旧 `schemaVersion = 1` 的 JSON 数组 zip 只读兼容导入，不再新生成。
-- TorrentSearch 接入后，新导出使用 `schemaVersion = 4`；`BackupFeatureContributor` 追加字段白名单数据和 `feature_counts`，旧磁力 JSONL 备份统一作为不兼容输入跳过，不再兼容恢复。
+- 新导出使用 `schemaVersion = 5` 和 JSONL 数据文件，旧数组模型与恢复入口已删除；所有非当前版本在预检阶段拒绝。
+- `BackupFeatureContributor` 继续追加模块白名单数据和 `feature_counts`，宿主五个必需 entry 不限制模块额外条目。
 - 导出不再生成整包 `ByteArray`：先分页写 JSONL 临时文件并计算 size/checksum，再生成 manifest，最后组装 zip。
 - 导出开始时记录可分页表的 high-water mark，本次只导出已存在记录；导出期间新增变化由下一次每日或手动快照读取。
 - 导出流程由 `BackupSnapshotExporter` 承载，仓库入口只负责互斥和对外 API；新增备份表时优先扩展 exporter 的分页导出方法、`BackupSummaryBuilder` 和 mapper，不把导出细节继续塞回 `BackupRepository`。
@@ -1848,16 +1790,6 @@ manifest 简化示例：
 - 本地 SAF 和 WebDAV 写入都改为文件流复制；WebDAV 上传使用带 `Content-Length` 的文件 RequestBody，发布正式文件前重新校验远端临时 zip。
 - 临时文件按导出和导入下载分区保存，文件名带 taskId；由任务自身清理，后台导出残留在新轮次开始清理，不再在启动、备份页初始化或恢复请求接管时按年龄扫描删除；用户正式备份保留清理继续忽略 `.tmp`。
 - 备份/恢复弹窗从单一文案升级为阶段 + 数量；日志按阶段和类别节流记录，不按 JSONL 每行输出。
-- v2 只优化元数据备份，不包含视频/图片文件本体；媒体重新定位只绑定已有本地媒体引用，不改变备份包内容。
-
-### 当前阶段：恢复本地媒体关联独立页落地
-
-- 新增 `BackupMediaRelocationRoute(restoreTaskId)`、`BackupMediaRelocationPage` 和 `BackupMediaRelocationVm`，恢复页只负责手动入口、`launchSingleTop` 导航和终态摘要回显，不再直接执行媒体扫描。
-- 媒体关联四类事件模型保留，发送器已替换为当前图会话与纯 `BackupMediaRelocationStateReducer`；同步保存 Incomplete、Running、Terminal 和 Interrupted 的入口/摘要事实，恢复页通过 StateFlow 按 restoreTaskId 投影回显。
-- 新增结构化 `MediaRelocationSummary`，恢复页和独立媒体关联页共用同一组 summary/result formatter，通过字符串资源生成一行摘要和视频/图片明细，不保存已格式化文案。
-- 独立媒体关联页复用既有 `DownloadedMediaRelocator`、`MediaRelocationEstimate`、`MediaRelocationPreparation`、`MediaRelocationProgress` 和 `MediaRelocationReport`，不改备份包协议、不新增 Room schema，也不改变下载记录状态。
-- 恢复页入口增加 600ms 防抖，`BackupMediaRelocationRoute` 在统一 `onNavigate` 策略中使用 `launchSingleTop`；正式扫描开始后拦截顶部返回和系统返回，恢复页“完成”按钮按 `Running` 入口状态禁用；媒体关联完成或无须处理后底部“完成”会只收起本地媒体关联页、恢复页和备份页，回到进入备份前的页面状态，顶部返回和系统返回只回恢复结果页。
-- 日志沿用既有媒体重新定位准备/进度低敏日志，新增事件发送/接收、导航防抖和 Running 返回拦截日志；只输出 `restoreTaskId`、事件类型、summary 类型、数量和 reasonCode，不输出 URI、路径、目录名或文件名。
 
 ### 后续增强
 
@@ -1885,34 +1817,21 @@ manifest 简化示例：
 - 大量剪贴数据备份时不明显卡死或 OOM。
 - 备份包内 manifest 的 `fileSize` 保持为 0，本地目录 sidecar 与私有描述 manifest 的 `fileSize` 应等于真实 zip 大小，WebDAV 不独立上传 sidecar；导出不应再因为 `43333/43334` 这类自引用大小震荡而失败。
 - 从远端或本地恢复来自未来时间轴的备份后，剪贴卡片不再长期显示“现在”；恢复后新复制的普通数据应排在置顶数据下方、旧恢复普通数据上方。
-- 恢复完成页点击底部“完成”应关闭恢复页和备份页，回到进入备份前页面；点击顶部返回或系统返回应只回备份页。恢复页底部“完成”在媒体关联 Running 时继续禁用或提示等待。
-- 恢复完成后不会自动进入媒体关联页；用户点击“恢复本地媒体关联”后导航到独立页面并先展示预估。入口需要防抖并使用 `launchSingleTop`，Running 状态下入口禁用，避免重复打开多个媒体关联页。媒体关联完成或无须处理后，底部“完成”应关闭备份恢复链路，顶部返回和系统返回只回恢复结果页。
-- `restoreTaskId` 不匹配的媒体关联事件必须被恢复页 ViewModel 忽略；匹配事件能驱动 `Incomplete`、`Running`、`Terminal` 和 `Interrupted` 回显状态。新一轮 `Incomplete` 或 `Running` 不应清空上一轮终态摘要。
-- 预估为 0 时不申请权限、不进入扫描。Android 10+ 旧 URI 不可读时，会先尝试无权限查询当前应用可见媒体，只有仍需要共享媒体库可见性时才请求图片或视频读取权限。
-- 预估、权限请求和用户确认阶段允许返回恢复页；再次进入媒体关联页可以重新预估。正式扫描开始后媒体关联页顶部返回、系统返回和离开入口都不退出、不取消；恢复页“完成”按钮禁用。完成或无须处理终态点击底部“完成”时，不回到恢复页，而是关闭备份恢复链路；点击顶部返回或系统返回时回恢复结果页。
-- 媒体重新定位完成、无需扫描、失败、权限不足或异常中断后，独立页面和恢复页都显示同一个结构化 summary 派生的一行摘要和视频/图片详细分类数字；操作按钮显示“再次恢复关联”，用户能区分当前已经有恢复关联结果。
-- 旧 `savePath` 或 `outputUri` 仍可读时只计入已可用，不扫描、不写回；重复触发结果幂等。
-- 图片批次文件夹不存在或目录下无可见媒体时，整批成功图片项判定未定位，不做全局同名搜索；缺少 `finalName` 的图片项直接跳过。
-- 写回 chunk 失败只影响当前 100 条，报告准确区分成功、跳过、失败和权限不足。
-- 双击开始恢复关联、重复权限回调、重组、屏幕方向切换或权限页返回不能启动多个预估或扫描任务；`BackupMediaRelocationVm` 的状态门禁是最终防线。
-- 扫描成功、失败、异常中断或 `BackupMediaRelocationVm` 清理后都不能让恢复页永久停留在 `Running`；`Interrupted` 兜底摘要应解除“完成”按钮禁用并允许用户再次进入媒体关联流程。成功或无须处理终态的底部“完成”还需要验证恢复页不会重新出现在返回栈顶，顶部返回和系统返回则应回恢复页。
-- 亮/暗色、横屏、小屏和动态字体下，媒体关联独立页正文可滚动、底部操作区固定，关键按钮和结果数字可读可操作。
+- 恢复结果没有媒体关联入口，恢复期间不申请相册权限；自定义导出/恢复完全不读写三张下载任务表。
 - release/R8 构建下最近自动备份状态和 WebDAV 健康状态应能从宿主 DataStore 的稳定 code 恢复，不依赖枚举名。
 
 ## 已知取舍
 
-- 第一版不备份媒体文件本体，只恢复下载记录元数据。
+- 自定义备份不包含媒体文件本体及下载运行态，系统自动备份保持现有规则。
 - 第一版不做多设备同步，只做备份快照和手动恢复。
 - 第一版不做备份包加密，隐私依赖用户选择可信存储位置与 WebDAV HTTPS。
-- 新导出已经升级为 `.zip` + JSONL 文件化流式管线；旧 v1 JSON 数组 zip 仅用于兼容导入，仍可能走局部字节读取，因此大文件性能基准主要以 v2 备份为准。
+- 当前仅使用格式 5 的 `.zip` + JSONL 流式管线，不维护旧版本导入兼容。
 - WebDAV 密码现采用独立 Android Keystore alias 的 AES-GCM 密文；该设备绑定方案不提供跨安装密码恢复，用户需在新安装重新输入。
 - 自动备份第一版使用统一开关，不拆分本地/WebDAV 独立开关；本地目录和 WebDAV 配置作为目标可用性共同决定执行范围。
 - 保留清理默认清理本地/WebDAV 目标内所有可识别的普通备份，手动和自动、当前安装和旧安装都纳入最近 N 份限制，换取更简单直观的用户模型。
 - 恢复前安全快照已移除；如用户需要恢复前回滚点，应手动导出普通备份，降低自动生成空回滚文件导致误解的风险。
-- 未来时间归一化只修正剪贴记录的用户可见时间轴字段，不调整搜索历史、下载记录和图片记录时间；这些数据不参与剪贴列表排序，且下载/图片记录的状态时间可能用于任务诊断，默认保留备份原值。
+- 未来时间归一化只修正剪贴记录的用户可见时间轴，不调整搜索历史时间；下载运行态不进入自定义备份。
 - 本轮已将恢复事务、chunk 写库、幂等报告和本地较新保护收敛到 `BackupSnapshotRestorer`；暂不再细分到每张表独立 restorer，原因是 v1/v2 分类报告、设置恢复和 Room transaction 仍需要统一编排，过早拆成多类会增加事务边界和报告聚合的维护成本。
-- 媒体重新定位第一版不新增 schema 状态字段，不把“未定位”写成下载失败状态；记录页继续用现有本地文件可读性校验展示不可读状态。
-- 媒体重新定位结果保存在当前父图内存会话中，恢复页 VM 只投影回显；整组退出立即清空，进程死亡不持久化或自动续跑，重新进入后必须由用户手动选择恢复目标。临时会话不进入备份协议或保存状态。
 
 ## 开放问题
 
@@ -1999,6 +1918,14 @@ manifest 简化示例：
 - 2026-05-21：将媒体重新定位入口文案从“重新定位媒体”调整为“恢复本地媒体关联”，已运行 `./gradlew :app:compileDebugKotlin`、`./gradlew :app:testDebugUnitTest` 和 `git diff --check`，结果通过；原因是后者更贴近用户语言，也能避免误以为会恢复媒体文件本体。
 
 ## 变更记录
+
+- 2026-10-26：确认当前格式 5 与精简恢复链路完成，记录 483 项测试、编译/R8 和系统备份未改证据；HTML 已同步，设备行为验收仍待进行。
+
+- 2026-10-26：执行已确认的格式 5 与媒体任务排除方案，删除旧数组入口和重新定位链路，更新当前格式/恢复图；系统 Auto Backup 配置保持不变。
+
+- 2026-10-26：按用户明确要求撤回系统整库备份收口建议，保持 Android 自动备份与设备迁移配置不变，接受系统恢复多余任务行；修正“新装任务表为空”的绝对承诺，媒体排除仅适用于应用自定义备份恢复。本轮只更新方案。
+
+- 2026-10-26：新增宿主下载媒体任务退出备份恢复的草案，定义仅接受格式 5、删除媒体数据类别/重新定位、保留当前下载任务与可选模块备份，以及系统整库备份收口建议。原因是用户决定开发阶段不考虑旧数据兼容，希望移除低价值下载历史带来的恢复复杂度；本轮未实施协议或流程变更。
 
 - 2026-10-17：经用户确认完成网络失败有限补传，上传请求接入 CONNECTED 与指数退避，新增每轮最多两次的持久化条件事务，Worker 只在 queued 落盘后返回 retry，保留新轮次立即替代旧轮次、同包补传及目录许可不重置。补充脱敏 HTTP 阶段诊断与 20 项测试，共 453 项 JVM 回归、Debug 编译、Release/R8、最终独立复核及流程图/差异检查通过；未安装设备，保留隔离设备和小米息屏验收待办。原因：落实已确认修复方案，恢复短暂网络错误后的上传机会并避免旧任务继续重试或写回新状态。
 

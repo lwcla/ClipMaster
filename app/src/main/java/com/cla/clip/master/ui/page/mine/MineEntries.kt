@@ -7,7 +7,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Search
@@ -21,7 +20,6 @@ import com.cla.clip.base.general.R
 import com.cla.clip.base.general.config.ClipItemQuickAction
 import com.cla.clip.feature.torrent.search.api.TorrentSearchFeatureEntry
 import com.cla.clip.master.ui.navigation.BackupGraphRoute
-import com.cla.clip.master.ui.navigation.DownloadHistoryRoute
 import com.cla.clip.master.ui.navigation.FoldedClipsRoute
 import com.cla.clip.master.ui.navigation.RecycleBinRoute
 import com.cla.clip.master.ui.navigation.Route
@@ -167,29 +165,6 @@ internal fun ClipSourceBlockSettingEntry(
             stringResource(R.string.base_general_clip_source_block_setting_empty_desc)
         },
         onClick = onClick
-    )
-}
-
-/**
- * 下载记录入口。
- *
- * 放在“我的”页顶部，作为已下载视频和图片的统一管理入口；这里只负责导航，不直接读取下载数据。
- */
-@Composable
-internal fun DownloadHistoryEntry(
-    onNavigate: (route: Route) -> Unit,
-) {
-    ListEntryCard(
-        icon = {
-            Icon(
-                imageVector = Icons.Default.Download,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary
-            )
-        },
-        title = stringResource(R.string.base_general_download_history),
-        description = stringResource(R.string.base_general_download_history_entry_desc),
-        onClick = { onNavigate(DownloadHistoryRoute) }
     )
 }
 

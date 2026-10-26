@@ -24,23 +24,25 @@ data class BackupExportResult(
 
 /** 流式导出开始时记录的 high-water mark，避免长事务锁库。 */
 internal data class BackupHighWaterMarks(
+    // 剪贴记录的导出上界，导出期间新增记录留到下一轮。
     val clipMaxId: Long,
+    // 搜索历史的导出上界。
     val searchHistoryMaxId: Long,
-    val videoDownloadMaxId: Long,
-    val imageBatchMaxId: Long,
-    val imageItemMaxId: Long,
+    // 可选功能自行声明的分页边界，不包含下载运行态。
     val featureMarks: Map<String, Map<String, Long>> = emptyMap(),
 )
 
 /** 导出过程中累积的数量摘要，最终会写入 manifest。 */
 internal data class BackupSummaryBuilder(
+    // 累计写入的剪贴条数。
     var clipCount: Int = 0,
+    // 累计写入的来源缓存条数。
     var sourceAppCount: Int = 0,
+    // 累计写入的链接预览条数。
     var linkPreviewCount: Int = 0,
+    // 累计写入的搜索历史条数。
     var searchHistoryCount: Int = 0,
-    var videoDownloadCount: Int = 0,
-    var imageBatchCount: Int = 0,
-    var imageItemCount: Int = 0,
+    // 可选功能的稳定数量分类，供 manifest 展示。
     val featureCounts: MutableMap<String, Int> = linkedMapOf(),
 ) {
     /** 转为稳定外部协议中的摘要模型。 */
@@ -50,9 +52,6 @@ internal data class BackupSummaryBuilder(
             sourceAppCount = sourceAppCount,
             linkPreviewCount = linkPreviewCount,
             searchHistoryCount = searchHistoryCount,
-            videoDownloadCount = videoDownloadCount,
-            imageBatchCount = imageBatchCount,
-            imageItemCount = imageItemCount,
             featureCounts = featureCounts.toSortedMap()
         )
     }

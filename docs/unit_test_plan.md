@@ -2,6 +2,10 @@
 
 # 单元测试建设计划
 
+## 下载媒体记录退役测试计划（2026-10-26，已完成）
+
+新增 BackupCurrentFormatTest 7 项协议测试并先红后绿；更新 BackupFlowSessionTest，删除仅含退役媒体场景的 BackupRestoreStateTest、媒体 reducer 和历史 Pager 测试。新增 Room 隔离测试，仅做源码编译，未运行设备测试。完整范围与验证见 [下载记录主方案](download_history_plan.md#下载媒体记录功能移除方案2026-10-26)，备份契约以 [备份主方案](webdav_backup_plan.md#下载媒体任务退出备份恢复方案2026-10-26) 为准。无新增运行时日志，保留流程继续复用现有诊断。
+
 ## 当前状态
 
 2026-10-16：视频/图片下载流程新增会话、文档加载去重、扫描预算、候选选择、下载/发布进度、读取失败、安全错误文案和底层 HTTP 取消回归。规则用合成 URL 与状态输入，不访问真实网页；纯移动脚本与 Compose 接线通过编译，新增生命周期仪器测试源码仅编译。独立复核追加“中转页完成再导航正文”和“冷启动 Worker 被取消后的中断重试”回归；验收范围见两个提取主方案。
@@ -34,9 +38,9 @@
 
 第二阶段再纳入：
 
-- ViewModel 状态流：搜索页、备份恢复页、图片提取页、下载记录页等关键页面的事件到 UI state/effect 的转换。
+- ViewModel 状态流：搜索页、备份恢复页、图片提取页等关键页面的事件到 UI state/effect 的转换。
 - DAO/Room 查询：普通/折叠/回收站范围隔离、置顶优先排序、搜索筛选、恢复幂等 upsert、唯一索引约束。
-- Worker 协作者：下载、备份、清理、媒体重新定位等 Worker 下沉后的纯逻辑或可替换 IO 协作者。
+- Worker 协作者：下载、备份、清理等 Worker 下沉后的纯逻辑或可替换 IO 协作者。
 
 暂不作为单元测试主目标：
 
@@ -138,10 +142,10 @@ Worker 本体保留少量集成验证即可。核心规则应尽量下沉到可�
 
 继续扩展备份测试：
 
-- v1/v2/v3 协议兼容读取。
+- 当前格式 5 的 JSONL 读取及非当前版本拒绝，不维护旧格式兼容读取。
 - 缺失可选 JSONL 文件时的兼容行为。
 - 恢复报告新增/更新/跳过统计。
-- 来源 App、链接预览、搜索历史、磁力历史和下载记录的幂等恢复。
+- 来源 App、链接预览、搜索历史和可选 TorrentSearch 数据的幂等恢复；宿主下载运行态排除且不被覆盖。
 - 普通备份与历史 safety 文件识别、排序和隐藏规则。
 - manifest checksum、schemaVersion、dataFormat 和应用 id 校验失败。
 
@@ -163,7 +167,6 @@ Worker 本体保留少量集成验证即可。核心规则应尽量下沉到可�
 - `BackupRestoreVm`：读取中、预览、恢复中、完成、失败、取消返回确认和一次性请求消费。
 - `SearchViewModel`：关键词、防抖后的查询触发、筛选条件、历史写入和清空。
 - `ImageExtractVm`：候选实时合并、选择状态保留、重新提取会话隔离、确认下载失败后保留候选。
-- `DownloadHistoryVm`：视频/图片/磁力 Tab、多选、删除确认和分页刷新触发。
 
 ## 长期维护建议
 
@@ -294,7 +297,7 @@ Room、Robolectric、迁移、文件包 fixture、大量 zip/JSONL 和集成型�
 
 ### 3. 给 sealed result 和 failure 建断言 helper
 
-下载校验、备份恢复、图片过滤、媒体重新定位等返回 sealed result 或 failure reason 的逻辑，可以逐步建立测试断言 helper，例如 `assertFailureReason(...)`、`assertRecoverableFailure(...)`、`assertSkippedBecause(...)`。断言 helper 只表达稳定测试契约，不暴露生产私有实现细节。
+下载校验、备份恢复、图片过滤等返回 sealed result 或 failure reason 的逻辑，可以逐步建立测试断言 helper，例如 `assertFailureReason(...)`、`assertRecoverableFailure(...)`、`assertSkippedBecause(...)`。断言 helper 只表达稳定测试契约，不暴露生产私有实现细节。
 
 ### 4. CI 分阶段接入
 
@@ -421,6 +424,12 @@ TorrentSearch 进入 P0/P1 测试清单：先以失败测试固定“恰好 43 �
 - 是否需要在 CI 或本地提交前固定运行 `:base:general:testDebugUnitTest` 和 `:app:testDebugUnitTest`。
 
 ## 变更记录
+
+- 2026-10-26：本轮移除已完成；483 项单测、编译与 Release/R8 通过，设备验收未执行，详细证据见下载记录主方案。
+
+- 2026-10-26：新增 BackupCurrentFormatTest 7 项协议测试并先红后绿；更新 BackupFlowSessionTest，删除仅含退役媒体场景的 BackupRestoreStateTest、媒体 reducer 和历史 Pager 测试。新增 Room 隔离测试，仅做源码编译，未运行设备测试。原因是用户确认执行宿主媒体历史退役。
+
+- 2026-10-26：补充下载媒体记录退役的选择性 TDD、格式拒绝与 Room 隔离计划，标明旧数据兼容豁免与失效测试删除范围；原因是本次缩小备份协议和页面状态需保护当前下载能力。本轮只改文档，测试尚未执行。
 
 - 2026-10-16：补齐媒体页面流程回归与测试分层，保存真实断言 RED→GREEN 证据；禁止在现用手机运行 connected 测试，设备差异单独验收。
 

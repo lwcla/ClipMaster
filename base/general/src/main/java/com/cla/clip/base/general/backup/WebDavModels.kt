@@ -8,7 +8,7 @@ const val DEFAULT_WEBDAV_BACKUP_DIR = "/ClipMaster/backups/"
 /**
  * WebDAV 配置。
  *
- * 密码只保存在本机配置，不进入 `BackupSnapshot`；UI 保存前需要提示 HTTP 明文风险。
+ * 密码只保存在本机配置，不进入备份包；UI 保存前需要提示 HTTP 明文风险。
  */
 data class WebDavConfig(
     /** WebDAV 服务根地址，例如 `https://example.com/dav`。 */

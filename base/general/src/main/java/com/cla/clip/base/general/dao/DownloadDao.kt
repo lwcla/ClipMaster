@@ -7,8 +7,6 @@ import androidx.room.Index
 import androidx.room.Insert
 import androidx.room.PrimaryKey
 import androidx.room.Query
-import androidx.room.Upsert
-import androidx.paging.PagingSource
 import kotlinx.coroutines.flow.Flow
 
 @Entity(
@@ -22,7 +20,7 @@ import kotlinx.coroutines.flow.Flow
 /**
  * 视频下载任务表实体。
  *
- * 任务由视频提取页或下载记录页创建，下载页和 DownloadVideoWorker 共同读写。
+ * 任务由视频提取页创建，下载页和 DownloadVideoWorker 共同读写。
  * `video_url` 只作为普通索引用于按来源排查和后续聚合，同一地址允许产生多条记录，以保留每一次下载对应的本地媒体文件。
  */
 data class DownloadTaskData(
@@ -105,125 +103,21 @@ data class DownloadTaskData(
     }
 }
 
-/** 恢复后媒体重新定位写回视频本地引用的最小更新模型。 */
-data class VideoMediaReferenceUpdate(
-    /** 视频任务 id，只用于精确写回当前任务的媒体引用。 */
-    val taskId: Long,
-    /** 高可信重新定位得到的可读 URI 或旧系统文件路径。 */
-    val savePath: String,
-)
-
 @Dao
 /**
  * 视频下载任务 DAO。
  *
- * 负责创建、观察、更新和删除 `download_tasks` 记录；下载 Worker 依赖这些方法回写进度与状态。
+ * 负责创建、观察和更新 `download_tasks` 记录；下载 Worker 依赖这些方法回写进度与状态。
  */
 interface DownloadDao {
 
-    /** 插入或更新下载任务；Room 在更新已有任务时返回 -1，Repository 会负责兜底查询真实 id。 */
-    @Upsert
-    suspend fun upsertTask(task: DownloadTaskData): Long // 在更新旧数据时，返回-1
-
-    /** 插入一条全新下载任务，用于保留同一视频地址的多次下载历史。 */
+    /** 插入全新下载任务，确保每次下载拥有独立的输出身份。 */
     @Insert
     suspend fun insertTask(task: DownloadTaskData): Long
-
-    /**
-     * 备份恢复批量写入视频下载历史。
-     *
-     * 恢复时保留原始 id 以保证重复恢复幂等；进行中任务会在 mapper 层降级为失败/中断状态后再写入。
-     */
-    @Upsert
-    suspend fun upsertTasksForBackup(tasks: List<DownloadTaskData>)
-
-    /**
-     * 备份导出读取全部视频下载历史。
-     *
-     * Cookie、pending URI 等敏感或临时字段不会由备份 mapper 写入备份包，DAO 只负责提供当前数据库快照。
-     */
-    @Query("SELECT * FROM download_tasks ORDER BY id ASC")
-    suspend fun loadAllTasksForBackup(): List<DownloadTaskData>
-
-    /** 备份流式导出开始时读取当前最大任务 id，作为本次下载记录快照边界。 */
-    @Query("SELECT COALESCE(MAX(id), 0) FROM download_tasks")
-    suspend fun maxTaskIdForBackup(): Long
-
-    /** 按 high-water mark 分页导出下载记录，避免大量历史任务导致内存峰值过高。 */
-    @Query("SELECT * FROM download_tasks WHERE id > :lastId AND id <= :maxId ORDER BY id ASC LIMIT :limit")
-    suspend fun loadTasksPageForBackup(lastId: Long, maxId: Long, limit: Int): List<DownloadTaskData>
-
-    /** 统计恢复后媒体重新定位需要检查的成功视频记录数量；只读 COUNT，不访问媒体库。 */
-    @Query("SELECT COUNT(*) FROM download_tasks WHERE status = :successStatus")
-    suspend fun countSuccessfulTasksForMediaRelocation(
-        successStatus: String = DownloadTaskData.STATUS_SUCCESS
-    ): Int
-
-    /** 按 id 分页读取成功视频记录，供媒体重新定位逐步验证和扫描，避免一次性读取全部历史。 */
-    @Query(
-        """
-            SELECT * FROM download_tasks
-            WHERE status = :successStatus AND id > :lastId
-            ORDER BY id ASC
-            LIMIT :limit
-        """
-    )
-    suspend fun loadSuccessfulTasksForMediaRelocation(
-        lastId: Long,
-        limit: Int,
-        successStatus: String = DownloadTaskData.STATUS_SUCCESS
-    ): List<DownloadTaskData>
-
-    /**
-     * 备份恢复前按 id 批量读取已有视频下载历史。
-     *
-     * 用于重复恢复时跳过本地较新的记录，避免旧备份覆盖用户最近的重新下载结果。
-     */
-    @Query("SELECT * FROM download_tasks WHERE id IN (:ids)")
-    suspend fun loadTasksByIdsForBackup(ids: List<Long>): List<DownloadTaskData>
 
     /** 按主键读取单个下载任务，Worker 启动时使用。 */
     @Query("SELECT * FROM download_tasks WHERE id = :id")
     suspend fun getTask(id: Long): DownloadTaskData?
-
-    /** 按视频 URL 读取最近一条历史任务；仅作兼容旧调用和调试，不用于去重创建。 */
-    @Query("SELECT * FROM download_tasks WHERE video_url = :url ORDER BY update_time DESC, id DESC LIMIT 1")
-    suspend fun getTask(url: String): DownloadTaskData?
-
-    /** 按更新时间倒序观察全部视频下载历史；保留给少量全量观察场景，下载记录列表优先使用分页接口。 */
-    @Query("SELECT * FROM download_tasks ORDER BY update_time DESC, id DESC")
-    fun observeHistory(): Flow<List<DownloadTaskData>>
-
-    /** 按更新时间倒序分页加载视频下载历史，避免下载记录页一次性读取大量任务和本地媒体元信息。 */
-    @Query("SELECT * FROM download_tasks ORDER BY update_time DESC, id DESC")
-    fun pagingHistory(): PagingSource<Int, DownloadTaskData>
-
-    /** 观察视频历史总数；只读取 COUNT，不加载完整记录，用于标题栏按钮和清空确认数量。 */
-    @Query("SELECT COUNT(*) FROM download_tasks")
-    fun observeHistoryCount(): Flow<Int>
-
-    /** 观察仍在下载或合并的视频任务数量，用于清空当前分类前提示会先停止后台任务。 */
-    @Query("SELECT COUNT(*) FROM download_tasks WHERE status = :downloadingStatus OR status = :mergingStatus")
-    fun observeRunningHistoryCount(
-        downloadingStatus: String = DownloadTaskData.STATUS_DOWNLOADING,
-        mergingStatus: String = DownloadTaskData.STATUS_MERGING
-    ): Flow<Int>
-
-    /** 按当前排序读取全部视频历史 id；只在全选或清空时调用，避免常规浏览加载完整实体。 */
-    @Query("SELECT id FROM download_tasks ORDER BY update_time DESC, id DESC")
-    suspend fun getHistoryIds(): List<Long>
-
-    /** 统计选中视频记录中仍在运行的任务数量，供删除确认文案判断是否需要提示停止下载。 */
-    @Query("SELECT COUNT(*) FROM download_tasks WHERE id IN (:ids) AND (status = :downloadingStatus OR status = :mergingStatus)")
-    suspend fun countRunningTasks(
-        ids: Set<Long>,
-        downloadingStatus: String = DownloadTaskData.STATUS_DOWNLOADING,
-        mergingStatus: String = DownloadTaskData.STATUS_MERGING
-    ): Int
-
-    /** 批量读取待删除或待重新下载的任务，调用方会先过滤空集合，避免 SQL IN 空列表歧义。 */
-    @Query("SELECT * FROM download_tasks WHERE id IN (:ids)")
-    suspend fun getTasks(ids: Set<Long>): List<DownloadTaskData>
 
     /** 观察单个任务变化，视频下载页用它实时刷新进度和结果状态。 */
     @Query("SELECT * FROM download_tasks WHERE id = :id")
@@ -256,23 +150,4 @@ interface DownloadDao {
     @Query("UPDATE download_tasks SET pending_output_uri = :pendingOutputUri, save_path =:savePath WHERE id = :id")
     suspend fun updatePath(id: Long, pendingOutputUri: String?, savePath: String?)
 
-    /**
-     * 按 chunk 写回重新定位得到的视频引用。
-     *
-     * 只覆盖高可信匹配出的 `savePath` 并清空 pending 输出；不修改任务状态，保证下载历史语义稳定。
-     */
-    @androidx.room.Transaction
-    suspend fun updateMediaReferencesForRelocation(updates: List<VideoMediaReferenceUpdate>) {
-        updates.forEach { update ->
-            updatePath(update.taskId, pendingOutputUri = null, savePath = update.savePath)
-        }
-    }
-
-    /** 删除指定下载任务记录；不会自动删除已经保存成功的媒体文件。 */
-    @Query("DELETE FROM download_tasks WHERE id = :id")
-    suspend fun deleteTask(id: Long)
-
-    /** 精确删除选中的下载任务记录；不会影响剪贴板、图片批次或未选中的下载记录。 */
-    @Query("DELETE FROM download_tasks WHERE id IN (:ids)")
-    suspend fun deleteTasks(ids: Set<Long>)
 }

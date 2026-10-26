@@ -20,7 +20,6 @@ import com.cla.clip.master.ad.adInteractionGuard
 import com.cla.clip.master.ad.rememberTopAdScrollLayoutCoordinator
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,15 +34,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.cla.clip.base.general.R
-import com.cla.clip.base.general.utils.logD
 import com.cla.clip.feature.torrent.search.api.TorrentSearchFeatureEntry
-import com.cla.clip.master.ui.navigation.BackupMediaRelocationRoute
-import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.widget.SecondaryPageScaffold
 import com.cla.clip.master.ui.widget.ad.AdHeaderLayout
-
-private const val MEDIA_RELOCATION_NAV_DEBOUNCE_MS = 600L
-private const val TAG = "BackupRestoreFlowPage"
 
 /**
  * 备份恢复流程页。
@@ -59,7 +52,6 @@ internal fun BackupRestoreFlowPage(
     onBack: () -> Unit,
     onInvalidSession: () -> Unit,
     onCloseRestoreFlow: () -> Unit,
-    onNavigate: (Route) -> Unit,
     torrentSearchFeatures: Set<TorrentSearchFeatureEntry> = emptySet(),
     modifier: Modifier = Modifier,
     restoreVm: BackupRestoreVm = hiltViewModel(),
@@ -73,13 +65,10 @@ internal fun BackupRestoreFlowPage(
             }
         }
     }
-    /** 页面状态、恢复阶段及导航防抖时间只服务当前目的地，不放入共享会话。 */
+    /** 页面状态和恢复阶段只服务当前目的地，不放入共享会话。 */
     val state by restoreVm.uiState.collectAsStateWithLifecycle()
-    /** 当前阶段用于渲染和回调适配，最终退出许可仍同步询问会话。 */
+    /** 当前阶段用于渲染和回调适配，最终退出许可同步询问恢复 VM。 */
     val restoreFlow = state.restoreFlow
-    /** 导航防抖仅保存于当前页面，重新进入不会继承旧时间。 */
-    var lastMediaRelocationNavigateAt by remember { mutableLongStateOf(0L) }
-
     if (restoreFlow is BackupRestoreFlowState.Hidden) {
         // 初始 Hidden 不是请求缺失；必须完成会话绑定和首次可见接管后再降级。
         LaunchedEffect(state.requestChecked, lifecycleOwner) {
@@ -93,8 +82,6 @@ internal fun BackupRestoreFlowPage(
 
     BackupRestoreFlowScaffold(
         state = restoreFlow,
-        mediaRelocationEntryState = state.mediaRelocationEntryState,
-        mediaRelocationSummary = state.lastTerminalMediaRelocationSummary,
         onBack = {
             // 按 VM 同步会话门禁决定导航，不只依赖当前收集到的 UI 状态。
             if (restoreVm.dismissRestoreFlow()) onBack()
@@ -106,20 +93,6 @@ internal fun BackupRestoreFlowPage(
             if (restoreVm.forceCloseRestoreFlow()) onBack()
         },
         onRestore = restoreVm::restoreSelectedBackup,
-        onOpenMediaRelocation = {
-            /** 只从当前完整结果打开媒体页，不能使用预检或部分结果身份。 */
-            val result = restoreFlow as? BackupRestoreFlowState.Result ?: return@BackupRestoreFlowScaffold
-            if (!flowSession.canOpenMedia(result.taskId)) return@BackupRestoreFlowScaffold
-            /** 点击时刻只决定防抖，不替代任务及会话有效性校验。 */
-            val now = System.currentTimeMillis()
-            if (now - lastMediaRelocationNavigateAt < MEDIA_RELOCATION_NAV_DEBOUNCE_MS) {
-                logD(TAG) { "媒体关联页导航已防抖 restoreTaskId=${result.taskId} reasonCode=nav_debounced" }
-                return@BackupRestoreFlowScaffold
-            }
-            lastMediaRelocationNavigateAt = now
-            onNavigate(BackupMediaRelocationRoute(result.taskId))
-            logD(TAG) { "打开媒体关联页 restoreTaskId=${result.taskId}" }
-        },
         torrentSearchFeatures = torrentSearchFeatures,
         modifier = modifier
     )
@@ -129,21 +102,15 @@ internal fun BackupRestoreFlowPage(
 @Composable
 private fun BackupRestoreFlowScaffold(
     state: BackupRestoreFlowState,
-    mediaRelocationEntryState: MediaRelocationEntryState,
-    mediaRelocationSummary: MediaRelocationSummary?,
     onBack: () -> Unit,
     onDone: () -> Unit,
     onForceBack: () -> Unit,
     onRestore: () -> Unit,
-    onOpenMediaRelocation: () -> Unit,
     torrentSearchFeatures: Set<TorrentSearchFeatureEntry>,
     modifier: Modifier = Modifier,
 ) {
     // 确认弹窗按流程阶段重置；显示时暂停广告请求和尺寸变化。
     var showExitConfirm by remember(state.logCode) { mutableStateOf(false) }
-    // 媒体关联提醒独立于恢复报告，只用于当前页面的交互抑制。
-    var showMediaRunningNotice by remember { mutableStateOf(false) }
-
     // 同一恢复任务跨预览、执行和结果共用会话，不因阶段变化重复加载。
     val adTaskKey = when (state) {
         is BackupRestoreFlowState.Reading -> state.taskId
@@ -160,7 +127,7 @@ private fun BackupRestoreFlowScaffold(
     // 读取、纯恢复进度及失败页没有足够内容；预览和实际结果才允许展示。
     val eligible = state is BackupRestoreFlowState.Preview || state is BackupRestoreFlowState.Result
     // 弹窗不展示广告；按下由整个 Scaffold 的观察器统一守卫，包括底部恢复按钮。
-    val blocked = showExitConfirm || showMediaRunningNotice
+    val blocked = showExitConfirm
     // TaskId 仅作为本地 remember 身份，宿主只向 SDK 发送随机 nonce。
     val adSession = rememberPageAdSession(adTaskKey)
     SideEffect { adSession.suppressed = blocked || !eligible }
@@ -169,28 +136,10 @@ private fun BackupRestoreFlowScaffold(
 
     /** 处理顶部返回和系统返回；结果态只回备份页，读取/恢复中按原规则二次确认。 */
     fun requestBack() {
-        if (mediaRelocationEntryState.isRunning) {
-            showMediaRunningNotice = true
-        } else if (state.requiresExitConfirm) {
+        if (state.requiresExitConfirm) {
             showExitConfirm = true
         } else {
             onBack()
-        }
-    }
-
-    /** 处理底部“完成”；结果态关闭恢复页和备份页，运行中的媒体关联仍拦截。 */
-    fun requestDone() {
-        /** 是否存在仍在运行的媒体关联任务，用于阻止恢复链路提前关闭。 */
-        val mediaRelocationRunning = mediaRelocationEntryState.isRunning
-        if (mediaRelocationRunning) {
-            showMediaRunningNotice = true
-        } else {
-            logD(TAG) {
-                "恢复流程完成并关闭备份恢复链路 state=${state.logCode} " +
-                    "mediaRelocationRunning=$mediaRelocationRunning " +
-                    "reasonCode=restore_flow_done_close_stack"
-            }
-            onDone()
         }
     }
 
@@ -205,11 +154,9 @@ private fun BackupRestoreFlowScaffold(
         bottomBar = {
             BackupRestoreFlowActions(
                 state = state,
-                mediaRelocationEntryState = mediaRelocationEntryState,
                 onBack = { requestBack() },
-                onDone = { requestDone() },
+                onDone = onDone,
                 onRestore = onRestore,
-                onOpenMediaRelocation = onOpenMediaRelocation
             )
         }
     ) { paddingValues ->
@@ -243,8 +190,6 @@ private fun BackupRestoreFlowScaffold(
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 BackupRestoreFlowContent(
                     state = state,
-                    mediaRelocationEntryState = mediaRelocationEntryState,
-                    mediaRelocationSummary = mediaRelocationSummary,
                     torrentSearchFeatures = torrentSearchFeatures,
                 )
             }
@@ -282,19 +227,8 @@ private fun BackupRestoreFlowScaffold(
         )
     }
 
-    if (showMediaRunningNotice) {
-        AlertDialog(
-            onDismissRequest = { showMediaRunningNotice = false },
-            title = { Text(text = stringResource(R.string.base_general_backup_media_relocation_title)) },
-            text = { Text(text = stringResource(R.string.base_general_backup_media_relocation_running_back_hint)) },
-            confirmButton = {
-                TextButton(onClick = { showMediaRunningNotice = false }) {
-                    Text(text = stringResource(R.string.base_general_backup_media_relocation_known))
-                }
-            }
-        )
-    }
 }
 
+/** 只有正在读取或恢复时需要二次确认，结果和错误态可直接返回。 */
 private val BackupRestoreFlowState.requiresExitConfirm: Boolean
     get() = this is BackupRestoreFlowState.Reading || this is BackupRestoreFlowState.Restoring

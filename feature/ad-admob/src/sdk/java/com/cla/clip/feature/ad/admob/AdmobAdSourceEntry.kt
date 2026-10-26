@@ -148,11 +148,8 @@ internal class AdmobAdSourceEntry @Inject constructor(
         AdPlacement.ImageExtractNative -> BuildConfig.ImageExtractNative
         AdPlacement.ImageDownloadProgressNative -> BuildConfig.ImageDownloadProgressNative
         AdPlacement.ImageDownloadResultNative -> BuildConfig.ImageDownloadResultNative
-        AdPlacement.VideoHistoryNative -> BuildConfig.VideoHistoryNative
-        AdPlacement.ImageHistoryNative -> BuildConfig.ImageHistoryNative
         AdPlacement.BackupOverviewNative -> BuildConfig.BackupOverviewNative
         AdPlacement.BackupRestoreNative -> BuildConfig.BackupRestoreNative
-        AdPlacement.BackupMediaRelocationNative -> BuildConfig.BackupMediaRelocationNative
     }
 }
 

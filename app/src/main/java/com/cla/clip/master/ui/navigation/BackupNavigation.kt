@@ -9,12 +9,10 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.compose.composable
 import androidx.navigation.navigation
-import androidx.navigation.toRoute
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logW
 import com.cla.clip.feature.torrent.search.api.TorrentSearchFeatureEntry
 import com.cla.clip.master.ui.page.backup.BackupFlowVm
-import com.cla.clip.master.ui.page.backup.BackupMediaRelocationPage
 import com.cla.clip.master.ui.page.backup.BackupPage
 import com.cla.clip.master.ui.page.backup.BackupRestoreFlowPage
 
@@ -41,30 +39,17 @@ internal fun NavGraphBuilder.backupNavigation(
                 onBack = { if (navController.currentBackStackEntry === entry) navController.popBackStack() },
                 onInvalidSession = { navController.returnToBackupStart(entry) },
                 onCloseRestoreFlow = { navController.closeBackupGraph(flowVm, entry, "restore_flow_done") },
-                onNavigate = { route -> navController.navigateWithinBackup(flowVm, entry, route) },
                 torrentSearchFeatures = torrentSearchFeatures,
             )
         }
-        composable<BackupMediaRelocationRoute> { entry ->
-            /** 轻量路由身份还需同一会话中的真实结果授权，不能直接恢复扫描。 */
-            val route = entry.toRoute<BackupMediaRelocationRoute>()
-            /** 与恢复页共用父图 VM，扫描 VM 仍为当前媒体目的地所有。 */
-            val flowVm = rememberBackupFlowVm(navController, entry)
-            BackupMediaRelocationPage(
-                restoreTaskId = route.restoreTaskId,
-                flowSession = flowVm.session,
-                onBack = { if (navController.currentBackStackEntry === entry) navController.popBackStack() },
-                onInvalidSession = { navController.returnToBackupStart(entry) },
-                onCloseRestoreFlow = { navController.closeBackupGraph(flowVm, entry, "media_relocation_done") },
-            )
-        }
+
     }
 }
 
 /** owner 跟随 entry 缓存，退出转场期间不重新查找已弹出的父图。 */
 @Composable
 private fun rememberBackupFlowVm(navController: NavHostController, entry: NavBackStackEntry): BackupFlowVm {
-    /** 三个页面缓存同一父 entry，新图不能复用旧 owner。 */
+    /** 备份页和恢复页缓存同一父 entry，新图不能复用旧 owner。 */
     val parentEntry = remember(entry) { navController.getBackStackEntry<BackupGraphRoute>() }
     return hiltViewModel(parentEntry)
 }
@@ -78,7 +63,6 @@ private fun NavHostController.navigateWithinBackup(flowVm: BackupFlowVm, sourceE
     /** 许可同时约束业务事实和当前目的地。 */
     val allowed = when (route) {
         BackupRestoreRoute -> pending != null && currentDestination?.hasRoute<BackupRoute>() == true
-        is BackupMediaRelocationRoute -> flowVm.session.canOpenMedia(route.restoreTaskId) && currentDestination?.hasRoute<BackupRestoreRoute>() == true
         else -> false
     }
     if (!allowed) {

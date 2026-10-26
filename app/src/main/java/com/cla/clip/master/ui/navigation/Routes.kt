@@ -97,11 +97,6 @@ data class VideoDownloadRoute(
     val taskId: Long
 ) : Route()
 
-/** 下载记录页 */
-@Keep
-@Serializable
-data object DownloadHistoryRoute : Route()
-
 /** 折叠剪贴数据页 */
 @Keep
 @Serializable
@@ -126,14 +121,6 @@ data object BackupRoute : Route()
 @Keep
 @Serializable
 data object BackupRestoreRoute : Route()
-
-/** 恢复本地媒体关联页 */
-@Keep
-@Serializable
-data class BackupMediaRelocationRoute(
-    /** 恢复流程页当前任务 id，用于恢复页过滤媒体关联事件，避免旧流程串写回显。 */
-    val restoreTaskId: String
-) : Route()
 
 /** 我的页面 */
 @Keep

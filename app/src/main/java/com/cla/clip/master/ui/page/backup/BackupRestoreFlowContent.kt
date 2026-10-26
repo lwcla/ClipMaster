@@ -45,7 +45,7 @@ import com.cla.clip.feature.torrent.search.api.TorrentSearchFeatureEntry
 /**
  * 备份恢复流程页内容区。
  *
- * 只负责把恢复流程状态和媒体关联回显渲染为详情、进度和报告，不启动文件、网络或数据库副作用。
+ * 只负责把恢复流程状态渲染为详情、进度和报告，不启动文件、网络或数据库副作用。
  * 状态标题与摘要由页面先行渲染，允许在摘要和详情之间放入独立广告槽。
  *
  * @param torrentSearchFeatures 可选功能的计数与分类文案映射；为空时仅渲染宿主内建分类。
@@ -53,8 +53,6 @@ import com.cla.clip.feature.torrent.search.api.TorrentSearchFeatureEntry
 @Composable
 internal fun BackupRestoreFlowContent(
     state: BackupRestoreFlowState,
-    mediaRelocationEntryState: MediaRelocationEntryState,
-    mediaRelocationSummary: MediaRelocationSummary?,
     torrentSearchFeatures: Set<TorrentSearchFeatureEntry> = emptySet(),
 ) {
     when (state) {
@@ -63,8 +61,6 @@ internal fun BackupRestoreFlowContent(
         is BackupRestoreFlowState.Restoring -> RestoringContent(state)
         is BackupRestoreFlowState.Result -> ResultContent(
             state = state,
-            mediaRelocationEntryState = mediaRelocationEntryState,
-            mediaRelocationSummary = mediaRelocationSummary,
             torrentSearchFeatures = torrentSearchFeatures,
         )
         is BackupRestoreFlowState.Error -> ErrorContent(state)
@@ -81,11 +77,9 @@ internal fun BackupRestoreFlowContent(
 @Composable
 internal fun BackupRestoreFlowActions(
     state: BackupRestoreFlowState,
-    mediaRelocationEntryState: MediaRelocationEntryState,
     onBack: () -> Unit,
     onDone: () -> Unit,
     onRestore: () -> Unit,
-    onOpenMediaRelocation: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -106,23 +100,14 @@ internal fun BackupRestoreFlowActions(
             }
             is BackupRestoreFlowState.Result -> {
                 if (state.settingsRestoreFailed || state.featureRestoreFailed) {
-                    // 媒体关联写库期间禁止再次恢复同一备份，避免两个流程交错写入。
-                    TextButton(onClick = onRestore, enabled = !mediaRelocationEntryState.isRunning) {
+                    // 部分提交保留重试入口，幂等规则保护已经写入的数据。
+                    TextButton(onClick = onRestore) {
                         Text(stringResource(HostR.string.host_backup_restore_retry_partial))
                     }
                     Spacer(modifier = Modifier.size(8.dp))
                 }
-                // 恢复链路有未完成阶段时先收敛备份数据，再开放依赖恢复结果的媒体关联。
-                if (!state.settingsRestoreFailed && !state.featureRestoreFailed) {
-                    MediaRelocationAction(
-                        state = mediaRelocationEntryState,
-                        onOpenMediaRelocation = onOpenMediaRelocation
-                    )
-                    Spacer(modifier = Modifier.size(8.dp))
-                }
                 Button(
                     onClick = onDone,
-                    enabled = !mediaRelocationEntryState.isRunning
                 ) {
                     Text(stringResource(R.string.base_general_backup_flow_done))
                 }
@@ -253,8 +238,6 @@ private fun PreviewContent(
 @Composable
 private fun ResultContent(
     state: BackupRestoreFlowState.Result,
-    mediaRelocationEntryState: MediaRelocationEntryState,
-    mediaRelocationSummary: MediaRelocationSummary?,
     torrentSearchFeatures: Set<TorrentSearchFeatureEntry>,
 ) {
     /** Room 阶段已提交的分类统计，设置或调度告警不应覆盖真实数量。 */
@@ -306,17 +289,6 @@ private fun ResultContent(
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
-    Text(
-        text = stringResource(R.string.base_general_backup_restore_image_item_hint),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
-    if (!state.settingsRestoreFailed && !state.featureRestoreFailed) {
-        MediaRelocationEntryContent(
-            entryState = mediaRelocationEntryState,
-            summary = mediaRelocationSummary
-        )
-    }
 }
 
 @Composable
@@ -385,9 +357,6 @@ private fun BackupCountRows(
     BackupCountRow(stringResource(R.string.base_general_backup_count_source_apps), summary.sourceAppCount)
     BackupCountRow(stringResource(R.string.base_general_backup_count_link_previews), summary.linkPreviewCount)
     BackupCountRow(stringResource(R.string.base_general_backup_count_search_histories), summary.searchHistoryCount)
-    BackupCountRow(stringResource(R.string.base_general_backup_count_video_downloads), summary.videoDownloadCount)
-    BackupCountRow(stringResource(R.string.base_general_backup_count_image_batches), summary.imageBatchCount)
-    BackupCountRow(stringResource(R.string.base_general_backup_count_image_items), summary.imageItemCount)
     /** 可选功能按稳定 ID 排序，保证预览计数行次序可预测。 */
     torrentSearchFeatures.sortedBy { it.featureId }.forEach { feature ->
         /** 当前功能返回的轻量展示行；宿主继续复用现有 BackupCountRow。 */
@@ -441,56 +410,6 @@ private fun BackupCountRow(label: String, value: String, muted: Boolean) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(text = label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = color)
         Text(text = value, style = MaterialTheme.typography.bodyMedium, color = color)
-    }
-}
-
-@Composable
-private fun MediaRelocationEntryContent(
-    entryState: MediaRelocationEntryState,
-    summary: MediaRelocationSummary?,
-) {
-    FlowSection(title = stringResource(R.string.base_general_backup_media_relocation_title)) {
-        if (summary == null) {
-            Text(
-                text = stringResource(R.string.base_general_backup_media_relocation_intro),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        } else {
-            MediaRelocationSummaryText(summary)
-            MediaRelocationResultRows(summary.report)
-        }
-        if (entryState.isRunning) {
-            Text(
-                text = stringResource(R.string.base_general_backup_media_relocation_running),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-private fun MediaRelocationAction(
-    state: MediaRelocationEntryState,
-    onOpenMediaRelocation: () -> Unit,
-) {
-    when (state) {
-        MediaRelocationEntryState.NotStarted -> TextButton(onClick = onOpenMediaRelocation) {
-            Text(stringResource(R.string.base_general_backup_media_relocation_start))
-        }
-        MediaRelocationEntryState.Incomplete -> TextButton(onClick = onOpenMediaRelocation) {
-            Text(stringResource(R.string.base_general_backup_media_relocation_continue))
-        }
-        MediaRelocationEntryState.Running -> TextButton(
-            onClick = {},
-            enabled = false
-        ) {
-            Text(stringResource(R.string.base_general_backup_media_relocation_running_short))
-        }
-        MediaRelocationEntryState.Terminal -> TextButton(onClick = onOpenMediaRelocation) {
-            Text(stringResource(R.string.base_general_backup_media_relocation_restart))
-        }
     }
 }
 
@@ -579,9 +498,6 @@ private fun BackupProgressCategory.labelText(): String {
         BackupProgressCategory.SourceApps -> stringResource(R.string.base_general_backup_count_source_apps)
         BackupProgressCategory.LinkPreviews -> stringResource(R.string.base_general_backup_count_link_previews)
         BackupProgressCategory.SearchHistories -> stringResource(R.string.base_general_backup_count_search_histories)
-        BackupProgressCategory.VideoDownloads -> stringResource(R.string.base_general_backup_count_video_downloads)
-        BackupProgressCategory.ImageBatches -> stringResource(R.string.base_general_backup_count_image_batches)
-        BackupProgressCategory.ImageItems -> stringResource(R.string.base_general_backup_count_image_items)
         BackupProgressCategory.Settings,
         BackupProgressCategory.Overall -> stringResource(R.string.base_general_unknow)
     }
@@ -627,9 +543,6 @@ private val restoreReportCategoryOrder = listOf(
     BackupProgressCategory.SourceApps.reportCode(),
     BackupProgressCategory.LinkPreviews.reportCode(),
     BackupProgressCategory.SearchHistories.reportCode(),
-    BackupProgressCategory.VideoDownloads.reportCode(),
-    BackupProgressCategory.ImageBatches.reportCode(),
-    BackupProgressCategory.ImageItems.reportCode()
 )
 
 private data class RestoreStatusVisual(

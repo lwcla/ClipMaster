@@ -3,15 +3,10 @@ package com.cla.clip.base.general.backup
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.OutputStream
 import java.text.ParseException
 import java.security.MessageDigest
 import java.util.zip.ZipFile
-import java.util.zip.ZipEntry
-import java.util.zip.ZipInputStream
-import java.util.zip.ZipOutputStream
 
 /**
  * 备份 JSON 编解码入口。
@@ -28,53 +23,11 @@ object BackupJson {
         explicitNulls = false
     }
 
-    /** 编码剪贴记录数据文件。 */
-    fun encodeClips(values: List<BackupClip>): String = json.encodeToString(values)
-
-    /** 解码剪贴记录数据文件。 */
-    fun decodeClips(text: String): List<BackupClip> = json.decodeFromString(text)
-
-    /** 编码来源 App 数据文件。 */
-    fun encodeSourceApps(values: List<BackupSourceApp>): String = json.encodeToString(values)
-
-    /** 解码来源 App 数据文件。 */
-    fun decodeSourceApps(text: String): List<BackupSourceApp> = json.decodeFromString(text)
-
-    /** 编码链接预览数据文件。 */
-    fun encodeLinkPreviews(values: List<BackupLinkPreview>): String = json.encodeToString(values)
-
-    /** 解码链接预览数据文件。 */
-    fun decodeLinkPreviews(text: String): List<BackupLinkPreview> = json.decodeFromString(text)
-
-    /** 编码搜索历史数据文件。 */
-    fun encodeSearchHistories(values: List<BackupSearchHistory>): String = json.encodeToString(values)
-
-    /** 解码搜索历史数据文件。 */
-    fun decodeSearchHistories(text: String): List<BackupSearchHistory> = json.decodeFromString(text)
-
     /** 编码设置数据文件。 */
     fun encodeSettings(value: BackupSettings): String = json.encodeToString(value)
 
     /** 解码设置数据文件。 */
     fun decodeSettings(text: String): BackupSettings = json.decodeFromString(text)
-
-    /** 编码视频下载元数据文件。 */
-    fun encodeVideoDownloads(values: List<BackupVideoDownload>): String = json.encodeToString(values)
-
-    /** 解码视频下载元数据文件。 */
-    fun decodeVideoDownloads(text: String): List<BackupVideoDownload> = json.decodeFromString(text)
-
-    /** 编码图片批次数据文件。 */
-    fun encodeImageBatches(values: List<BackupImageBatch>): String = json.encodeToString(values)
-
-    /** 解码图片批次数据文件。 */
-    fun decodeImageBatches(text: String): List<BackupImageBatch> = json.decodeFromString(text)
-
-    /** 编码图片项数据文件。 */
-    fun encodeImageItems(values: List<BackupImageItem>): String = json.encodeToString(values)
-
-    /** 解码图片项数据文件。 */
-    fun decodeImageItems(text: String): List<BackupImageItem> = json.decodeFromString(text)
 
     /** 编码 manifest sidecar。 */
     fun encodeManifest(manifest: BackupManifest): String {
@@ -105,43 +58,6 @@ object BackupJson {
 fun String.sha256Hex(): String {
     val digest = MessageDigest.getInstance("SHA-256").digest(toByteArray(Charsets.UTF_8))
     return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
-}
-
-/** 根据数据区生成 v1 备份 checksum；仅旧内存式兼容路径使用，新导出走 `BackupPackageWriter`。 */
-fun BackupData.calculateChecksum(): String {
-    return dataFiles().calculatePackageChecksum()
-}
-
-/** 验证快照格式、应用身份、schemaVersion、承载格式和 checksum，失败时抛出可映射到用户提示的错误。 */
-fun BackupSnapshot.validateForRestore(expectedApplicationId: String) {
-    if (format != BACKUP_FORMAT) throw BackupFailure.InvalidFormat()
-    if (applicationId != expectedApplicationId) throw BackupFailure.AppMismatch()
-    if (schemaVersion > BACKUP_SCHEMA_VERSION) throw BackupFailure.UnsupportedSchema()
-    if (encryption != BACKUP_ENCRYPTION_NONE || compression != BACKUP_COMPRESSION_ZIP) throw BackupFailure.InvalidFormat()
-    if (schemaVersion <= 1 && data.calculateChecksum() != checksum) throw BackupFailure.ChecksumMismatch()
-}
-
-/** 根据完整快照和实际文件名/大小生成列表 sidecar manifest。 */
-fun BackupSnapshot.toManifest(snapshotFileName: String, fileSize: Long): BackupManifest {
-    return BackupManifest(
-        format = format,
-        applicationId = applicationId,
-        schemaVersion = schemaVersion,
-        encryption = encryption,
-        compression = compression,
-        createdAt = createdAt,
-        appVersionCode = appVersionCode,
-        appVersionName = appVersionName,
-        deviceLabel = deviceLabel,
-        source = source,
-        backupKind = backupKind,
-        snapshotFileName = snapshotFileName,
-        fileSize = fileSize,
-        checksum = checksum,
-        files = data.dataFiles().toPackageFiles(),
-        dataFormat = if (schemaVersion >= 2) BACKUP_DATA_FORMAT_JSONL else BACKUP_DATA_FORMAT_JSON_ARRAY,
-        summary = summary
-    )
 }
 
 /** 生成脱敏安装标识，避免文件名或备份列表直接暴露真实设备名。 */
@@ -208,136 +124,29 @@ fun buildManifestFileName(snapshotFileName: String): String {
 /** zip 包内 manifest 固定路径。 */
 const val PACKAGE_MANIFEST_PATH = "manifest.json"
 
-/** zip 包内剪贴数据路径。 */
-const val CLIPS_PATH = "data/clips.json"
-
-/** v2 zip 包内剪贴 JSONL 数据路径。 */
+/** 剪贴记录的 JSONL 路径。 */
 const val CLIPS_JSONL_PATH = "data/clips.jsonl"
 
-/** zip 包内来源 App 数据路径。 */
-const val SOURCE_APPS_PATH = "data/source_apps.json"
-
-/** v2 zip 包内来源 App JSONL 数据路径。 */
+/** 来源 App 缓存的 JSONL 路径。 */
 const val SOURCE_APPS_JSONL_PATH = "data/source_apps.jsonl"
 
-/** zip 包内链接预览数据路径。 */
-const val LINK_PREVIEWS_PATH = "data/link_previews.json"
-
-/** v2 zip 包内链接预览 JSONL 数据路径。 */
+/** 链接预览缓存的 JSONL 路径。 */
 const val LINK_PREVIEWS_JSONL_PATH = "data/link_previews.jsonl"
 
-/** zip 包内搜索历史数据路径。 */
-const val SEARCH_HISTORIES_PATH = "data/search_histories.json"
-
-/** v2 zip 包内搜索历史 JSONL 数据路径。 */
+/** 搜索历史的 JSONL 路径。 */
 const val SEARCH_HISTORIES_JSONL_PATH = "data/search_histories.jsonl"
 
-/** 旧协议 zip 包内磁力搜索历史数据路径；仅用于校验老备份包。 */
-const val MAGNET_SEARCH_HISTORIES_PATH = "data/magnet_search_histories.json"
-
-/** 旧协议 zip 包内磁力搜索历史 JSONL 数据路径；仅用于校验老备份包。 */
-const val MAGNET_SEARCH_HISTORIES_JSONL_PATH = "data/magnet_search_histories.jsonl"
-
-/** zip 包内设置数据路径。 */
+/** 可跨安装恢复的设置白名单路径。 */
 const val SETTINGS_PATH = "data/settings.json"
 
-/** zip 包内视频下载元数据路径。 */
-const val VIDEO_DOWNLOADS_PATH = "data/video_downloads.json"
-
-/** v2 zip 包内视频下载 JSONL 数据路径。 */
-const val VIDEO_DOWNLOADS_JSONL_PATH = "data/video_downloads.jsonl"
-
-/** 旧协议 zip 包内磁力复制/打开记录数据路径；仅用于校验老备份包。 */
-const val MAGNET_DOWNLOAD_RECORDS_PATH = "data/magnet_download_records.json"
-
-/** 旧协议 zip 包内磁力复制/打开记录 JSONL 数据路径；仅用于校验老备份包。 */
-const val MAGNET_DOWNLOAD_RECORDS_JSONL_PATH = "data/magnet_download_records.jsonl"
-
-/** zip 包内图片批次数据路径。 */
-const val IMAGE_BATCHES_PATH = "data/image_batches.json"
-
-/** v2 zip 包内图片批次 JSONL 数据路径。 */
-const val IMAGE_BATCHES_JSONL_PATH = "data/image_batches.jsonl"
-
-/** zip 包内图片项数据路径。 */
-const val IMAGE_ITEMS_PATH = "data/image_items.json"
-
-/** v2 zip 包内图片项 JSONL 数据路径。 */
-const val IMAGE_ITEMS_JSONL_PATH = "data/image_items.jsonl"
-
-/** 必需业务数据文件路径，排序固定后用于汇总 checksum 和恢复校验。 */
-private val RequiredDataPaths = listOf(
-    CLIPS_PATH,
-    SOURCE_APPS_PATH,
-    LINK_PREVIEWS_PATH,
-    SEARCH_HISTORIES_PATH,
-    SETTINGS_PATH,
-    VIDEO_DOWNLOADS_PATH,
-    IMAGE_BATCHES_PATH,
-    IMAGE_ITEMS_PATH
-)
-
-/** v2 必需业务数据文件路径，排序固定后用于 checksum 和恢复校验。 */
+/** 格式 5 的宿主必需文件；功能模块自行声明条目，下载运行态不进入该集合。 */
 val RequiredJsonlDataPaths = listOf(
     CLIPS_JSONL_PATH,
     SOURCE_APPS_JSONL_PATH,
     LINK_PREVIEWS_JSONL_PATH,
     SEARCH_HISTORIES_JSONL_PATH,
     SETTINGS_PATH,
-    VIDEO_DOWNLOADS_JSONL_PATH,
-    IMAGE_BATCHES_JSONL_PATH,
-    IMAGE_ITEMS_JSONL_PATH
 )
-
-/** v3 历史协议曾把磁力数据作为必需 JSONL entry，保留用于校验老备份包。 */
-private val LegacyRequiredJsonlDataPathsWithMagnet = RequiredJsonlDataPaths + listOf(
-    MAGNET_SEARCH_HISTORIES_JSONL_PATH,
-    MAGNET_DOWNLOAD_RECORDS_JSONL_PATH
-)
-
-/** 备份包内文件，内容已经是规范 JSON 文本。 */
-data class BackupPackageEntry(
-    /** zip 内相对路径。 */
-    val path: String,
-    /** 文件 JSON 文本。 */
-    val text: String,
-) {
-    /** UTF-8 字节内容，zip 写入和大小计算共用，避免重复编码差异。 */
-    val bytes: ByteArray = text.toByteArray(Charsets.UTF_8)
-}
-
-/** 生成备份数据文件列表，顺序稳定才能保证汇总 checksum 稳定。 */
-fun BackupData.dataFiles(): List<BackupPackageEntry> {
-    return listOf(
-        BackupPackageEntry(CLIPS_PATH, BackupJson.encodeClips(clips)),
-        BackupPackageEntry(SOURCE_APPS_PATH, BackupJson.encodeSourceApps(sourceApps)),
-        BackupPackageEntry(LINK_PREVIEWS_PATH, BackupJson.encodeLinkPreviews(linkPreviews)),
-        BackupPackageEntry(SEARCH_HISTORIES_PATH, BackupJson.encodeSearchHistories(searchHistories)),
-        BackupPackageEntry(SETTINGS_PATH, BackupJson.encodeSettings(settings)),
-        BackupPackageEntry(VIDEO_DOWNLOADS_PATH, BackupJson.encodeVideoDownloads(videoDownloads)),
-        BackupPackageEntry(IMAGE_BATCHES_PATH, BackupJson.encodeImageBatches(imageBatches)),
-        BackupPackageEntry(IMAGE_ITEMS_PATH, BackupJson.encodeImageItems(imageItems))
-    )
-}
-
-/** 将数据文件转换为 manifest 中的文件清单。 */
-fun List<BackupPackageEntry>.toPackageFiles(): List<BackupPackageFile> {
-    return map { entry ->
-        BackupPackageFile(
-            path = entry.path,
-            size = entry.bytes.size.toLong(),
-            checksum = entry.text.sha256Hex()
-        )
-    }
-}
-
-/** 根据每个数据文件的路径、大小和 checksum 生成汇总 checksum。 */
-fun List<BackupPackageEntry>.calculatePackageChecksum(): String {
-    return toPackageFiles()
-        .sortedBy { it.path }
-        .joinToString(separator = "\n") { file -> "${file.path}:${file.size}:${file.checksum}" }
-        .sha256Hex()
-}
 
 /** 根据 manifest 文件清单生成汇总 checksum；v2 文件型导出和导入校验共用该规则。 */
 fun List<BackupPackageFile>.calculateManifestChecksum(): String {
@@ -372,22 +181,6 @@ fun File.sha256Hex(): String {
     return digest.digest().joinToString(separator = "") { byte -> "%02x".format(byte) }
 }
 
-/** 将文件化备份包写成 zip 字节；包内 manifest 会先以 fileSize=0 写入，sidecar manifest 另行记录真实 zip 大小。 */
-fun BackupSnapshot.encodeToPackageBytes(): ByteArray {
-    val manifest = toManifest(snapshotFileName = "", fileSize = 0)
-    val dataEntries = data.dataFiles()
-    val output = ByteArrayOutputStream()
-    ZipOutputStream(output).use { zip ->
-        zip.putUtf8Entry(PACKAGE_MANIFEST_PATH, BackupJson.encodeManifest(manifest))
-        dataEntries.forEach { entry ->
-            zip.putNextEntry(ZipEntry(entry.path))
-            zip.write(entry.bytes)
-            zip.closeEntry()
-        }
-    }
-    return output.toByteArray()
-}
-
 /** 从文件型 zip 备份包读取 manifest，不读取业务 entry 内容。 */
 fun File.readBackupManifestFromZip(): BackupManifest {
     return runCatching {
@@ -404,28 +197,39 @@ fun File.readBackupManifestFromZip(): BackupManifest {
 
 /** 校验文件型 zip 备份包，并返回 manifest；业务内容按 entry 流式读取，不整体加载到内存。 */
 fun File.validateBackupPackageFile(expectedApplicationId: String): BackupManifest {
+    // 从 ZIP 读取协议，版本检查先于所有业务读取与写库。
     val manifest = readBackupManifestFromZip()
     manifest.validatePackageMetadata()
     if (manifest.applicationId != expectedApplicationId) throw BackupFailure.AppMismatch()
-    val requiredPaths = manifest.requiredPathsForFormat()
+    // 只接受当前格式的宿主文件，模块额外条目照常参与完整性校验。
+    val requiredPaths = RequiredJsonlDataPaths
+    // 按路径定位 manifest 中的文件完整性声明。
     val files = manifest.files.associateBy { it.path }
     if (manifest.files.any { !it.path.isSafePackagePath() }) throw BackupFailure.InvalidFormat()
     runCatching {
         ZipFile(this).use { zip ->
+            // 遍历全部 ZIP 路径，额外模块条目也不得越界。
             val entries = zip.entries()
             while (entries.hasMoreElements()) {
+                // 当前 ZIP 文件条目，只读取字节流，不解压到外部路径。
                 val entry = entries.nextElement()
                 if (!entry.isDirectory && !entry.name.isSafePackagePath()) throw BackupFailure.InvalidFormat()
             }
             if (!files.keys.containsAll(requiredPaths)) throw BackupFailure.ChecksumMismatch()
             files.values.forEach { expected ->
+                // 待校验的相对文件路径。
                 val path = expected.path
+                // 当前 ZIP 文件条目，只读取字节流，不解压到外部路径。
                 val entry = zip.getEntry(path) ?: throw BackupFailure.ChecksumMismatch()
+                // 当前文件的增量 SHA-256，避免一次性读入内存。
                 val tempDigest = MessageDigest.getInstance("SHA-256")
+                // 实际读取字节数，用于发现截断或替换。
                 var total = 0L
                 zip.getInputStream(entry).use { input ->
+                    // 固定大小缓冲区，不随备份数据量增长。
                     val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                     while (true) {
+                        // 当前读取长度，负一表示文件结束。
                         val read = input.read(buffer)
                         if (read == -1) break
                         total += read
@@ -433,6 +237,7 @@ fun File.validateBackupPackageFile(expectedApplicationId: String): BackupManifes
                     }
                 }
                 if (total != expected.size) throw BackupFailure.ChecksumMismatch()
+                // 实际字节摘要，必须与 manifest 完全一致。
                 val actual = tempDigest.digest().joinToString(separator = "") { byte -> "%02x".format(byte) }
                 if (actual != expected.checksum) throw BackupFailure.ChecksumMismatch()
             }
@@ -446,106 +251,15 @@ fun File.validateBackupPackageFile(expectedApplicationId: String): BackupManifes
     return manifest
 }
 
-/** 从 zip 备份包解析快照，并校验 manifest 与数据文件完整性。 */
-fun ByteArray.decodeBackupPackage(): BackupSnapshot {
-    val entries = unzipUtf8Entries()
-    val manifestText = entries[PACKAGE_MANIFEST_PATH] ?: throw BackupFailure.InvalidFormat()
-    val manifest = runCatching { BackupJson.decodeManifest(manifestText) }
-        .getOrElse { throw BackupFailure.ParseFailed(it) }
-    manifest.validatePackageMetadata()
-    validatePackageFiles(manifest, entries)
-    val data = BackupData(
-        clips = entries.decodeRequired(CLIPS_PATH, BackupJson::decodeClips),
-        sourceApps = entries.decodeRequired(SOURCE_APPS_PATH, BackupJson::decodeSourceApps),
-        linkPreviews = entries.decodeRequired(LINK_PREVIEWS_PATH, BackupJson::decodeLinkPreviews),
-        searchHistories = entries.decodeRequired(SEARCH_HISTORIES_PATH, BackupJson::decodeSearchHistories),
-        settings = entries.decodeRequired(SETTINGS_PATH, BackupJson::decodeSettings),
-        videoDownloads = entries.decodeRequired(VIDEO_DOWNLOADS_PATH, BackupJson::decodeVideoDownloads),
-        imageBatches = entries.decodeRequired(IMAGE_BATCHES_PATH, BackupJson::decodeImageBatches),
-        imageItems = entries.decodeRequired(IMAGE_ITEMS_PATH, BackupJson::decodeImageItems)
-    )
-    val snapshot = BackupSnapshot(
-        format = manifest.format,
-        applicationId = manifest.applicationId,
-        schemaVersion = manifest.schemaVersion,
-        encryption = manifest.encryption,
-        compression = manifest.compression,
-        createdAt = manifest.createdAt,
-        appVersionCode = manifest.appVersionCode,
-        appVersionName = manifest.appVersionName,
-        deviceLabel = manifest.deviceLabel,
-        source = manifest.source,
-        backupKind = manifest.backupKind,
-        checksum = manifest.checksum,
-        summary = manifest.summary,
-        data = data
-    )
-    return snapshot
-}
-
-/** 解压 zip 包并读取 UTF-8 文本 entry，同时拒绝绝对路径和父目录跳转。 */
-private fun ByteArray.unzipUtf8Entries(): Map<String, String> {
-    return runCatching {
-        ZipInputStream(inputStream()).use { zip ->
-            buildMap {
-                while (true) {
-                    val entry = zip.nextEntry ?: break
-                    val path = entry.name
-                    if (!entry.isDirectory && !path.isSafePackagePath()) throw BackupFailure.InvalidFormat()
-                    if (!entry.isDirectory) {
-                        put(path, zip.readBytes().toString(Charsets.UTF_8))
-                    }
-                    zip.closeEntry()
-                }
-            }
-        }
-    }.getOrElse { throw BackupFailure.ParseFailed(it) }
-}
-
 /** 包内路径只能是相对路径，防止未来支持解压到目录时出现 zip slip 风险。 */
 private fun String.isSafePackagePath(): Boolean {
     return isNotBlank() && !startsWith("/") && !contains("\\") && split('/').none { it == ".." || it.isBlank() }
 }
 
-/** 校验 manifest 基础协议字段。 */
+/** 恢复入口只接受当前版本及 JSONL；开发阶段不保留旧格式兼容分支。 */
 fun BackupManifest.validatePackageMetadata() {
     if (format != BACKUP_FORMAT) throw BackupFailure.InvalidFormat()
-    if (schemaVersion > BACKUP_SCHEMA_VERSION) throw BackupFailure.UnsupportedSchema()
+    if (schemaVersion != BACKUP_SCHEMA_VERSION) throw BackupFailure.UnsupportedSchema()
+    if (dataFormat != BACKUP_DATA_FORMAT_JSONL) throw BackupFailure.InvalidFormat()
     if (encryption != BACKUP_ENCRYPTION_NONE || compression != BACKUP_COMPRESSION_ZIP) throw BackupFailure.InvalidFormat()
-}
-
-/** 根据 manifest 兼容判断必需 entry 路径；v1 缺失 dataFormat 时按 JSON 数组路径处理。 */
-fun BackupManifest.requiredPathsForFormat(): List<String> {
-    return when {
-        schemaVersion >= 4 -> RequiredJsonlDataPaths
-        schemaVersion >= 3 -> LegacyRequiredJsonlDataPathsWithMagnet
-        schemaVersion >= 2 || dataFormat == BACKUP_DATA_FORMAT_JSONL -> RequiredJsonlDataPaths
-        else -> RequiredDataPaths
-    }
-}
-
-/** 根据 manifest 校验每个数据文件的存在性、大小和 checksum。 */
-private fun validatePackageFiles(manifest: BackupManifest, entries: Map<String, String>) {
-    val files = manifest.files.associateBy { it.path }
-    val requiredPaths = manifest.requiredPathsForFormat()
-    if (!files.keys.containsAll(requiredPaths)) throw BackupFailure.ChecksumMismatch()
-    files.values.forEach { expected ->
-        val path = expected.path
-        val text = entries[path] ?: throw BackupFailure.ChecksumMismatch()
-        if (text.toByteArray(Charsets.UTF_8).size.toLong() != expected.size) throw BackupFailure.ChecksumMismatch()
-        if (text.sha256Hex() != expected.checksum) throw BackupFailure.ChecksumMismatch()
-    }
-    if (manifest.files.calculateManifestChecksum() != manifest.checksum) throw BackupFailure.ChecksumMismatch()
-}
-
-/** 解码必需数据文件，缺失或格式异常时转成统一可映射错误。 */
-private fun <T> Map<String, String>.decodeRequired(path: String, decoder: (String) -> T): T {
-    val text = this[path] ?: throw BackupFailure.ChecksumMismatch()
-    return runCatching { decoder(text) }.getOrElse { throw BackupFailure.ParseFailed(it) }
-}
-
-/** 解码可选数据文件，旧协议缺失时返回空集合。 */
-private fun <T> Map<String, String>.decodeOptional(path: String, decoder: (String) -> List<T>): List<T> {
-    val text = this[path] ?: return emptyList()
-    return runCatching { decoder(text) }.getOrElse { throw BackupFailure.ParseFailed(it) }
 }
