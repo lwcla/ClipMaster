@@ -10,6 +10,18 @@
 
 ## 目标与范围
 
+### 0.9.6 双源发布（2026-10-26，已完成）
+
+- 按用户要求将 `versionName` 从 `0.9.5` 递增至 `0.9.6`，`versionCode` 从 `41` 递增至 `42`，发布当前已移除下载历史、精简备份恢复的实现；Android 系统自动备份保持原状。
+- 复用现有 BuildConfig、版本比较、APK 命名及 Windows/Bash 双端发布脚本，向既定 GitHub、Gitee Release 仓库上传正式签名 APK、`update.json` 和 `sha256.txt`；沿用当前渠道与广告开关，无新增组件、类、方法或协议。
+- 单元测试门禁：仅调整版本元数据，无新增业务规则，不新增单测或采用 TDD；沿用上一轮已通过的 483 项单测，本轮通过脚本 dry-run 执行 Release/R8 构建，并核对 APK 版本、签名与 SHA256，再执行真实上传和远端附件核验。
+- 日志与诊断沿用本文发布流程，不新增运行时日志；版本配置中文注释同步更新。无持久化结构、备份协议或反射契约变更，不调整备份与 keep 规则。按版本保留 mapping 和发布清单，凭据由原脚本在本机读取，不写入发布产物或日志。
+- 验证结果：原发布脚本 `:app:assembleRelease`（含 Kotlin 编译、Release/R8、资源压缩与 lintVital）成功；`apksigner verify --verbose` 确认正式 APK 的 v2 签名有效，`aapt dump badging` 与 Release BuildConfig 均确认为 `com.cla.clip.master / 0.9.6 / 42`，渠道 `domestic`、更新清单 `internal`；`git diff --check` 通过。
+- 发布结果：GitHub 与 Gitee 的 latest 均指向 `v0.9.6`，都包含 `ClipMaster-v0.9.6-admob.apk`、`update.json` 和 `sha256.txt`；GitHub 三附件的服务端摘要、Gitee 三附件回下载 SHA256 全部与本地一致。APK 为 5,368,030 字节，SHA256 为 `dd611214fb6f485326e9987e651d3eedbdc779e273851f4014ff8f3ff4ecc1b4`。
+- 发布地址：[GitHub v0.9.6](https://github.com/clip-master-2/ClipMaster-Releases/releases/tag/v0.9.6)、[Gitee v0.9.6](https://gitee.com/clip-master-2/clip-master-releases/releases/tag/v0.9.6)。APK、最终清单、校验文件、构建 metadata、mapping 与发布日志保留于本地 `build/github-gitee-release/v0.9.6/`，mapping 不上传公开仓库。
+- 环境例外：Windows 原包装层的 `bash -l <script>` 再次在 dry-run 成功后返回 1；沿用 0.9.4 发布时已验证的内存兼容方式，改为登录 Bash 启动子 shell 执行原脚本，预演和真实双端发布均返回 0。仓库发布脚本未修改，仍需后续单独修复双击入口的退出码问题。
+- 本轮未执行设备覆盖安装或应用内更新交互验收；已有 Gradle 弃用提示和 Shizuku `OnOpNotedListener` R8 警告未导致构建失败。
+
 ### 0.9.5 源码版本准备（2026-10-17，已完成）
 
 - 本次提交保留工作区已有的 `versionName=0.9.5`、`versionCode=41`，同步版本码中文注释；上一版 `0.9.4 / 40` 的发布结果仍为历史记录。
@@ -192,6 +204,8 @@ public 仓库 README 作为人可读发布页维护，至少包含最新版版�
 - 是否需要把发布页入口放到关于页或错误弹窗外的常驻位置，方便两个自动源都不可达时用户主动查看。
 
 ## 变更记录
+
+- 2026-10-26（已完成）：按用户要求发布 `0.9.6 / 42`，原脚本完成 GitHub/Gitee 双端上传，两端 latest、六项附件摘要、APK 签名与版本核验通过；保存本地 mapping 和发布记录，沿用已记录的本机 Bash 启动兼容方式。本轮仅修改版本配置与方案文档，无新增业务逻辑、单测或运行时日志，设备验收未执行。
 
 - 2026-10-17：按用户提交并推送主分支的要求，纳入已有 `0.9.5 / 41` 版本准备并同步中文注释，补充当前源码版本、验证范围及尚未发布 Release 的边界；原因是工作区版本已更新，而注释和版本方案仍停在上一版。
 
