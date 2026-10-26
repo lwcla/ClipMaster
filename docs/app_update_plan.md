@@ -10,6 +10,19 @@
 
 ## 目标与范围
 
+### 0.9.7 双源发布（2026-10-26，已完成）
+
+- 按用户要求将 `versionName` 从 `0.9.6` 递增至 `0.9.7`，`versionCode` 从 `42` 递增至 `43`，发布已提交的首页列表广告移除实现；详情、搜索、折叠等其他位置的广告保持现有接入。
+- 复用版本配置、APK 命名、Windows/Bash 发布脚本和上一版验证过的本机启动兼容入口，向既定 GitHub/Gitee Release 仓库发布正式签名 APK、`update.json` 和 `sha256.txt`；沿用现有 domestic 分发、internal 更新渠道和 AdMob 开关，不新增组件、类、方法或协议。
+- 单元测试门禁：仅递增版本元数据，无新增业务规则，不新增单测或采用 TDD；执行既有 app 单测、发布脚本 dry-run（含 `:app:assembleRelease` 和 R8）、APK 版本/签名/SHA256 核验及 `git diff --check`，再执行真实上传和两端附件验证。
+- 日志与诊断计划：继续使用现有发布日志和构建诊断，不新增 App 运行时日志。凭据仅由原脚本在本机读取，不写入日志或公开产物；按版本保留 APK、最终清单、metadata、mapping 和发布日志，mapping 不上传公开仓库。
+- 版本配置中文注释同步更新，无数据库、备份协议或反射契约变化，无需调整备份或 keep 规则。沿用上一版已记录的 Windows 登录 Bash 退出码兼容方式，不在本轮修改仓库发布脚本；设备覆盖安装及应用内更新交互不在本次自动发布验收中。
+- 验证结果：`.\gradlew.bat :app:testDebugUnitTest --offline --console=plain --no-parallel --max-workers=2` 成功，76 个测试套件共 316 项测试，失败/错误/跳过均为 0；原发布脚本 `:app:assembleRelease` 含 Kotlin 编译、R8、资源压缩与 lintVital 成功（预演 4m44s）。`apksigner verify --verbose` 确认 v2 签名有效，证书与 `0.9.6` 一致；`aapt dump badging` 与 Release BuildConfig 均确认为 `com.cla.clip.master / 0.9.7 / 43`，`git diff --check` 通过。
+- 发布结果：GitHub/Gitee latest 均指向 `v0.9.7`，均包含 `ClipMaster-v0.9.7-admob.apk`、`update.json` 和 `sha256.txt`；GitHub 三附件服务端摘要及 Gitee 三附件回下载 SHA256 均与本地一致。APK 为 5,368,034 字节，SHA256 为 `b6f114b2ceb879478c439fbd7c6262f4d1c873b4821b0d77938ef37e739b8ee4`。
+- 发布地址：[GitHub v0.9.7](https://github.com/clip-master-2/ClipMaster-Releases/releases/tag/v0.9.7)、[Gitee v0.9.7](https://gitee.com/clip-master-2/clip-master-releases/releases/tag/v0.9.7)。本版 APK、最终清单、校验文件、metadata、mapping 与发布日志归档到 `build/github-gitee-release/v0.9.7/`；mapping 仅保存在本地。
+- 环境例外：首次使用 Windows PowerShell 5.1 `-File` 读取 UTF-8 本地兼容入口时发生解析错误，尚未开始上传；切换已安装的 PowerShell 7 后，同一入口的预演和真实发布均成功，未更改仓库发布脚本。既有 Gradle 弃用提示和 Shizuku R8 接口警告保留，未导致构建失败。
+- 变更记录：2026-10-26，按用户要求完成 `0.9.7 / 43` 双源发布，补录 316 项单测、正式构建、签名一致性和远端附件摘要验证结果；未执行设备覆盖安装或应用内更新交互验收。
+
 ### 0.9.6 双源发布（2026-10-26，已完成）
 
 - 按用户要求将 `versionName` 从 `0.9.5` 递增至 `0.9.6`，`versionCode` 从 `41` 递增至 `42`，发布当前已移除下载历史、精简备份恢复的实现；Android 系统自动备份保持原状。
