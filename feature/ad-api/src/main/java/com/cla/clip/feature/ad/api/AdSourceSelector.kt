@@ -39,10 +39,6 @@ class AdSourceSelector @Inject constructor() {
             return AdSourceSelection.Hidden(reasonCode = "ads_not_main_process")
         }
 
-        if (runtimePolicy.isSensitiveContext) {
-            return AdSourceSelection.Hidden(reasonCode = "ads_sensitive_context")
-        }
-
         if (sources.none { it.privacyController != null } &&
             (consentState == AdConsentState.Unknown || consentState == AdConsentState.Denied)) {
             return AdSourceSelection.Hidden(reasonCode = "consent_unavailable")

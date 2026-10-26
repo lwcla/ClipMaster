@@ -4,7 +4,7 @@ import com.cla.clip.feature.ad.api.AdConsentState
 import com.cla.clip.feature.ad.api.AdRuntimePolicy
 import javax.inject.Inject
 
-/** 穿山甲广告源可用性策略，集中处理配置、隐私、主进程、敏感上下文和测试位边界。 */
+/** 穿山甲广告源可用性策略，集中处理配置、隐私、主进程和测试位边界，不检查剪贴正文。 */
 internal class CsjAdAvailabilityPolicy @Inject constructor() {
 
     /**
@@ -42,9 +42,6 @@ internal class CsjAdAvailabilityPolicy @Inject constructor() {
         }
         if (!runtimePolicy.isMainProcess) {
             return CsjAdReason.NOT_MAIN_PROCESS
-        }
-        if (runtimePolicy.isSensitiveContext) {
-            return CsjAdReason.SENSITIVE_DETAIL_HIDDEN
         }
         if (consentState == AdConsentState.Denied) {
             return CsjAdReason.CONSENT_DENIED

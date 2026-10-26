@@ -74,7 +74,7 @@ internal class AdmobSlotSession(
             try {
                 // 容纳实际冷启动及代理延迟；离开页面仍立即取消，不等待预算耗尽。
                 withTimeout(15_000L) {
-                    if (!privacy.state.value.canRequestAds || request.isSensitiveContext) {
+                    if (!privacy.state.value.canRequestAds) {
                         close(AdReleaseReason.PrivacyRevoked)
                         return@withTimeout
                     }
@@ -134,7 +134,7 @@ internal class AdmobSlotSession(
         this.binding = binding
         this.request = request
         this.onEvent = onEvent
-        if (request.isSensitiveContext || !privacy.state.value.canRequestAds) {
+        if (!privacy.state.value.canRequestAds) {
             close(AdReleaseReason.PrivacyRevoked)
         } else if (loadedAt?.let { SystemClock.elapsedRealtime() - it >= 60 * 60 * 1000L } == true) {
             close(AdReleaseReason.Expired)

@@ -6,7 +6,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-/** uni-ad 可用性策略测试，覆盖隐私、主进程、敏感详情、总开关和远程 kill switch。 */
+/** uni-ad 可用性策略测试，覆盖隐私、主进程、总开关和远程 kill switch。 */
 class UniAdAvailabilityPolicyTest {
     /** 当前被测策略；策略本身无状态，可在测试间复用。 */
     private val policy = UniAdAvailabilityPolicy()
@@ -65,20 +65,6 @@ class UniAdAvailabilityPolicyTest {
         )
 
         assertEquals(UniAdReason.NOT_MAIN_PROCESS, reason)
-    }
-
-    /** 敏感详情页不能展示真实广告。 */
-    @Test
-    fun sensitiveDetailIsRejected() {
-        /** 当前不可用原因；本地敏感判断只输出低敏 reasonCode。 */
-        val reason = policy.unavailableReason(
-            config = defaultConfig,
-            consentState = AdConsentState.Granted,
-            acceptedPrivacyPolicyVersion = "",
-            runtimePolicy = defaultRuntimePolicy.copy(isSensitiveContext = true),
-        )
-
-        assertEquals(UniAdReason.SENSITIVE_DETAIL_HIDDEN, reason)
     }
 
     /** 拒绝隐私同意时隐藏广告。 */

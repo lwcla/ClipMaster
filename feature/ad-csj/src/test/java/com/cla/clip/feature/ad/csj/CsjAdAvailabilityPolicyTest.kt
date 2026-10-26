@@ -6,7 +6,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-/** 穿山甲广告可用性策略测试，覆盖隐私、进程、敏感内容和配置边界。 */
+/** 穿山甲广告可用性策略测试，覆盖隐私、进程和配置边界。 */
 class CsjAdAvailabilityPolicyTest {
     /** 被测策略；纯逻辑对象，不依赖 Android runtime。 */
     private val policy = CsjAdAvailabilityPolicy()
@@ -21,7 +21,7 @@ class CsjAdAvailabilityPolicyTest {
         requiredPrivacyPolicyVersion = "",
     )
 
-    /** 默认运行时策略；广告开启、主进程、非敏感详情。 */
+    /** 默认运行时策略；广告开启且位于宿主主进程。 */
     private val defaultRuntimePolicy = AdRuntimePolicy(adsGlobalEnabled = true)
 
     /** 用户同意且配置完整时应允许继续初始化。 */
@@ -95,23 +95,6 @@ class CsjAdAvailabilityPolicyTest {
         )
 
         assertEquals(CsjAdReason.NOT_MAIN_PROCESS, reason)
-    }
-
-    /** 敏感详情页应隐藏广告且只返回低敏 reasonCode。 */
-    @Test
-    fun sensitiveContextIsRejected() {
-        /** 当前运行时策略；只携带敏感布尔值，不携带正文。 */
-        val runtimePolicy = defaultRuntimePolicy.copy(isSensitiveContext = true)
-
-        /** 当前不可用原因；命中敏感保护后不继续判断广告位。 */
-        val reason = policy.unavailableReason(
-            config = defaultConfig,
-            consentState = AdConsentState.Granted,
-            acceptedPrivacyPolicyVersion = "",
-            runtimePolicy = runtimePolicy,
-        )
-
-        assertEquals(CsjAdReason.SENSITIVE_DETAIL_HIDDEN, reason)
     }
 
     /** 隐私政策版本过期时应阻止真实 SDK 请求。 */

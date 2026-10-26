@@ -21,7 +21,7 @@ enum class AdReleaseReason(
     Evicted("evicted"),
     /** 素材超过缓存有效期。 */
     Expired("expired"),
-    /** 敏感内容、阶段切换或空间不足导致不再适用。 */
+    /** 页面阶段切换或空间不足导致不再适用，与剪贴正文无关。 */
     Ineligible("ineligible"),
     /** 来源配置、开关或保险丝撤销当前来源。 */
     SourceUnavailable("source_unavailable"),

@@ -157,8 +157,8 @@ internal fun ClipResultList(
     val contentHeights = remember { mutableMapOf<Any, Int>() }
     // 侧滑动画独立于菜单展开状态，回收站没有菜单也需要保护离场动画。
     var interactingClipIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
-    // 真实渲染索引、内容三态和可见敏感许可使用同源快照，不把 Paging 占位符视作内容。
-    val adPresentation = rememberClipListAdPresentation(pagedClips, listState)
+    // 真实渲染索引和内容三态使用同源快照，不把 Paging 占位符视作内容，也不检查正文。
+    val adPresentation = rememberClipListAdPresentation(pagedClips)
     // 列表直接消费共享接线的渲染索引，保持稳定 key 和原 Paging 访问位置。
     val renderEntries = adPresentation.renderEntries
     // 侧滑、离场和置顶纠偏期间固定区不改变列表可用高度；页面动画保护继续透传。
@@ -316,7 +316,6 @@ internal fun ClipResultList(
             session = adConfig.session,
             placement = adConfig.placement,
             contentState = adPresentation.contentState,
-            eligible = adPresentation.eligible,
             blocked = adConfig.suppressed || selectionMode,
             canReveal = !adLayoutBlocked,
             modifier = modifier,

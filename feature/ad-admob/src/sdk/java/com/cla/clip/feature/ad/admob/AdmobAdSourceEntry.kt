@@ -39,7 +39,7 @@ internal class AdmobAdSourceEntry @Inject constructor(
     /** 平台独立隐私语义与运行时安全边界都必须满足。 */
     override fun isAvailable(consentState: AdConsentState, runtimePolicy: AdRuntimePolicy): Boolean =
         runtimePolicy.adsGlobalEnabled && runtimePolicy.isMainProcess &&
-            !runtimePolicy.isSensitiveContext && !runtimePolicy.remoteKillSwitchEnabled &&
+            !runtimePolicy.remoteKillSwitchEnabled &&
             sourceId !in runtimePolicy.sessionDisabledSourceIds && privacyController.state.value.canRequestAds
 
     /** 页面拥有资源，组合只绑定 View；暂停和普通重组不创建新请求。 */

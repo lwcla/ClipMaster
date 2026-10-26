@@ -96,24 +96,6 @@ class AdSourceSelectorTest {
         assertHidden(selection, "ads_not_main_process")
     }
 
-    /** 敏感详情上下文应隐藏广告，且隐藏原因不能包含原始内容。 */
-    @Test
-    fun selectHidesWhenSensitiveContextIsDetected() {
-        /** 当前选择结果；只传布尔标记，不把剪贴正文传进选择器或 adapter。 */
-        val selection = selector.select(
-            sources = setOf(FakeAdSource(sourceId = "csj", priority = 100)),
-            placement = AdPlacement.DetailNative,
-            activeSourceId = AdSourceSelectionMode.AUTO,
-            consentState = AdConsentState.NotRequired,
-            runtimePolicy = AdRuntimePolicy(
-                adsGlobalEnabled = true,
-                isSensitiveContext = true,
-            ),
-        )
-
-        assertHidden(selection, "ads_sensitive_context")
-    }
-
     /** 同意状态不可用时应隐藏真实广告请求。 */
     @Test
     fun selectHidesWhenConsentIsDenied() {

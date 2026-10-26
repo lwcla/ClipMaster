@@ -23,7 +23,6 @@ import com.cla.clip.feature.ad.api.AdSourceEntry
 import com.cla.clip.feature.ad.api.AdSourceSelector
 import com.cla.clip.feature.torrent.search.api.TorrentSearchFeatureEntry
 import com.cla.clip.master.ad.AdHostProvider
-import com.cla.clip.master.ad.DetailAdSensitivityPolicy
 import com.cla.clip.master.ui.navigation.AppNavigation
 import com.cla.clip.master.ui.navigation.DetailRoute
 import com.cla.clip.master.ui.navigation.VideoDownloadRoute
@@ -71,10 +70,6 @@ class MainActivity : ComponentActivity() {
     /** 广告源选择器；宿主通过它按运行时策略选择当前详情页广告源。 */
     @Inject
     lateinit var adSourceSelector: AdSourceSelector
-
-    /** 详情页广告敏感内容保护策略；只返回布尔值，不输出剪贴正文。 */
-    @Inject
-    lateinit var detailAdSensitivityPolicy: DetailAdSensitivityPolicy
 
     /** Activity 级 ViewModel，保存来自通知 intent 的一次性跳转目标。 */
     private val mainVm by viewModels<MainVm>()
@@ -151,7 +146,6 @@ class MainActivity : ComponentActivity() {
                             adPrivacyPolicyVersionFlow = mainVm.adPrivacyPolicyVersionFlow,
                             adDisabledSourceIdsFlow = adSessionFailureFuse.disabledSourceIdsFlow,
                             isMainProcess = isAppMainProcess,
-                            detailAdSensitivityPolicy = detailAdSensitivityPolicy,
                             onDisableAdSource = adSessionFailureFuse::disableSource,
                         )
                         }

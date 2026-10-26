@@ -26,9 +26,6 @@ internal object UniAdReason {
     /** 用户同意的隐私政策版本不包含当前 uni-ad SDK 清单。 */
     const val PRIVACY_VERSION_OUTDATED = "uniad_privacy_version_outdated"
 
-    /** 当前详情页命中本地敏感内容保护。 */
-    const val SENSITIVE_DETAIL_HIDDEN = "uniad_sensitive_detail_hidden"
-
     /** 当前进程不是应用主进程，不能初始化 uni-ad SDK。 */
     const val NOT_MAIN_PROCESS = "uniad_not_main_process"
 

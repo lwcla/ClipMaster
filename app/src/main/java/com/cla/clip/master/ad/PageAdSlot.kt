@@ -38,9 +38,9 @@ internal fun PageAdSlot(
     val binding = remember(session, leaseKey) { Any() }
     // 真实业务资格与临时遮挡分开；暂停/弹窗不撤销资源存活资格。
     val allowed = session.active && eligible && !session.isDismissed(leaseKey)
-    // 选择器只接收资格布尔值，不接收业务内容。
+    // 来源选择只读取广告配置与隐私状态，页面阶段资格由 allowed 独立控制。
     val selection = environment.selector.select(environment.sources, placement, environment.activeSourceId,
-        environment.legacyConsent, environment.policy.copy(isSensitiveContext = !eligible))
+        environment.legacyConsent, environment.policy)
     // 当前可用来源；不可用时保持零高度。
     val source = (selection as? AdSourceSelection.Selected)?.source
     // 当前绑定领取的资源身份；离屏由页面保留，失败/淘汰不在本绑定内循环申请。

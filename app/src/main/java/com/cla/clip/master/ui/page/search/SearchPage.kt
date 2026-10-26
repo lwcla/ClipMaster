@@ -215,8 +215,8 @@ fun SearchPage(
     } else {
         null
     }
-    /** 共享列表与页面固定区从同一当前快照读取真实内容和可见敏感许可，不复制一份迟到状态。 */
-    val adPresentation = rememberClipListAdPresentation(pagedClips, resultListState)
+    /** 共享列表与页面固定区从同一当前快照读取内容三态，不读取正文或跟踪可见项资格。 */
+    val adPresentation = rememberClipListAdPresentation(pagedClips)
 
     // 生命周期监听只关闭浮层，不回滚已生效筛选，不启动任何额外数据任务。
     DisposableEffect(menuLifecycleOwner, saveableScopeKey, darkTheme) {
@@ -468,7 +468,6 @@ fun SearchPage(
             session = adSession,
             placement = if (isVisibleSearch) AdPlacement.SearchFeedNative else AdPlacement.FoldedSearchNative,
             contentState = adPresentation.contentState,
-            eligible = adPresentation.eligible,
             blocked = clipSelectionMode || adOverlayBlocked,
             canReveal = !adOverlayBlocked && headerSnapJob?.isActive != true,
             modifier = Modifier.fillMaxSize().padding(

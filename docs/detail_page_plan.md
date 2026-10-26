@@ -2,6 +2,12 @@
 
 # 详情页方案
 
+## 广告取消正文检查（2026-10-26，已完成）
+
+- 详情广告不再检查剪贴正文关键词，删除 `DetailAdSensitivityPolicy`、导航参数和 Activity 注入；正文中出现密码、验证码或 token 等词不影响广告。广告仍使用现有页面会话、弹层交互保护和关闭入口。
+- 完整设计、日志与诊断计划、测试及验证边界见 [广告主方案](ad_module_plan.md#广告与剪贴正文判断解耦2026-10-26已完成)。本页不新增日志、不更改正文操作或持久化数据。宿主编译与相关单测通过，完整 392 项结果以主方案为准。
+- 变更记录：2026-10-26，按用户要求删除额外的广告正文限制，避免详情和列表保留不同的关键词检查行为。
+
 ## 来源展示公共模型迁移影响（已检查，2026-10-02）
 
 来源图标/名称/主色已从公共 `ClipShowEntity` 内容模型迁往独立包名状态，详情的 mapper 与操作参数已通过公共构造引用和编译兼容检查；保留非分页 `ClipDetail` 单条查询、路由和复制/删除/过滤动作，当前详情未展示来源图标，因此不新增图标区域或补图需求。后续需要展示时接入同一前台包名会话。数据、日志与测试以 [来源图标主方案](source_app_icon_plan.md) 为准。
@@ -41,7 +47,7 @@
 - 点击链接打开的操作弹层以链接类型作为标题，直接展示可滚动的完整 URL，不再展示摘要版或限制完整 URL 的显示行数；复制、打开视频提取和打开图片提取始终使用完整 URL。
 - `file://`、`ftp://`、`localhost`、内网地址和其他非公网 http/https 链接仍可复制，但不会进入 WebView 或下载提取流程，弹层提示该链接不支持提取。
 - 底部不再展示普通复制按钮；如果没有链接提取入口且没有 TorrentSearch 动作，则不渲染空操作区。
-- 详情页成功态会在正文和底部操作区之间尝试渲染一个原生广告位；无广告源、广告关闭、隐私未同意、敏感详情、无填充、加载失败或保险丝禁用时直接隐藏，不占空白。
+- 详情页成功态会在正文和底部操作区之间尝试渲染一个原生广告位；无广告源、广告关闭、隐私未同意、无填充、加载失败或保险丝禁用时直接隐藏，不占空白。正文内容不参与广告资格判断。
 - 国内广告包启用 `:feature:ad-csj` 后可展示穿山甲模板信息流广告；广告异步加载，成功后才插入容器，容器保留“广告”标识且最大高度由 adapter 限制。
 - 国内广告包启用 `:feature:ad-uniad` 后可展示 uni-ad 信息流广告；广告通过 `DCFeedAdLoader` 异步加载，渲染成功后才插入容器，找不到 Activity、无网、无填充、加载失败或超时时直接隐藏。
 - 详情页广告不做用户可感知频控；同一个 `clipId` 在每次可见访问内最多创建一次广告请求，切换剪贴记录或离开后返回生成新的低敏 request nonce；普通重组不重载，完整契约以 [广告主方案](ad_module_plan.md) 为准。
@@ -60,7 +66,7 @@
 - 详情页内部将完整 URL 转为 `DetailLinkUiState`，记录摘要、类型提示和是否允许提取；该模型保持 feature-local，不作为跨页面公共契约。
 - 链接复制只调用 `copyToClipboard(link)`，不刷新整条剪贴记录时间戳；图片/视频提取和 TorrentSearch 仍走各自启动回调。
 - 详情页通过 `LaunchedEffect(clip.id)` 在剪贴切换时清空已选链接和底部弹层状态，避免 A 剪贴的旧链接残留到 B 剪贴。
-- 详情页先用本地 `DetailAdSensitivityPolicy` 判断剪贴内容是否明显像验证码、密码、Token、密钥或银行卡号，只把敏感布尔值传给广告选择器和 adapter，不记录原文或命中片段。
+- 广告直接使用现有来源选择与页面会话，不检查剪贴正文，不传递正文或敏感标记；详情操作弹层仍通过 `suppressed` 暂停广告交互。
 - 详情页通过 `AdSourceSelector` 选择当前可用广告源，并向 adapter 传入 `AdSlotRequest(placement = DetailNative, requestNonce, isDebugRequest, isSensitiveContext)`；请求对象不包含剪贴正文、完整 URL 或搜索词。
 - 详情页从 `AdSettingsRepository.data` 收集广告隐私状态；读取失败或未就绪时按未同意处理，真实 SDK 只有在明确同意且版本满足 adapter 要求时可用。
 - 广告源初始化失败或渲染失败事件会触发 `AdSessionFailureFuse`，当前会话后续跳过该 source，回退到其它 source 或隐藏广告位。
@@ -96,8 +102,8 @@
 - 手动验证点：详情页加载态、错误态、正文滚动、点击正文卡片复制、底部复制按钮已移除、右上角删除入口、删除选择弹窗、图片提取和视频提取入口行为正确。
 - 手动验证点：启用 TorrentSearch 时，点击动作后独立 Activity 应带入标题或正文作为候选关键词和 `detail` 来源，不写入剪贴板、历史或发起预热；默认关闭构建不展示该动作。
 - 手动验证点：debug 构建显示调试广告占位，release 默认无真实广告源时不显示广告；同一详情页重组不重复创建请求，切换到另一条剪贴记录后生成新的请求。
-- 手动验证点：在 `local.properties` 或 CI Gradle 属性准备 `csjDebugAppId`/`csjDebugDetailNativeAdSlotId` 或 `csjReleaseAppId`/`csjReleaseDetailNativeAdSlotId`，并显式开启对应 `enableCsjDebugAdFeature`/`enableCsjReleaseAdFeature` 后，对应 debug/release 构建会携带穿山甲详情页广告模块；debug 包使用项目固定 internal keystore，release 包使用正式 release keystore。隐私未同意或敏感详情不初始化穿山甲，同意后广告异步展示，离开详情页释放，弱网、无网、超时和无填充不占空白。
-- 手动验证点：在 `local.properties` 或 CI Gradle 属性准备 `uniadDebugAppId`/`uniadDebugUnionId`/`uniadDebugDetailNativeAdpid` 或 `uniadReleaseAppId`/`uniadReleaseUnionId`/`uniadReleaseDetailNativeAdpid`，并显式开启对应 `enableUniadDebugAdFeature`/`enableUniadReleaseAdFeature` 后，对应 debug/release 构建会携带 uni-ad 详情页广告模块；CSJ 与 uni-ad 同一 buildType 同时开启时构建失败。隐私未同意或敏感详情不初始化 uni-ad，同意后广告异步展示，离开详情页释放，弱网、无网、超时和无填充不占空白。
+- 手动验证点：在 `local.properties` 或 CI Gradle 属性准备 `csjDebugAppId`/`csjDebugDetailNativeAdSlotId` 或 `csjReleaseAppId`/`csjReleaseDetailNativeAdSlotId`，并显式开启对应 `enableCsjDebugAdFeature`/`enableCsjReleaseAdFeature` 后，对应 debug/release 构建会携带穿山甲详情页广告模块；debug 包使用项目固定 internal keystore，release 包使用正式 release keystore。隐私未同意不初始化穿山甲，同意后广告异步展示，离开详情页释放，弱网、无网、超时和无填充不占空白；正文关键词不影响广告资格。
+- 手动验证点：在 `local.properties` 或 CI Gradle 属性准备 `uniadDebugAppId`/`uniadDebugUnionId`/`uniadDebugDetailNativeAdpid` 或 `uniadReleaseAppId`/`uniadReleaseUnionId`/`uniadReleaseDetailNativeAdpid`，并显式开启对应 `enableUniadDebugAdFeature`/`enableUniadReleaseAdFeature` 后，对应 debug/release 构建会携带 uni-ad 详情页广告模块；CSJ 与 uni-ad 同一 buildType 同时开启时构建失败。隐私未同意不初始化 uni-ad，同意后广告异步展示，离开详情页释放，弱网、无网、超时和无填充不占空白；正文关键词不影响广告资格。
 - 手动验证点：来源包名明确的详情页显示屏蔽或取消屏蔽动作，确认后轻提示且页面保留当前记录；未知来源不展示该动作；从我的页修改名单后返回详情页，动作文案刷新。
 
 ## TorrentSearch 接入影响（待实施）

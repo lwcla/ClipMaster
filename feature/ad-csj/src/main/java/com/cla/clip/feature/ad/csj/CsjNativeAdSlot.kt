@@ -69,12 +69,11 @@ internal fun CsjNativeAdSlot(
     /** 当前请求开始时间；用于计算低敏耗时。 */
     val startedAtMillis = remember(request.requestNonce) { System.currentTimeMillis() }
     /** 当前运行时策略；adapter 内部只补充真实 SDK 需要的本地判断。 */
-    val runtimePolicy = remember(request.isDebugRequest, request.isSensitiveContext) {
+    val runtimePolicy = remember(request.isDebugRequest) {
         AdRuntimePolicy(
             adsGlobalEnabled = true,
             debugMode = request.isDebugRequest,
             isMainProcess = true,
-            isSensitiveContext = request.isSensitiveContext,
         )
     }
     /** 当前可用性失败原因；非空时隐藏广告并输出低敏事件。 */

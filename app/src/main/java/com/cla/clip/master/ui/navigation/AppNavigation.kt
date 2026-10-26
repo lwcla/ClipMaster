@@ -22,7 +22,6 @@ import com.cla.clip.feature.ad.api.AdSourceEntry
 import com.cla.clip.feature.ad.api.AdSourceSelector
 import com.cla.clip.feature.torrent.search.api.TorrentSearchFeatureEntry
 import com.cla.clip.feature.torrent.search.api.TorrentSearchLaunchSource
-import com.cla.clip.master.ad.DetailAdSensitivityPolicy
 import com.cla.clip.master.ui.page.detail.DetailPage
 import com.cla.clip.master.ui.page.image.ImageExtractPage
 import com.cla.clip.master.ui.page.list.ClipListPage
@@ -61,7 +60,6 @@ fun AppNavigation(
     adPrivacyPolicyVersionFlow: StateFlow<String>,
     adDisabledSourceIdsFlow: StateFlow<Set<String>>,
     isMainProcess: Boolean,
-    detailAdSensitivityPolicy: DetailAdSensitivityPolicy,
     onDisableAdSource: (String) -> Unit,
 ) {
     /** 当前 Activity Context；只在用户点击宿主入口时交给可选功能启动独立 Activity。 */
@@ -145,7 +143,6 @@ fun AppNavigation(
                 adPrivacyPolicyVersionFlow = adPrivacyPolicyVersionFlow,
                 adDisabledSourceIdsFlow = adDisabledSourceIdsFlow,
                 isMainProcess = isMainProcess,
-                detailAdSensitivityPolicy = detailAdSensitivityPolicy,
                 onDisableAdSource = onDisableAdSource,
             )
         }

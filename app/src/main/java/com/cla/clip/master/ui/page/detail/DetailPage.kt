@@ -52,7 +52,6 @@ import com.cla.clip.feature.ad.api.AdPlacement
 import com.cla.clip.feature.ad.api.AdSourceEntry
 import com.cla.clip.feature.ad.api.AdSourceSelector
 import com.cla.clip.feature.torrent.search.api.TorrentSearchFeatureEntry
-import com.cla.clip.master.ad.DetailAdSensitivityPolicy
 import com.cla.clip.master.ad.PageAdSession
 import com.cla.clip.master.ad.PageAdSlot
 import com.cla.clip.master.ad.adInteractionGuard
@@ -139,7 +138,6 @@ fun DetailPage(
     adPrivacyPolicyVersionFlow: StateFlow<String> = remember { MutableStateFlow("") },
     adDisabledSourceIdsFlow: StateFlow<Set<String>> = remember { MutableStateFlow(emptySet()) },
     isMainProcess: Boolean = true,
-    detailAdSensitivityPolicy: DetailAdSensitivityPolicy = remember { DetailAdSensitivityPolicy() },
     onDisableAdSource: (String) -> Unit = {},
 ) {
     // 单条详情的图标装配同样受页面可见性约束。
@@ -272,7 +270,6 @@ fun DetailPage(
                         adSession = adSession,
                         deleteDialogVisible = deleteClip != null,
                         contentScrolling = contentScrollState.isScrollInProgress,
-                        detailAdSensitivityPolicy = detailAdSensitivityPolicy,
                         blockedSourcePackages = blockedSourcePackages,
                     )
                 }
@@ -311,17 +308,12 @@ private fun DetailActionSections(
     deleteDialogVisible: Boolean,
     // 正文惯性状态决定是否允许底部广告改变可用高度。
     contentScrolling: Boolean,
-    detailAdSensitivityPolicy: DetailAdSensitivityPolicy,
     blockedSourcePackages: Set<String>?,
 ) {
     /** 详情页操作区间距 token，确保正文、能力入口和普通操作区节奏一致。 */
     val spacing = ClipMasterThemeTokens.tokens.spacing
     /** 从正文实时提取出的链接展示模型；历史剪贴不需要迁移即可展示多链接。 */
     val linkItems = remember(clip.content) { buildDetailLinkItems(clip.content) }
-    /** 当前详情页是否命中敏感内容保护；只传布尔值给广告策略，不记录正文或命中片段。 */
-    val isSensitiveAdContext = remember(clip.id, clip.content) {
-        detailAdSensitivityPolicy.shouldHideAds(clip.content)
-    }
     /** 是否存在 TorrentSearch 扩展动作；没有动作时不渲染空操作行。 */
     val hasTorrentSearchActions = torrentSearchFeatures.isNotEmpty()
     /** 当前被用户选中并准备操作的链接；为 null 时不显示链接操作弹层。 */
@@ -336,7 +328,8 @@ private fun DetailActionSections(
     // 删除、链接选择及来源屏蔽确认统一视为敏感交互覆盖层。
     val adOverlayVisible = deleteDialogVisible || selectedLink != null || showAllLinks || sourceBlockAction != null
     SideEffect {
-        adSession.suppressed = adOverlayVisible || isSensitiveAdContext
+        // 仅页面覆盖层暂停广告交互，剪贴正文不参与广告资格判断。
+        adSession.suppressed = adOverlayVisible
         adSession.canMutateLayout = !contentScrolling && !linksScrollState.isScrollInProgress && !adOverlayVisible
     }
 
@@ -352,8 +345,6 @@ private fun DetailActionSections(
         PageAdSlot(
             session = adSession,
             placement = AdPlacement.DetailNative,
-            // 敏感内容撤销资源资格；普通弹窗通过 suppressed 保留原素材。
-            eligible = !isSensitiveAdContext,
             modifier = Modifier.fillMaxWidth(),
         )
 

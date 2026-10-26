@@ -28,7 +28,6 @@ internal fun FixedListAdLayout(
     session: PageAdSession,
     placement: AdPlacement,
     contentState: ListAdContentState,
-    eligible: Boolean = true,
     blocked: Boolean = false,
     canReveal: Boolean = true,
     modifier: Modifier = Modifier,
@@ -36,7 +35,7 @@ internal fun FixedListAdLayout(
 ) {
     // 超高素材只在当前访问/位置锁存；普通空态、查询变化和重组均不能触发重新请求。
     var oversized by remember(session, placement) { mutableStateOf(false) }
-    // 遮挡只暂停请求与点击，不将空列表写入 enabled、eligible 或 suppressed。
+    // 遮挡只暂停请求与点击；空列表由独立内容三态控制，不作为遮挡或会话失效。
     SideEffect { session.suppressed = blocked }
     SubcomposeLayout(modifier.fillMaxSize()) { constraints ->
         // 与固定图片广告使用相同最小业务视口，按窗口当前密度转换，不预留广告空白高度。
@@ -51,7 +50,7 @@ internal fun FixedListAdLayout(
         // 同一广告宿主在 loading/empty 期间也存在，因此请求不等待真实列表结果。
         val header = subcompose("ad") {
             if (!oversized && MediaAdFooterPolicy.fits(availableHeight, 0, minimumContentHeight)) {
-                PageAdSlot(session, placement, eligible = eligible, requestEnabled = !blocked,
+                PageAdSlot(session, placement, requestEnabled = !blocked,
                     canReveal = canReveal && !blocked,
                     contentPresentable = contentState.containsContent,
                     modifier = Modifier.padding(horizontal = 12.dp), retainOnDispose = false)

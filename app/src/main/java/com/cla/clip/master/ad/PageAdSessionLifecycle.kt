@@ -66,7 +66,7 @@ internal fun rememberPageAdSession(
     // 页面层清理所有离屏缓存，不能只依赖已挂载槽的来源选择器。
     val environment = LocalAdHostEnvironment.current
     SideEffect {
-        // 仅检查低敏来源资格；敏感正文资格仍由对应槽传入。
+        // 仅检查来源配置、隐私及保险丝；页面阶段资格由对应槽控制，不检查正文。
         val allowedSources = if (environment == null) emptySet() else AdPlacement.entries.mapNotNull { placement ->
             // 复用选择器的未知来源回退、隐私及保险丝规则，避免缓存层另写一套判断。
             (environment.selector.select(environment.sources, placement, environment.activeSourceId,

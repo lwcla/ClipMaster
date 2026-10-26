@@ -75,8 +75,6 @@ data class AdRuntimePolicy(
     val debugMode: Boolean = false,
     /** 当前进程是否为宿主主进程；真实 SDK 只能在主进程初始化，辅助进程必须直接不可用。 */
     val isMainProcess: Boolean = true,
-    /** 当前详情内容是否被本地低敏规则判定为敏感；为 true 时真实广告源必须隐藏。 */
-    val isSensitiveContext: Boolean = false,
     /** 预留远程广告能力开关；远程策略只能关闭或降级广告，不能绕过隐私同意。 */
     val remoteKillSwitchEnabled: Boolean = false,
 )
@@ -93,8 +91,6 @@ data class AdSlotRequest(
     val requestNonce: String,
     /** 当前请求是否只能使用测试广告配置。 */
     val isDebugRequest: Boolean,
-    /** 当前请求是否因本地敏感上下文保护而必须隐藏，adapter 只能据此降级，不能读取原文。 */
-    val isSensitiveContext: Boolean = false,
     /** 是否允许把已加载素材发布到布局；变化不生成新请求。 */
     val canReveal: Boolean = true,
     /** 广告布局尺寸变化前通知宿主保存列表锚点；回调变化不生成新请求。 */

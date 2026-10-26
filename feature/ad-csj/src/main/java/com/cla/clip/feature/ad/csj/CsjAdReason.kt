@@ -14,9 +14,6 @@ internal object CsjAdReason {
     /** 用户同意的隐私政策版本不包含当前广告 SDK 清单。 */
     const val PRIVACY_VERSION_OUTDATED = "csj_privacy_version_outdated"
 
-    /** 当前详情页命中本地敏感内容保护。 */
-    const val SENSITIVE_DETAIL_HIDDEN = "csj_sensitive_detail_hidden"
-
     /** 当前进程不是应用主进程，不能初始化穿山甲 SDK。 */
     const val NOT_MAIN_PROCESS = "csj_not_main_process"
 
