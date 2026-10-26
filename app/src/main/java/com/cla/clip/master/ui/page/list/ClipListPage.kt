@@ -20,7 +20,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,10 +45,6 @@ import com.cla.clip.master.ui.widget.ClipBatchSelectionActionBar
 import com.cla.clip.master.ui.widget.ShizukuServiceUnavailableTip
 import com.cla.clip.master.ui.widget.TitleBar
 import com.cla.clip.master.ui.widget.TitleBarText
-import com.cla.clip.feature.ad.api.AdPlacement
-import com.cla.clip.master.ad.rememberPageAdSession
-import com.cla.clip.master.ad.adInteractionGuard
-import com.cla.clip.master.ui.widget.clip.ClipListAdConfig
 import com.cla.clip.master.ui.widget.clip.ClipResultList
 
 /**
@@ -57,34 +52,35 @@ import com.cla.clip.master.ui.widget.clip.ClipResultList
  *
  * 这个页面只保留列表页特有的生命周期、权限提示、删除弹窗和搜索入口；
  * 具体卡片渲染交给 `ClipResultList`，方便搜索页复用完全一致的结果样式。
+ * 首页采用共享列表的无广告分支，不创建广告会话或占位；其他页面独立配置广告。
  *
  * @param viewModel Hilt 自动注入的列表 ViewModel。
  * @param listState 外部传入竖向列表状态，首页底部 Tab 再次点击列表时可以滚回顶部。
+ * @param visibleToUser 首页稳定选中状态，仅约束来源名称和图标的可见加载。
  * @param onNavigate 统一页面跳转入口。
  */
 @Composable
 fun ClipListPage(
     viewModel: ClipListModel = hiltViewModel(),
     listState: LazyListState = rememberLazyListState(),
-    // 首页横向 Pager 的稳定可见状态，避免“我的”页后台广告继续请求。
+    // 首页横向 Pager 的稳定可见状态，避免“我的”页后台继续读取列表来源信息。
     visibleToUser: Boolean = true,
-    // 外层 Pager 转场仅冻结新广告布局，不撤销当前访问或已显示素材。
-    adLayoutBlocked: Boolean = false,
-    // SDK 回调同帧读取实时转场，默认非 Pager 入口沿用布尔快照。
-    adLayoutBlockedNow: () -> Boolean = { adLayoutBlocked },
     onNavigate: (Route) -> Unit  // 跳转页面
 ) {
     // 页面级引用只控制历史名称查询；图标在卡片内按可见生命周期加载。
     /** 页面只创建一次加载边界，实际系统读取由每个可见卡片负责。 */
     val iconLoader = rememberAppIconLoader()
     SourceAppNameLoadingEffect(viewModel.sourceLoadGate, visibleToUser)
+    /** 页面生命周期用于暂停非前台的分页收集，不由广告或 Tab 动画控制。 */
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    /** 复用 ViewModel 的分页流，仅在页面至少 STARTED 时收集列表内容。 */
     val pagedClips = remember(viewModel.pagedClips, lifecycle) {
         viewModel.pagedClips.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
     }.collectAsLazyPagingItems()
     /** 页面可见时读取已提交快捷动作；首次加载或读取失败暂时关闭快捷操作。 */
     val quickAction by viewModel.quickAction.collectAsStateWithLifecycle(initialValue = ClipItemQuickAction.None)
 
+    /** 待单条删除的记录，仅在当前组合内持有，关闭弹窗后清空。 */
     var deleteClip by remember { mutableStateOf<ClipShowEntity?>(null) }
     /** 当前多选态选中的剪贴 id；只存 id，分页刷新时不会因为对象实例变化丢失选择。 */
     var selectedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
@@ -122,15 +118,6 @@ fun ClipListPage(
         }
     }
 
-    // Tab 返回开启新广告访问，分页追加和置顶排序仍保持同一会话。
-    val adSession = rememberPageAdSession("home-list", visibleToUser = visibleToUser)
-    // 根按压和外层转场共同阻止展开；不覆盖内层列表协调器的滚动/侧滑门控。
-    SideEffect {
-        adSession.pointerPressedNow = { adSession.pointerPressed || adLayoutBlockedNow() }
-    }
-    // 确认、设置及批量操作覆盖层禁止广告交互并延后布局变化。
-    val adOverlayBlocked = deleteClip != null || showBatchDeleteDialog || isBatchActionRunning
-
     BackHandler(enabled = selectionMode) {
         clearSelection()
     }
@@ -138,7 +125,6 @@ fun ClipListPage(
     logD("MainPage", { "MainPage: pagedClips itemCount = ${pagedClips.itemCount}, loadState = ${pagedClips.loadState}" })
 
     Scaffold(
-        modifier = Modifier.adInteractionGuard(adSession),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             if (selectionMode) {
@@ -203,15 +189,10 @@ fun ClipListPage(
                         // 列表区域只占用权限提示下方的剩余空间，避免子级 fillMaxSize 反向撑开整个 Column。
                         .weight(1f)
                 ) {
+                    // 首页复用默认无广告入口，让列表占满可用空间且不触发广告请求。
                     ClipResultList(
                         iconLoader = iconLoader,
                         iconsVisibleToUser = visibleToUser,
-                        adConfig = ClipListAdConfig(
-                            session = adSession,
-                            placement = AdPlacement.HomeFeedNative,
-                            suppressed = adOverlayBlocked || selectionMode,
-                            layoutBlocked = adOverlayBlocked || adLayoutBlocked,
-                        ),
                         listState = listState,
                         pagedClips = pagedClips,
                         emptyText = stringResource(com.cla.clip.base.general.R.string.base_general_clip_list_empty),

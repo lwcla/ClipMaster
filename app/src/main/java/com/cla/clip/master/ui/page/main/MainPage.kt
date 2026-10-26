@@ -28,7 +28,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cla.clip.base.general.R
-import com.cla.clip.master.ad.AdPagerPageState
 import com.cla.clip.feature.torrent.search.api.TorrentSearchFeatureEntry
 import com.cla.clip.master.ui.navigation.MainInitialTab
 import com.cla.clip.master.ui.navigation.Route
@@ -72,6 +71,7 @@ private sealed class TabPage {
  * 使用 HorizontalPager 承载剪贴列表和我的页，底部 Tab 控制页面切换；
  * 列表页的竖向列表状态放在主页面持有，便于重复点击列表 Tab 时滚回顶部。
  * Pager 应用并消费首页底栏 padding，子页面骨架只补尚未处理的导航栏 Insets，避免重复留白。
+ * 首页列表不接入广告；稳定选中页只向列表提供来源名称和图标的可见加载边界。
  *
  * @param torrentSearchFeatures 可选功能入口集合；只透传给“我的”页，不在首页启动功能内任务。
  * @param onLaunchTorrentSearch 用户点击可选入口后的启动回调；Context 和来源由导航层统一提供。
@@ -164,17 +164,12 @@ fun MainPage(
         ) { index ->
             /** 当前 Pager 页对应的底部 Tab 配置。 */
             val tab = tabs[index]
-            /** 会话可见性与转场布局门分离，斜滑/回弹保留当前广告。 */
-            val adPageState = AdPagerPageState(index, pagerState.settledPage, pagerState.isScrollInProgress)
             when (tab.page) {
                 TabPage.List -> ClipListPage(
                     listState = listState,
                     onNavigate = onNavigate,
-                    // 真正切页才结束访问；拖动只延后新素材展开，不能销毁已显示广告。
-                    visibleToUser = adPageState.visibleToUser,
-                    adLayoutBlocked = adPageState.layoutBlocked,
-                    // 网络回调同帧也读取实时转场状态，避免先于重组插入广告。
-                    adLayoutBlockedNow = { pagerState.isScrollInProgress },
+                    // 保留稳定页可见性，斜滑或回弹不会反复暂停来源名称和图标加载。
+                    visibleToUser = pagerState.settledPage == index,
                 )
                 TabPage.Mine -> MinePage(
                     onNavigate = onNavigate,
