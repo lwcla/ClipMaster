@@ -12,7 +12,7 @@
 - AIDL callback 只保留无副作用 `pingAppProcess()` 探活；旧 `ShizukuCallback.onOpNoted(...)` 保存回调已删除，不保留旧版本兼容分支。
 - Provider 对外只保留 `commit_clip`、`query_icon_state`、`commit_icon`、`query_shizuku_process`。旧 `read_clip` 和旧安装应用缓存同步 methods 均已删除，外部继续调用时进入默认不支持分支，返回 `invalid_args` 并只记录 method 名、callingUid 等低敏信息。
 - 来源 App 过滤命中时，`ClipHelper.processClipText(...)` 返回 `FilteredBySourceApp`，Provider 对外返回 `clipStatus=source_app_blocked` 且 `clipCommitted=false`；该状态表示已按用户规则处理完成，不触发通知、链接解析或备份调度。
-- Shizuku 不再为过滤页提供安装应用列表或图标；过滤页已改为主进程 `QUERY_ALL_PACKAGES` + `PackageManager` 直读，完整规则以 `docs/clip_source_app_filter_plan.md` 为准。
+- Shizuku 不再为过滤页提供安装应用列表或图标；过滤页已恢复为主进程 `QUERY_ALL_PACKAGES` + `PackageManager` 直读，完整规则以 `docs/clip_source_app_filter_plan.md` 为准。
 - `ShizukuConnector.VERSION = 29`，UserService tag 继续携带行为版本；本轮覆盖安装后重建仍会生成/传输图标的旧服务，正文和进程身份协议字段保持。
 
 ## 目标
@@ -93,6 +93,10 @@
 - `InstallationIdentityRepository` 保存已提交的期望 Shizuku 进程名，属于本机运行态，不纳入备份；Provider 只返回持久化成功的身份。
 
 ## 变更记录
+
+- 2026-10-27：按用户确认回退过滤页权限及候选改动，恢复主进程安装扫描；保留 Shizuku 指定包查询，未修改 UserService、AIDL、来源名称解析、剪贴监听或保存协议，服务版本仍为 29。
+
+- 2026-10-26：过滤页移除全量包可见性，保留 Shizuku 管理器指定包查询；不新增 Shizuku 应用枚举、AIDL 或剪贴协议，后台来源识别与保存规则不变。
 
 - 2026-10-11：按全入口图标规则停止 Shizuku 图标生成/hash/PNG 同步，旧图标 Provider 命令只禁用应答，服务行为版本升为 29；正文与历史来源字段兼容保持，验证以来源图标主方案为准。
 

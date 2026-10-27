@@ -33,7 +33,7 @@
 | --- | --- | --- |
 | 名称与版本 | `base/general/src/main/res/values/strings.xml`；`app/build.gradle.kts` | 中文名为“剪贴板助手”；版本与包名见上文 |
 | 剪贴内容与来源 | `app/src/main/java/com/cla/clip/master/utils/ClipHelper.kt`；`MainActivity.kt`；`shizuku/src/main/` | 文本、来源包名/名称/图标、时间及链接摘要入库；前台读取与 Shizuku 后台路径分开 |
-| 应用列表 | `app/src/main/java/com/cla/clip/master/installedapps/PackageManagerInstalledAppReader.kt` | 来源过滤页读取安装应用列表；完整列表仅为内存状态，保存的过滤包名和来源记录可进入备份 |
+| 应用列表 | `app/src/main/java/com/cla/clip/master/installedapps/PackageManagerInstalledAppReader.kt` | 来源过滤页读取安装应用列表；完整列表仅为内存状态，保存的过滤包名和来源记录可进入备份；未安装的保存规则不补显示行 |
 | 自动链接请求 | `app/src/main/java/com/cla/clip/master/utils/ClipHelper.kt`；`utils/LinkMetaParser.kt` | 保存链接后可自动解析远程页面；携带 URL、User-Agent、语言、Referer；没有假称“只有点击才联网” |
 | 网页状态与下载 | `app/src/main/java/com/cla/clip/master/ui/page/video/VideoProbeWebViewLayer.kt`；`entity/VideoCandidate.kt` | JavaScript、DOM storage、第一方/第三方 Cookie 已开启；媒体下载可携带所需 Cookie 等请求信息 |
 | 广告 | `feature/ad-admob/src/sdk/java/com/cla/clip/feature/ad/admob/AdmobSdkLoader.kt`；`AdmobPrivacyController.kt`；`app/.../ad/AdHostEnvironment.kt` | GMA Next-Gen 1.4.0、UMP 4.0.0；隐私信息刷新与广告请求分开；广告请求构造没有传入剪贴正文或应用清单 |
@@ -46,9 +46,9 @@
 
 ## 发布前需确认的实际边界
 
-1. **核对最终 AAB。** 当前没有编译、运行设备、抓包或扫描最终合并 Manifest。最终 SDK、权限、渠道、服务端广告配置及中英文功能名必须与政策一致。
-2. **接入政策入口。** 本次仅添加文档，不会自动为 App 增加通用隐私政策入口。`MinePage` 中的 UMP 隐私入口不等于本政策链接；需确认应用内和 Play Console 均提供本政策。
-3. **受限权限。** 主 Manifest 仍声明 `QUERY_ALL_PACKAGES`，并保留“自用/私有分发；上架需重新评估”的注释。政策披露不能代替 Google Play 对权限必要性和资格的审核；照片/视频广泛访问、Shizuku/后台剪贴读取也应按实际包单独核对。
+1. **核对最终 AAB。** 2026-10-27 已按用户要求恢复安装应用扫描和广泛包可见性，并重新构建 Release/R8 AAB；实际 Manifest 确认包含 QUERY_ALL_PACKAGES、保留 Shizuku 查询及自身启动入口、不含此次桌面查询声明。311+7 项测试通过，产物 hash 与证据记录于 `docs/clip_source_app_filter_plan.md`。2026-10-26 的有限权限 AAB 只代表已回退版本；尚未做宿主真机 UI 或抓包，后续正式包变化仍须重新核对。
+2. **接入政策入口。** 本次过滤功能改动未增加通用隐私政策入口。`MinePage` 中的 UMP 隐私入口不等于本政策链接；需确认应用内和 Play Console 均提供本政策。
+3. **受限权限。** 主 Manifest 已恢复 `QUERY_ALL_PACKAGES`，并保留“自用/私有分发；上架需重新评估”的注释；此次 MAIN + LAUNCHER queries 已撤销，Shizuku 管理器指定包查询保留。政策披露不能代替 Google Play 对权限必要性和资格的审核；照片/视频广泛访问、Shizuku/后台剪贴读取也应按实际包单独核对。
 4. **自动链接预览与后台剪贴。** 它们可能在用户未点击链接或正在使用其他 App 时处理数据。应核查应用内显著披露和同意时机；本政策不是这些交互的替代品。本次未修改交互。
 5. **系统备份。** 政策已如实描述主库可能被系统备份。若发布目标要求剪贴内容严格仅存本机，需另行调整系统备份规则，之后同步更新政策。
 6. **备份与删除。** 已存在的快照可能保留已删除记录；未对本地文件、远端备份或系统备份承诺联动删除。未承诺完整数据库/备份端到端加密。
@@ -104,3 +104,12 @@
 - 2026-09-29：随宿主设置介质替换，将源码依据及系统备份排除说明更新为 DataStore 的实际文件和规则；政策正文未因这次介质替换改变数据用途。
 - 2026-09-29：首次创建中英双语政策 HTML 与维护发布说明；根据当前 Play 配置和实际数据流披露自动链接联网、来源应用、后台剪贴、未加密备份、系统备份和 AdMob，避免套用不符合项目事实的通用模板。
 - 2026-09-29：按用户要求，将隐私政策和本说明从 docs 迁至项目根目录的 play-store/，集中存放 Google Play 上架准备材料；更新政策路径，避免与内部方案文档混放。该调整仅移动文件和更新路径，不改政策正文及 App 行为。
+
+
+## 2026-10-26 读取范围变更记录
+
+历史记录（2026-10-27 已回退）：当时按用户确认方案收窄过滤页查询，更新本地政策源文件与代码索引。历史来源、过滤名单和备份契约保持不变；此修改不表示政策网站已发布，构建/验证证据以 docs/clip_source_app_filter_plan.md 为准。
+
+## 2026-10-27 回退记录
+
+按用户要求恢复原安装应用列表及权限，同步中英文政策正文与本文件源码索引。移除历史/已保存包名补行，保留全部过滤规则、来源记录及备份数据；未发布政策网站，未提交 Play Console，也不把本次功能回退视为通过权限审核。

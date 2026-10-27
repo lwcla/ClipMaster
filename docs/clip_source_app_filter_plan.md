@@ -2,6 +2,341 @@
 
 # 按 App 过滤剪贴保存方案
 
+## 回退有限可见性与三类候选改动（2026-10-27）
+
+本轮状态：已完成。用户于 2026-10-27 批准按本节回退，明确保留已有过滤规则和用户数据、不影响其他功能。产品代码和测试已恢复固定基线，311 项 app 测试、7 项名单/备份测试、Debug 编译、Release/R8 和最终 AAB 权限检查通过。补丁、源文件副本及验证证据保存在忽略目录 `build/app-visibility-rollback-20261027/`。回退原因是历史来源及已保存包名补入列表后，会出现用户难以识别的默认图标、包名占位，并增加多源订阅、合并与失败处理的复杂度。下方实验和实现记录保留为历史证据，不再作为继续扩展的目标。
+
+### 回退目标与固定基线
+
+- 对照基线为 `7db791d107e9744a0f9e5779a4df5fcc96296e5a`（`发布：升级至 0.9.8 并同步双端发行记录`）。已核对该版本的过滤页、读取器和测试，确为此次权限收窄前的行为；恢复的是这个版本，不是更早的草稿保存、图标随扫描返回或 Shizuku 安装列表缓存方案。
+- 回退实施阶段位于 `codex/limited-app-visibility`，当时未创建提交或切换分支，暂存区为空；未安装 App、读取或更改用户数据。实施前已重新核对工作区，按文件清单恢复并审计其余路径，未处理无关改动。用户随后明确要求提交并推送主分支，提交范围见本轮变更记录。
+- 采用整轮功能回退：安装应用读取、权限、系统开关、候选规则及配套测试一起恢复。仅撤销历史合并但保留 Launcher 查询，会继续改变无桌面入口应用的可选范围；继续补历史图标或新增“旧规则”分组，又会增加用户已明确不需要的复杂度，因此均不采用。
+- 实施时逐文件或逐个差异块对照固定基线，不执行全仓硬重置、批量清理或改写 Git 历史。先保留本次修改的可恢复补丁/副本，再移除确认属于本轮的新增文件。
+
+### 恢复后的用户体验与数据边界
+
+| 项目 | 回退目标 |
+| --- | --- |
+| 应用范围 | 主进程通过 `getInstalledApplications` 读取当前用户下可读取的已安装应用；是否有桌面入口不再是入选条件，仍排除自身 |
+| 权限 | 恢复 `QUERY_ALL_PACKAGES` 及原用途注释，撤销此次新增的 `<queries>` 内 MAIN/LAUNCHER intent；保留 Shizuku 管理器的指定包查询，也保留 App 自身启动 Activity 的 MAIN/LAUNCHER 声明 |
+| 系统应用 | 恢复“系统应用”开关，默认关闭；按旧 `FLAG_SYSTEM` 规则分类，打开后包含系统应用，搜索及已选状态不绕过开关 |
+| 候选来源 | 只从当前成功扫描结果生成行；历史来源及已保存名单不再补行，已保存名单只决定勾选和已过滤优先排序 |
+| 名称和图标 | 名称使用当前安装信息，沿用旧规则原样保留标签，缺名为空，不以历史名或包名补主标题；图标继续使用既有行级 `AppIcon` / `AppIconManager`，资源读取失败时原默认图标仍保留，不承诺系统资源永不失败 |
+| 跨设备备份 | 恢复的未安装包名继续保存在完整过滤名单，但不显示为占位行；重新安装并刷新后，若符合系统开关范围则显示并保持勾选 |
+| 保存和数量 | 继续单项原子增删、即时生效、保存失败保持旧状态、返回等待已接受写入；保持 500 项上限。数量恢复“已过滤 X 个，已读取 Y 个 App”，X 是完整规则数，可能大于可见已勾选行数 |
+| 搜索、刷新和生命周期 | 保留原顶部搜索、包名/名称匹配、下拉刷新、成功空结果、失败保留旧列表、首次失败重试、隐藏取消扫描及旧结果隔离；系统范围变化按旧协调器重新扫描 |
+
+未安装规则只是隐藏，不自动删除；切换系统开关、搜索、刷新和修改其他条目都不能裁剪完整名单。由备份恢复的历史来源继续服务剪贴列表、搜索来源菜单等原有功能，过滤页退出历史订阅不等于删除来源表。此次没有新增持久化字段，回退不需要 Room/DataStore 迁移，也不重置过滤名单、备份格式、恢复并集、dirty 标记或系统 Auto Backup 配置。备份主方案仍为 [WebDAV 与本地备份方案](webdav_backup_plan.md)。
+
+剪贴监听、Shizuku 来源名称解析、正文保存、详情页过滤入口、共享图标缓存和其他页面保持修改前既有实现；不新增 Shizuku 图标传输或安装应用枚举。此前已完成的 0.9.8 发布、广告及备份功能不在回退范围。
+
+### 文件范围与复用决定
+
+已按过滤页 package → app 的 installedapps / sourceapp / 共享 widget → base/general 名单和来源 Repository → 全仓引用核对。复用固定基线中的安装读取器、扫描协调器、纯候选/搜索规则、`ClipSourceBlockWriteCoordinator`、名单 Repository、`ToggleFilterChip`、`SelectableAppRow` 和共享图标组件，不新建兼容层或替代类。以下路径均相对仓库根目录；花括号中的每项分别为一个文件。
+
+| 范围 | 实施操作 |
+| --- | --- |
+| `app/src/main/AndroidManifest.xml` | 仅撤销本轮权限和 queries 差异 |
+| `app/src/main/java/com/cla/clip/master/installedapps/{InstalledAppModels,InstalledAppModule,InstalledAppSelectionRules,PackageManagerInstalledAppReader}.kt` | 恢复原文件、`InstalledAppReader.loadInstalledApps(showSystemApps: Boolean = false)` 及 DI |
+| 同目录 `{LauncherAppModels,LauncherAppModule,LauncherAppSelectionRules,PackageManagerLauncherAppReader,AndroidLauncherAppPackageReader}.kt` | 移除本轮新增的 Launcher 专用实现 |
+| `app/src/main/java/com/cla/clip/master/ui/page/mine/{ClipSourceBlockInstalledAppCoordinator,InstalledAppListState}.kt` | 恢复系统范围、扫描状态和原协调器 |
+| 同目录 `{ClipSourceBlockCandidates,ClipSourceBlockSelectionRules,ClipSourceBlockListContentState,ClipSourceBlockSettingVm,ClipSourceBlockSettingPage}.kt` | 恢复基线行为、名称契约、数量文案接线和系统开关；移除 VM 的 ClipRepository 注入与历史订阅。恢复原扫描摘要候选快照，不把所有快照保护一并删掉 |
+| 同目录 `{ClipSourceBlockLauncherAppCoordinator,LauncherAppListState,ClipSourceBlockHistoryCoordinator,ClipSourceBlockCandidateSnapshot,ClipSourceBlockCandidatesPreview}.kt` | 移除本轮新增文件；三源输入身份、原子设置组合及多源失败归约随之撤销 |
+| `app/src/main/res/values/strings.xml`、`base/general/src/main/res/values/strings.xml` | 撤销本轮新增历史失败提示、数量变更及“仅供 Preview”注释；原系统开关资源重新用于页面 |
+| `app/src/test/java/com/cla/clip/master/installedapps/{InstalledAppSelectionRulesTest,PackageManagerInstalledAppReaderTest}.kt` | 恢复基线读取范围、名称、排序、失败与取消测试，移除对应 Launcher 测试 |
+| `app/src/test/java/com/cla/clip/master/ui/page/mine/{ClipSourceBlockInstalledAppCoordinatorTest,InstalledAppAutoLoadStateTest,ClipSourceBlockListContentStateTest,ClipSourceBlockSelectionRulesTest,ClipSourceBlockSettingStateTest,ClipSourceBlockWriteCoordinatorTest}.kt` | 恢复旧契约测试；移除本轮新建的 Launcher 协调器、Launcher 自动加载、历史协调器及三源候选快照测试 |
+| `app/src/test/java/com/cla/clip/master/sourceapp/AppIconModelContractTest.kt` | 恢复 InstalledApp 模型引用，继续保护业务模型不携带图片的既有约束 |
+| `tools/android-package-visibility-probe/` | 实施时移除仅服务此次实验的 `VisibilityProbe.java` 和 `build.ps1`；已核对无生产构建接入。历史文档保留实验结论并标明工具已随回退移除，不把历史命令列为现行验证入口 |
+
+接口按基线恢复：`buildBlockedSourceAppCandidates(blockedPackages: Set<String>, installedApps: List<InstalledAppInfo>)`；`filterClipSourceBlockCandidates(candidates: List<BlockedSourceAppCandidate>, searchQuery: String, showSystemApps: Boolean)`；候选恢复 `systemApp` 字段，扫描摘要快照回到 `ClipSourceBlockCandidates.kt`。不保留新旧两套接口。
+
+### 文档、政策与构建产物
+
+- 本文保留此次需求变化、已做实验及旧实现验证证据；完成回退后顶部状态改为“已完成”，明确当前行为是本节的安装列表方案，并将下方有限可见性实现标为已回退。
+- 实施时同步 `docs/source_app_icon_plan.md`、`docs/source_app_display_plan.md`、`docs/shizuku_clipboard_service_plan.md`、`docs/webdav_backup_plan.md`：恢复当前过滤页的 InstalledApp 接入说明，追加回退记录；不回退这些文件中更早或无关的共享图标、来源名称及备份设计。
+- 实施时同步 `play-store/privacy-policy.html` 的中英文应用列表段落，恢复读取安装应用列表的实际说明；更新 `play-store/PRIVACY_SETUP.md` 的代码路径、权限边界和最新验证状态。只更新本地源文件，不自动发布政策网站。
+- 先前生成的有限权限 `app-release.aab` 和其 Manifest 断言只是历史产物，不能当作回退版本交付或作为“当前不含全量权限”的依据。实施后重新构建并核对最终 Manifest，保留对应 R8 mapping；不因回退删除整个 `build/` 或其他任务产物。
+- 恢复 `QUERY_ALL_PACKAGES` 也意味着重新面对 Google Play 的受限权限要求；回退只恢复功能，不代表满足上架条件。本次不新增渠道分叉或替代绕行方案。依据：[Google Play 广泛应用可见性权限政策](https://support.google.com/googleplay/android-developer/answer/10158779)，2026-10-27 核对。
+
+### 日志与诊断计划
+
+恢复旧读取器/VM/写入协调器的现有日志，删除本轮专用历史订阅日志，不新建诊断系统。扫描开始/取消/跳过用 DEBUG，成功摘要用 INFO，可恢复降级用 WARN，读取或保存失败按既有 ERROR 分支；仅输出系统范围布尔值、数量、耗时、状态、操作号、异常类型与低敏 reasonCode。禁止输出应用清单、真实包名/名称、图标像素、搜索词、剪贴正文及备份内容。测试检查失败分类和取消传播，设备验证只看聚合日志；业务原子写入日志与实际变更语义不变。
+
+### 实施步骤与验证门禁
+
+回退实施使用 `superpowers:executing-plans` 在本会话逐项完成；当时按用户批准的以下任务执行，不自动提交。实施阶段保留原分支和工作区，复用已核对的仓库测试、架构、Compose、文档日志、备份和 Git 工作流；后续提交按用户追加授权执行。
+
+1. **固定范围并先恢复目标断言**
+   - [x] 重新核对 `git status --short`、暂存区及本节固定基线，保存相关差异和新增文件副本；确认待删除路径均在仓库内且仍属于本轮。
+   - [x] 在当前候选测试的可编译 fixture 上先恢复 `buildCandidatesIncludesOnlyScannedApps`：仅保存 `a`、仅扫描 `b` 时只能生成 `b`；再恢复 `buildCandidatesKeepsMissingNameEmpty` 的空名断言。先使用当前模型验证行为失败，不能把重命名导致的编译失败作为红灯证据。
+   - [x] 运行 `.\gradlew.bat :app:testDebugUnitTest --tests 'com.cla.clip.master.ui.page.mine.ClipSourceBlockSettingStateTest' --console=plain`，预期上述断言在当前三源实现下失败。
+2. **按基线恢复产品代码和原测试**
+   - [x] 按文件表恢复权限、InstalledApp 读取/状态/DI、页面和 VM；移除三源专用实现及零引用资源，保留原写入和共享 UI。保留或补齐所有实际修改方法、变量和关键分支的简体中文注释。
+   - [x] 同步恢复 InstalledApp、候选/搜索/内容、协调器、自动加载及图标模型契约测试；删除只证明废弃需求的测试，保留已有范围切换、取消、迟到结果、成功空结果和原子写入回归，不为旧逻辑新写一套实现镜像测试。
+   - [x] 运行 `.\gradlew.bat :app:testDebugUnitTest :app:compileDebugKotlin --console=plain`，预期 BUILD SUCCESSFUL、测试零失败；确认过滤页不再依赖历史 Repository 和 Launcher 专用类型。
+3. **核对数据安全、文档和发布产物**
+   - [x] 运行 `.\gradlew.bat :base:general:testDebugUnitTest --tests 'com.cla.clip.base.general.config.ClipSourceBlockRulesTest' --tests 'com.cla.clip.base.general.backup.BackupSettingsBlockedPackagesTest' --console=plain`，预期全部通过。另复核 app 原子写入测试仍覆盖修改可见项不丢失隐藏规则，未改名单 key、备份字段和恢复实现。
+   - [x] 按前节同步文档及双语政策，清理本轮独立探针源文件，并记录新旧方案及实验产物的历史身份。
+   - [x] 运行 `.\gradlew.bat :app:bundleRelease -PappDistribution=play --console=plain`，预期 BUILD SUCCESSFUL。直接检查最终 AAB：包含 QUERY_ALL_PACKAGES、保留 Shizuku 包查询、无此次新增的 queries/intent MAIN+LAUNCHER；自身启动 Activity 的 intent 不应被误删。构建成功不等于通过 Play 审核。
+   - [x] 运行 `git diff --check`，逐文件复核产品/测试与固定基线只存在有记录的必要差异，剩余文档差异只解释历史和本次回退；没有无关文件被回退。
+
+`repo-unit-test-gate` 结论：候选规则和状态恢复属于行为变更，已采用上述选择性 TDD，先观察 2 项业务断言失败，再恢复原回归测试并全量通过。未增加序列化/反射协议或模型，无需新 keep；Release/R8 已用于核对最终包及删除类型后的集成构建。纯开关布局不写镜像 JVM 测试，实际观感留给设备验收。
+
+### 回退执行与验证结果（2026-10-27）
+
+| 验证 | 实际结果 |
+| --- | --- |
+| 候选规则红灯 | `:app:testDebugUnitTest --tests 'com.cla.clip.master.ui.page.mine.ClipSourceBlockSettingStateTest'` 编译成功，7 项中恰有目标 2 项断言失败；证据 `rules-red.log` |
+| 完整 app 测试与 Debug 编译 | `:app:testDebugUnitTest :app:compileDebugKotlin` BUILD SUCCESSFUL，311 项测试，失败/错误/跳过均为 0；证据 `app-green.log`、`app-test-summary.json` |
+| 名单与备份兼容 | `:base:general:testDebugUnitTest` 指定 `ClipSourceBlockRulesTest`、`BackupSettingsBlockedPackagesTest`，7 项通过；app 的 8 项写入协调器回归包含隐藏规则保留、容量满仍可取消、失败保持和返回等待 |
+| Release/R8 | 与上一项合并运行 `:app:bundleRelease -PappDistribution=play`，BUILD SUCCESSFUL；证据 `backup-release.log`，BuildConfig 为 release 且 IS_PLAY_DISTRIBUTION=true |
+| 最终 AAB | 用 AGP 官方 protobuf 模型直接解析实际包中各模块 Manifest：QUERY_ALL_PACKAGES=true、MAIN_LAUNCHER_QUERY=false、SHIZUKU_QUERY=true、APP_LAUNCHER=true；证据 `final-aab-check.log`、`final-aab-manifest.txt` |
+| 范围及代码等价 | `git diff --exit-code 7db791d107e9744a0f9e5779a4df5fcc96296e5a -- app base shizuku feature play-store/privacy-policy.html` 通过；24 个恢复文件和 18 个移除文件均有清单与恢复副本 |
+| 无关文件保护 | 1261 个有效前快照路径无清单外变化；另 1 个中文 HTML 路径因 Git 转义未形成有效前摘要，改用起止 Git 差异及固定基线内容核对，不能将其计为前后摘要验证。详见 `file-audit-summary.json` |
+| 独立只读审查及差异检查 | 未发现 Critical/Important 功能或数据保留缺陷；审查发现的文档状态和证据表述已在本节补正；`git diff --check` 通过 |
+
+产物为 `app/build/outputs/bundle/release/app-release.aab`，SHA-256：`9C2CFAC5BCD42CE960CC8F1E82FEC4A2FEA93D0582FAF558F90B1B507DF9B407`；对应 `app/build/outputs/mapping/release/mapping.txt` 保留。该包是回退后的广泛权限版本，不代表可直接通过 Google Play 审核。
+
+执行取舍及验证边界：按已确认方案原地恢复，PowerShell 原生命令和本地证据目录代替 POSIX 工作流脚本；回退实施结束时尚未提交，恢复材料继续保留。回退文件按 Git 的 Windows 换行规则写回，Git blob 与基线相同；一次静止空索引锁已在确认无 Git 进程后移入证据目录，索引条目核对未改变，当时没有新增暂存内容。沿用原类型、方法及变量的简体中文注释，不新增业务抽象、运行日志或备份迁移。未操作设备、未覆盖安装、未访问真实剪贴内容或过滤设置；真机 UI/OEM 行为保留为后续验收。R8 仍报告既有 `ClipboardListener` / `AppOpsManager$OnOpNotedListener` 隐藏接口类型警告，本次未修改该链路；不把构建成功等同于 Shizuku 的全机型运行验证。
+
+### 验收重点与后续待办
+
+- 合成跨设备场景：规则含当前未安装的 `a`，列表只扫描到 `b`，界面不出现 `a` 的默认图标/包名行；切换 `b` 不删除 `a`，模拟重新安装 `a` 后仍是已过滤状态。
+- 有安装信息但无桌面入口的普通应用仍进入候选；系统应用默认隐藏，开启后出现，已保存和搜索命中不能绕过关闭状态。JVM 验证范围规则，真实 PackageManager 行为由设备验收补充。
+- 刷新成功空结果清除旧行；刷新失败保留旧行；切换系统范围后迟到成功/失败不能覆盖新扫描；搜索不触发扫描。这些边界优先恢复固定基线的既有测试。
+- 设置未读到或读取失败时禁用修改，保存失败保持已提交状态，返回等待写入；完整名单计数可能包括隐藏规则，这是恢复旧实现的已知取舍，不新增清理/管理入口。
+- 后续设备验收覆盖系统开关、无桌面入口应用、刷新/返回、图标及生命周期；使用合成测试数据，不自动覆盖用户安装或清空真实数据。Google Play 分发资格另行处理，不作为本次回退执行的前置确认。
+
+### 本轮变更记录
+
+- 2026-10-27：用户追加授权提交并推送主分支。同步远端后确认本地 `main`、`origin/main` 和回退基线一致；产品代码、测试及政策正文已与该基线一致，本次提交范围仅为过滤主方案、来源图标/名称、Shizuku、备份方案及隐私维护说明共 6 份文档。提交前复核差异与既有 318 项测试、Debug、Release/R8 和 AAB 证据；本轮只改文档，不新增测试、日志、数据迁移或发布政策网站。
+
+- 2026-10-27：用户批准后完成整轮回退及配套文档/中英文政策同步，恢复 24 个文件、移除 18 个本轮新增文件；311+7 项测试、Debug、Release/R8、AAB 与范围审计通过。既有规则、来源记录及备份数据未被访问或修改；回退实施结束时仅保留文档审计差异，当时未提交或发布。
+
+- 2026-10-27：按用户要求编写整轮回退草案，固定修改前提交与文件范围，恢复已安装应用扫描和系统开关，撤销历史/已保存包名补行，并明确隐藏规则仍保留、测试恢复、文档政策和构建产物边界。原因是默认图标/包名占位体验不佳，三源方案超出用户所需复杂度。本轮仅编辑方案文档，未执行回退。
+- 2026-10-27：完成方案自检，核对基线接口、测试文件和保留隐藏规则的既有回归；`git -c core.safecrlf=false diff --check` 通过，编辑前后文件摘要对比确认本轮只改变本文件。没有组件/类/方法、代码注释、运行日志或备份代码变化；本次为文档任务，未运行单测、编译或 R8，无其他规则例外。
+
+## 有限应用可见性与三类候选合并修改方案（2026-10-26）
+
+本轮状态：已废弃（历史实现，2026-10-27 已回退代码）。用户曾确认候选采用“有桌面入口的应用 + 已出现的剪贴来源 + 已保存的过滤项”，移除系统应用开关、保留有桌面入口的系统应用，并于 2026-10-26 在设备实验后授权按本方案修改代码。本节仅保留当时实现和验证证据；当前代码已恢复安装应用扫描，回退验证以上方 2026-10-27 章节为准，不再继续扩展本节方案。
+
+**执行说明：** 使用 `superpowers:executing-plans`、仓库测试门禁及选择性 TDD 执行下面五项任务。保留前轮未提交方案与探针，在本地 `codex/limited-app-visibility` 分支实现；不自动提交、合并或发布。进度与验证输出记录于忽略目录 `build/limited-app-visibility/`。
+
+### 有限可见性设备验证（2026-10-26）
+
+历史说明：独立探针源码已于 2026-10-27 随回退移除；以下工具路径和命令记录当时实验，现不作为仓库可执行入口。原始输出及源码副本保留在本地忽略的构建/回退证据目录，不参与生产构建。
+
+测试状态：已完成。仅增加独立 Android 测试探针，不修改 ClipMaster 的 Manifest、过滤页、数据库或安装包。此状态只表示下面的设备实验完成，当时产品代码尚未实施，当前状态以文档顶部为准。
+
+- 测试设备：已连接的三星 SM-G9730，Android 12 / API 31，当前用户 0；探针 targetSdk 36，使用普通独立应用 UID。
+- 对照组：相同 Java Instrumentation 分别打包为 `all`（声明 `QUERY_ALL_PACKAGES`）、`launcher`（只声明 `MAIN + LAUNCHER` queries）、`none`（两者均无）。三个测试包均无桌面入口，避免污染结果。
+- 测试路径：按包名去重桌面查询，读取 `ApplicationInfo.loadLabel` 与 `getApplicationInfo`；图标复现现有 `AppIconManager` 的桌面入口优先、应用图标兜底路径，并额外验证 `getApplicationIcon`。将 Drawable 绘制为 64 × 64 Bitmap，检查非透明像素；比较三组包名、名称与图标摘要。
+- 权限证据：检查最终 APK Manifest、运行时请求/授权权限、实际 UID 与目标应用 UID；不调用 `adoptShellPermissionIdentity`，不使用 Shizuku/root 查询，不以 ADB shell 的包查询结果代替普通应用行为。
+- 复用与职责：源码位于 `tools/android-package-visibility-probe/`，构建产物放在忽略的 `build/package-visibility-probe/`；构建脚本只负责打包，Instrumentation 只负责平台读取验证。现有业务图标管理器依赖宿主与缓存，不直接装入独立包；本测试验证相同系统 API 路径，不冒充完整生产组件集成测试。
+- 日志与诊断计划：INFO 仅输出模式、SDK、UID、权限布尔值、条目数量与带同次随机盐的 SHA-256 摘要；失败输出计数与异常类型，不记录应用清单、真实名称、图标原图或剪贴数据。可选诊断输出按候选序号排列的图标摘要和 Drawable 类型，仅用于比较差异，不输出身份。禁止读取用户正文、联网、修改系统权限；测试后卸载仅本次安装的探针。
+- 单元测试门禁：本轮新增的是设备测试代码，没有产品纯逻辑修改；JVM mock 无法验证系统可见性，因此不新增 JVM 测试或修改生产代码做 TDD。直接编译独立 APK 并在真实 PackageManager 上做三组对照。完整宿主编译、release/R8 与过滤页集成验证留在后续实现阶段。
+- 结果与边界：本机实测通过“桌面应用元数据可读取”验证；单台 Android 12 结果不代表其他系统版本、工作资料空间、OEM 或不可见的历史来源元数据。无桌面入口的历史/已保存包名仍需名称和图标兜底，不能据此承诺可读。
+
+| 对照模式 | `QUERY_ALL_PACKAGES` 请求/授权 | 桌面入口/去重包名 | 名称读取成功 | 应用图标/桌面优先图标绘制成功 | 默认占位图标/单项失败 |
+| --- | --- | --- | --- | --- | --- |
+| 无全量权限、无 queries | 否/否 | 16/16 | 16 | 16/16 | 0/0 |
+| 仅 MAIN + LAUNCHER queries | 否/否 | 143/133 | 133 | 133/133 | 0/0 |
+| 全量权限 | 是/是 | 143/133 | 133 | 133/133 | 0/0 |
+
+- 包名与名称：有限组和全量组的集合摘要、名称映射摘要完全一致；没有名称退化为包名的条目。133 个候选中包含 16 个系统应用。无声明组只能看到 16 个桌面包，证明实验实际受到可见性过滤，而非使用 shell 特权枚举。
+- 图标：133 个应用均可通过两条路径获取并绘制非透明图标，且不是系统默认占位图。但有限组与全量组有 23 个像素摘要不同：20 个的类型由有限组 `ShadowDrawable` 变为全量组 `BitmapDrawable`，另 3 个均为 `BitmapDrawable` 而像素不同。因此结论是“图标可读”，不能写为“图标外观完全相同”。
+- 图标差异复核：追加同包名、同 UID 10808 的有限 → 全量 → 有限 A/B/A 测试；三次实际权限分别为 false/true/false，包名与名称摘要始终相同，23 个图标差异随声明切换复现；前后有限组图标摘要相同。同一个 Drawable 连续绘制无差异。已排除不同测试包身份与短时重复绘制不稳定，尚未确定三星框架内部处理差异的具体原因，不将其猜测为动态时钟或加载失败。
+- 验证命令：`& .\tools\android-package-visibility-probe\build.ps1 -IncludeSamePackageControl` 通过 javac、D8、aapt2、zipalign、apksigner；脚本反查最终 APK 的权限和 queries。设备使用 `adb -s <serial> shell am instrument -w -e salt <同次随机盐> [-e diagnostics true] <探针包名>/com.cla.clip.visibilityprobe.VisibilityProbe`，全部报告 `status=PASS` 与 `INSTRUMENTATION_CODE: -1`；追加主机断言检查权限、UID、数量和摘要关系通过。
+- 复现边界：先用 `adb ... shell pm list packages com.cla.clip.visibilityprobe` 确认包名未占用，再以 `adb ... install -t <模式.apk>` 安装三组；只允许对本次创建的包用 `install -r -t sameall.apk` 与 `launcher.apk` 做同包名对照，不覆盖未知既有安装。原始聚合报告和最终 Manifest 位于忽略目录 `build/package-visibility-probe/`，汇总为 `verification-summary.json`；同次摘要比较必须使用同一个随机盐。脚本不自动执行安装/卸载。
+- 清理：本次三个探针已全部卸载，精确前缀复查结果为空。没有安装或覆盖 ClipMaster，没有修改其生产权限或数据。
+- 后续待办：产品实施时完成宿主过滤页集成与其他 Android 版本验证；对三星上 23 个图标的显示差异做 UI 对照，确认呈现可接受后再决定是否需要单独适配。不为追求像素一致恢复全量权限。
+
+**目标：** 收窄系统查询权限并完整管理三类来源的包名过滤规则。
+
+**架构：** 桌面读取、历史订阅和名单写入各由单一职责协作者负责，纯函数合并为一致页面快照；页面复用共享组件，只处理展示和事件。
+
+**技术栈：** Kotlin、PackageManager、Compose、Coroutines/Flow、既有 Room/Preferences DataStore 与 JUnit，不新增依赖。
+
+**需求依据：** 本次用户确认的三类候选方案，以及本节“目标、范围与取舍”“候选合并与用户体验”；按仓库约定把设计与实施任务集中在原主文档，不另建重复方案。
+
+### 目标、范围与取舍
+
+- 目标：移除宿主 `QUERY_ALL_PACKAGES` 广泛包可见性权限，通过 `MAIN + LAUNCHER` 查询桌面入口，并让历史来源与完整已保存名单补齐候选，使用户可以预先过滤常用应用，也可以管理无桌面入口、不可见或已卸载来源的旧规则。
+- 已确认：移除“系统应用”控件；不再通过该开关发起扫描、裁剪候选或维护 `showSystemApps` 状态；继续勾选立即生效、已过滤优先、搜索和下拉刷新。
+- 已确认的系统应用边界：移除系统分类开关及其筛选逻辑，不按系统标记排除应用。有桌面入口的系统浏览器、相册等仍进入候选；结合已确认的三类并集，系统组件如果已在历史来源或过滤名单中，也可管理。用户于 2026-10-26 明确选择“移除开关，保留有桌面入口的系统应用”。
+- 构建范围：Debug/Release、domestic/play 共用同一有限可见性实现，避免两套过滤页与名单语义。用户已授权按此方案实现，不保留私有渠道全量扫描分支。
+- 不改后台剪贴读取、来源识别、剪贴保存和详情页屏蔽行为；不通过 Shizuku、shell、隐藏 API 或远程服务重新取得完整安装列表；不恢复手动输入包名、清空名单、底部确认或系统应用分类入口。
+- 无新依赖、Room 表、DataStore key、备份版本或 keep 注解。当前实施修改宿主 Manifest、过滤页及本地隐私政策源文件；独立设备实验仍作为平台行为证据，未发布对外政策。
+
+备选比较：只展示桌面应用改动最小，但无法管理不可见的旧规则；只展示历史来源无需扫描，却不能提前选择从未出现的常用应用。用户选择三类并集，代价是需要明确合并优先级、分源加载和失败状态。Google Play 对实际数据用途仍有审核要求，删除一个权限不等于保证上架通过。
+
+### 当前代码与复用结论
+
+| 已有能力 | 本轮使用方式 |
+| --- | --- |
+| `installedapps/PackageManagerInstalledAppReader.kt` 与可注入适配接口 | 在原职责位置收窄为桌面入口读取，保留 IO、取消传播、成功空列表和低敏失败语义；不另建平行全量读取器 |
+| `ClipRepository.loadAllSourceApps()` | 直接复用其 `Flow<List<SourceAppCandidate>>`，底层是 `SourceAppDao.observeCandidates()` 的包名/名称轻量投影和等值去重，不读取剪贴正文或逐条查询来源 |
+| `ClipSettingsRepository.blockedPackages`、原子 add/remove、`ClipSourceBlockRules` | 继续作为过滤名单和包名规范化的唯一事实来源；500 项上限只约束保存，不裁剪可选候选 |
+| `ClipSourceBlockCandidates.kt`、`ClipSourceBlockSelectionRules.kt` | 扩展原纯函数做并集、名称选择、去重、排序与搜索，不把规则塞入 ViewModel 或 Compose |
+| 扫描协调器、写入协调器、搜索返回规则 | 保留可见时启动/离页取消、写入独立、旧结果保护和返回等待；删除系统范围状态 |
+| `SelectableAppRow`、`SearchTopBar`、`SecondaryPageScaffold`、`AppIcon` | 继续复用页面骨架、选择行、搜索及可见行按需图标；不新增通用 UI 组件 |
+
+复用检查按过滤页 package、app 的 installedapps/sourceapp/widget、base/general 的 Repository/DAO/规则、全仓调用方依次完成。现有候选构建刻意只收扫描结果；旧测试也禁止保存名单占位，这些断言必须随新需求迁移。现有内容归约使用 `candidateCount == loadedAppCount`，三类合并后不再成立，必须替换为输入快照版本/就绪状态校验。`SourceAppDao` 的查询已满足本轮，无需新 DAO 方法或 schema 迁移。
+
+### 桌面入口读取与权限
+
+1. 从宿主 Manifest 删除 `QUERY_ALL_PACKAGES` 及对应 `tools:ignore`，保留 Shizuku 指定包查询，在 `<queries>` 增加 `android.intent.action.MAIN` 与 `android.intent.category.LAUNCHER` 的 intent 声明。
+2. 主进程用 `queryIntentActivities(Intent(ACTION_MAIN).addCategory(CATEGORY_LAUNCHER), 0)` 获取候选；API 33+ 使用等价 `ResolveInfoFlags.of(0)` 重载。不能加 `MATCH_DEFAULT_ONLY`，桌面入口不以 DEFAULT 为必要条件；不使用 `MATCH_DISABLED_COMPONENTS`、跨资料空间或全量安装包枚举兜底。
+3. 先提取有效 `activityInfo` 与包名、排除自身并按包名去重，再从代表条目的 `ApplicationInfo` 读取应用标签。多 Activity/alias 同包只生成一行；代表入口按 Activity 名稳定选择；不把 Activity 别名当作应用名称。
+4. 名称资源读取失败时保留包名条目、让合并层使用历史名/包名兜底；真实整个查询失败才返回 Failed。取消异常必须继续传播，单项失败不能吞掉取消或让整个页面不可用。
+5. 删除 `showSystemApps` 参数和 `isSystemApp` 展示字段，不再读取系统标记决定范围。Launcher 查询成功零结果是正常成功，不能推断权限不足；没有查询到也不能断言已卸载。
+6. 候选扫描不获取图标、不写入 `source_apps`。图标沿用 `AppIconManager` 的当前设备读取和默认图标；包名已知不代表元数据可见，名称/图标读取失败不阻止设置过滤。
+
+### 候选合并与用户体验
+
+设 L 为本次可用桌面应用，H 为来源表的历史投影，B 为完整已提交名单：候选包名为 `normalize(L ∪ H ∪ B) - 自身`。各项使用 `ClipSourceBlockRules.normalizeSinglePackage`，不使用有 500 项裁剪的集合规范化方法限制候选规模；空/非法来源不生成行，大小写不合并。
+
+| 场景 | 目标行为 |
+| --- | --- |
+| 同一包出现在两类或三类数据中 | 按包名只显示一行，选择状态仅由 B 决定 |
+| 有桌面入口、无历史、未过滤 | 可提前勾选过滤 |
+| 无桌面入口、有历史来源 | 仍可勾选；不需要补充安装查询权限 |
+| 只在已保存名单中 | 显示包名和默认图标，允许取消过滤 |
+| 已卸载或当前不可见 | 不自动删除名单；不将查询失败标注为“已卸载” |
+| 从备份恢复的历史来源或包名规则 | 合并后可展示并管理，无需在新设备先产生一次剪贴 |
+| 取消一个仅来自 B 的项目 | 写入成功并收到已提交名单后，该行退出候选；写入失败保留原选中行 |
+| 删除剪贴记录后来源表仍有该包 | 继续作为历史候选；本轮不增加来源表清理 |
+| 未知来源的空包名 | 不参与过滤候选，不能创建“屏蔽所有未知来源”规则 |
+
+- 历史口径：复用已有 `source_apps` 记录，含备份恢复的来源；不要求当前仍有剪贴引用。旧版本可能存在预热产生的来源缓存，因此 UI 不声称每项都能证明曾实际复制，不做全剪贴扫描、数据清洗或新证据表。
+- 名称优先级：当前桌面应用的有效名称 → 历史来源有效名称 → 包名。名称是否为未知可复用 `isUnknownClipSource(packageName, name)`，但它只参与名称选择，不能因名称未知排除有效包名。选中的真实名称保留原字符串，不截断或写回历史数据。
+- 一份统一列表，不新增来源 Tab、系统分类或三组重复列表。已过滤优先；组内以最终展示名称使用既有中文 Collator 排序，名称相同用包名稳定排序；Lazy key 始终为包名。
+- 数量摘要改为“已过滤 X 个，可选 Y 个 App”：X 是完整已提交名单数量，Y 是当前已发布的合并候选数，均不随搜索词变化。部分数据失败时附明确提示，Y 表示当前可用候选，不能标为完整安装总数。
+- 普通态保留“剪贴过滤”标题与搜索按钮；移除数量行右侧系统应用胶囊。行继续显示图标、名称和包名；名称兜底为包名时可不重复副标题。搜索匹配最终展示名及包名，仅裁剪 UI，不重扫或改名单。
+- 保留立即提交、行级保存进度、失败提示和离页等待；不从候选列表反推/覆盖整个名单。新包超过 500 项时沿用既有拒绝提示，取消已有项不受上限阻止。
+
+### 数据流、状态与生命周期
+
+数据流为：桌面查询成功快照 L、历史来源订阅 H、已提交设置 B → 后台纯候选合并 → 原子页面快照 → 搜索裁剪 → 共享选择行。点击选择仍走原写入协调器 → DataStore 原子增删 → B 回流；扫描和合并不能触发写库、联网或额外备份。
+
+- 页面 `LifecycleResumeEffect` 保持显式可见入口。桌面扫描同会话首次成功后不自动重复，首次失败/取消可在重新可见时重试；下拉主动重扫。应用安装/卸载变化通过刷新或新页面会话更新，不新增常驻包广播监听。
+- 历史 Room Flow 只在页面 RESUMED 时收集，onHidden 立即取消，重新可见时重新订阅；不从 ViewModel init 启动长期观察。共享来源 Repository 不修改为全局常驻流。
+- 增加 feature-local 历史来源协调器，与扫描和写入分工：负责订阅、最后成功快照、失败、重试和取消；不持 Context、不做候选合并、不修改名单。下拉刷新同时重试失败的历史订阅；已健康观察的历史流无需反复重建。
+- 历史加载用 `Pending`、`Ready(items)`、`Failed(previousItems?, reasonCode)` 表达，区分“成功零条”和“从未成功”。失败保留本次页面内的最后成功值；下一次成功空列表必须真的移除旧历史项。旧订阅晚到结果不得覆盖当前会话。
+- 扩展 `BlockedSourceAppCandidateSnapshot` 为完整发布快照：候选、对应的已提交 B、桌面摘要身份、历史状态身份和发布版本一起传递。选择状态和排序使用同一 B 版本，不能组合一版候选与另一版勾选。状态版本只在内存，不新增外部协议。
+- 删除候选数等于桌面数的就绪判断。慢合并/慢收集者通过来源快照身份或单调内存版本判断结果是否对应最新输入；相同数量、名称、时间的不同刷新仍不能造成“永久加载”。合并在 Default 调度器执行，离开可见状态后停止无必要合并。
+- 加载/失败优先级：已有匹配候选则展示并允许使用，附加载或分源错误；没有匹配候选且必要数据尚在读取时显示加载；必要数据失败且无匹配项时显示失败重试；全部必要数据成功且已完成当前合并后，才显示无候选/无搜索结果。部分成功的列表不被整个扫描失败清空。
+- B 首次未到达或读取失败时禁用所有名单修改，绝不把未知设置当成空名单继续写；最后成功值可只读展示。B 已可靠读取而 L/H 失败时，B 的占位行仍可取消过滤。保存已接受后不因扫描隐藏/取消而取消写入。
+- 性能边界：只读取应用级包名/名称集合，不加载全部剪贴实体、图片或完整来源对象；后台合并，UI 使用 Lazy 列表。来源集合大小以不同应用数而非剪贴条数增长，当前不新增分页或数量截断；后续出现异常大来源集合再按测量结果优化。
+
+### 文件与职责
+
+下表路径以仓库根目录为基准；同一目录花括号中的文件逐个适用。
+
+| 文件 | 拟调整 |
+| --- | --- |
+| `app/src/main/AndroidManifest.xml` | 删除广泛权限，声明桌面入口查询；保留指定 Shizuku 包 |
+| `app/src/main/java/com/cla/clip/master/installedapps/{InstalledAppModels,PackageManagerInstalledAppReader,InstalledAppSelectionRules,InstalledAppModule}.kt` | 将读取器、模型和 DI 一并明确命名为 Launcher 职责；拟为 `LauncherAppReader`、`LauncherAppInfo`、`LauncherAppLoadResult`、`PackageManagerLauncherAppReader`、`LauncherAppPackageReader`，相关文件同步重命名；不保留兼容全量 API |
+| `app/src/main/java/com/cla/clip/master/ui/page/mine/ClipSourceBlockCandidates.kt` | 扩展并集合并、名称兜底和排序，保留独立纯规则职责及快照模型 |
+| `app/src/main/java/com/cla/clip/master/ui/page/mine/ClipSourceBlockSelectionRules.kt` | 删除系统分类筛选，仅名称/包名搜索 |
+| `app/src/main/java/com/cla/clip/master/ui/page/mine/{ClipSourceBlockInstalledAppCoordinator,InstalledAppListState}.kt` | 去掉系统范围参数/状态，并重命名为 `ClipSourceBlockLauncherAppCoordinator`、`LauncherAppListState`；保留扫描 Job 与摘要身份保护 |
+| `app/src/main/java/com/cla/clip/master/ui/page/mine/ClipSourceBlockHistoryCoordinator.kt`（新增） | 容纳 `ClipSourceHistoryState` 及小型历史订阅协调器，统一可见、取消、重试与旧快照保护 |
+| `app/src/main/java/com/cla/clip/master/ui/page/mine/ClipSourceBlockSettingVm.kt` | 注入现有 ClipRepository，仅编排三个输入、生命周期和已提交状态；不塞入平台查询、名称/排序规则 |
+| `app/src/main/java/com/cla/clip/master/ui/page/mine/{ClipSourceBlockListContentState,ClipSourceBlockSettingPage}.kt` | 调整完整就绪/部分失败归约、移除系统胶囊、接入一致快照和数量口径 |
+| `app/src/main/res/values/strings.xml`、`base/general/src/main/res/values/strings.xml` | 资源化可选数量、桌面/历史读取失败等新文案；零引用后清理系统开关及旧安装数量文案 |
+
+关键接口约定：`LauncherAppReader.loadLauncherApps(): LauncherAppLoadResult`；纯合并 `buildBlockedSourceAppCandidates(blockedPackages: Set<String>, launcherApps: List<LauncherAppInfo>, historySources: List<SourceAppCandidate>, selfPackageName: String): List<BlockedSourceAppCandidate>`；搜索 `filterClipSourceBlockCandidates(candidates: List<BlockedSourceAppCandidate>, searchQuery: String): List<BlockedSourceAppCandidate>`。`BlockedSourceAppCandidate` 保留包名、最终显示名和已提交过滤状态，移除 systemApp，不持图像/数据库实体。
+
+具体文件迁移为 `InstalledAppModels.kt → LauncherAppModels.kt`、`PackageManagerInstalledAppReader.kt → PackageManagerLauncherAppReader.kt`、`InstalledAppSelectionRules.kt → LauncherAppSelectionRules.kt`、`InstalledAppModule.kt → LauncherAppModule.kt`；同包完成迁移，不新建平行领域包。`LauncherAppInfo` 字段为 `packageName: String`、`appName: String`，结果类型沿用 Success 的 apps/elapsedMs/loadedAtMillis 和 Failed 的 reasonCode/elapsedMs/loadedAtMillis；候选字段沿用 `packageName: String`、`appName: String`、`savedBlocked: Boolean`，其中 appName 是本页最终显示名，最末兜底为包名。
+
+历史协调器输入 `observeSources: () -> Flow<List<SourceAppCandidate>>`、页面 scope 和低敏诊断回调，输出 `StateFlow<ClipSourceHistoryState>`，提供 `onVisible()`、`onHidden()`、`retry()`；无数据状态与最后成功空列表必须可区分。既有 `ClipSourceBlockWriteCoordinator`、搜索返回 reducer、DAO、Repository 和共享图标组件原则上复用，不因候选来源扩展而重写。
+
+### 实施任务与测试门禁
+
+实现时使用 `superpowers:executing-plans` 逐项执行；用户已授权实现；代码与自动化验证已完成；各项证据见执行记录，未勾选的设备覆盖不宣称完成。按 `$repo-unit-test-gate`，读取/合并/状态/失败契约必须选择性 TDD；删除纯 UI 控件不写镜像测试，以编译、Preview 和设备验收覆盖。所有新增或修改类型、方法、变量、回调和关键分支须补贴近代码的简体中文注释。
+
+审查重点：多 Launcher alias 的同包去重（任务 1）；只有旧名单且元数据不可见的行仍可取消（任务 2/4）；历史成功空结果覆盖旧快照（任务 3）；设置未读取与空名单不能混淆（任务 3）；慢收集者及相同摘要刷新不能让列表永久加载（任务 3）。这些边界均有对应测试，不以理想正常路径替代。
+
+1. **桌面应用读取与权限收窄**
+   - [x] 将 `app/src/test/java/com/cla/clip/master/installedapps/{PackageManagerInstalledAppReaderTest,InstalledAppSelectionRulesTest}.kt` 迁移为 Launcher 对应测试；先覆盖多入口去重、自身排除、系统桌面应用保留、空查询成功、标签失败保留包名、查询失败和取消传播，确认旧契约失败。
+   - [x] 按“文件与职责”迁移读取器、接口、DI、调用方和 Manifest；单次查询后去重再取标签，禁止全量枚举兜底。测试迁移同时修正 fake 签名，不留下旧 Boolean API。
+   - [x] 运行 `.\gradlew.bat :app:testDebugUnitTest --tests 'com.cla.clip.master.installedapps.*' :app:compileDebugKotlin --console=plain`，预期 BUILD SUCCESSFUL、相关测试零失败；用静态引用检查确认业务读取器不再调用 getInstalledApplications。
+2. **三类候选合并与搜索**
+   - [x] 更新 `app/src/test/java/com/cla/clip/master/ui/page/mine/{ClipSourceBlockSettingStateTest,ClipSourceBlockSelectionRulesTest,ClipSourceBlockWriteCoordinatorTest}.kt` 的旧“仅扫描结果”断言；先验证 L={a,b}、H={b,c}、B={c,d} 得到四个包、c/d 在前，b 用当前有效名，c 用历史名，d 用包名，未知空包/自身不生成行且原集合未改写。
+   - [x] 添加重名稳定排序、500 项上限不截断候选、中文/英文名称搜索、包名搜索、缺名称默认图标接线边界；保存名单仍按大小写敏感完整包名匹配。
+   - [x] 实现纯合并和搜索，再运行 `.\gradlew.bat :app:testDebugUnitTest --tests 'com.cla.clip.master.ui.page.mine.ClipSourceBlock*Test' --console=plain`；规则变化的旧测试要改成新契约，不简单删除覆盖。
+3. **分源加载与生命周期**
+   - [x] 新增 `app/src/test/java/com/cla/clip/master/ui/page/mine/ClipSourceBlockHistoryCoordinatorTest.kt`，并迁移 Launcher 协调器及自动加载测试。覆盖不可见不订阅/不扫描、隐藏立即取消、重进恢复、失败保留旧值、成功空覆盖旧值、旧任务迟到忽略、刷新重试但不重建健康历史订阅。
+   - [x] 更新 `ClipSourceBlockListContentStateTest.kt`，新增 `ClipSourceBlockCandidateSnapshotTest.kt`：候选数大于桌面数、相同数量/时间刷新、慢合并、慢收集者、L 失败但 B/H 可用、首次 B 失败禁写、空搜索结果与读取失败区分、名单回流与排序勾选一致。
+   - [x] 实现历史协调器、ViewModel 输入组合和原子快照，删除旧数量等式和系统范围状态；运行上一条 app 定向测试命令并补 Launcher/历史/快照测试，确认失败回归转绿。
+4. **页面与规则编辑体验**
+   - [x] 移除胶囊、状态、参数、日志字段与无引用资源，数量改为 X/Y；复用现有选择行、搜索、默认图标和返回等待；调整页面 Preview 覆盖仅 B、缺名、部分失败、无结果及长包名。
+   - [x] 回归“只在 B 的行取消成功后消失、失败不消失”“提交期间返回等待”“搜索清空不改名单”“点击一行不丢其他不可见规则”。复用已有写入协调器测试；若需要新增派生规则，先为该规则增加失败测试。
+   - [ ] 运行 `.\gradlew.bat :app:testDebugUnitTest :app:compileDebugKotlin --console=plain`；设备验证下拉、搜索/IME 返回、横竖屏、小屏/大字体、图标不可读和选择即时生效。
+5. **备份、跨页面与最终 Play 包验证**
+   - [x] 运行 `.\gradlew.bat :base:general:testDebugUnitTest --tests 'com.cla.clip.base.general.config.ClipSourceBlockRulesTest' --tests 'com.cla.clip.base.general.backup.BackupSettingsBlockedPackagesTest' --console=plain`，证明名单精确匹配、恢复并集/上限未回归；无需新增 schema 或备份迁移测试。
+   - [ ] 真机覆盖 API 24/29 与 API 30+/36 的 Launcher 查询、同包多入口、无入口历史、卸载后旧规则、禁用入口、历史/恢复包仅显示默认图标；移除全局权限后回归搜索来源、列表/详情名称图标及 Shizuku 管理器查询。无包可见性不能被当作未安装，更不能清空规则。
+   - [x] 运行 `.\gradlew.bat :app:bundleRelease -PappDistribution=play --console=plain`，核对最终 AAB 合并 Manifest 无 QUERY_ALL_PACKAGES 且有 MAIN/LAUNCHER 查询，检查依赖清单没有重新带入权限；签名或广告配置缺失时记录实际阻断，不能用 Debug 编译替代正式包验证。无新反射模型，不增加 keep；Release 构建同时覆盖 R8。
+   - [x] 实现完成后同步本主文档状态、共享来源图标/名称文档的接入影响、Shizuku 文档引用、备份说明和 `play-store/{privacy-policy.html,PRIVACY_SETUP.md}` 的读取范围；对外政策必须对应真实已发布行为，不能在仅规划阶段提前改成已实施。
+   - [x] 执行 `git diff --check` 并只审查本任务差异；提交或发布遵循后续用户指示，不混入其他工作区改动。
+
+### 日志与诊断计划
+
+| 流程 | 级别/时机 | 允许字段与验证 |
+| --- | --- | --- |
+| 桌面应用扫描 | DEBUG 开始/正常取消，INFO 成功，WARN 可恢复失败 | 页面内 scanId、阶段、候选数量、标签失败数量、elapsedMs、固定 reasonCode；每轮只汇总一次标签失败，沿用已有封装并删除 showSystemApps |
+| 历史来源订阅 | DEBUG 可见订阅/取消，WARN 失败，INFO 失败后恢复 | sessionId、是否有旧快照、数量、固定 history_sources_read_failed、异常类型；正常每次数据库发射不打日志 |
+| 名单写入 | 复用既有开始/成功/幂等/拒绝/失败日志 | operationId、add/remove、changed、reasonCode；不改变持久化和后台过滤日志 |
+| 候选合并/搜索/滚动 | 不新增逐项或逐次日志 | 使用合成单测和 UI 快照定位；避免输入、重组和名称变化形成噪声 |
+
+日志正文使用简体中文，禁止记录包名、应用名称、安装/历史名单、搜索词、剪贴正文、图标、备份内容或异常 message/原始堆栈。通过成功、零结果、失败、取消和恢复场景检查低敏阶段字段；实现沿用扫描/写入低敏日志，并新增历史订阅开始、取消、失败和恢复汇总；不记录正常逐次数据库发射。
+
+### 数据、备份与混淆边界
+
+- L、合并候选、快照版本、来源加载状态和图标均可重建，仅页面/进程内存使用，不持久化、不备份、不引入 dirty 或后台调度。
+- H 继续复用已有来源表及原备份白名单；B 继续使用 `blocked_clip_source_packages`、恢复并集和 500 项上限，不改变数据协议、加密、Auto Backup 排除或用户旧规则。卸载应用后保留规则，重装同包仍按原规则过滤。
+- 本轮只读复用 H，不能为桌面扫描结果补写来源表，不能为了凑名称新增持久化缓存。完整备份契约以 [备份主方案](webdav_backup_plan.md) 为准。
+- 新增/调整模型只在编译期调用或页面内存流转，不依赖反射、序列化类名或外部 Intent 字段，不新增 Keep；Manifest 查询规则属于平台声明，必须通过最终包检查与真机验证。
+
+### 开放问题与验收边界
+
+- “系统应用”语义已明确，不再是开放问题：移除开关，保留有桌面入口的系统应用，历史来源和已保存规则继续按三类并集参与候选。该边界已落实到桌面查询、候选模型和页面控件。
+- 统一所有渠道与名称/包名兜底、仅 B 行取消后消失均按授权方案实现。无新增手动添加、分类 Tab、后台应用扫描或资料空间支持。
+- OEM Launcher 行为、隐藏/冻结入口、包可见性与图标缓存可能有设备差异；当前不宣称完全等于桌面实际显示内容，也不承诺 Google Play 审核结果。
+- 现有来源表可能含旧缓存，当前不清理。前轮独立探针仅读取用户授权设备的应用元数据；本轮业务规则用合成单测验证，不读取或修改真实剪贴数据。
+- 本轮已运行 app 完整单测、Debug 编译、base 名单/备份规则单测及 Play Release/R8；设备探针仍仅代表 Android 12 平台能力，不替代宿主真机 UI 与完整 ViewModel/系统生命周期集成验收。
+
+### 本轮实现记录
+
+- 读取器及 DI 已迁移为 Launcher 命名；平台适配独立为 `AndroidLauncherAppPackageReader`，延迟标签 lambda 保证先过滤/去重再读取资源。名称失败仅保留空名，不误报整个扫描失败。
+- `ClipSourceBlockHistoryCoordinator` 管理可见订阅、取消、失败保留与显式重试；`ClipSourceBlockCandidateSnapshot.kt` 管理设置状态、完整输入身份与最新输入取消旧映射。页面勾选和排序均来自同一候选快照。
+- 搜索从来源状态流中移除后去重，仅更新展示裁剪，不重查数据或重建候选；输入身份与桌面摘要双重检查替代旧候选数量等式。
+- 共享 ToggleFilterChip 的 Preview 仍引用两个系统应用样例文案，因此保留这些资源；实际过滤页已移除控件、Boolean 参数、分类字段及其日志。其他已零引用的旧摘要资源可清理。
+- 名称有效性在已有未知来源规则外补充“名称等于包名”占位判断，防止平台缺名兜底压过有效历史名。保存名单协议、500 项上限及备份恢复保持原样，候选数量不截断。
+- 测试先行证据：旧实现的系统桌面保留、旧名单占位和包名兜底三项断言失败；新增历史协调器的四项生命周期测试在占位实现上失败；搜索引发重复合并的回归也已观察到失败。绿色测试与最终包证据见下方最终验证记录。
+- 边界：未安装覆盖用户的 ClipMaster，不用用户剪贴数据进行 UI 操作；仅有 Android 12 探针证据，宿主 UI 手势/视觉、API 24/29/36 与其他 OEM 待设备验收。三星图标像素差异沿用默认读取路径，不通过宽权限规避。
+
+### 最终验证记录（2026-10-26）
+
+- `:app:compileDebugKotlin :app:testDebugUnitTest :base:general:testDebugUnitTest --tests com.cla.clip.base.general.config.ClipSourceBlockRulesTest --tests com.cla.clip.base.general.backup.BackupSettingsBlockedPackagesTest`：BUILD SUCCESSFUL；app 300 项、base 名单/备份 7 项，失败/错误/跳过均为 0。原始记录 `build/limited-app-visibility/full-tests.log`。
+- `:app:compileDebugKotlin :app:bundleRelease -PappDistribution=play`：BUILD SUCCESSFUL，完成 R8 与签名。`BuildConfig.IS_PLAY_DISTRIBUTION=true`；产物 `app/build/outputs/bundle/release/app-release.aab`，R8 mapping 保留于 `app/build/outputs/mapping/release/mapping.txt`。构建出现 Shizuku `OnOpNotedListener` 隐藏 API 类型警告，本轮未改该链路，不把构建成功当作后台服务设备验收。
+- 使用当前 AGP 的官方 `aapt2-proto` 模型直接解析最终 AAB 各模块 Manifest：无 `QUERY_ALL_PACKAGES`，`queries/intent` 中同时存在 MAIN 与 LAUNCHER，保留 Shizuku 指定包。验证器、解析结果和断言输出位于 `build/limited-app-visibility/`，不是只检查输入 Manifest 或调试包。
+- 独立只读审查检查全部新增产品 Kotlin 及对应测试，未发现确定的 Critical/Important 功能问题；指出英文政策仍描述旧查询范围，已同步中英文并通过旧表述排除检查。`git diff --check` 通过。
+- 测试例外：删除系统控件和 Preview 属于薄 UI 接线，无独立 JVM 样式镜像测试；复用共享控件 Preview 并以 Debug/Release 编译覆盖。没有 Room/schema/设置 key/备份协议变化，不新增迁移或 keep 规则。两个共享控件样例文案及历史摘要资源保留，避免本轮扩展为无关共享资源清理。
+- 实现职责：平台查询与标签读取、历史订阅、纯候选合并与快照流、页面编排分别独立；写入协调器、Repository/DAO 轻量投影、共享行/搜索/图标直接复用。新增与修改的方法、变量及状态边界已补简体中文注释。
+- 未提交、未推送、未发布隐私政策，未安装覆盖用户 ClipMaster。宿主真机 UI/手势、完整 ViewModel+系统生命周期集成、API 24/29/36、其他 OEM 和三星 23 个图标的外观对照仍为后续设备验收项。
+
+### 官方依据与本轮变更记录
+
+- 2026-10-26：有限桌面查询、三类候选、可见历史订阅和过滤页修改完成；300+7 自动化测试、Debug 编译、Play Release/R8 与最终 AAB 权限断言通过。独立审查后修正英文政策范围，未做设备覆盖如上明确保留。
+
+- 2026-10-26：用户授权按已验证方案开始产品代码修改，状态转为实现中；现有 installedapps 与 ClipSourceBlock 定向单测基线通过。复用名单原子写入、历史轻量投影和共享 UI，不新增持久化/备份字段；新增规则、状态和失败契约先补回归测试。
+- 2026-10-26：按用户“先测试收窄后能否读取图标、包名、名称”的要求，新增独立设备探针及构建脚本，完成 Android 12 三组权限对照与同 UID A/B/A 复核；确认 133 个桌面应用均可读取，记录 23 个图标像素差异及后续 UI 验证边界。仅测试代码与文档变化，产品实施尚未开始；临时探针已卸载。
+- Android 的 [包可见性声明](https://developer.android.com/training/package-visibility/declaring) 支持按包名或 Intent 声明需要查询的范围；[Intent 文档](https://developer.android.com/reference/android/content/Intent) 说明 MAIN/LAUNCHER 桌面入口语义。资料于 2026-10-26 核对。
+- 2026-10-26：按用户确认的三类候选方向编写有限可见性修改方案，明确移除系统开关、权限收窄、并集合并、占位规则、生命周期、失败和备份边界；复用既有历史来源投影与名单原子写入。原因是准备 Google Play 分发，并让不可见/卸载来源的已保存规则仍能管理。本轮仅规划，未改代码。
+- 2026-10-26：完成方案自检，补齐具体文件迁移、接口字段和五项重点失败边界。`git diff --check` 通过；本轮仅修改本文件，未修改其他任务的工作区内容，未暂存或提交。无代码改动，未执行 Android 单测、编译或 R8，实施验证仍为上述未勾选任务。
+- 2026-10-26：根据用户异步答复，将“移除系统应用开关、保留有桌面入口的系统应用”从暂定解释改为已确认需求，并关闭该开放问题；三类候选并集及其他实施提案保持不变。本次仅澄清文档，无组件、数据、备份或日志变化；`git diff --check` 通过，未执行代码测试或构建。
+
 ## 可见行按包名加载图标（已完成，2026-10-11）
 
 - 扫描先过滤自身/系统范围，只读取名称和系统标记；安装结果与过滤候选不携带 Drawable、Bitmap 或主色。可见行通过共享 `SelectableAppRow.icon` slot 接入 `AppIcon`，系统取图复用统一 Manager，离开前台取消、离场释放。名称先显示，冷缓存使用默认资源；名单、搜索、统计、备份保持。
@@ -501,6 +836,8 @@ on-system-rule-tests.ps1 -OutputName 'non-system-green' -CompileCurrentRules`。
 - 取舍与待办：仅修改页面会话内存名称契约，无序列化、反射或备份变化，不安排 release/R8；真实设备超长名称的显示观感仍需人工验收。
 
 ## 变更记录
+
+- 2026-10-27：新增有限可见性与三类候选的回退草案，目标恢复 `7db791d` 的安装列表、系统开关和隐藏规则行为；本文顶部改为草案，保留前轮实验/实现历史。本次未修改产品代码。
 
 - 2026-10-02：共享默认应用资源改用用户新 android.svg，过滤页读取失败时自动使用黑色轮廓图标；保留扫描、加载空位和选择行为，未新增副作用，资源验证以来源图标主方案为准。
 
