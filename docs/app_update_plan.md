@@ -10,6 +10,19 @@
 
 ## 目标与范围
 
+### 0.9.11 双源发布（2026-10-29，实现中）
+
+- 按用户要求将 `versionName` 从 `0.9.10` 递增至 `0.9.11`，`versionCode` 从 `46` 递增至 `47`；纳入当前全部右滑交互、测试和对应文档改动，先提交并推送源码 `main`，再使用原脚本向 GitHub/Gitee 发布正式签名 APK、`update.json` 和 `sha256.txt`。
+- 本版统一折叠、取消折叠和回收站彻底删除的 80% 基准阈值、菜单后保护距离及继续/松手两阶段提示，保留回拉取消和离场后执行。共享规则、组件拆分、注释、测试与设备验收边界以 [共享列表方案](clip_result_list_plan.md#swipe-threshold-plan) 及各页面接入摘要为准。
+- 复用现有版本配置、APK 命名、双端发布脚本及本机 PowerShell 7/Git Bash 兼容入口，沿用 domestic 分发、internal 更新渠道和 AdMob 配置。版本元数据没有新的独立业务规则，不新增单测或采用 TDD；功能改动已包含阈值规则单测和 Android 指针交互测试。
+- 发布验证：重新运行 app/base:general 单测、Debug Kotlin 和 app/base:general Android 测试编译，执行脚本 dry-run（含 `:app:assembleRelease`、R8）、APK 版本/签名/SHA256 和 `git diff --check`；上传后核验两端 latest 及三个附件摘要。当前设备交互测试、真机覆盖安装和视觉验收仍待实际设备执行，不以编译结果代替运行结果。
+- 日志与诊断计划：沿用原发布日志、构建诊断及共享列表已有日志边界，不新增高频手势或 App 运行时日志；凭据仅供原脚本本机读取，不输出到日志或公开产物。APK、最终清单、metadata、mapping、源码提交号和验证日志按版本保存在 `build/github-gitee-release/v0.9.11/`，mapping 仅本地留存。
+- 规则边界：版本配置中文注释同步更新；本次无新增数据库、备份、序列化或反射契约，不调整备份或 keep 规则。沿用已记录的 Windows 启动兼容措施，仓库发布脚本保持原实现。
+- 变更记录：2026-10-29，按用户要求准备 `0.9.11 / 47` 双源发布，记录全部现有右滑改动的提交范围、验证计划和日志边界。
+- 发布前验证：`.\gradlew.bat :base:general:testDebugUnitTest :app:testDebugUnitTest :base:general:compileDebugAndroidTestKotlin :app:compileDebugAndroidTestKotlin :app:compileDebugKotlin --offline --console=plain --no-parallel --max-workers=2` 成功，app 347 项、base 138 项，共 485 项单测通过，无失败、错误或跳过。原脚本 dry-run 的 `:app:assembleRelease`（含 R8、lintVital）成功，耗时 2 分 23 秒；`apksigner verify --verbose --print-certs` 确认 v2 签名有效且与 0.9.10 一致，`aapt dump badging`、metadata、Release BuildConfig 和预演清单均为 `com.cla.clip.master / 0.9.11 / 47`，渠道 domestic/internal。预演 APK 为 5,373,902 字节，SHA256 为 `e762c37730f853c95b7dd1df312d8bba7575871eefcc617bb2848c95fb5a4756`；真实上传若再次打包，以最终附件摘要为准。
+- 提交与环境记录：现有右滑功能、测试及五份方案文档归入 `ba945b1`，版本配置与本记录单独提交；源码构建期间内容摘要一致，工作区与暂存区 `git diff --check` 通过。首次 Gradle 沙箱访问 E 盘缓存锁失败，获准使用本机缓存后同一命令成功；无连接设备，Android 测试仅编译，既有 Kotlin 弃用提示与 Shizuku R8 告警保留。
+- 变更记录：2026-10-29，完成 485 项单测、正式构建预演、版本及签名连续性检查；补录功能提交和预演摘要，后续按源码先推送、APK 再发布的顺序执行。
+
 ### 0.9.10 双源发布（2026-10-29，已完成）
 
 - 按用户要求将 `versionName` 从 `0.9.9` 递增至 `0.9.10`，`versionCode` 从 `45` 递增至 `46`；用户已确认纳入全部现有改动，先提交并推送源码 `main`，再使用原脚本发布 GitHub/Gitee 正式签名 APK、`update.json` 和 `sha256.txt`。
