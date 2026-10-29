@@ -1,17 +1,19 @@
 # ClipMaster 隐私政策维护与发布说明
 
-状态：已完成（本地 HTML 编写；尚未托管发布或完成 Play 审核）
+状态：已完成
 
-更新日期：2026-09-29
+本轮完成范围：按最新源码更新本地双语政策并完成静态校验；浏览器预览受限，尚未托管发布或完成 Play 审核。
+
+更新日期：2026-10-27
 
 ## 产物与范围
 
 - 用户隐私政策：`play-store/privacy-policy.html`，中英双语单文件，无 JavaScript、外部字体、分析脚本或远程图片，支持移动端、深色模式和打印。
 - 开发者与联系邮箱：用户明确提供的 `cla`、`cla6939@gmail.com`。
-- 应用：ClipMaster / 剪贴板助手，`com.cla.clip.master`，当前版本配置 `0.6.0` / `33`。
-- 编写基线：本地工作区 `44035e6`，读取时工作区干净；按当前 `gradle.properties` 的 Play 分发配置编写。没有修改应用功能、Manifest、SDK 配置或备份行为。
-- 根据用户要求，将 `privacy-policy-generate` 默认 Markdown 政策产物改为 HTML。正文以实际代码为依据，不沿用其“无数据收集”“所有数据仅在本机”或默认日志收集模板。
-- 没有现成隐私政策可复用；已有 `docs/flows/` 是内部流程图生成产物，职责不同，未改动其生成器或 HTML。
+- 应用：ClipMaster / 剪贴板助手，`com.cla.clip.master`，2026-10-27 核对时的版本配置为 `0.9.8` / `44`；后续版本发布记录见 [自更新主方案](../docs/app_update_plan.md)。
+- 本轮核对基线：本地工作区 `95586c0`，开始时工作区干净；按 2026-10-27 的实际源码及 `gradle.properties` 更新。当前默认渠道为 `domestic`，不是已经上线的 Google Play 版本。没有修改应用功能、Manifest、SDK 配置或备份行为。
+- 复用现有双语 HTML 的十章节、锚点、联系方式和响应式样式，仅更新文案；不新建分叉政策或改动内部流程图。正文适用于当前启用 AdMob 的分发版本，并分别说明国内与 Play 更新检查行为；不覆盖开启 CSJ、uni-ad 或磁力搜索后的其他构建配置。
+- 2026-09-29 首次生成时按用户要求采用 HTML；本轮直接对照源码维护，不宣称再次运行历史第三方 skill 或自动合规审计。
 
 ## 当前渠道基线
 
@@ -19,36 +21,45 @@
 
 | 配置 | 值 | 对政策的影响 |
 | --- | --- | --- |
-| `appDistribution` | `play` | 按 Google Play 版本描述 |
+| `appDistribution` | `domestic` | 披露“我的”页自动/手动访问 Gitee、GitHub 更新源；Play 分支仅打开商店 |
 | `enableAdmobReleaseAdFeature` | `true` | 披露 Google AdMob / UMP |
 | `enableCsjReleaseAdFeature` | `false` | 不把穿山甲列为当前版本的数据接收方 |
 | `enableUniadReleaseAdFeature` | `false` | 不把 uni-ad 列为当前版本的数据接收方 |
 | `enableMagnetFeature` | `false` | 不披露当前版本未启用的磁力搜索、Torznab 或 DoH 功能 |
 
-这些是静态配置事实，不代表最终 AAB 已核对。发布命令、CI 或其他属性可覆盖配置；必须在正式包内容变化后同步更新政策。
+这些是本轮源码和默认配置事实，不代表本轮重新核对过最终 AAB。发布命令、CI 或其他属性可覆盖配置；必须在正式包内容变化后同步更新政策。2026-10-27 应用过滤回退任务的 AAB 验证是独立历史证据，见下方发布边界，不能替代本轮运行验收。
 
 ## 源码依据
 
 | 主题 | 主要源码位置 | 核实结果 |
 | --- | --- | --- |
 | 名称与版本 | `base/general/src/main/res/values/strings.xml`；`app/build.gradle.kts` | 中文名为“剪贴板助手”；版本与包名见上文 |
-| 剪贴内容与来源 | `app/src/main/java/com/cla/clip/master/utils/ClipHelper.kt`；`MainActivity.kt`；`shizuku/src/main/` | 文本、来源包名/名称/图标、时间及链接摘要入库；前台读取与 Shizuku 后台路径分开 |
+| 剪贴内容与来源 | `app/src/main/java/com/cla/clip/master/utils/ClipHelper.kt`；`MainActivity.kt`；`shizuku/src/main/` | 文本、来源包名/名称、时间及链接摘要保存；图标按本机应用信息展示。前台读取与 Shizuku 后台路径分开，撤销 Shizuku 不会禁止前台读取或删除既有数据 |
 | 应用列表 | `app/src/main/java/com/cla/clip/master/installedapps/PackageManagerInstalledAppReader.kt` | 来源过滤页读取安装应用列表；完整列表仅为内存状态，保存的过滤包名和来源记录可进入备份；未安装的保存规则不补显示行 |
 | 自动链接请求 | `app/src/main/java/com/cla/clip/master/utils/ClipHelper.kt`；`utils/LinkMetaParser.kt` | 保存链接后可自动解析远程页面；携带 URL、User-Agent、语言、Referer；没有假称“只有点击才联网” |
-| 网页状态与下载 | `app/src/main/java/com/cla/clip/master/ui/page/video/VideoProbeWebViewLayer.kt`；`entity/VideoCandidate.kt` | JavaScript、DOM storage、第一方/第三方 Cookie 已开启；媒体下载可携带所需 Cookie 等请求信息 |
-| 广告 | `feature/ad-admob/src/sdk/java/com/cla/clip/feature/ad/admob/AdmobSdkLoader.kt`；`AdmobPrivacyController.kt`；`app/.../ad/AdHostEnvironment.kt` | GMA Next-Gen 1.4.0、UMP 4.0.0；隐私信息刷新与广告请求分开；广告请求构造没有传入剪贴正文或应用清单 |
+| 网页状态与下载 | `app/src/main/java/com/cla/clip/master/ui/page/video/VideoProbeWebViewLayer.kt`；`base/general/src/main/java/com/cla/clip/base/general/dao/DownloadDao.kt`；`ImageExtractDao.kt` | JavaScript、DOM storage、第一方/第三方 Cookie 已开启；下载任务持久保存 URL、Cookie、Referer、User-Agent、文件位置及状态。历史页面已移除，但任务表仍供 Worker、当前结果和失败重试使用，未新增完成后自动删除期限 |
+| 更新检查 | `app/src/main/java/com/cla/clip/master/ui/page/mine/MinePage.kt`；`MineVm.kt`；`update/AppUpdateChecker.kt`；`AppUpdateConfigFactory.kt` | domestic 在“我的”页可触发 24 小时限频自动检查或手动检查，GET Gitee/GitHub 发布信息，在本机比较版本；Play 分支不进入外部检查链路，手动只打开商店 |
+| 广告 | `feature/ad-admob/src/sdk/java/com/cla/clip/feature/ad/admob/AdmobSdkLoader.kt`；`AdmobPrivacyController.kt`；`app/.../ad/AdHostEnvironment.kt` | GMA Next-Gen 1.4.0、UMP 4.0.0；UMP 联网刷新可先于广告请求，canRequestAds 不等于个性化授权；广告请求构造没有传入剪贴正文或应用清单。首页移除广告不代表全应用无广告 |
 | 广告隐私入口 | `app/src/main/java/com/cla/clip/master/ui/page/mine/MinePage.kt` | 只有 UMP 要求提供隐私选项时才显示入口；没有承诺所有地区均显示同一表单 |
-| 本地与 WebDAV 备份 | `base/general/src/main/java/com/cla/clip/base/general/backup/BackupSnapshotExporter.kt`；`BackupEntityMappers.kt`；`WebDavClient.kt`；`backup/settings/BackupSettingsRepository.kt` | 记录及允许的设置可导出；自定义备份排除 WebDAV 凭据及媒体请求 Cookie；备份包未加密，自动备份默认关闭，WebDAV 默认 HTTPS，可显式允许 HTTP |
-| 系统备份 | `app/src/main/AndroidManifest.xml`；`res/xml/backup_rules.xml`；`res/xml/data_extraction_rules.xml` | `allowBackup=true`；主剪贴数据库未整体排除，不能宣称不会被系统备份。宿主 DataStore 在 Auto Backup、Android 12+ 云备份与设备迁移规则中均被排除，设备绑定凭据和授权不随该文件迁移 |
+| 本地与 WebDAV 备份 | `base/general/src/main/java/com/cla/clip/base/general/backup/BackupSnapshotExporter.kt`；`BackupEntityMappers.kt`；`BackupModels.kt`；`backup/settings/BackupSettingsRepository.kt`；`app/.../ui/page/backup/BackupPage.kt` | 格式 5 导出剪贴（含未永久删除的回收站条目）、来源、预览、搜索历史和设置白名单；清单含版本、时间、本机安装标识及数量。不读取三张媒体任务表，不导出媒体、请求 Cookie、日志、广告同意或 WebDAV 凭据。首次生成/开启自动备份前有明文风险确认；自动备份默认关闭，WebDAV 默认 HTTPS，可显式允许 HTTP |
+| 系统备份 | `app/src/main/AndroidManifest.xml`；`res/xml/backup_rules.xml`；`res/xml/data_extraction_rules.xml` | `allowBackup=true`；主数据库未整体排除，可能包含剪贴、下载任务及已保存请求信息。自定义备份的任务排除不改变系统备份；宿主 DataStore 和 WebView 状态按既有规则排除，不能据此承诺全部本机数据不出设备 |
 | 删除与保留 | `base/general/.../config/clip/ClipSettingsRepository.kt`；`app/.../work/RecycleBinCleanupWorker.kt` | 回收站默认 30 天；后台清理受调度影响；备份和共享媒体的删除是独立操作 |
-| 设备日志 | `base/general/src/main/java/com/cla/clip/base/general/utils/Logcat.kt` | 使用 Android 日志；没有据此虚构独立云端崩溃上报服务 |
+| 设备日志 | `app/src/main/java/com/cla/clip/master/logging/LogCapturePolicy.kt`；`LogcatCaptureController.kt`；`LogDirectoryStore.kt`；`base/general/.../config/logging/LogSettingsRepository.kt` | 默认关闭；开启后按主 PID 保存业务/SDK/原生 Logcat 至公共 `Download/ClipMaster/logs/`；10 MiB 阈值、20 历史加 1 当前文件，关闭不删旧文件。后台继续、进程结束停止、再次启动按开关恢复；SDK/原生日志不保证经过统一脱敏。该保存功能无自动上传，不虚构云端崩溃上报 |
 | OCR | `app/build.gradle.kts`；`ClipHelper.kt` | `implementation(libs.mlkit.ocr)` 被注释；图像剪贴/OCR 为未启用预留方法，未把版本目录中的 ML Kit 定义当成已上线功能 |
+
+## 本轮同步范围与取舍
+
+- 下载与备份的最终行为以 [下载记录退役方案](../docs/download_history_plan.md) 和 [备份主方案](../docs/webdav_backup_plan.md) 为准；政策移除“自定义备份包含媒体下载记录”和“恢复后媒体关联”的过时描述，明确仍保留本机任务、请求信息和系统备份边界。
+- 日志行为以 [日志主方案](../docs/app_logging_plan.md) 为准；补充开启条件、公开目录、未加密、轮转、第三方日志脱敏限制和删除方式，不承诺只有低敏信息或卸载即清除公共文件。
+- 应用列表沿用 [来源过滤方案](../docs/clip_source_app_filter_plan.md) 2026-10-27 回退后的真实范围；没有因准备上架擅自收窄读取权限，也不把扫描内存列表与已持久化来源/过滤数据混为一谈。
+- 更新检查以 [更新主方案](../docs/app_update_plan.md) 为准；政策范围从仅 Google Play 改为当前 AdMob 分发版本，分别说明默认 domestic 和显式 Play 的行为，不声称已上架。
+- 不承诺尚未实现的自动预览开关、首次剪贴披露、通用政策入口、自动敏感剪贴排除或下载任务定期清理。政策更新不会代替这些产品交互或后台声明。
 
 ## 发布前需确认的实际边界
 
 1. **核对最终 AAB。** 2026-10-27 已按用户要求恢复安装应用扫描和广泛包可见性，并重新构建 Release/R8 AAB；实际 Manifest 确认包含 QUERY_ALL_PACKAGES、保留 Shizuku 查询及自身启动入口、不含此次桌面查询声明。311+7 项测试通过，产物 hash 与证据记录于 `docs/clip_source_app_filter_plan.md`。2026-10-26 的有限权限 AAB 只代表已回退版本；尚未做宿主真机 UI 或抓包，后续正式包变化仍须重新核对。
-2. **接入政策入口。** 本次过滤功能改动未增加通用隐私政策入口。`MinePage` 中的 UMP 隐私入口不等于本政策链接；需确认应用内和 Play Console 均提供本政策。
-3. **受限权限。** 主 Manifest 已恢复 `QUERY_ALL_PACKAGES`，并保留“自用/私有分发；上架需重新评估”的注释；此次 MAIN + LAUNCHER queries 已撤销，Shizuku 管理器指定包查询保留。政策披露不能代替 Google Play 对权限必要性和资格的审核；照片/视频广泛访问、Shizuku/后台剪贴读取也应按实际包单独核对。
+2. **接入政策入口。** 本轮仅更新文件，源码未发现通用隐私政策入口。`MinePage` 中的 UMP 隐私入口不等于本政策链接；仍需在应用内和 Play Console 提供本政策，并核实公开 URL。本轮未发布网站。
+3. **受限权限。** 主 Manifest 已恢复 `QUERY_ALL_PACKAGES`，并保留“自用/私有分发；上架需重新评估”的注释；此前 MAIN + LAUNCHER queries 已撤销，Shizuku 管理器指定包查询保留。政策披露不能代替 Google Play 对权限必要性和资格的审核；存储权限及 Shizuku/后台剪贴读取应按实际包单独核对。主 Manifest 仍保留至 API 32 的旧存储读取权限，但不能将已移除的媒体关联流程当作当前用途。
 4. **自动链接预览与后台剪贴。** 它们可能在用户未点击链接或正在使用其他 App 时处理数据。应核查应用内显著披露和同意时机；本政策不是这些交互的替代品。本次未修改交互。
 5. **系统备份。** 政策已如实描述主库可能被系统备份。若发布目标要求剪贴内容严格仅存本机，需另行调整系统备份规则，之后同步更新政策。
 6. **备份与删除。** 已存在的快照可能保留已删除记录；未对本地文件、远端备份或系统备份承诺联动删除。未承诺完整数据库/备份端到端加密。
@@ -68,7 +79,9 @@
 - 对照实际 AAB、SDK 文档和运行行为填写 Data safety，不直接将“本机处理”或“用户主动上传”简单等同于整份表单的“无收集”。
 - 若日后启用磁力搜索、其他广告源、OCR 或新的云端服务，先重新核查数据流再修改政策。
 
-## 已安装的 skill
+## 首次编写的历史工具记录（2026-09-29）
+
+以下仅保留首次生成时的记录，本轮没有重新安装、调用或验证这些第三方 skill：
 
 - `privacy-policy-generate`：来自 `hitoshura25/claude-devtools` 的 `skills/privacy-policy-generate`；已完整安装，本文使用其源码扫描、信息确认与政策生成流程，将 Bash 示例改为 PowerShell 兼容操作。
 - `play-policy-insights`：来自官方 `android/skills` 的 `play/play-policy-insights`；包含 `SKILL.md`、`scripts/`、`resources/`，已完整安装。本次没有运行其完整自动审计流程，也不将本文的源码核查描述为该工具的审计报告。
@@ -80,7 +93,16 @@
 
 验证仅检查文件、HTML 结构、锚点、双语完整性、窄屏布局与 Git diff，不读取真实剪贴内容、WebDAV 凭据、广告 ID 或用户数据库。
 
-## 验证与规则例外
+## 本轮验证与规则例外（2026-10-27）
+
+- 按 `repo-unit-test-gate` 判定为静态政策文案同步，没有应用行为、Kotlin、Compose、持久化协议或反射变更，不补业务单测、不走 TDD，也不重新运行 Gradle/R8；风险在文案准确性与显示，由源码交叉核对、双语检查、HTML 校验及页面预览验证。
+- 复用原 HTML，不新增组件、类、方法、变量、脚本或样式；无新增代码注释适用项。无运行时日志、备份实现或 keep 规则改动；无需生成 Mermaid/流程图。
+- Python 标准库 `HTMLParser` 静态校验通过：20 个章节组成 10 对中英章节，段落/列表/标题/代码标记结构对应；26 个 ID 唯一、13 个链接及内部锚点有效、5 个本地主方案链接存在、日期为 2026-10-27、无乱码替代字符。已检查退役功能的旧肯定性描述被移除，日志、更新源及轮转参数两种语言均有覆盖；结构检查不代替语义审校，已逐项对照上方源码依据核对文案。
+- CSS 与修改前完全一致；没有脚本、事件处理属性或自动加载的外部资源。`git diff --check` 通过。校验器不比较中英文强调标签数量，因为原页面对应用名称的加粗不同；不为通过检查修改既有排版。
+- 本轮尝试通过内置浏览器打开本地 HTML 时，浏览器安全策略拒绝 `file://` 协议；未绕过限制或改用其他入口。因此未取得本轮桌面/手机/深色模式实际渲染证据，只能确认原样式未变。下方 2026-09-29 预览是历史记录，不能当作本轮验证。
+- 本轮使用项目工作流：`repo-coding-gate`（范围与复用检查）、`repo-docs-logs`、`repo-unit-test-gate`（无需业务单测的判定）、`repo-git-discipline`（只读差异检查）、`repo-final-self-check`；另遵循 `superpowers:verification-before-completion`。没有创建/修改 skill、暂存、提交或推送。
+
+## 首次编写验证记录（2026-09-29）
 
 - 静态文档改动，不新增应用组件、类、方法、业务变量或 Android 字符串资源；CSS/HTML 使用简体中文说明注释。
 - 不需要业务单元测试、Gradle 编译、R8 或真机验证；这些未执行，不能据此认定正式包合规。
@@ -91,7 +113,9 @@
 - 两个 skill 的目录与配套文件检查通过：`privacy-policy-generate` 2 个文件；`play-policy-insights` 14 个文件，包含 orchestrator、报告生成器和资源目录。
 - 项目复制后另行检查文件哈希、Git 状态与 `git diff --check`，结果以任务交付说明为准。
 
-## 参考资料（2026-09-29 核对）
+## 参考资料
+
+2026-10-27 重新核对下列 Google Play 用户数据政策和 GMA Next-Gen 数据披露页面。官方 SDK 页面说明的是最新版本，不代替对本项目固定 SDK、配置及最终包的核对；历史工具链接仅供追溯。
 
 - [Google Play User Data / 隐私政策要求](https://support.google.com/googleplay/android-developer/answer/10144311?hl=en)
 - [GMA Next-Gen SDK 数据披露](https://developers.google.com/admob/android/next-gen/privacy/play-data-disclosure?hl=en)：官方页面说明适用于其最新版本；最终提交时仍需核对项目固定版本和配置。
@@ -101,6 +125,8 @@
 
 ## 变更记录
 
+- 2026-10-29：随 0.9.9 发布纳入已完成的政策更新，将 0.9.8 标注为历史核对基线并链接版本主方案，避免与新的应用版本配置混淆；政策网站仍未部署。
+- 2026-10-27：按 `95586c0` / 0.9.8 源码同步双语政策、日期及维护基线。移除自定义备份中的媒体任务和恢复后媒体关联描述；补充任务留存、系统备份请求信息、公共日志保存与轮转、首次备份明文提示、安装标识及 domestic/Play 更新检查差异；明确 UMP 刷新与广告请求的边界。原因是旧政策仍描述退役能力，并遗漏新增日志及实际默认分发数据流。本轮未修改 App、部署网站或提交商店。
 - 2026-09-29：随宿主设置介质替换，将源码依据及系统备份排除说明更新为 DataStore 的实际文件和规则；政策正文未因这次介质替换改变数据用途。
 - 2026-09-29：首次创建中英双语政策 HTML 与维护发布说明；根据当前 Play 配置和实际数据流披露自动链接联网、来源应用、后台剪贴、未加密备份、系统备份和 AdMob，避免套用不符合项目事实的通用模板。
 - 2026-09-29：按用户要求，将隐私政策和本说明从 docs 迁至项目根目录的 play-store/，集中存放 Google Play 上架准备材料；更新政策路径，避免与内部方案文档混放。该调整仅移动文件和更新路径，不改政策正文及 App 行为。

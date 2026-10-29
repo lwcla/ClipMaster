@@ -88,7 +88,7 @@
       <p class="eyebrow">Your data &amp; your choices</p>
       <h1>隐私政策 <span lang="en">/ Privacy Policy</span></h1>
       <p class="subtitle">了解数据如何被使用，以及您可以如何管理它。<br><span lang="en">Understand how your data is used and how you can manage it.</span></p>
-      <p class="meta"><span>最后更新 / Last updated: <time datetime="2026-09-29">2026-09-29</time></span><span>开发者 / Developer: cla</span></p>
+      <p class="meta"><span>最后更新 / Last updated: <time datetime="2026-10-27">2026-10-27</time></span><span>开发者 / Developer: cla</span></p>
       <nav aria-label="语言与联系 / Language and contact">
         <a href="#zh" lang="zh-CN">简体中文</a>
         <a href="#en" lang="en">English</a>
@@ -98,38 +98,42 @@
     <main id="main">
       <article id="zh" lang="zh-CN" aria-labelledby="zh-title">
         <div class="language"><h2 id="zh-title">简体中文</h2><a href="#en" lang="en">Read in English ↓</a></div>
-        <div class="summary"><p><strong>请先了解：</strong>ClipMaster 的剪贴历史主要保存在您的设备上。链接预览、网页提取、下载、您配置的 WebDAV 备份、Android 系统备份以及广告服务，可能使相关数据离开设备。下文说明各自的触发方式、数据和接收方。</p></div>
+        <div class="summary"><p><strong>请先了解：</strong>ClipMaster 的剪贴历史主要保存在您的设备上。链接预览、网页提取、下载、更新检查、您配置的 WebDAV 备份、Android 系统备份以及广告服务，可能使相关数据离开设备。您开启日志保存后，诊断文件会写入设备的公共下载目录。下文说明各自的触发方式、数据和接收方。</p></div>
         <section id="zh-scope">
           <h3>1. 适用范围与开发者</h3>
-          <p>本政策适用于由 <strong>cla</strong> 提供的 ClipMaster（中文名称“剪贴板助手”，应用标识 <strong>com.cla.clip.master</strong>）Google Play 版本，说明我们如何处理与剪贴记录、链接和媒体、备份、广告及用户联系有关的信息。</p>
+          <p>本政策适用于由 <strong>cla</strong> 提供、使用 Google AdMob 广告服务的 ClipMaster（中文名称“剪贴板助手”，应用标识 <strong>com.cla.clip.master</strong>）版本，说明我们如何处理与剪贴记录、链接和媒体、备份、更新检查、日志、广告及用户联系有关的信息。不同分发渠道的更新检查方式见第 3 节。</p>
           <p>本应用的剪贴管理功能不要求您注册 ClipMaster 账号。您自行配置的 WebDAV 账号、访问的网页账号以及 Google 服务账号属于相应服务提供方。</p>
         </section>
         <section id="zh-local">
           <h3>2. 剪贴记录与本地信息</h3>
           <ul>
             <li><strong>剪贴板文本：</strong>应用在 Android 允许的前台读取场景中访问剪贴板；当您授权 Shizuku 并运行剪贴监听时，也可在您使用其他应用时接收剪贴变化。文本、链接、记录时间和可获取的来源应用信息用于保存历史、检索、去重、置顶、折叠和管理记录。</li>
-            <li><strong>来源应用信息：</strong>为显示剪贴来源和设置来源过滤，应用读取相关包名、名称和图标。进入或刷新来源过滤页面时，应用会读取设备已安装应用列表，用于在本机选择过滤对象；该完整列表不会被作为一份清单上传给开发者。已保存的来源信息和您选择的过滤包名可随您创建的备份导出。</li>
+            <li><strong>来源应用信息：</strong>为显示剪贴来源和设置来源过滤，应用读取相关包名、名称和图标。进入或刷新来源过滤页面时，应用会读取设备已安装应用列表，用于在本机选择过滤对象；扫描结果保留在内存中，不作为完整应用清单持久保存或上传给开发者。与剪贴记录有关的来源信息及您选择的过滤包名会另行保存在设备中，并可随您创建的备份导出。</li>
             <li><strong>历史与设置：</strong>本地搜索词、链接预览、下载任务及文件位置、过滤规则、回收站和备份设置等保存在设备中，用于相应功能。应用不将剪贴正文或来源应用列表作为广告请求参数提供给 AdMob。</li>
           </ul>
+          <p><strong>下载任务仍会在本机保存：</strong>当前版本不提供下载历史管理页面，但为执行下载、展示当前进度和结果、失败重试及处理异常中断，仍会保存媒体地址、必要的请求信息（可能包含 Cookie、来源地址和浏览器标识）、文件名称与位置、任务状态和时间。任务完成或离开页面不代表这些数据已立即删除；保存与删除方式见第 7 节。</p>
           <p>您复制的内容可能包含姓名、地址、验证码、密码或其他敏感信息。应用不能保证自动识别并排除所有敏感内容；请通过来源过滤、撤销 Shizuku 授权及删除记录管理保存范围。撤销 Shizuku 授权会停止对应后台读取能力，但不自动删除已有记录，也不等同于禁止系统允许的前台剪贴读取。</p>
         </section>
         <section id="zh-network">
-          <h3>3. 链接预览、网页与媒体下载</h3>
+          <h3>3. 链接预览、网页、媒体下载与更新检查</h3>
           <p><strong>链接预览可能自动联网：</strong>当保存的文本包含可解析链接时，应用可能自动访问该链接以获取标题、说明和预览图片；显示远程图片时也可能请求图片服务器。这些访问可能发生在您点击链接之前。</p>
           <p>目标网站、重定向目标及相关内容服务器会接收到被请求的网址（包括其中的路径和查询参数）、您的 IP 地址及必要的请求信息，例如浏览器标识、语言和来源信息。通常不会为了预览发送整条剪贴文本，但网址自身可能含有个人信息或访问令牌。</p>
           <p>您打开网页提取图片、视频或执行下载时，应用会访问对应网站和媒体服务器。内置网页环境可运行网页脚本、使用网页本地存储并接受第一方及第三方 Cookie；网站可据此处理访问或登录状态。为完成媒体请求，下载流程可能保存并携带所需的 Cookie、来源地址及浏览器标识。请仅打开您信任的网站，其数据处理适用该网站的政策。</p>
           <p>您通过系统分享、外部浏览器或其他应用打开内容时，所选内容会交给您选择的接收应用或服务。</p>
+          <p><strong>更新检查：</strong>在使用应用内更新检查的分发版本中，进入“我的”页可能触发检查，自动检查通常按 24 小时间隔限频；您也可手动检查。应用会请求 Gitee、GitHub 的发布信息及相关托管资源，服务方可接收到 IP 地址、请求地址和必要的网络请求信息；版本比较在设备上完成，不为检查更新上传剪贴正文或安装应用清单。Google Play 分发版本不执行这条外部更新检查链路，点击检查更新时打开对应商店页面，由商店按其政策处理访问和更新。</p>
         </section>
         <section id="zh-backup">
           <h3>4. 本地备份、WebDAV 与系统备份</h3>
           <p><strong>主动导出及自动备份：</strong>您可以导出备份到自己选择的文件位置，或配置 WebDAV 上传、恢复和管理备份。自动备份默认关闭；开启后，应用可在后台按设置备份到已配置目标。所选文件提供方也可能自行同步到云端。</p>
-          <p>备份可包含剪贴正文、来源信息、链接预览、搜索历史、图片和视频下载记录以及允许备份的设置。WebDAV 服务会收到备份内容、必要的连接请求信息，以及用于验证的用户名和密码或应用专用密码。WebDAV 地址、用户名和密码不会写入应用自定义备份包；密码在本机使用加密存储。</p>
-          <p><strong>备份文件本身未加密。</strong>能够读取备份文件的人可能读取其中内容。WebDAV 默认要求 HTTPS；如您主动允许 HTTP，传输内容和验证凭据可能被网络中的其他人读取。请妥善管理备份位置和访问权限。</p>
-          <p><strong>Android 系统备份与换机：</strong>本应用允许系统备份。依据 Android 版本、设备厂商和您的系统设置，部分应用数据（包括可能的剪贴数据库）可由系统备份服务或设备迁移功能复制、上传或恢复。部分敏感配置和网页状态已设置排除，但并非所有本地数据均被排除。此行为独立于本应用的自动备份开关，请在设备的系统备份设置中管理。</p>
+          <p>当前版本的本地导出及 WebDAV 备份可包含剪贴正文（包括尚未永久删除的回收站记录）、来源信息、链接预览、搜索历史以及允许备份的设置，例如来源过滤名单。备份文件及清单还包含创建时间、应用版本、用于区分本次安装的标识和数据数量等管理信息。它们不包含图片或视频下载任务、下载请求 Cookie、已下载媒体文件、日志文件、广告隐私选择或 WebDAV 连接凭据，也不提供恢复后的媒体重新关联功能。</p>
+          <p>WebDAV 服务会收到备份内容、必要的连接请求信息，以及用于验证的用户名和密码或应用专用密码。WebDAV 地址、用户名和密码不会写入应用自定义备份包；密码在本机使用加密存储。</p>
+          <p><strong>备份文件本身未加密。</strong>首次创建备份或开启自动备份前，应用会提示未加密备份风险并要求确认。能够读取备份文件的人可能读取其中内容。WebDAV 默认要求 HTTPS；如您主动允许 HTTP，传输内容和验证凭据可能被网络中的其他人读取。请妥善管理备份位置和访问权限。</p>
+          <p><strong>Android 系统备份与换机：</strong>本应用允许系统备份。依据 Android 版本、设备厂商和您的系统设置，部分应用数据可由系统备份服务或设备迁移功能复制、上传或恢复。主数据库未整体排除，可能包含剪贴记录、下载任务及其中保存的请求信息；自定义备份对下载任务的排除不适用于这条系统备份链路。部分敏感配置和网页状态已设置排除，但并非所有本地数据均被排除。此行为独立于本应用的自动备份开关，请在设备的系统备份设置中管理。</p>
         </section>
         <section id="zh-ads">
           <h3>5. 广告与隐私选择</h3>
           <p>本版本使用 Google AdMob 展示广告，并使用 Google User Messaging Platform（UMP）处理适用的隐私提示与选择。广告服务可处理 IP 地址及由此推断的大致位置、设备或广告标识符、应用及广告互动信息和诊断数据，用于广告展示、衡量及防欺诈。实际处理受到您的选择、地区、设备设置和服务配置影响；非个性化广告也可能涉及必要的数据处理。</p>
+          <p>UMP 会联网刷新隐私消息及选择状态；这一过程可能先于广告请求或实际展示。应用以 UMP 返回的允许请求状态控制广告请求，但该状态不等同于您同意个性化广告。</p>
           <p>在适用时，请通过广告隐私表单作出选择；当需要提供隐私选项时，您可从“我的”页面的广告隐私入口重新打开表单。您也可使用 Android 系统提供的广告标识符管理功能。改变选择不会自动删除服务提供方此前已合法处理的数据。</p>
           <p>详情参见 <a href="https://policies.google.com/privacy" rel="noreferrer">Google 隐私政策</a>及 <a href="https://developers.google.com/admob/android/next-gen/privacy/play-data-disclosure?hl=zh-cn" rel="noreferrer">Google 广告 SDK 数据披露说明</a>。</p>
         </section>
@@ -138,7 +142,7 @@
           <ul>
             <li><strong>Shizuku 授权：</strong>用于跨应用剪贴变化监听及其必要的系统交互；您可在 Shizuku 中撤销授权。</li>
             <li><strong>应用列表访问：</strong>用于在本机显示来源和选择来源过滤对象。</li>
-            <li><strong>照片、视频与文件访问：</strong>用于您选择的备份文件、保存下载内容，以及您主动执行恢复后媒体重新关联时读取媒体库。不同 Android 版本的权限范围不同；部分媒体授权可能无法完成批量关联。</li>
+            <li><strong>文件与存储访问：</strong>用于您选择的备份文件或目录、保存下载媒体，以及开启日志保存后的文件写入。应用依据 Android 版本使用系统文件选择器、媒体存储接口或相应存储权限；当前版本不再提供恢复后的媒体库扫描与重新关联。</li>
             <li><strong>通知：</strong>用于剪贴更新、下载和任务状态。剪贴通知可能显示剪贴文字及来源；其在锁屏上的可见性受系统设置影响，您可管理通知权限和锁屏内容。</li>
             <li><strong>联网、前台任务与开机接收：</strong>用于上述网络功能、持续任务提示及设备重启后的任务恢复。广告 SDK 还会使用其必要的网络和标识符能力。</li>
           </ul>
@@ -147,20 +151,23 @@
           <h3>7. 保存期限与删除方式</h3>
           <ul>
             <li><strong>剪贴历史：</strong>保留以供您使用，直到您删除。移入回收站的内容仍可恢复；默认保留期限为 30 天，可由您调整。到期清理由后台任务在系统允许执行时完成，您也可主动永久删除或清空回收站。</li>
-            <li><strong>其他本地信息：</strong>历史、任务、设置和缓存按相应功能保留。您可使用应用提供的管理操作，或在 Android 应用设置中清除应用存储；卸载通常会移除应用私有数据。</li>
-            <li><strong>独立文件与备份：</strong>共享目录中的已下载文件、已导出文件、WebDAV 及系统备份不会因为删除一条记录、关闭备份或卸载应用而必然删除。请分别在文件管理器、WebDAV 服务和系统备份设置中处理；已有备份恢复后可能重新出现旧记录。普通备份按设置保留最近的份数，实际清理需相应任务成功执行。</li>
+            <li><strong>其他本地信息：</strong>搜索历史、任务、设置和缓存按相应功能保留。下载任务不会因当前结果页关闭而立即清空，也未设置完成后的固定自动删除期限；当前版本没有下载历史批量删除入口。如需清除这些私有数据，可在 Android 应用设置中清除应用存储；这也会删除其他本机应用数据。卸载通常会移除应用私有数据。</li>
+            <li><strong>独立文件与备份：</strong>共享目录中的已下载文件、日志、已导出文件、WebDAV 及系统备份不会因为删除一条记录、关闭日志或备份、清除应用存储或卸载应用而必然删除。请分别在文件管理器、WebDAV 服务和系统备份设置中处理；已有备份恢复后可能重新出现旧记录。普通备份按设置保留最近的份数，实际清理需相应任务成功执行。</li>
+            <li><strong>日志轮转：</strong>开启保存时，当前日志按约 10 MiB 的大小轮转，保留最多 20 份历史日志及 1 份当前日志，超出数量时淘汰最旧的受控日志。单条记录可使文件略超过阈值；此前遗留或不属于当前安装管理的文件不保证自动清理。关闭开关会停止保存，不会删除已写入的文件。</li>
             <li><strong>外部服务：</strong>广告、网页、邮件及备份服务处理的信息按其适用政策保留。我们无法直接删除您设备上的私有记录或第三方持有的全部数据。</li>
           </ul>
         </section>
         <section id="zh-security">
           <h3>8. 安全、诊断与用户联系</h3>
           <p>应用利用 Android 的应用隔离机制保存私有数据，并对本机 WebDAV 密码使用加密存储。广告 SDK 使用 TLS 传输其收集的数据。用户指定的网站和允许使用 HTTP 的 WebDAV 连接不一定加密，备份文件也不提供内容加密。任何存储或传输方式都无法保证绝对安全。</p>
-          <p>应用可能在设备系统日志中记录运行状态、错误类型、任务数量和耗时等诊断信息。您主动提供反馈、日志或截图时，其中的邮箱、文字、附件及诊断信息会发送给开发者及所用邮件服务，用于处理您的请求；请先删除不需要提供的敏感内容。广告 SDK 的诊断数据处理见第 5 节。</p>
+          <p>应用可能在设备系统日志中记录运行状态、错误类型、任务数量、来源应用标识和耗时等诊断信息。<strong>“我的”页的日志保存开关默认关闭。</strong>开启后，应用将本应用主进程实际输出的业务、第三方 SDK 及原生日志保存到公共目录 <code>Download/ClipMaster/logs/</code>，用于排查问题。离开页面或切到后台不会自动关闭保存；主进程结束后停止采集，再次启动会根据已保存的开关状态恢复。</p>
+          <p>这些日志文件未加密，能够访问该公共目录的人或应用可能读取它们。应用自身日志会采取脱敏措施，但第三方 SDK 和原生日志不一定经过同一脱敏流程，文件可能包含请求、设备或业务相关信息，不能保证完全不含敏感内容。请在分享前检查并删除不必要的信息。该日志保存功能不会自动把文件上传给开发者；广告 SDK 自身的网络诊断处理见第 5 节。</p>
+          <p>您主动通过邮件或其他方式提供反馈、日志或截图时，其中的邮箱、文字、附件及诊断信息会发送给开发者及您使用的服务，用于处理您的请求。</p>
           <p>我们仅在处理您的联系请求及必要后续事项所需的期间保留您主动提供的资料，法律要求保留的情况除外。您可通过以下邮箱提出与这些资料有关的访问、更正或删除请求。</p>
         </section>
         <section id="zh-rights">
           <h3>9. 您的选择与未成年人信息</h3>
-          <p>您可以管理记录、备份、来源过滤、系统权限及适用的广告隐私选择。根据您所在地区的适用法律，您还可能享有访问、更正、删除、限制处理、反对处理或撤回同意等权利。请联系我们说明请求；仅保存在您设备中的数据需要由您在设备端管理。撤回同意不影响撤回前基于同意已进行处理的合法性。</p>
+          <p>您可以管理记录、备份、来源过滤、日志保存、系统权限及适用的广告隐私选择。关闭日志保存或备份、撤销权限不会自动删除已有文件和记录；具体删除方式见第 7 节。根据您所在地区的适用法律，您还可能享有访问、更正、删除、限制处理、反对处理或撤回同意等权利。请联系我们说明请求；仅保存在您设备中的数据需要由您在设备端管理。撤回同意不影响撤回前基于同意已进行处理的合法性。</p>
           <p>如果您未达到所在地区可独立作出相关隐私选择的年龄，请在监护人指导下使用。监护人如认为儿童信息被不当处理，可通过下列邮箱联系我们；我们会处理我们能够控制的相关资料，并说明适用的设备端或第三方处理途径。</p>
         </section>
         <section id="zh-contact">
@@ -171,38 +178,42 @@
       </article>
       <article id="en" lang="en" aria-labelledby="en-title">
         <div class="language"><h2 id="en-title">English</h2><a href="#zh" lang="zh-CN">返回中文版 ↑</a></div>
-        <div class="summary"><p><strong>Please read first:</strong> ClipMaster primarily stores clipboard history on your device. Link previews, web extraction, downloads, your configured WebDAV backups, Android system backups, and advertising services may send relevant data off your device. The sections below explain when this happens, what data is involved, and who receives it.</p></div>
+        <div class="summary"><p><strong>Please read first:</strong> ClipMaster primarily stores clipboard history on your device. Link previews, web extraction, downloads, update checks, your configured WebDAV backups, Android system backups, and advertising services may send relevant data off your device. If you enable log saving, diagnostic files are written to the device's public download directory. The sections below explain when this happens, what data is involved, and who receives it.</p></div>
         <section id="en-scope">
           <h3>1. Scope and developer</h3>
-          <p>This policy applies to the Google Play version of <strong>ClipMaster</strong> (Chinese name: 剪贴板助手; application identifier: <strong>com.cla.clip.master</strong>), provided by <strong>cla</strong>. It explains the handling of information related to clipboard records, links and media, backups, advertising, and communications with us.</p>
+          <p>This policy applies to versions of <strong>ClipMaster</strong> (Chinese name: 剪贴板助手; application identifier: <strong>com.cla.clip.master</strong>) provided by <strong>cla</strong> that use Google AdMob advertising. It explains the handling of information related to clipboard records, links and media, backups, update checks, logs, advertising, and communications with us. Differences in update checks between distribution channels are explained in section 3.</p>
           <p>ClipMaster does not require a ClipMaster account for clipboard management. Any WebDAV account you configure, website account you use, or Google service account is provided by the respective service provider.</p>
         </section>
         <section id="en-local">
           <h3>2. Clipboard records and local information</h3>
           <ul>
             <li><strong>Clipboard text:</strong> The app reads the clipboard in foreground situations permitted by Android. With your Shizuku authorization and clipboard monitoring running, it can also receive clipboard changes while you use other apps. Text, links, timestamps, and available source-app information support history, search, deduplication, pinning, folding, and record management.</li>
-            <li><strong>Source-app information:</strong> Package names, app names, and icons identify clipboard sources and support source filtering. Opening or refreshing the source-filter screen reads the installed-app list so you can select apps locally. The complete list is not uploaded as an inventory to the developer. Saved source information and the package names you select for filtering may be exported in backups you create.</li>
+            <li><strong>Source-app information:</strong> Package names, app names, and icons identify clipboard sources and support source filtering. Opening or refreshing the source-filter screen reads the installed-app list so you can select apps locally. Scan results remain in memory and are not persistently stored or uploaded to the developer as a complete app inventory. Source information associated with clipboard records and the package names you select for filtering are stored separately on your device and may be exported in backups you create.</li>
             <li><strong>History and preferences:</strong> Local search terms, link previews, download tasks and file locations, filtering rules, recycle-bin settings, and backup settings are stored on your device for the corresponding functions. The app does not supply clipboard text or source-app lists to AdMob as ad-request parameters.</li>
           </ul>
+          <p><strong>Download tasks are still stored locally:</strong> The current version has no download-history management screen, but it retains media URLs, necessary request information (which may include cookies, referrers, and browser identifiers), file names and locations, task status, and timestamps to run downloads, show current progress and results, retry failures, and handle interruptions. Completing a task or leaving the screen does not mean this data is immediately deleted; see section 7 for retention and deletion.</p>
           <p>Copied content can contain names, addresses, verification codes, passwords, or other sensitive information. The app cannot guarantee that it identifies and excludes every sensitive item. You can manage saved content through source filtering, revoking Shizuku authorization, and deleting records. Revoking Shizuku stops the corresponding background access; it does not delete existing records or prevent clipboard reads that Android permits while the app is in the foreground.</p>
         </section>
         <section id="en-network">
-          <h3>3. Link previews, websites, and media downloads</h3>
+          <h3>3. Link previews, websites, media downloads, and update checks</h3>
           <p><strong>Link previews may connect automatically.</strong> When saved text contains a supported link, the app may visit that link to retrieve its title, description, and preview image. Displaying a remote image may also contact its server. These requests can occur before you tap the link.</p>
           <p>The destination website, redirect destinations, and relevant content servers receive the requested URL, including its path and query parameters, your IP address, and necessary request information such as a browser identifier, language, and referrer. The full clipboard text is not normally sent for a preview, but the URL itself may contain personal information or access tokens.</p>
           <p>When you open a web page to extract images or videos, or start a download, the app contacts the relevant website and media servers. The embedded web environment can run website scripts, use web storage, and accept first-party and third-party cookies. Websites may use these to manage visits or sign-in sessions. Download tasks may store and send necessary cookies, referrers, and browser identifiers to retrieve media. Use websites you trust; their own policies govern their processing.</p>
           <p>When you share content or open it in an external browser or another app, the selected content is passed to the app or service you choose.</p>
+          <p><strong>Update checks:</strong> In distributions with in-app update checking, opening the “Mine” screen may trigger a check; automatic checks are normally limited to a 24-hour interval. You can also check manually. The app requests release information and related hosted resources from Gitee and GitHub, whose services can receive your IP address, requested URLs, and necessary network request information. Version comparison happens on your device; these checks do not upload clipboard text or an installed-app inventory. Google Play distributions do not perform this external update check. Tapping the update entry opens the app's store page, and the store handles access and updates under its own policy.</p>
         </section>
         <section id="en-backup">
           <h3>4. Local, WebDAV, and system backups</h3>
           <p><strong>Manual and automatic backups:</strong> You can export a backup to a location you select or configure WebDAV to upload, restore, and manage backups. Automatic backup is off by default. After you enable it, the app may back up data in the background to configured destinations. A selected document provider may also sync files to its own cloud service.</p>
-          <p>Backups can contain clipboard text, source information, link previews, search history, image and video download records, and settings included in the backup. Your WebDAV service receives backup content, necessary connection information, and the username and password or app-specific password required for authentication. The WebDAV endpoint and credentials are excluded from the app's custom backup archives; the password is stored locally using encryption.</p>
-          <p><strong>The backup files themselves are not encrypted.</strong> Someone who can read an archive may read its contents. WebDAV requires HTTPS by default. If you explicitly allow HTTP, network observers may be able to read the transmitted data and authentication credentials. Protect access to your backup locations.</p>
-          <p><strong>Android system backup and device migration:</strong> The app allows system backup. Depending on Android, the device manufacturer, and your system settings, some app data, potentially including the clipboard database, may be copied, uploaded, or restored by a system backup or migration service. Some sensitive settings and web state are excluded, but not all local data is excluded. This is independent of the app's automatic-backup setting; manage it in your device's system backup settings.</p>
+          <p>Local exports and WebDAV backups created by the current version can contain clipboard text (including recycle-bin items not yet permanently deleted), source information, link previews, search history, and included settings such as source-filter rules. Backup files and their manifests also contain management information such as creation time, app version, an identifier distinguishing this installation, and data counts. They exclude image and video download tasks, download-request cookies, downloaded media files, log files, advertising privacy choices, and WebDAV connection credentials. They do not provide media relinking after a restore.</p>
+          <p>Your WebDAV service receives backup content, necessary connection information, and the username and password or app-specific password required for authentication. The WebDAV endpoint and credentials are excluded from the app's custom backup archives; the password is stored locally using encryption.</p>
+          <p><strong>The backup files themselves are not encrypted.</strong> Before you first create a backup or enable automatic backup, the app explains the risks of unencrypted backups and asks for confirmation. Someone who can read an archive may read its contents. WebDAV requires HTTPS by default. If you explicitly allow HTTP, network observers may be able to read the transmitted data and authentication credentials. Protect access to your backup locations.</p>
+          <p><strong>Android system backup and device migration:</strong> The app allows system backup. Depending on Android, the device manufacturer, and your system settings, some app data may be copied, uploaded, or restored by a system backup or migration service. The main database is not excluded as a whole and may include clipboard records, download tasks, and stored request information. The exclusion of download tasks from custom backups does not apply to this system backup path. Some sensitive settings and web state are excluded, but not all local data is excluded. This is independent of the app's automatic-backup setting; manage it in your device's system backup settings.</p>
         </section>
         <section id="en-ads">
           <h3>5. Advertising and privacy choices</h3>
-          <p>This version uses Google AdMob for ads and Google's User Messaging Platform (UMP) for applicable privacy messages and choices. Advertising services may process IP-derived approximate location, device or advertising identifiers, app and ad interactions, and diagnostics for advertising, measurement, and fraud prevention. Processing depends on your choices, region, device settings, and service configuration. Non-personalized ads may still require some data processing.</p>
+          <p>This version uses Google AdMob for ads and Google's User Messaging Platform (UMP) for applicable privacy messages and choices. Advertising services may process IP addresses and approximate location inferred from them, device or advertising identifiers, app and ad interactions, and diagnostics for advertising, measurement, and fraud prevention. Processing depends on your choices, region, device settings, and service configuration. Non-personalized ads may still require some data processing.</p>
+          <p>UMP connects to refresh privacy messages and choice status; this may happen before an ad is requested or displayed. The app gates ad requests using UMP's permission-to-request state, which does not by itself mean that you consented to personalized advertising.</p>
           <p>Use the consent form when presented. When privacy options are required, you can reopen them from the advertising privacy entry on the “Mine” screen. Android also provides advertising-identifier controls. Changing your choices does not automatically erase data previously lawfully processed by the provider.</p>
           <p>See <a href="https://policies.google.com/privacy" rel="noreferrer">Google's Privacy Policy</a> and the <a href="https://developers.google.com/admob/android/next-gen/privacy/play-data-disclosure?hl=en" rel="noreferrer">Google advertising SDK data disclosures</a>.</p>
         </section>
@@ -211,7 +222,7 @@
           <ul>
             <li><strong>Shizuku authorization:</strong> Supports cross-app clipboard monitoring and the system interactions it requires. You can revoke it in Shizuku.</li>
             <li><strong>Installed-app access:</strong> Supports local source identification and selection of source-filter rules.</li>
-            <li><strong>Photos, videos, and files:</strong> Supports selected backup files, saving downloads, and reading the media library when you initiate media relinking after a restore. Permission scope varies by Android version; limited media access may not support batch relinking.</li>
+            <li><strong>Files and storage:</strong> Supports backup files or folders you select, saving downloaded media, and writing log files after you enable log saving. Depending on Android version, the app uses system file pickers, media-storage interfaces, or applicable storage permissions. The current version no longer offers media-library scanning and relinking after a restore.</li>
             <li><strong>Notifications:</strong> Shows clipboard updates, download progress, and task status. Clipboard notifications may display text and its source. Lock-screen visibility depends on your system settings; you can manage notification permission and lock-screen content.</li>
             <li><strong>Network access, foreground tasks, and boot events:</strong> Supports the network functions above, ongoing task notifications, and restoring tasks after a restart. Advertising SDKs also use necessary network and identifier capabilities.</li>
           </ul>
@@ -220,20 +231,23 @@
           <h3>7. Retention and deletion</h3>
           <ul>
             <li><strong>Clipboard history:</strong> Records remain available until you delete them. Items moved to the recycle bin can still be restored. Its default retention period is 30 days and can be changed. Expired records are removed when Android permits the cleanup task to run; you can also permanently delete items or empty the recycle bin yourself.</li>
-            <li><strong>Other local information:</strong> History, tasks, settings, and caches are retained for their respective functions. Use the app's management controls or clear app storage in Android settings. Uninstalling normally removes private app data.</li>
-            <li><strong>Separate files and backups:</strong> Downloaded files in shared storage, exports, WebDAV backups, and system backups are not necessarily deleted when you delete a record, turn backup off, or uninstall the app. Manage them separately in your file manager, WebDAV service, and system backup settings. Restoring an earlier backup may restore previously deleted records. Ordinary backups retain the configured number of recent copies; cleanup depends on successful task execution.</li>
+            <li><strong>Other local information:</strong> Search history, tasks, settings, and caches are retained for their respective functions. Download tasks are not immediately cleared when you close the current result screen, and there is no fixed automatic-deletion period after completion. The current version has no bulk download-history deletion entry. To remove this private data, you can clear app storage in Android settings; this also removes other local app data. Uninstalling normally removes private app data.</li>
+            <li><strong>Separate files and backups:</strong> Downloaded files in shared storage, logs, exports, WebDAV backups, and system backups are not necessarily deleted when you delete a record, turn log saving or backup off, clear app storage, or uninstall the app. Manage them separately in your file manager, WebDAV service, and system backup settings. Restoring an earlier backup may restore previously deleted records. Ordinary backups retain the configured number of recent copies; cleanup depends on successful task execution.</li>
+            <li><strong>Log rotation:</strong> While saving is enabled, the current log rotates at approximately 10 MiB, retaining up to 20 historical logs plus one current log. The oldest managed log is removed when this count is exceeded. A complete log record can push a file slightly over the size threshold. Older leftover files or files outside the current installation's management are not guaranteed to be removed automatically. Turning the switch off stops saving and does not delete existing files.</li>
             <li><strong>External services:</strong> Advertising, website, email, and backup providers retain information under their applicable policies. We cannot directly erase private records on your device or all data held by third parties.</li>
           </ul>
         </section>
         <section id="en-security">
           <h3>8. Security, diagnostics, and contacting us</h3>
           <p>The app uses Android's app isolation for private data and encrypted local storage for the WebDAV password. The advertising SDK uses TLS for collected data. User-selected websites and WebDAV connections configured to allow HTTP may be unencrypted; backup archives do not have content encryption. No storage or transmission method can guarantee absolute security.</p>
-          <p>The app may record operational status, error types, task counts, timing, and similar diagnostics in the device's system logs. If you send feedback, logs, or screenshots, your email address, message, attachments, and diagnostics are sent to the developer and the email service used to handle your request. Remove unnecessary sensitive content before sending. Advertising SDK diagnostics are described in section 5.</p>
+          <p>The app may record operational status, error types, task counts, source-app identifiers, timing, and similar diagnostics in the device's system logs. <strong>The log-saving switch on the “Mine” screen is off by default.</strong> Once enabled, the app saves logs actually emitted by its main process, including app, third-party SDK, and native logs, to the public directory <code>Download/ClipMaster/logs/</code> for troubleshooting. Leaving the screen or moving the app to the background does not automatically stop saving. Capture stops when the main process ends and resumes on a later launch according to the saved switch setting.</p>
+          <p>These log files are not encrypted. People or apps with access to the public directory may read them. The app applies redaction measures to its own logs, but third-party SDK and native logs may not go through the same process. Files may contain request, device, or app-related information and cannot be guaranteed to contain no sensitive data. Review files and remove unnecessary information before sharing them. This log-saving feature does not automatically upload the files to the developer; the advertising SDK's own network diagnostics are described in section 5.</p>
+          <p>If you voluntarily provide feedback, logs, or screenshots by email or another method, your email address, message, attachments, and diagnostics are sent to the developer and the service you use to handle your request.</p>
           <p>We retain information you send us only for as long as needed to handle your request and necessary follow-up, unless retention is legally required. You may contact us to request access, correction, or deletion of this information.</p>
         </section>
         <section id="en-rights">
           <h3>9. Your choices and information about minors</h3>
-          <p>You can manage records, backups, source filtering, system permissions, and applicable advertising privacy choices. Depending on the law where you live, you may also have rights to access, correct, erase, restrict or object to processing, or withdraw consent. Contact us with your request. Data held only on your device must be managed on that device. Withdrawing consent does not affect the lawfulness of consent-based processing before withdrawal.</p>
+          <p>You can manage records, backups, source filtering, log saving, system permissions, and applicable advertising privacy choices. Turning log saving or backup off, or revoking permissions, does not automatically delete existing files and records; see section 7 for deletion options. Depending on the law where you live, you may also have rights to access, correct, erase, restrict or object to processing, or withdraw consent. Contact us with your request. Data held only on your device must be managed on that device. Withdrawing consent does not affect the lawfulness of consent-based processing before withdrawal.</p>
           <p>If you are below the age at which you can make the relevant privacy choices independently in your region, use the app with a parent or guardian's guidance. A guardian who believes a child's information has been handled improperly can contact us. We will address relevant information within our control and explain applicable device-side or third-party options.</p>
         </section>
         <section id="en-contact">
