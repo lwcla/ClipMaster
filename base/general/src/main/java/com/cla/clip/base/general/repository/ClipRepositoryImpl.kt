@@ -1,7 +1,7 @@
 package com.cla.clip.base.general.repository
 
 import androidx.paging.PagingSource
-import com.cla.clip.base.general.search.ClipSearchTarget
+import com.cla.clip.base.general.search.ClipSearchField
 import com.cla.clip.base.general.search.buildClipFieldSearchQuery
 import androidx.room.withTransaction
 import com.cla.clip.base.general.dao.AppDatabase
@@ -89,19 +89,19 @@ class ClipRepositoryImpl @Inject constructor(
         sourceAppPackages: Set<String>,
         visibilityScope: ClipVisibilityScope,
         /** 定向范围使用已有真实字段，不再从综合索引挑选候选。 */
-        target: ClipSearchTarget,
+        fields: Set<ClipSearchField>,
         /** 来源名称投影解析后的身份集合；空集合保留无命中语义。 */
         matchedSourcePackages: Set<String>?,
     ): PagingSource<Int, ClipPageData> {
         /** 只裁剪查询外层空白，保留完整短语内部的输入语义。 */
         val trimmed = userInput.trim()
         // 空词仍走原筛选查询，不因选中标题或名称而排除缺失该字段的记录。
-        if (trimmed.isNotBlank() && target != ClipSearchTarget.All) {
+        if (trimmed.isNotBlank() || fields.isEmpty()) {
             return clipDao.searchClipsByFields(buildClipFieldSearchQuery(
-                target, trimmed, startTime, endTime, sourceAppPackages, matchedSourcePackages, visibilityScope,
+                fields, trimmed, startTime, endTime, sourceAppPackages, matchedSourcePackages, visibilityScope,
             ))
         }
-        /** 综合搜索沿用既有包名占位规则，定向无匹配不会经过此分支。 */
+        /** 空关键词沿用既有包名占位规则，非空查询不会进入旧综合索引。 */
         val sourcePackagesForQuery = buildSourcePackagesForQuery(sourceAppPackages)
         // 空字符串包名本身代表“未知来源”筛选项，不能按空白过滤；只有数量为 0 才表示跳过来源过滤。
         val sourceAppPackageCount = sourceAppPackages
@@ -112,8 +112,7 @@ class ClipRepositoryImpl @Inject constructor(
         val isFolded = visibilityScope.toFoldState()
         // 折叠搜索的“今天/近 7 天”等时间筛选按折叠动作发生时间过滤，和折叠列表排序、卡片时间展示保持一致。
         val timeFilterUsesFoldedAt = visibilityScope == ClipVisibilityScope.FoldedOnly
-        if (trimmed.isBlank()) {
-            return clipDao.searchClipsByFilters(
+        return clipDao.searchClipsByFilters(
                 startTime = startTime,
                 endTime = endTime,
                 sourceAppPackageCount = sourceAppPackageCount,
@@ -121,35 +120,6 @@ class ClipRepositoryImpl @Inject constructor(
                 isFolded = isFolded,
                 timeFilterUsesFoldedAt = timeFilterUsesFoldedAt
             )
-        }
-
-        /** 综合搜索保留原分词与 LIKE 并集行为，不在本轮重建索引。 */
-        val ftsQuery = buildFtsQuery(trimmed)
-        if (ftsQuery.isBlank()) {
-            return clipDao.searchClipsByLike(
-                keyword = trimmed,
-                startTime = startTime,
-                endTime = endTime,
-                sourceAppPackageCount = sourceAppPackageCount,
-                sourceAppPackages = sourcePackagesForQuery,
-                isFolded = isFolded,
-                timeFilterUsesFoldedAt = timeFilterUsesFoldedAt
-            )
-        }
-
-        return clipDao.searchClipsByKeyword(
-            query = ftsQuery,
-            exactQuery = trimmed,
-            queryWord = buildQueryWord(trimmed),
-            // 中文连续词依赖 LIKE 子串兜底，必须保留完整输入，避免“来源”无法命中“来源应用的包名”。
-            likeKeyword = trimmed,
-            startTime = startTime,
-            endTime = endTime,
-            sourceAppPackageCount = sourceAppPackageCount,
-            sourceAppPackages = sourcePackagesForQuery,
-            isFolded = isFolded,
-            timeFilterUsesFoldedAt = timeFilterUsesFoldedAt
-        )
     }
 
     /**
@@ -165,32 +135,6 @@ class ClipRepositoryImpl @Inject constructor(
             .distinct()
             .sorted()
         return packages.ifEmpty { listOf("__all_source_apps__") }
-    }
-
-    /**
-     * 把用户输入转换成 FTS 可执行的前缀查询。
-     *
-     * 这里延续旧搜索“逐字符前缀匹配”的策略，方便中文内容在没有明确空格分词时仍能被查到；
-     * 同时过滤 FTS 特殊字符，避免用户输入 URL 或标点时触发 MATCH 语法错误。
-     */
-    private fun buildFtsQuery(trimmedInput: String): String {
-        return trimmedInput
-            .mapNotNull { char ->
-                char.takeIf { ftsSearchableCharRegex.matches(it.toString()) }?.let { "$it*" }
-            }
-            .joinToString(separator = " ")
-    }
-
-    /**
-     * 提取用于排序打分的核心查询词。
-     *
-     * 多词搜索时取第一个非空词，保持与旧搜索排序逻辑一致；如果分词结果为空，则回退到完整输入。
-     */
-    private fun buildQueryWord(trimmedInput: String): String {
-        return trimmedInput
-            .split(Regex("\\s+"))
-            .firstOrNull { it.isNotBlank() }
-            ?: trimmedInput
     }
 
     /**

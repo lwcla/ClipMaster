@@ -73,8 +73,8 @@ internal fun FilterDropdown(
     onExpandedChange: (Boolean) -> Unit,
     /** 所属页面分配入口宽度，并在此测量真实窗口锚点。 */
     modifier: Modifier = Modifier,
-    /** 可选最小菜单宽度，默认跟随入口并受当前窗口安全区限制。 */
-    menuMinWidth: Dp = 0.dp,
+    /** 可选最小菜单宽度，与共享规则默认值一致并受窗口安全区限制。 */
+    menuMinWidth: Dp = DEFAULT_FILTER_DROPDOWN_MENU_WIDTH,
     /** 纯展示菜单内容，业务数据与勾选事件由调用方提供。 */
     menuContent: @Composable ColumnScope.() -> Unit,
 ) {
@@ -104,7 +104,8 @@ internal fun FilterDropdown(
     }
     /** 可见菜单宽度至少覆盖入口；来源可请求更宽布局，始终受当前窗口边缘限制。 */
     val menuWidth = with(density) {
-        maxOf(anchor.width.toDp(), menuMinWidth).coerceAtMost((windowSize.width - leftInsetPx - rightInsetPx - marginPx * 2).coerceAtLeast(1).toDp())
+        resolveFilterDropdownMenuWidth(anchor.width.toDp(),
+            (windowSize.width - leftInsetPx - rightInsetPx - marginPx * 2).coerceAtLeast(1).toDp(), menuMinWidth)
     }
     /** 最大高度使用锚点上下实际空间；内容超出时交给来源懒列表滚动。 */
     val maxHeight = with(density) { positionProvider.availableHeight(anchor, windowSize).toDp() }
@@ -184,39 +185,24 @@ internal fun <T> SingleChoiceDropdownContent(
     }
 }
 
-/** 通用即时多选菜单内容；左侧勾选，顶部全选只保留读屏名称，图标差异由展示 slot 表达。 */
+/** 通用即时多选菜单；头部由 slot 可选提供，选择规则和图标差异由调用方表达。 */
 @Composable
 internal fun SelectableDropdownContent(
     /** 调用方映射的稳定选择项，不由菜单加载业务数据。 */
     items: List<SelectableListItemState<String>>,
-    /** 已应用全选态，空候选时只展示禁用标记。 */
-    allSelected: Boolean,
-    /** 全选没有可见文字，由调用方传资源化读屏名称，避免无标签复选框。 */
-    selectAllContentDescription: String,
     /** 调用方资源化的空态文案，不展示来源名单。 */
     emptyText: String,
-    /** 顶部整行只回传一次全选事件。 */
-    onToggleAll: () -> Unit,
     /** 单项选择回传稳定身份，浮层继续保持打开。 */
     onToggleItem: (String) -> Unit,
     /** 菜单内容布局接口，最大高度由外层浮层约束。 */
     modifier: Modifier = Modifier,
     /** 可选图标展示由调用方按项提供，不让共享菜单依赖具体领域实体。 */
     itemLeadingContent: (@Composable (SelectableListItemState<String>) -> Unit)? = null,
+    /** 可选独立头部；未提供时不保留全选行或分隔线。 */
+    headerContent: (@Composable () -> Unit)? = null,
 ) {
     Column(modifier) {
-        Row(
-            Modifier.fillMaxWidth().toggleable(value = allSelected, enabled = items.isNotEmpty(), role = Role.Checkbox,
-                // 行承担唯一勾选入口，候选为空时不产生全选事件。
-                onValueChange = { onToggleAll() })
-                .semantics { contentDescription = selectAllContentDescription }
-                .heightIn(min = 48.dp).padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // 全选与具体来源共用 18dp 展示标记，点击与读屏由整行承担。
-            CompactCheckboxIndicator(checked = allSelected, enabled = items.isNotEmpty())
-        }
-        HorizontalDivider()
+        headerContent?.invoke()
         if (items.isEmpty()) {
             Text(emptyText, Modifier.padding(20.dp), style = MaterialTheme.typography.bodyMedium)
         } else {
@@ -233,4 +219,25 @@ internal fun SelectableDropdownContent(
             }
         }
     }
+}
+
+/** 多选菜单可选全选头部；状态与动作均由调用方提供，保持唯一复选语义。 */
+@Composable
+internal fun DropdownSelectAllHeader(
+    /** 当前全选态。 */ checked: Boolean,
+    /** 候选为空时不可切换。 */ enabled: Boolean,
+    /** 资源化读屏名称，无可见文字。 */ contentDescription: String,
+    /** 整行只回传一次全选事件。 */ onToggle: () -> Unit,
+    /** 外部布局接口。 */ modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier.fillMaxWidth().toggleable(value = checked, enabled = enabled, role = Role.Checkbox,
+            onValueChange = { onToggle() })
+            .semantics { this.contentDescription = contentDescription }
+            .heightIn(min = 48.dp).padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CompactCheckboxIndicator(checked = checked, enabled = enabled)
+    }
+    HorizontalDivider()
 }

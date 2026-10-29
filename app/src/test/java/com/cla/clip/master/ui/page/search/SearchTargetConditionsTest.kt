@@ -1,6 +1,6 @@
 package com.cla.clip.master.ui.page.search
 
-import com.cla.clip.base.general.search.ClipSearchTarget
+import com.cla.clip.base.general.search.ClipSearchField
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
@@ -14,10 +14,10 @@ class SearchTargetConditionsTest {
         /** 时间、来源和关键词保持固定，只改变目标字段。 */
         val initial = SearchFilterState("会议", SearchTimeFilter.TODAY, SourceAppSelection.Explicit(setOf("a")))
         /** 人工给出预期的三种独立查询。 */
-        val queries = flowOf(initial, initial.copy(target = ClipSearchTarget.Content),
-            initial.copy(target = ClipSearchTarget.Content), initial.copy(target = ClipSearchTarget.LinkTitle))
+        val queries = flowOf(initial, initial.copy(fields = setOf(ClipSearchField.Content, ClipSearchField.LinkTitle)),
+            initial.copy(fields = setOf(ClipSearchField.LinkTitle, ClipSearchField.Content)), initial.copy(fields = setOf(ClipSearchField.LinkTitle)))
             .distinctSearchQueryConditions().toList()
-        assertEquals(listOf(ClipSearchTarget.All, ClipSearchTarget.Content, ClipSearchTarget.LinkTitle), queries.map { it.target })
+        assertEquals(listOf(ClipSearchField.entries.toSet(), setOf(ClipSearchField.Content, ClipSearchField.LinkTitle), setOf(ClipSearchField.LinkTitle)), queries.map { it.fields })
         assertEquals(listOf("会议", "会议", "会议"), queries.map { it.query })
         assertEquals(listOf(setOf("a"), setOf("a"), setOf("a")), queries.map { it.sourceAppPackages })
     }

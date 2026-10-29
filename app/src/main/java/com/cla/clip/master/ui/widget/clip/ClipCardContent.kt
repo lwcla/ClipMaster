@@ -150,7 +150,7 @@ internal fun ClipContent(
 
         HighlightableText(
             text = clip.content,
-            highlightQuery = highlight?.queryFor(ClipHighlightField.Content),
+            highlightQuery = highlight?.queryForContent(clip.content, clip.link),
             style = MaterialTheme.typography.bodyLarge,
             maxLines = 3
         )
@@ -166,7 +166,7 @@ internal fun ClipContent(
 @Composable
 private fun LinkPreviewContent(
     /** 当前记录已有的预览，不触发额外读取。 */ clip: ClipShowEntity,
-    /** 仅标题或综合模式允许对应字段高亮。 */ highlight: ClipSearchHighlight?,
+    /** 标题和链接各自按当前字段集合决定高亮。 */ highlight: ClipSearchHighlight?,
 ) {
     /** 已提取且非空的链接地址。 */
     val link = clip.link?.takeIf { it.isNotBlank() }
@@ -283,7 +283,8 @@ private fun HighlightableText(
     val highlightTextColor = MaterialTheme.colorScheme.error
     /** 原文、关键词和主题改变时才重算区间，不在每次重组重复扫描。 */
     val highlightedText = remember(text, highlightQuery, highlightTextColor) {
-        buildSearchHighlightedText(text, highlightQuery, SearchMatchMode.Words, highlightTextColor)
+        // 七字段查询采用完整短语包含，高亮也必须保留输入中的空格和连续性。
+        buildSearchHighlightedText(text, highlightQuery, SearchMatchMode.Phrase, highlightTextColor)
     }
 
     Text(

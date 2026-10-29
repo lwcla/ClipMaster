@@ -1,7 +1,7 @@
 package com.cla.clip.master.ui.page.search
 
 import com.cla.clip.base.general.dao.data.SourceAppCandidate
-import com.cla.clip.base.general.search.ClipSearchTarget
+import com.cla.clip.base.general.search.ClipSearchField
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.catch
 internal fun searchSourceNamePackages(
     /** 当前分页会话的固定查询条件。 */ conditions: SearchQueryConditions,
     /** 惰性获取名称流，由调用方挂接可见性门控。 */ candidates: () -> Flow<List<SourceAppCandidate>>,
-): Flow<Set<String>?> = if (conditions.target == ClipSearchTarget.SourceName && conditions.query.isNotBlank()) {
+): Flow<Set<String>?> = if (ClipSearchField.SourceName in conditions.fields && conditions.query.isNotBlank()) {
     candidates().map { values -> matchSearchSourcePackages(conditions.query, values, conditions.sourceAppPackages) }
         .distinctUntilChanged()
 } else flowOf(null)

@@ -6,11 +6,11 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 
-/** 结果按词匹配、历史按完整短语匹配，仅用于 UI，不参与外部协议。 */
+/** 通用文本匹配策略；当前搜索结果与历史均采用 Phrase，不参与外部协议。 */
 internal enum class SearchMatchMode {
-    /** 搜索结果沿用按空白拆词。 */
+    /** 可选按空白拆词策略，不能用于完整短语搜索结果。 */
     Words,
-    /** 搜索历史沿用完整输入。 */
+    /** 结果与历史均保留完整输入及内部空白。 */
     Phrase,
 }
 

@@ -88,7 +88,13 @@
     <string name="host_backup_error_handoff">备份包交接失败，未能完成远端备份。</string>
     <!-- 搜索字段筛选与已有来源选择维度独立，全部字段保持旧综合搜索。 -->
     <string name="host_search_target">搜索范围</string>
-    <string name="host_search_target_all">全部字段</string>
+    <string name="host_search_target_link">链接地址</string>
+    <string name="host_search_target_description">链接描述</string>
+    <string name="host_search_target_site">站点名称</string>
+    <string name="host_search_target_package">来源 App 包名</string>
+    <string name="host_search_target_all">全部范围</string>
+    <string name="host_search_target_count">已选 %1$d 项</string>
+    <string name="host_search_target_required">至少选择一项</string>
     <string name="host_search_target_content">剪贴内容</string>
     <string name="host_search_target_title">链接标题</string>
     <string name="host_search_target_source">来源 App 名称</string>

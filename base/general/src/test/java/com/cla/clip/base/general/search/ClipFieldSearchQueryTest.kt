@@ -16,7 +16,7 @@ class ClipFieldSearchQueryTest {
         /** 一千二百个名称命中身份，不读取真实安装应用。 */
         val packages = (1..1_200).map { "fixture.$it" }.toSet()
         /** 实际生产构造器输出，保护自动名称匹配路径。 */
-        val query = buildClipFieldSearchQuery(ClipSearchTarget.SourceName, "fixture", 0, 5_000,
+        val query = buildClipFieldSearchQuery(setOf(ClipSearchField.SourceName), "fixture", 0, 5_000,
             emptySet(), packages, ClipVisibilityScope.VisibleOnly)
         assertTrue("大量来源匹配必须使用有界绑定参数", query.argCount <= 8)
     }

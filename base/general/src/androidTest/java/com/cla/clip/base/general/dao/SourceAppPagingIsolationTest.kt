@@ -6,7 +6,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.cla.clip.base.general.entity.ClipVisibilityScope
-import com.cla.clip.base.general.search.ClipSearchTarget
+import com.cla.clip.base.general.search.ClipSearchField
 import com.cla.clip.base.general.search.buildClipFieldSearchQuery
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
@@ -60,9 +60,9 @@ class SourceAppPagingIsolationTest {
             database.clipDao().searchClipsByFilters(null, null, 0, listOf("fixture"), false, false),
             database.clipDao().searchClipsByLike("keyword", null, null, 0, listOf("fixture"), false, false),
             database.clipDao().searchClipsByKeyword("keyword*", "keyword", "keyword", "keyword", null, null, 0, listOf("fixture"), false, false),
-        ) + listOf(ClipSearchTarget.Content, ClipSearchTarget.LinkTitle, ClipSearchTarget.SourceName).map { target ->
+        ) + ClipSearchField.entries.map { target ->
             // 来源名命中身份独立传入；SQL 不允许为了名称检索加入来源图标表依赖。
-            database.clipDao().searchClipsByFields(buildClipFieldSearchQuery(target, "keyword", null, null,
+            database.clipDao().searchClipsByFields(buildClipFieldSearchQuery(setOf(target), "keyword", null, null,
                 emptySet(), setOf("fixture.app"), ClipVisibilityScope.VisibleOnly))
         }
         sources.forEach { source -> register(source) }
@@ -86,7 +86,7 @@ class SourceAppPagingIsolationTest {
         assertTrue(source.invalid)
         /** 新标题查询也必须收到预览补齐通知，否则首次无标题会永久漏掉命中。 */
         val linkedSource = database.clipDao().searchClipsByFields(buildClipFieldSearchQuery(
-            ClipSearchTarget.LinkTitle, "标题", null, null, emptySet(), null, ClipVisibilityScope.VisibleOnly,
+            setOf(ClipSearchField.LinkTitle), "标题", null, null, emptySet(), null, ClipVisibilityScope.VisibleOnly,
         ))
         register(linkedSource)
         /** 链接更新的实际失效信号。 */

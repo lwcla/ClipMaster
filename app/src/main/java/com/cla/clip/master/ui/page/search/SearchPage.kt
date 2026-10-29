@@ -157,12 +157,12 @@ fun SearchPage(
     /** 结果列表滚动状态需要跨亮暗色切换保存，并按搜索范围隔离。 */
     val resultListState = rememberSaveable(saveableScopeKey, saver = LazyListState.Saver) { LazyListState() }
     /** 保存最后采用的目标，避免详情返回或配置变化误把同一结果滚回顶部。 */
-    var lastResultTarget by rememberSaveable(saveableScopeKey) { mutableStateOf(filterState.target.name) }
+    var lastResultFields by rememberSaveable(saveableScopeKey) { mutableStateOf(filterState.fields.map { it.id }.sorted().joinToString(",")) }
     // 字段变化代表新的结果集，重新从首屏展示；同字段回栈仍保留原视口。
-    LaunchedEffect(filterState.target) {
-        if (lastResultTarget != filterState.target.name) {
+    LaunchedEffect(filterState.fields) {
+        if (lastResultFields != filterState.fields.map { it.id }.sorted().joinToString(",")) {
             resultListState.requestScrollToItem(0)
-            lastResultTarget = filterState.target.name
+            lastResultFields = filterState.fields.map { it.id }.sorted().joinToString(",")
         }
     }
     /** 历史列表滚动状态独立保存，避免 Result/History 模式互相重置位置。 */
@@ -245,7 +245,7 @@ fun SearchPage(
                     if (failure != null) {
                         /** 只使用固定类别标识，不采集异常文本或查询绑定值。 */
                         val reason = if (failure is SearchSourceNameReadException) "source_name_read_failed" else "paging_load_failed"
-                        logE("ClipSearch") { "读取搜索结果失败 target=${resultKey.conditions.target} reasonCode=$reason" }
+                        logE("ClipSearch") { "读取搜索结果失败 fieldCount=${resultKey.conditions.fields.size} reasonCode=$reason" }
                     }
                 }
         }
@@ -458,7 +458,7 @@ fun SearchPage(
         }
     }
 
-    LaunchedEffect(visibilityScope, filterState.query, filterState.timeFilter, filterState.sourceAppPackages, filterState.target) {
+    LaunchedEffect(visibilityScope, filterState.query, filterState.timeFilter, filterState.sourceAppPackages, filterState.fields) {
         if (selectionMode) {
             clearSelection()
         }
@@ -551,7 +551,7 @@ fun SearchPage(
                     // 与上方同一 pageMode 分支收集的分页引用必定存在，不延迟复制内容状态。
                     pagedClips = checkNotNull(pagedClips),
                     emptyText = stringResource(scope.emptyTextRes),
-                    highlight = ClipSearchHighlight(resultKey.conditions.query, resultKey.conditions.target),
+                    highlight = ClipSearchHighlight(resultKey.conditions.query, resultKey.conditions.fields),
                     // 名称投影读取也属于分页前置步骤，显式重试需重建整个当前查询。
                     onRefreshRetry = viewModel::retrySearch,
                     // 广告与搜索头已在列表外，结果仅保留卡片间距和本页面多选栏空间。
@@ -666,7 +666,7 @@ fun SearchPage(
             },
             onMenuChange = ::updateFilterMenu,
             onTimeSelected = viewModel::updateTimeFilter,
-            onTargetSelected = viewModel::updateSearchTarget,
+            onToggleField = viewModel::toggleSearchField,
             onToggleAllSources = viewModel::toggleAllSourceApps,
             onToggleSource = viewModel::toggleSourceApp,
         )

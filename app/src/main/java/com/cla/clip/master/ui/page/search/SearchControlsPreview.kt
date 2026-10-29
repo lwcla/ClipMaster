@@ -15,7 +15,7 @@ private fun SearchHeaderEmptyPreview() {
     ClipMasterTheme { SearchHeaderPreviewContent(query = "") }
 }
 
-/** 有输入与窄屏大字体检查返回/清空热区、统一背景及三列或窄屏两行筛选入口。 */
+/** 有输入与窄屏大字体检查返回/清空热区、统一背景及固定同行的时间、搜索范围和来源入口。 */
 @Preview(showBackground = true, widthDp = 480)
 @Preview(showBackground = true, widthDp = 280, fontScale = 1.8f)
 @Composable
@@ -40,6 +40,6 @@ private fun SearchHeaderPreviewContent(
         offsetPx = 0f,
         // 预览回调仅占位，不启动焦点请求、输入法或业务任务。
         onQueryChange = {}, onFocusChange = {}, onBack = {}, onClear = {}, onSubmit = {},
-        onMenuChange = {}, onTargetSelected = {}, onTimeSelected = {}, onToggleAllSources = {}, onToggleSource = {},
+        onMenuChange = {}, onToggleField = {}, onTimeSelected = {}, onToggleAllSources = {}, onToggleSource = {},
     )
 }

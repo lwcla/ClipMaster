@@ -2,7 +2,7 @@ package com.cla.clip.master.ui.page.search
 
 import androidx.paging.PagingData
 import com.cla.clip.base.general.entity.ClipVisibilityScope
-import com.cla.clip.base.general.search.ClipSearchTarget
+import com.cla.clip.base.general.search.ClipSearchField
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -31,7 +31,7 @@ class SearchPagingSessionsTest {
             val firstJob = parent.children.single()
             assertSame(first, sessions.get(firstKey) { error("相同查询不应重建") })
             /** 只有字段发生变化的第二次查询。 */
-            val secondKey = firstKey.copy(conditions = firstKey.conditions.copy(target = ClipSearchTarget.LinkTitle))
+            val secondKey = firstKey.copy(conditions = firstKey.conditions.copy(fields = setOf(ClipSearchField.LinkTitle)))
             /** 第二次查询必须是独立的分页数据流。 */
             val second = sessions.get(secondKey) { flowOf(PagingData.empty()) }
             assertNotSame(first, second)

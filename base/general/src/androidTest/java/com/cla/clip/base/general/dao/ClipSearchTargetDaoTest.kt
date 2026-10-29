@@ -6,7 +6,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.cla.clip.base.general.entity.ClipVisibilityScope
-import com.cla.clip.base.general.search.ClipSearchTarget
+import com.cla.clip.base.general.search.ClipSearchField
 import com.cla.clip.base.general.search.buildClipFieldSearchQuery
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -39,47 +39,47 @@ class ClipSearchTargetDaoTest {
 
     /** 正文目标不能被标题、综合索引、折叠或已删除记录污染。 */
     @Test fun contentDoesNotMatchTitleOrOtherVisibility() = runBlocking {
-        assertEquals(listOf(1L), ids(ClipSearchTarget.Content, "会议"))
+        assertEquals(listOf(1L), ids(ClipSearchField.Content, "会议"))
     }
 
     /** 标题目标只使用真实预览标题，正文与无标题记录都不命中。 */
     @Test fun titleDoesNotMatchContentOrFallback() = runBlocking {
-        assertEquals(listOf(2L), ids(ClipSearchTarget.LinkTitle, "会议"))
+        assertEquals(listOf(2L), ids(ClipSearchField.LinkTitle, "会议"))
     }
 
     /** 来源名已解析为空集合时必须返回零条，不能走现有空集合即全部语义。 */
     @Test fun noSourceNameMatchStaysEmpty() = runBlocking {
-        assertEquals(emptyList<Long>(), ids(ClipSearchTarget.SourceName, "会议", matched = emptySet()))
-        assertEquals(emptyList<Long>(), ids(ClipSearchTarget.SourceName, "会议", selected = setOf("b"), matched = setOf("a")))
+        assertEquals(emptyList<Long>(), ids(ClipSearchField.SourceName, "会议", matched = emptySet()))
+        assertEquals(emptyList<Long>(), ids(ClipSearchField.SourceName, "会议", selected = setOf("b"), matched = setOf("a")))
     }
 
     /** 名称匹配后仍要应用用户选择与删除/折叠边界，排序以 id 唯一兜底。 */
     @Test fun sourceIntersectionKeepsStableVisibleOrder() = runBlocking {
-        assertEquals(listOf(6L, 5L, 1L), ids(ClipSearchTarget.SourceName, "应用", selected = setOf("a"), matched = setOf("a", "b")))
+        assertEquals(listOf(6L, 5L, 1L), ids(ClipSearchField.SourceName, "应用", selected = setOf("a"), matched = setOf("a", "b")))
     }
 
     /** 大集合使用单个编码参数后仍精确匹配，不能因子串前缀误命中另一个来源。 */
     @Test fun manySourceNamesUseBoundedParametersWithoutPrefixMatches() = runBlocking {
         /** 超出内联参数阈值，但只有 a 是本库已记录来源；ab 不能让 b 误命中。 */
         val matches = (1..1_200).map { "fixture.$it" }.toSet() + setOf("a", "ab")
-        assertEquals(listOf(6L, 5L, 1L), ids(ClipSearchTarget.SourceName, "应用", matched = matches))
+        assertEquals(listOf(6L, 5L, 1L), ids(ClipSearchField.SourceName, "应用", matched = matches))
     }
 
     /** 搜索符号时不把百分号和下划线解释为通配符。 */
     @Test fun symbolsAreMatchedLiterally() = runBlocking {
-        assertEquals(listOf(5L), ids(ClipSearchTarget.Content, "%_\\"))
+        assertEquals(listOf(5L), ids(ClipSearchField.Content, "%_\\"))
     }
 
     /** 折叠搜索使用 foldedAt 时间轴，不能套用原剪贴时间。 */
     @Test fun foldedSearchUsesFoldedTimeWindow() = runBlocking {
-        assertEquals(listOf(3L), ids(ClipSearchTarget.Content, "会议", scope = ClipVisibilityScope.FoldedOnly, start = 8_000, end = 10_000))
-        assertEquals(emptyList<Long>(), ids(ClipSearchTarget.Content, "会议", scope = ClipVisibilityScope.FoldedOnly, start = 1_000, end = 2_000))
+        assertEquals(listOf(3L), ids(ClipSearchField.Content, "会议", scope = ClipVisibilityScope.FoldedOnly, start = 8_000, end = 10_000))
+        assertEquals(emptyList<Long>(), ids(ClipSearchField.Content, "会议", scope = ClipVisibilityScope.FoldedOnly, start = 1_000, end = 2_000))
     }
 
     /** 同一时间下置顶优先，然后按目标字段精确命中优先并以主键稳定排序。 */
     @Test fun exactFieldMatchAndPinningPrecedeTimeTieBreaker() = runBlocking {
         database.clipDao().upsertClipsForBackup(listOf(clip(7, "会议", "a"), clip(8, "会议补充", "a").copy(pinnedTime = 20)))
-        assertEquals(listOf(8L, 7L, 1L), ids(ClipSearchTarget.Content, "会议"))
+        assertEquals(listOf(8L, 7L, 1L), ids(ClipSearchField.Content, "会议"))
     }
 
     /** 原有空关键词路径仍显示没有标题的记录，与所选目标无关。 */
@@ -90,18 +90,71 @@ class ClipSearchTargetDaoTest {
         assertEquals(listOf(6L, 5L, 2L, 1L), result.data.map { it.clip.id })
     }
 
+    /** 七个字段各自命中独立记录，全选只按真实列取并集，不读取综合索引。 */
+    @Test fun sevenFieldsMatchIndependentlyAndAllSelectedReturnsTheirUnion() = runBlocking {
+        database.linkPreviewDao().upsert(LinkPreviewData("fixture-title", "needle", null, null, null))
+        database.linkPreviewDao().upsert(LinkPreviewData("fixture-description", null, "needle", null, null))
+        database.linkPreviewDao().upsert(LinkPreviewData("fixture-site", null, null, null, "needle"))
+        database.clipDao().upsertClipsForBackup(listOf(
+            clip(11, "prefix needle suffix", "a"), clip(12, "link fixture", "a", "https://example.test/needle"),
+            clip(13, "title fixture", "b", "fixture-title"), clip(14, "description fixture", "a", "fixture-description"),
+            clip(15, "site fixture", "a", "fixture-site"), clip(16, "package fixture", "needle.package"),
+            clip(17, "name fixture", "fixture.named"),
+        ))
+        /** 显式业务预期，来源名称以已解析身份输入，不把包名当名称。 */
+        val expected = mapOf(ClipSearchField.Content to 11L, ClipSearchField.Link to 12L, ClipSearchField.LinkTitle to 13L,
+            ClipSearchField.LinkDescription to 14L, ClipSearchField.SiteName to 15L,
+            ClipSearchField.SourcePackage to 16L, ClipSearchField.SourceName to 17L)
+        expected.forEach { (field, id) -> assertEquals(listOf(id), ids(field, "needle", matched = setOf("fixture.named"))) }
+        assertEquals(expected.values.toSet(), ids(ClipSearchField.Content, "needle", matched = setOf("fixture.named"),
+            fields = ClipSearchField.entries.toSet()).toSet())
+    }
+
+    /** 名称无命中不能排除正文/标题，手动来源仍应约束所有分支。 */
+    @Test fun selectedFieldsAreOrButManualSourceIsAnOuterAnd() = runBlocking {
+        /** 三字段组合，其中来源名没有命中。 */
+        val fields = setOf(ClipSearchField.Content, ClipSearchField.LinkTitle, ClipSearchField.SourceName)
+        assertEquals(setOf(1L, 2L), ids(ClipSearchField.Content, "会议", matched = emptySet(), fields = fields).toSet())
+        assertEquals(listOf(2L), ids(ClipSearchField.Content, "会议", selected = setOf("b"), matched = setOf("a"), fields = fields))
+    }
+
+    /** 同一记录多个字段同时命中必须只出现一次，单页内外都保持唯一 id。 */
+    @Test fun multipleMatchingFieldsDoNotDuplicateClips() = runBlocking {
+        database.clipDao().upsertClipsForBackup(listOf(clip(20, "会议", "a", "https://example.test/2")))
+        /** 同时由内容和预览标题命中的记录只出现一次。 */
+        val result = ids(ClipSearchField.Content, "会议", matched = emptySet(), fields = ClipSearchField.entries.toSet())
+        assertEquals(result.distinct(), result)
+        assertEquals(setOf(20L, 2L, 1L), result.toSet())
+    }
+
+    /** 连续短语不能退回逐词、逐字符前缀或跨字段拼接命中。 */
+    @Test fun fullPhrasePreservesSpacesAndDoesNotUseFtsOrCrossFieldText() = runBlocking {
+        database.linkPreviewDao().upsert(LinkPreviewData("fixture-split", "beta", null, null, null))
+        database.clipDao().upsertClipsForBackup(listOf(clip(21, "alpha beta", "a"), clip(22, "alpha x beta", "a"),
+            clip(23, "alpha", "a", "fixture-split"), clip(24, "apple banana", "a"), clip(25, "xxabyy", "a")))
+        assertEquals(listOf(21L), ids(ClipSearchField.Content, "alpha beta", matched = emptySet(), fields = ClipSearchField.entries.toSet()))
+        assertEquals(listOf(25L), ids(ClipSearchField.Content, "ab", matched = emptySet(), fields = ClipSearchField.entries.toSet()))
+    }
+
+    /** 即使关键词为空，也不能把空字段集合解释成默认全部。 */
+    @Test fun invalidEmptySelectionReturnsNoClips() = runBlocking {
+        assertEquals(emptyList<Long>(), ids(ClipSearchField.Content, "", fields = emptySet()))
+        assertEquals(emptyList<Long>(), ids(ClipSearchField.Content, "会议", fields = emptySet()))
+    }
+
     /** 调用生产查询构造器与 DAO，读取实际分页首屏，错误直接抛出使测试失败。 */
     private suspend fun ids(
-        /** 当前目标字段。 */ target: ClipSearchTarget,
+        /** 当前目标字段。 */ target: ClipSearchField,
         /** 合成关键词。 */ keyword: String,
         /** 用户选择来源。 */ selected: Set<String> = emptySet(),
         /** 名称匹配得到的来源，null 表示不使用该维度。 */ matched: Set<String>? = null,
         /** 普通/折叠记录隔离。 */ scope: ClipVisibilityScope = ClipVisibilityScope.VisibleOnly,
         /** 左闭时间边界。 */ start: Long? = null,
         /** 右开时间边界。 */ end: Long? = null,
+        /** 多字段组合覆盖，默认保持单字段用例简洁。 */ fields: Set<ClipSearchField> = setOf(target),
     ): List<Long> {
         /** 实际执行的参数化 SQL，全部用户文本通过绑定参数进入 SQLite。 */
-        val query = buildClipFieldSearchQuery(target, keyword, start, end, selected, matched, scope)
+        val query = buildClipFieldSearchQuery(fields, keyword, start, end, selected, matched, scope)
         /** 执行真实 Room 分页查询，不模拟命中结果。 */
         val loaded = database.clipDao().searchClipsByFields(query).load(PagingSource.LoadParams.Refresh(null, 20, false))
         return when (loaded) {

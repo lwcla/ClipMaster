@@ -4,7 +4,7 @@ import androidx.paging.*
 import com.cla.clip.base.general.dao.data.SourceAppCandidate
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.entity.ClipVisibilityScope
-import com.cla.clip.base.general.search.ClipSearchTarget
+import com.cla.clip.base.general.search.ClipSearchField
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import org.junit.Assert.*
@@ -30,7 +30,7 @@ class SearchPagingConsumptionTest {
             assertEquals(listOf(11L, 12L), readIds(sessions.get(key) { error("回栈不应重建") }))
             assertEquals(1, loads)
             /** 改变字段使用不同的数据，捕获缓存串代。 */
-            val next = sessions.get(key.copy(conditions = key.conditions.copy(target = ClipSearchTarget.LinkTitle))) {
+            val next = sessions.get(key.copy(conditions = key.conditions.copy(fields = setOf(ClipSearchField.LinkTitle)))) {
                 pager(listOf(21)) { loads++ }
             }
             assertEquals(listOf(21L), readIds(next))
@@ -45,7 +45,7 @@ class SearchPagingConsumptionTest {
         /** 真正生产会话缓存，不 mock cachedIn。 */
         val sessions = SearchPagingSessions(cacheScope)
         /** 名称模式保证经过来源匹配与失败转换链。 */
-        val key = key().copy(conditions = key().conditions.copy(target = ClipSearchTarget.SourceName))
+        val key = key().copy(conditions = key().conditions.copy(fields = setOf(ClipSearchField.SourceName)))
         /** 数据源尝试次数，显式重试才允许第二次读取。 */
         var attempts = 0
         /** 页面重试使用同一工厂；第一次失败、第二次恢复只改变数据源行为。 */

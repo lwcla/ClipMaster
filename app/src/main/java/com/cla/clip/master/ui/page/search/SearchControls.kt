@@ -10,7 +10,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.cla.clip.base.general.search.ClipSearchTarget
+import com.cla.clip.base.general.search.ClipSearchField
 import com.cla.clip.master.ui.widget.SearchTopBar
 import com.cla.clip.base.general.dao.data.SourceAppCandidate
 import com.cla.clip.master.ui.widget.sourceapp.AppIconLoader
@@ -68,7 +68,7 @@ internal fun SearchCollapsibleHeader(
     /** 页面负责菜单互斥、广告保护与生命周期关闭。 */
     onMenuChange: (SearchFilterMenu) -> Unit,
     /** 搜索字段选择由页面更新唯一条件。 */
-    onTargetSelected: (ClipSearchTarget) -> Unit,
+    onToggleField: (ClipSearchField) -> Unit,
     /** 时间选中后沿用页面即时查询。 */
     onTimeSelected: (SearchTimeFilter) -> Unit,
     /** 来源全选事件只交给既有选择规则。 */
@@ -110,7 +110,7 @@ internal fun SearchCollapsibleHeader(
                 iconLoader = iconLoader,
                 expandedMenu = expandedMenu,
                 onMenuChange = onMenuChange,
-                onTargetSelected = onTargetSelected,
+                onToggleField = onToggleField,
                 onTimeSelected = onTimeSelected,
                 onToggleAllSources = onToggleAllSources,
                 onToggleSource = onToggleSource,

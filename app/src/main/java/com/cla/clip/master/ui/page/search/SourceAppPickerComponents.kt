@@ -11,6 +11,7 @@ import com.cla.clip.master.ui.widget.sourceapp.AppIconLoader
 import com.cla.clip.master.ui.widget.sourceapp.EmptyAppIconLoader
 import com.cla.clip.base.general.utils.toSourceAppDisplayName
 import com.cla.clip.master.R
+import com.cla.clip.master.ui.widget.DropdownSelectAllHeader
 import com.cla.clip.master.ui.widget.SelectableDropdownContent
 import com.cla.clip.master.ui.widget.SelectableListItemState
 
@@ -37,10 +38,11 @@ internal fun SourceAppDropdownContent(
                 selected = selection.contains(sourceApp.packageName),
             )
         },
-        allSelected = selection.isAllSelected,
-        selectAllContentDescription = stringResource(com.cla.clip.base.general.R.string.base_general_select_all),
         emptyText = stringResource(R.string.host_search_source_empty),
-        onToggleAll = onToggleAll,
+        headerContent = {
+            DropdownSelectAllHeader(selection.isAllSelected, sourceApps.isNotEmpty(),
+                stringResource(com.cla.clip.base.general.R.string.base_general_select_all), onToggleAll)
+        },
         onToggleItem = onToggleItem,
         // 菜单行进入组合且处于 STARTED 才加载；关闭菜单后释放图像引用。
         itemLeadingContent = { item ->

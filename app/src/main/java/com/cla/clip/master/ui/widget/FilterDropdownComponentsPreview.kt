@@ -67,10 +67,10 @@ private fun SelectableDropdownLongListPreview() {
                 SelectableDropdownContent(
                     // 身份只供稳定 key 使用，不作为副标题展示；合成名称检查单行省略。
                     items = List(30) { SelectableListItemState(id = "fixture.$it", title = title.repeat(2), selected = false) },
-                    allSelected = false,
-                    selectAllContentDescription = stringResource(com.cla.clip.base.general.R.string.base_general_select_all),
                     emptyText = stringResource(R.string.host_search_source_empty),
-                    onToggleAll = {}, onToggleItem = {},
+                    onToggleItem = {},
+                    headerContent = { DropdownSelectAllHeader(false, true,
+                        stringResource(com.cla.clip.base.general.R.string.base_general_select_all), {}) },
                     // 纯展示 slot 与真实来源保持 24dp 尺寸，图标不重复朗读应用名称。
                     itemLeadingContent = { Icon(defaultIcon, contentDescription = null, modifier = Modifier.size(24.dp), tint = androidx.compose.ui.graphics.Color.Unspecified) },
                 )
@@ -85,9 +85,9 @@ private fun SelectableDropdownLongListPreview() {
 private fun SelectableDropdownEmptyPreview() {
     ClipMasterTheme {
         Surface {
-            SelectableDropdownContent(emptyList(), false,
-                stringResource(com.cla.clip.base.general.R.string.base_general_select_all),
-                stringResource(R.string.host_search_source_empty), {}, {})
+            SelectableDropdownContent(emptyList(), stringResource(R.string.host_search_source_empty), {},
+                headerContent = { DropdownSelectAllHeader(false, false,
+                    stringResource(com.cla.clip.base.general.R.string.base_general_select_all), {}) })
         }
     }
 }

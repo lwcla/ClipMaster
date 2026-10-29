@@ -146,6 +146,8 @@ internal data class SelectableListItemState<Id>(
 
     /** 当前是否被选中。 */
     val selected: Boolean,
+    /** 是否允许本项交互；默认可用以保持既有调用方，业务限制由上层派生。 */
+    val enabled: Boolean = true,
 )
 
 /**
@@ -323,13 +325,13 @@ internal fun <Id> SelectableListItem(
             .heightIn(min = 48.dp)
             .then(if (checkboxPlacement == CheckboxPlacement.Leading) {
                 // 选择框只展示，整行回传一次事件并朗读真实勾选状态。
-                Modifier.toggleable(value = state.selected, role = Role.Checkbox, onValueChange = { onClick() })
-            } else Modifier.clickable(onClick = onClick))
+                Modifier.toggleable(value = state.selected, enabled = state.enabled, role = Role.Checkbox, onValueChange = { onClick() })
+            } else Modifier.clickable(enabled = state.enabled, onClick = onClick))
             .padding(horizontal = horizontalPadding, vertical = verticalPadding),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (checkboxPlacement == CheckboxPlacement.Leading) {
-            CompactCheckboxIndicator(checked = state.selected)
+            CompactCheckboxIndicator(checked = state.selected, enabled = state.enabled)
             Spacer(Modifier.width(6.dp))
         }
         if (leadingContent != null) {
@@ -340,6 +342,7 @@ internal fun <Id> SelectableListItem(
             Text(
                 text = state.title,
                 style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (state.enabled) 1f else 0.38f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -357,6 +360,7 @@ internal fun <Id> SelectableListItem(
         if (checkboxPlacement == CheckboxPlacement.Trailing) {
             Checkbox(
                 checked = state.selected,
+                enabled = state.enabled,
                 // 默认尾部保留原选择事件语义，不引入内部草稿。
                 onCheckedChange = { onClick() },
             )

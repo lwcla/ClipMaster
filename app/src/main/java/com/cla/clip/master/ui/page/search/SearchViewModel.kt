@@ -7,7 +7,7 @@ import androidx.paging.Pager
 import com.cla.clip.master.paging.clipPagingConfig
 import androidx.paging.PagingData
 import com.cla.clip.base.general.entity.ClipShowEntity
-import com.cla.clip.base.general.search.ClipSearchTarget
+import com.cla.clip.base.general.search.ClipSearchField
 import kotlinx.coroutines.flow.Flow
 import androidx.paging.map
 import com.cla.clip.base.general.dao.SearchHistoryData
@@ -136,7 +136,7 @@ class SearchViewModel @Inject constructor(
                         endTime = timeRange.endTime,
                         sourceAppPackages = key.conditions.sourceAppPackages,
                         visibilityScope = key.visibility,
-                        target = key.conditions.target,
+                        fields = key.conditions.fields,
                         matchedSourcePackages = matchedPackages,
                     )
                 }.flow.map { pagingData ->
@@ -151,8 +151,8 @@ class SearchViewModel @Inject constructor(
     fun retrySearch() { _retryGeneration.update { it + 1 } }
 
     /** 字段切换只修改单一状态，保留时间/来源和输入；新结果态会使用独立缓存。 */
-    fun updateSearchTarget(/** 用户选择的字段范围。 */ target: ClipSearchTarget) {
-        _filterState.update { it.copy(target = target) }
+    fun toggleSearchField(/** 用户选择的字段范围。 */ target: ClipSearchField) {
+        _filterState.update { it.copy(fields = SearchFieldSelectionReducer.toggle(it.fields, target)) }
     }
 
     /**
