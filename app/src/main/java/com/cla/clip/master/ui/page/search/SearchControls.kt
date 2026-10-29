@@ -1,10 +1,7 @@
 package com.cla.clip.master.ui.page.search
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -13,19 +10,18 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.cla.clip.base.general.search.ClipSearchTarget
 import com.cla.clip.master.ui.widget.SearchTopBar
-import com.cla.clip.master.R
 import com.cla.clip.base.general.dao.data.SourceAppCandidate
 import com.cla.clip.master.ui.widget.sourceapp.AppIconLoader
 import com.cla.clip.master.ui.widget.sourceapp.EmptyAppIconLoader
-import com.cla.clip.master.ui.widget.FilterDropdown
-import com.cla.clip.master.ui.widget.SingleChoiceDropdownContent
-import com.cla.clip.master.ui.widget.SingleChoiceOption
 
 /** 页面瞬时互斥菜单状态，不跨重建或离页保存。 */
 internal enum class SearchFilterMenu {
     /** 无浮层。 */
     None,
+    /** 搜索字段单选浮层。 */
+    Target,
     /** 时间单选浮层。 */
     Time,
     /** 来源即时多选浮层。 */
@@ -71,6 +67,8 @@ internal fun SearchCollapsibleHeader(
     onSubmit: () -> Unit,
     /** 页面负责菜单互斥、广告保护与生命周期关闭。 */
     onMenuChange: (SearchFilterMenu) -> Unit,
+    /** 搜索字段选择由页面更新唯一条件。 */
+    onTargetSelected: (ClipSearchTarget) -> Unit,
     /** 时间选中后沿用页面即时查询。 */
     onTimeSelected: (SearchTimeFilter) -> Unit,
     /** 来源全选事件只交给既有选择规则。 */
@@ -112,6 +110,7 @@ internal fun SearchCollapsibleHeader(
                 iconLoader = iconLoader,
                 expandedMenu = expandedMenu,
                 onMenuChange = onMenuChange,
+                onTargetSelected = onTargetSelected,
                 onTimeSelected = onTimeSelected,
                 onToggleAllSources = onToggleAllSources,
                 onToggleSource = onToggleSource,
@@ -157,99 +156,4 @@ internal fun SearchBar(
         // 监听与 FocusRequester 都挂实际输入节点，菜单关闭后的焦点继续由页面 guard 判断。
         inputModifier = inputModifier.onFocusChanged { onFocusChange(it.isFocused) },
     )
-}
-
-/**
- * 搜索筛选区。
- *
- * 时间与来源按 2:3 分配宽度，为应用名称保留更多空间；选择与菜单状态由页面持有。
- */
-@Composable
-internal fun SearchFilters(
-    /** 页面当前时间与来源条件，本组件不创建选择副本。 */
-    filterState: SearchFilterState,
-    /** 已选来源名称用于入口摘要，多选只显示数量。 */
-    selectedSourceAppNames: List<String>,
-    /** 页面生命周期内收集的来源候选，仅在菜单展示。 */
-    sourceApps: List<SourceAppCandidate>,
-    /** 页面注入图标加载边界，纯预览默认占位。 */
-    iconLoader: AppIconLoader = EmptyAppIconLoader,
-    /** 页面统一管理互斥菜单及关闭边界。 */
-    expandedMenu: SearchFilterMenu,
-    /** 只切换浮层，保持当前查询条件。 */
-    onMenuChange: (SearchFilterMenu) -> Unit,
-    /** 时间选中事件沿用即时查询契约。 */
-    onTimeSelected: (SearchTimeFilter) -> Unit,
-    /** 来源批量选择由既有页面规则处理。 */
-    onToggleAllSources: () -> Unit,
-    /** 具体来源稳定包名原样交给页面，不按显示名称选择。 */
-    onToggleSource: (String) -> Unit,
-) {
-    /** 当前时间值与下拉选项共用文案；入口只展示当前值，不显示维度标题。 */
-    val selectedTimeLabel = filterState.timeFilter.labelText()
-
-    /** 当前来源筛选的展示值，多选时只显示数量，长单个名称由入口单行省略。 */
-    val selectedSourceAppLabel = when (selectedSourceAppNames.size) {
-        0 -> stringResource(com.cla.clip.base.general.R.string.base_general_all_source_apps)
-        1 -> selectedSourceAppNames.first()
-        else -> stringResource(
-            com.cla.clip.base.general.R.string.base_general_selected_source_app_count,
-            selectedSourceAppNames.size
-        )
-    }
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        FilterDropdown(
-            value = selectedTimeLabel,
-            accessibilityDescription = stringResource(R.string.host_search_filter_accessibility,
-                stringResource(com.cla.clip.base.general.R.string.base_general_time), selectedTimeLabel),
-            expanded = expandedMenu == SearchFilterMenu.Time,
-            // 时间入口与来源互斥，关闭只改变浮层状态，不提交筛选。
-            onExpandedChange = { onMenuChange(if (it) SearchFilterMenu.Time else SearchFilterMenu.None) },
-            // 时间取 2 份宽度，来源取 3 份；固定间距不参与比例。
-            modifier = Modifier.weight(2f),
-        ) {
-            SingleChoiceDropdownContent(
-                options = SearchTimeFilter.entries.map { SingleChoiceOption(it, it.labelText()) },
-                selectedValue = filterState.timeFilter,
-                onSelect = onTimeSelected,
-                // 重复点击当前时间只关闭菜单，保持至少一项选中。
-                onDismiss = { onMenuChange(SearchFilterMenu.None) },
-            )
-        }
-
-        FilterDropdown(
-            value = selectedSourceAppLabel,
-            accessibilityDescription = stringResource(R.string.host_search_filter_accessibility,
-                stringResource(com.cla.clip.base.general.R.string.base_general_source_app), selectedSourceAppLabel),
-            expanded = expandedMenu == SearchFilterMenu.Source,
-            // 来源菜单开关不回滚即时选择，统一由页面处理生命周期和广告保护。
-            onExpandedChange = { onMenuChange(if (it) SearchFilterMenu.Source else SearchFilterMenu.None) },
-            modifier = Modifier.weight(3f),
-        ) {
-            SourceAppDropdownContent(
-                sourceApps = sourceApps,
-                iconLoader = iconLoader,
-                selection = filterState.sourceAppSelection,
-                onToggleAll = onToggleAllSources,
-                onToggleItem = onToggleSource,
-            )
-        }
-    }
-}
-
-/** 时间筛选对应的本地化展示文案。 */
-@Composable
-internal fun SearchTimeFilter.labelText(): String {
-    return when (this) {
-        SearchTimeFilter.ALL -> stringResource(com.cla.clip.base.general.R.string.base_general_all_time)
-        SearchTimeFilter.TODAY -> stringResource(com.cla.clip.base.general.R.string.base_general_today)
-        SearchTimeFilter.LAST_7_DAYS -> stringResource(com.cla.clip.base.general.R.string.base_general_last_7_days)
-        SearchTimeFilter.LAST_30_DAYS -> stringResource(com.cla.clip.base.general.R.string.base_general_last_30_days)
-    }
 }

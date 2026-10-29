@@ -1,5 +1,7 @@
 package com.cla.clip.master.ui.page.search
 
+import com.cla.clip.base.general.search.ClipSearchTarget
+
 /** 搜索页时间单选值，始终有一项；查询时再计算窗口，不保存过期时间戳。 */
 enum class SearchTimeFilter {
     /** 不限制时间；它本身也是一个已选中的选项。 */
@@ -20,6 +22,8 @@ data class SearchFilterState(
     val timeFilter: SearchTimeFilter = SearchTimeFilter.ALL,
     /** 即时生效的真实勾选态；默认全选，无勾选同样查询全部来源。 */
     val sourceAppSelection: SourceAppSelection = SourceAppSelection.All,
+    /** 关键词匹配字段，仅当前页面实例保留，默认兼容综合搜索。 */
+    val target: ClipSearchTarget = ClipSearchTarget.All,
 ) {
     /** Repository 使用的有效包名集合；不是另一个可写状态。 */
     val sourceAppPackages: Set<String>

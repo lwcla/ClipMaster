@@ -5,6 +5,9 @@ import androidx.paging.PagingSource
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.cla.clip.base.general.entity.ClipVisibilityScope
+import com.cla.clip.base.general.search.ClipSearchTarget
+import com.cla.clip.base.general.search.buildClipFieldSearchQuery
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -49,7 +52,7 @@ class SourceAppPagingIsolationTest {
     /** 所有共享分页在来源名称、图标、主色变化时都不应失效。 */
     @Test
     fun sourceMetadataDoesNotInvalidateAnyResultPaging() = runBlocking {
-        /** 覆盖普通、折叠、回收站及三种搜索路径，即使空页也要观察正确的表。 */
+        /** 覆盖普通、折叠、回收站、综合搜索及三种新定向路径，空页也必须观察正确的表。 */
         val sources = listOf(
             database.clipDao().loadClipsByFoldState(false),
             database.clipDao().loadClipsByFoldState(true),
@@ -57,7 +60,11 @@ class SourceAppPagingIsolationTest {
             database.clipDao().searchClipsByFilters(null, null, 0, listOf("fixture"), false, false),
             database.clipDao().searchClipsByLike("keyword", null, null, 0, listOf("fixture"), false, false),
             database.clipDao().searchClipsByKeyword("keyword*", "keyword", "keyword", "keyword", null, null, 0, listOf("fixture"), false, false),
-        )
+        ) + listOf(ClipSearchTarget.Content, ClipSearchTarget.LinkTitle, ClipSearchTarget.SourceName).map { target ->
+            // 来源名命中身份独立传入；SQL 不允许为了名称检索加入来源图标表依赖。
+            database.clipDao().searchClipsByFields(buildClipFieldSearchQuery(target, "keyword", null, null,
+                emptySet(), setOf("fixture.app"), ClipVisibilityScope.VisibleOnly))
+        }
         sources.forEach { source -> register(source) }
         database.sourceAppDao().upsert(SourceAppData("fixture.app", "更新名称", "fixture-v2.png", 123, "v2"))
         database.invalidationTracker.refreshVersionsAsync()
@@ -77,8 +84,10 @@ class SourceAppPagingIsolationTest {
         database.clipDao().updatePinStatus(1, 2000)
         withTimeout(5000) { invalidation.await() }
         assertTrue(source.invalid)
-        /** 第二个独立分页验证链接预览关系仍然被观察。 */
-        val linkedSource = database.clipDao().loadClipsByFoldState(false)
+        /** 新标题查询也必须收到预览补齐通知，否则首次无标题会永久漏掉命中。 */
+        val linkedSource = database.clipDao().searchClipsByFields(buildClipFieldSearchQuery(
+            ClipSearchTarget.LinkTitle, "标题", null, null, emptySet(), null, ClipVisibilityScope.VisibleOnly,
+        ))
         register(linkedSource)
         /** 链接更新的实际失效信号。 */
         val linkInvalidation = CompletableDeferred<Unit>()

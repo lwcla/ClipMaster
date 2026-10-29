@@ -116,7 +116,7 @@ enum class ClipCardTimeMode {
 /**
  * 剪贴结果竖向列表。
  *
- * 该组件同时服务普通列表页和搜索页：列表页传空 `highlightQuery`，搜索页传当前关键词。
+ * 该组件同时服务普通列表页和搜索页：列表页传空 `highlight`，搜索页传当前关键词。
  * 这里统一维护单列 item、侧滑操作、复制入口和分页加载状态，避免两个页面在后续迭代中出现体验分叉。
  * 固定广告宿主独立于内容/加载/空态分支；搜索页可明确声明外层宿主，保持跨历史模式的素材访问。
  */
@@ -133,7 +133,8 @@ internal fun ClipResultList(
     onLongClick: (ClipShowEntity) -> Unit,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(10.dp),
-    highlightQuery: String? = null,
+    /** 本次查询与字段绑定的高亮配置，普通列表为空。 */
+    highlight: ClipSearchHighlight? = null,
     swipePastActionText: String? = null,
     timeMode: ClipCardTimeMode = ClipCardTimeMode.ClipTime,
     selectedIds: Set<Long> = emptySet(),
@@ -147,6 +148,8 @@ internal fun ClipResultList(
     iconLoader: AppIconLoader = EmptyAppIconLoader,
     /** 首页保留组合的非当前 Pager 页不能发起系统取图。 */
     iconsVisibleToUser: Boolean = true,
+    /** 页面可重建查询前置条件；未提供时沿用 Paging 原生 retry。 */
+    onRefreshRetry: (() -> Unit)? = null,
 ) {
     // 取消置顶的排序变化由数据库/Paging 异步返回，先保存待恢复视口，再在快照确认后执行恢复。
     var pendingPinScrollRestore by remember { mutableStateOf<PendingPinScrollRestore?>(null) }
@@ -208,8 +211,8 @@ internal fun ClipResultList(
                     // 无真实旧记录时仅显示既有重试状态，错误文字不能许可广告呈现。
                     PagingErrorContent(
                         text = stringResource(BaseR.string.base_general_data_load_failed_retry),
-                        // refresh 失败由 Paging 直接重试，不引入页面独立错误状态。
-                        onRetry = { pagedClips.retry() },
+                        // 搜索页可重启前置名称查询，其他调用方仍由 Paging 直接重试。
+                        onRetry = { (onRefreshRetry ?: pagedClips::retry).invoke() },
                         modifier = contentModifier,
                     )
                 } else {
@@ -257,7 +260,7 @@ internal fun ClipResultList(
                                         onInteractionChanged = { active ->
                                             interactingClipIds = if (active) interactingClipIds + clip.id else interactingClipIds - clip.id
                                         },
-                                        highlightQuery = highlightQuery,
+                                        highlight = highlight,
                                         onPinToggle = onPinToggle,
                                         onDelete = onDelete,
                                         onCopy = onCopy,
@@ -335,6 +338,7 @@ internal fun ClipResultList(
  * 普通列表和普通搜索可以按设置开启斜向快捷动作区：左下三角执行页面传入的动作，
  * 其余区域进入详情；折叠列表、折叠搜索和回收站保持整卡点击语义。
  * 快捷动作区背景只作为底层视觉提示，内容始终按完整卡片宽度铺满。
+ * 无有效来源主色时，边框、快捷区和角标统一使用主题 outline；仅来源色边框保留 30% 不透明度。
  *
  * 因此普通列表页和搜索页可以在各自页面层决定置顶、删除、复制和详情跳转行为。
  */
@@ -350,7 +354,8 @@ internal fun ClipCard(
     onLongClick: (ClipShowEntity) -> Unit,
     onKeepCurrentScrollPosition: () -> Unit,
     modifier: Modifier = Modifier,
-    highlightQuery: String? = null,
+    /** 本次查询与字段绑定的高亮配置，普通列表为空。 */
+    highlight: ClipSearchHighlight? = null,
     swipePastActionText: String? = null,
     selected: Boolean = false,
     selectionMode: Boolean = false,
@@ -370,12 +375,18 @@ internal fun ClipCard(
 ) {
     /** 当前组合独占加载状态，图标与边框颜色使用同一结果。 */
     val appIconEntry = rememberAppIconEntry(clip.sourceAppPackage, iconLoader, iconsVisibleToUser)
-    /** 冷缓存先使用主题色；同源主色加载完成后随图像一起更新。 */
-    val appColor = appIconEntry?.primaryColor
-        ?.takeIf { it != -1 }?.let { Color(it) } ?: MaterialTheme.colorScheme.outlineVariant
-    val borderColor = appColor.copy(alpha = 0.3f)
-    // 斜向快捷区底色只保留很轻的同源提示，避免压住铺满整 卡的剪贴内容。
+    /** 来源主色沿用原有无效值约定；缺失或 -1 返回 null，不能通过颜色相等判断是否走默认色。 */
+    val sourceAppColor = appIconEntry?.primaryColor
+        ?.takeIf { it != -1 }?.let { Color(it) }
+    /** 默认色复用公共卡片入口，随当前亮暗或动态主题变化，不额外降低不透明度。 */
+    val defaultCardColor = ClipMasterCardDefaults.borderColor()
+    /** 快捷区和置顶角标的共同基础色；冷缓存先用 outline，来源主色到达后与图标一起更新。 */
+    val appColor = sourceAppColor ?: defaultCardColor
+    /** 来源色边框保持原来的 30%，默认边框直接使用 outline，侧滑分隔线沿用同一结果。 */
+    val borderColor = sourceAppColor?.copy(alpha = 0.3f) ?: defaultCardColor
+    /** 快捷区常驻底色保留 5% 同源色，只作轻提示，避免压住整卡正文。 */
     val quickActionBackgroundColor = appColor.copy(alpha = 0.05f)
+    /** 按压时在常驻底色上再叠加 10% 同源色，保留现有绘制顺序与反馈强度。 */
     val quickActionPressedColor = appColor.copy(alpha = 0.10f)
     val detailPressedColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.035f)
     val density = LocalDensity.current
@@ -845,10 +856,10 @@ internal fun ClipCard(
                         .padding(start = 12.dp, top = 12.dp, bottom = 12.dp, end = 12.dp)
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
-                        ClipContent(clip, highlightQuery)
+                        ClipContent(clip, highlight)
 
                         Spacer(Modifier.height(8.dp))
-                        SourceAppNameWithTime(clip, highlightQuery, timeMode, appIconEntry?.icon)
+                        SourceAppNameWithTime(clip, highlight, timeMode, appIconEntry?.icon)
                     }
                 }
 
@@ -912,7 +923,7 @@ private fun ClipCardPreview() {
 
     ClipCard(
         clip = clip,
-        highlightQuery = "示例 飞书",
+        highlight = ClipSearchHighlight("示例 飞书"),
         onPinToggle = {},
         onDelete = {},
         onCopy = {},

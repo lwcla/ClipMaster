@@ -23,6 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -61,6 +62,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.paging.compose.collectAsLazyPagingItems
+import androidx.paging.LoadState
+import com.cla.clip.base.general.utils.logE
+import kotlinx.coroutines.flow.distinctUntilChanged
 import com.cla.clip.base.general.config.ClipItemQuickAction
 import com.cla.clip.base.general.entity.ClipShowEntity
 import com.cla.clip.base.general.entity.ClipVisibilityScope
@@ -77,6 +81,7 @@ import com.cla.clip.master.ad.rememberPageAdSession
 import com.cla.clip.master.ad.adInteractionGuard
 import com.cla.clip.master.ui.widget.clip.ClipListAdConfig
 import com.cla.clip.master.ui.widget.clip.ClipListAdHost
+import com.cla.clip.master.ui.widget.clip.ClipSearchHighlight
 import com.cla.clip.master.ui.widget.clip.ClipResultList
 import com.cla.clip.master.ui.widget.clip.rememberClipListAdPresentation
 import com.cla.clip.master.ui.widget.ad.FixedListAdLayout
@@ -117,6 +122,10 @@ fun SearchPage(
     val iconLoader = rememberAppIconLoader()
     /** 搜索筛选状态，包含关键词、时间范围和来源 App 集合。 */
     val filterState by viewModel.filterState.collectAsStateWithLifecycle()
+    /** 重试只改变结果会话，不重置当前筛选。 */
+    val retryGeneration by viewModel.retryGeneration.collectAsStateWithLifecycle()
+    /** collector、高亮和数据查询共同使用此身份，防止新字段组合到旧缓存上。 */
+    val resultKey = SearchResultKey(filterState.toQueryConditions(), visibilityScope, retryGeneration)
     /** 当前可选来源列表供下拉菜单使用，生命周期收集方式保持不变。 */
     val sourceApps by viewModel.sourceApps.collectAsStateWithLifecycle()
     /** 来源包名到展示名的映射，统一复用来源 App 显示名兜底规则。 */
@@ -147,6 +156,15 @@ fun SearchPage(
     val quickAction by viewModel.quickAction.collectAsStateWithLifecycle(initialValue = ClipItemQuickAction.None)
     /** 结果列表滚动状态需要跨亮暗色切换保存，并按搜索范围隔离。 */
     val resultListState = rememberSaveable(saveableScopeKey, saver = LazyListState.Saver) { LazyListState() }
+    /** 保存最后采用的目标，避免详情返回或配置变化误把同一结果滚回顶部。 */
+    var lastResultTarget by rememberSaveable(saveableScopeKey) { mutableStateOf(filterState.target.name) }
+    // 字段变化代表新的结果集，重新从首屏展示；同字段回栈仍保留原视口。
+    LaunchedEffect(filterState.target) {
+        if (lastResultTarget != filterState.target.name) {
+            resultListState.requestScrollToItem(0)
+            lastResultTarget = filterState.target.name
+        }
+    }
     /** 历史列表滚动状态独立保存，避免 Result/History 模式互相重置位置。 */
     val historyListState = rememberSaveable(saveableScopeKey, saver = LazyListState.Saver) { LazyListState() }
     /** 当前页面模式；新搜索页实例默认 History，回栈恢复时保留用户已进入的 Result 模式。 */
@@ -211,9 +229,26 @@ fun SearchPage(
         showClearHistoryConfirm || isBatchActionRunning
     /** 结果模式才收集分页，历史模式仍不提前启动剪贴查询；广告宿主始终独立组合。 */
     val pagedClips = if (pageMode == SearchPageMode.Result) {
-        viewModel.pagedClips.collectAsLazyPagingItems()
+        key(resultKey) {
+            /** 每个条件使用不同 collector，旧会话会被 ViewModel 取消且不会重放到新查询。 */
+            val resultFlow = remember(resultKey) { viewModel.resultsFor(resultKey) }
+            resultFlow.collectAsLazyPagingItems()
+        }
     } else {
         null
+    }
+    // 首次加载失败按状态边界记录，不打印原始异常/SQL/关键词；点击重试允许重新记录一次失败。
+    LaunchedEffect(pagedClips) {
+        if (pagedClips != null) {
+            snapshotFlow { (pagedClips.loadState.refresh as? LoadState.Error)?.error }
+                .distinctUntilChanged().collect { failure ->
+                    if (failure != null) {
+                        /** 只使用固定类别标识，不采集异常文本或查询绑定值。 */
+                        val reason = if (failure is SearchSourceNameReadException) "source_name_read_failed" else "paging_load_failed"
+                        logE("ClipSearch") { "读取搜索结果失败 target=${resultKey.conditions.target} reasonCode=$reason" }
+                    }
+                }
+        }
     }
     /** 共享列表与页面固定区从同一当前快照读取内容三态，不读取正文或跟踪可见项资格。 */
     val adPresentation = rememberClipListAdPresentation(pagedClips)
@@ -423,7 +458,7 @@ fun SearchPage(
         }
     }
 
-    LaunchedEffect(visibilityScope, filterState.query, filterState.timeFilter, filterState.sourceAppPackages) {
+    LaunchedEffect(visibilityScope, filterState.query, filterState.timeFilter, filterState.sourceAppPackages, filterState.target) {
         if (selectionMode) {
             clearSelection()
         }
@@ -516,7 +551,9 @@ fun SearchPage(
                     // 与上方同一 pageMode 分支收集的分页引用必定存在，不延迟复制内容状态。
                     pagedClips = checkNotNull(pagedClips),
                     emptyText = stringResource(scope.emptyTextRes),
-                    highlightQuery = filterState.query,
+                    highlight = ClipSearchHighlight(resultKey.conditions.query, resultKey.conditions.target),
+                    // 名称投影读取也属于分页前置步骤，显式重试需重建整个当前查询。
+                    onRefreshRetry = viewModel::retrySearch,
                     // 广告与搜索头已在列表外，结果仅保留卡片间距和本页面多选栏空间。
                     contentPadding = PaddingValues(
                         start = 10.dp,
@@ -629,6 +666,7 @@ fun SearchPage(
             },
             onMenuChange = ::updateFilterMenu,
             onTimeSelected = viewModel::updateTimeFilter,
+            onTargetSelected = viewModel::updateSearchTarget,
             onToggleAllSources = viewModel::toggleAllSourceApps,
             onToggleSource = viewModel::toggleSourceApp,
         )

@@ -86,4 +86,10 @@
     <string name="host_backup_error_upload_cancelled">上传任务被取消。本次远端备份未确认成功。</string>
     <string name="host_backup_error_schedule">备份包已生成，但此目标的保存任务未能入队。本次备份未完成。</string>
     <string name="host_backup_error_handoff">备份包交接失败，未能完成远端备份。</string>
+    <!-- 搜索字段筛选与已有来源选择维度独立，全部字段保持旧综合搜索。 -->
+    <string name="host_search_target">搜索范围</string>
+    <string name="host_search_target_all">全部字段</string>
+    <string name="host_search_target_content">剪贴内容</string>
+    <string name="host_search_target_title">链接标题</string>
+    <string name="host_search_target_source">来源 App 名称</string>
 </resources>

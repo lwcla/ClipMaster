@@ -1,5 +1,6 @@
 package com.cla.clip.base.general.repository
 
+import com.cla.clip.base.general.search.escapeSearchLikeLiteral
 import androidx.room.withTransaction
 import com.cla.clip.base.general.dao.AppDatabase
 import com.cla.clip.base.general.dao.SearchHistoryDao
@@ -58,8 +59,6 @@ class SearchHistoryRepositoryImpl @Inject constructor(
         /** 可保存关键词最大长度；超长输入通常是误粘贴整段文本，不适合作为历史提示。 */
         private const val MAX_QUERY_LENGTH = 200
 
-        /** LIKE 转义字符；DAO 查询使用同一个字符声明 `ESCAPE`，保证 `%` 和 `_` 被当普通字符。 */
-        private const val LIKE_ESCAPE_CHAR = '\\'
     }
 
     override fun observeHistories(scope: ClipVisibilityScope, keyword: String): Flow<List<SearchHistoryData>> {
@@ -70,7 +69,7 @@ class SearchHistoryRepositoryImpl @Inject constructor(
             normalizedKeyword.isBlank() -> searchHistoryDao.observeRecentHistories(isFolded, HISTORY_LIMIT)
             else -> searchHistoryDao.observeMatchedHistories(
                 isFolded = isFolded,
-                escapedKeyword = normalizedKeyword.escapeForLike(),
+                escapedKeyword = escapeSearchLikeLiteral(normalizedKeyword),
                 limit = HISTORY_LIMIT
             )
         }
@@ -132,15 +131,4 @@ class SearchHistoryRepositoryImpl @Inject constructor(
         return query.trim().lowercase(Locale.ROOT)
     }
 
-    /** 转义 SQL LIKE 通配符和转义符本身，使用户输入的 `%`、`_`、`\` 都只按字面量匹配。 */
-    private fun String.escapeForLike(): String {
-        return buildString(length) {
-            this@escapeForLike.forEach { char ->
-                if (char == LIKE_ESCAPE_CHAR || char == '%' || char == '_') {
-                    append(LIKE_ESCAPE_CHAR)
-                }
-                append(char)
-            }
-        }
-    }
 }

@@ -1,6 +1,7 @@
 package com.cla.clip.base.general.repository
 
 import androidx.paging.PagingSource
+import com.cla.clip.base.general.search.ClipSearchTarget
 import com.cla.clip.base.general.dao.LinkPreviewData
 import com.cla.clip.base.general.dao.SourceAppData
 import com.cla.clip.base.general.dao.data.ClipDetail
@@ -35,6 +36,10 @@ interface ClipRepository {
         endTime: Long?,
         sourceAppPackages: Set<String>,
         visibilityScope: ClipVisibilityScope,
+        /** 默认保持综合搜索；字段限制与普通/折叠范围独立。 */
+        target: ClipSearchTarget = ClipSearchTarget.All,
+        /** 仅名称模式使用；空集合明确无匹配，不能解释为全部来源。 */
+        matchedSourcePackages: Set<String>? = null,
     ): PagingSource<Int, ClipPageData>
 
     /**

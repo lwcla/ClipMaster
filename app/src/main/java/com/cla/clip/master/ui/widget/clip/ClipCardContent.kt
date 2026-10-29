@@ -30,10 +30,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
+import com.cla.clip.master.ui.widget.text.SearchMatchMode
+import com.cla.clip.master.ui.widget.text.buildSearchHighlightedText
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
@@ -54,7 +53,8 @@ import kotlin.math.max
 @Composable
 internal fun SourceAppNameWithTime(
     clip: ClipShowEntity,
-    highlightQuery: String?,
+    /** 本次搜索的关键词与允许高亮字段。 */
+    highlight: ClipSearchHighlight?,
     timeMode: ClipCardTimeMode,
     /** 卡片局部会话图像与边框取色同源，展示实体不持图片。 */
     icon: Bitmap?,
@@ -85,7 +85,7 @@ internal fun SourceAppNameWithTime(
                     Spacer(modifier = Modifier.width(4.dp))
                     HighlightableText(
                         text = sourceAppName,
-                        highlightQuery = highlightQuery,
+                        highlightQuery = highlight?.queryFor(ClipHighlightField.SourceName)?.takeIf { !clip.sourceAppName.isNullOrBlank() },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -141,13 +141,16 @@ internal fun SourceAppNameWithTime(
  * 让列表 item 在保留必要上下文的同时不会被长文本撑得过高。
  */
 @Composable
-internal fun ClipContent(clip: ClipShowEntity, highlightQuery: String?) {
+internal fun ClipContent(
+    /** 当前卡片正文及预览。 */ clip: ClipShowEntity,
+    /** 与当前结果查询对应的高亮配置。 */ highlight: ClipSearchHighlight?,
+) {
     Column {
-        LinkPreviewContent(clip, highlightQuery)
+        LinkPreviewContent(clip, highlight)
 
         HighlightableText(
             text = clip.content,
-            highlightQuery = highlightQuery,
+            highlightQuery = highlight?.queryFor(ClipHighlightField.Content),
             style = MaterialTheme.typography.bodyLarge,
             maxLines = 3
         )
@@ -161,10 +164,17 @@ internal fun ClipContent(clip: ClipShowEntity, highlightQuery: String?) {
  * 链接地址不再重复显示，避免一个 item 内出现两段完全相同的 URL。
  */
 @Composable
-private fun LinkPreviewContent(clip: ClipShowEntity, highlightQuery: String?) {
+private fun LinkPreviewContent(
+    /** 当前记录已有的预览，不触发额外读取。 */ clip: ClipShowEntity,
+    /** 仅标题或综合模式允许对应字段高亮。 */ highlight: ClipSearchHighlight?,
+) {
+    /** 已提取且非空的链接地址。 */
     val link = clip.link?.takeIf { it.isNotBlank() }
+    /** 真实预览标题，缺失时不伪造标题命中。 */
     val title = clip.linkTitle?.takeIf { it.isNotBlank() }
+    /** 已有预览图地址，仍由图片组件按可见组合读取。 */
     val imageUrl = clip.linkImgUrl?.takeIf { it.isNotBlank() }
+    /** 原文已经是同一链接时不重复显示。 */
     val shouldShowLink = link != null && link != clip.content
 
     if ((link == null || !shouldShowLink) && title == null && imageUrl == null) {
@@ -200,7 +210,7 @@ private fun LinkPreviewContent(clip: ClipShowEntity, highlightQuery: String?) {
                     if (title != null) {
                         HighlightableText(
                             text = title,
-                            highlightQuery = highlightQuery,
+                            highlightQuery = highlight?.queryFor(ClipHighlightField.Title),
                             style = MaterialTheme.typography.labelMedium,
                             maxLines = 2
                         )
@@ -212,7 +222,7 @@ private fun LinkPreviewContent(clip: ClipShowEntity, highlightQuery: String?) {
                         }
                         HighlightableText(
                             text = link.orEmpty(),
-                            highlightQuery = highlightQuery,
+                            highlightQuery = highlight?.queryFor(ClipHighlightField.Link),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1
@@ -262,23 +272,18 @@ internal fun SwipeActionButton(
  */
 @Composable
 private fun HighlightableText(
-    text: String,
-    highlightQuery: String?,
-    style: TextStyle,
-    modifier: Modifier = Modifier,
-    color: Color = Color.Unspecified,
-    maxLines: Int = Int.MAX_VALUE,
+    /** 原始展示文字，构建器不会修改它。 */ text: String,
+    /** null 表示本字段不参与本次高亮。 */ highlightQuery: String?,
+    /** 非命中文字继续使用调用方样式。 */ style: TextStyle,
+    /** 调用方布局接口。 */ modifier: Modifier = Modifier,
+    /** 非命中部分的普通前景色。 */ color: Color = Color.Unspecified,
+    /** 保留卡片各区域已有行数和省略规则。 */ maxLines: Int = Int.MAX_VALUE,
 ) {
-    val highlightColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)
-    val highlightTextColor = MaterialTheme.colorScheme.onSurface
-    val highlightedText = remember(text, highlightQuery, highlightColor, highlightTextColor) {
-        text.highlightedBy(
-            query = highlightQuery,
-            highlightStyle = SpanStyle(
-                color = highlightTextColor,
-                background = highlightColor
-            )
-        )
+    /** 主题提供亮暗适配的红色，命中字串只改颜色与字重。 */
+    val highlightTextColor = MaterialTheme.colorScheme.error
+    /** 原文、关键词和主题改变时才重算区间，不在每次重组重复扫描。 */
+    val highlightedText = remember(text, highlightQuery, highlightTextColor) {
+        buildSearchHighlightedText(text, highlightQuery, SearchMatchMode.Words, highlightTextColor)
     }
 
     Text(
@@ -289,48 +294,6 @@ private fun HighlightableText(
         maxLines = maxLines,
         overflow = TextOverflow.Ellipsis
     )
-}
-
-/**
- * 根据搜索词生成高亮文本。
- *
- * 这里按空白拆词、去重并做大小写不敏感匹配；如果多个词重叠，只给尚未覆盖的位置加样式，
- * 这样能避免重复添加 Span 造成样式边界不可预测。
- */
-private fun String.highlightedBy(query: String?, highlightStyle: SpanStyle): AnnotatedString {
-    val words = query
-        ?.trim()
-        ?.split(Regex("\\s+"))
-        ?.map { it.trim() }
-        ?.filter { it.isNotBlank() }
-        ?.distinctBy { it.lowercase() }
-        .orEmpty()
-
-    if (isBlank() || words.isEmpty()) {
-        return AnnotatedString(this)
-    }
-
-    return buildAnnotatedString {
-        append(this@highlightedBy)
-        val lowerText = this@highlightedBy.lowercase()
-        val highlightedRanges = mutableListOf<IntRange>()
-        words.forEach { word ->
-            val lowerWord = word.lowercase()
-            var startIndex = lowerText.indexOf(lowerWord)
-            while (startIndex >= 0) {
-                val endExclusive = startIndex + lowerWord.length
-                val range = startIndex until endExclusive
-                val hasOverlap = highlightedRanges.any { existing ->
-                    range.first <= existing.last && range.last >= existing.first
-                }
-                if (!hasOverlap) {
-                    addStyle(highlightStyle, startIndex, endExclusive)
-                    highlightedRanges += range
-                }
-                startIndex = lowerText.indexOf(lowerWord, startIndex + lowerWord.length)
-            }
-        }
-    }
 }
 
 /** 空状态屏幕。 */

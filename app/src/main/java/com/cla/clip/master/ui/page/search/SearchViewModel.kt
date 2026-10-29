@@ -5,7 +5,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.Pager
 import com.cla.clip.master.paging.clipPagingConfig
-import androidx.paging.cachedIn
+import androidx.paging.PagingData
+import com.cla.clip.base.general.entity.ClipShowEntity
+import com.cla.clip.base.general.search.ClipSearchTarget
+import kotlinx.coroutines.flow.Flow
 import androidx.paging.map
 import com.cla.clip.base.general.dao.SearchHistoryData
 import com.cla.clip.base.general.config.clip.ClipSettingsRepository
@@ -96,13 +99,19 @@ class SearchViewModel @Inject constructor(
      */
     val filterState: StateFlow<SearchFilterState> = _filterState
 
+    /** 显式重试会重建名称读取和 Pager，不依赖静态错误 PagingData 的 retry。 */
+    private val _retryGeneration = MutableStateFlow(0)
+    /** 页面把重试代次加入 collector key，确保错误后使用新会话。 */
+    val retryGeneration: StateFlow<Int> = _retryGeneration
+
     /**
      * 来源 App 筛选候选项。
      *
      * 使用 stateIn 缓存最近一次列表，避免筛选弹窗每次展开都重新收集数据库 Flow。
      */
-    val sourceApps: StateFlow<List<SourceAppCandidate>> = clipRepository.get()
-        .loadAllSourceApps()
+    val sourceApps: StateFlow<List<SourceAppCandidate>> = _retryGeneration.flatMapLatest {
+        searchMenuCandidates { clipRepository.get().loadAllSourceApps() }
+    }
         // 候选只含包名与历史名称，菜单可见行负责按需取图。
         .stateIn(
             CoroutineScope(viewModelScope.coroutineContext + Dispatchers.IO),
@@ -110,32 +119,41 @@ class SearchViewModel @Inject constructor(
             emptyList()
         )
 
-    /**
-     * 分页搜索结果。
-     *
-     * 每次筛选条件变化都会创建新的 Pager，Paging 会丢弃旧查询并加载新条件下的数据。
-     */
-    val pagedClips = combine(_filterState.distinctSearchQueryConditions(), visibilityScope.filterNotNull()) { state, scope -> state to scope }.flatMapLatest { (state, scope) ->
-        /** 时间窗口仍由现有枚举计算，来源勾选事件不会改写它。 */
-        val timeRange = state.timeFilter.toTimeRange()
-        Pager(
-            config = clipPagingConfig()
-        ) {
-            clipRepository.get().searchClips(
-                userInput = state.query,
-                startTime = timeRange.startTime,
-                endTime = timeRange.endTime,
-                sourceAppPackages = state.sourceAppPackages,
-                visibilityScope = scope
-            )
-        }.flow.map { pagingData ->
-            /** 搜索条件改变后创建新名称会话。 */
-            val session = sourceNames.newSession()
-            pagingData.map { clipDetail -> sourceLoadGate.run { session.attach(clipDetail.toUi()) } }
+    /** 仅保存当前条件的缓存，切换字段/关键词时取消旧缓存任务。 */
+    private val pagingSessions = SearchPagingSessions(CoroutineScope(viewModelScope.coroutineContext + Dispatchers.IO))
+    /** 为页面固定查询身份提供缓存流；只有结果态收集，构造本身不读取数据库。 */
+    internal fun resultsFor(/** 页面与高亮共同持有的查询身份。 */ key: SearchResultKey): Flow<PagingData<ClipShowEntity>> =
+        pagingSessions.get(key) {
+            searchSourceNamePackages(key.conditions) {
+                sourceLoadGate.observe { clipRepository.get().loadAllSourceApps() }
+            }.flatMapLatest { matchedPackages ->
+                /** 只在实际查询时计算窗口，避免保存过期时间戳。 */
+                val timeRange = key.conditions.timeFilter.toTimeRange()
+                Pager(config = clipPagingConfig()) {
+                    clipRepository.get().searchClips(
+                        userInput = key.conditions.query,
+                        startTime = timeRange.startTime,
+                        endTime = timeRange.endTime,
+                        sourceAppPackages = key.conditions.sourceAppPackages,
+                        visibilityScope = key.visibility,
+                        target = key.conditions.target,
+                        matchedSourcePackages = matchedPackages,
+                    )
+                }.flow.map { pagingData ->
+                    /** 每个分页代次独立名称装配缓存，图标变化不参与此链路。 */
+                    val session = sourceNames.newSession()
+                    pagingData.map { clipDetail -> sourceLoadGate.run { session.attach(clipDetail.toUi()) } }
+                }
+            }.catchSearchLoadFailure()
         }
-    }.cachedIn(
-        CoroutineScope(viewModelScope.coroutineContext + Dispatchers.IO)
-    )
+
+    /** 重试只更换查询代次，不清除输入、时间、来源或搜索字段。 */
+    fun retrySearch() { _retryGeneration.update { it + 1 } }
+
+    /** 字段切换只修改单一状态，保留时间/来源和输入；新结果态会使用独立缓存。 */
+    fun updateSearchTarget(/** 用户选择的字段范围。 */ target: ClipSearchTarget) {
+        _filterState.update { it.copy(target = target) }
+    }
 
     /**
      * 当前范围的搜索历史。

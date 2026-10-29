@@ -1,6 +1,8 @@
 package com.cla.clip.base.general.repository
 
 import androidx.paging.PagingSource
+import com.cla.clip.base.general.search.ClipSearchTarget
+import com.cla.clip.base.general.search.buildClipFieldSearchQuery
 import androidx.room.withTransaction
 import com.cla.clip.base.general.dao.AppDatabase
 import com.cla.clip.base.general.dao.ClipDao
@@ -86,14 +88,27 @@ class ClipRepositoryImpl @Inject constructor(
         endTime: Long?,
         sourceAppPackages: Set<String>,
         visibilityScope: ClipVisibilityScope,
+        /** 定向范围使用已有真实字段，不再从综合索引挑选候选。 */
+        target: ClipSearchTarget,
+        /** 来源名称投影解析后的身份集合；空集合保留无命中语义。 */
+        matchedSourcePackages: Set<String>?,
     ): PagingSource<Int, ClipPageData> {
+        /** 只裁剪查询外层空白，保留完整短语内部的输入语义。 */
         val trimmed = userInput.trim()
+        // 空词仍走原筛选查询，不因选中标题或名称而排除缺失该字段的记录。
+        if (trimmed.isNotBlank() && target != ClipSearchTarget.All) {
+            return clipDao.searchClipsByFields(buildClipFieldSearchQuery(
+                target, trimmed, startTime, endTime, sourceAppPackages, matchedSourcePackages, visibilityScope,
+            ))
+        }
+        /** 综合搜索沿用既有包名占位规则，定向无匹配不会经过此分支。 */
         val sourcePackagesForQuery = buildSourcePackagesForQuery(sourceAppPackages)
         // 空字符串包名本身代表“未知来源”筛选项，不能按空白过滤；只有数量为 0 才表示跳过来源过滤。
         val sourceAppPackageCount = sourceAppPackages
             .map { it.trim() }
             .distinct()
             .size
+        /** 普通/折叠隔离与字段目标独立，所有旧查询分支仍使用同一范围。 */
         val isFolded = visibilityScope.toFoldState()
         // 折叠搜索的“今天/近 7 天”等时间筛选按折叠动作发生时间过滤，和折叠列表排序、卡片时间展示保持一致。
         val timeFilterUsesFoldedAt = visibilityScope == ClipVisibilityScope.FoldedOnly
@@ -108,6 +123,7 @@ class ClipRepositoryImpl @Inject constructor(
             )
         }
 
+        /** 综合搜索保留原分词与 LIKE 并集行为，不在本轮重建索引。 */
         val ftsQuery = buildFtsQuery(trimmed)
         if (ftsQuery.isBlank()) {
             return clipDao.searchClipsByLike(

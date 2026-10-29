@@ -8,6 +8,8 @@ import androidx.room.Fts4
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import androidx.room.Query
+import androidx.room.RawQuery
+import androidx.sqlite.db.SupportSQLiteQuery
 import androidx.room.Transaction
 import androidx.room.Upsert
 import com.cla.clip.base.general.dao.data.ClipDetail
@@ -111,6 +113,14 @@ data class ClipFts(
  * 负责剪贴内容写入、去重查询、分页列表、全文搜索、置顶、删除和最近记录读取；搜索页和列表页都依赖这里的排序契约。
  */
 interface ClipDao {
+
+    /** 定向字段查询由白名单构造器生成；不观察来源表，防止图标补齐使分页失效。 */
+    @Transaction
+    @RawQuery(observedEntities = [ClipData::class, LinkPreviewData::class])
+    fun searchClipsByFields(
+        /** 已绑定用户文本与来源身份的查询，禁止接收页面拼接的原始 SQL。 */
+        query: SupportSQLiteQuery,
+    ): PagingSource<Int, ClipPageData>
 
     /**
      * 更新或插入一个Clip条目。这是所有数据写入的基础，使用更高效的 @Upsert。

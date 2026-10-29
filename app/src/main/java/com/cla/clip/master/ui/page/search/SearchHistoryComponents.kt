@@ -27,15 +27,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import com.cla.clip.master.ui.widget.text.SearchMatchMode
+import com.cla.clip.master.ui.widget.text.buildSearchHighlightedText
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.cla.clip.base.general.dao.SearchHistoryData
 import com.cla.clip.base.general.widget.DeleteIconButton
-import java.util.Locale
 
 /**
  * 搜索历史覆盖面板。
@@ -211,39 +210,12 @@ internal fun ClearSearchHistoryDialog(
  * 历史匹配按规范化后的包含关系执行，这里只做可见文本上的大小写不敏感高亮；查询为空时不加样式。
  */
 @Composable
-private fun String.highlightHistoryMatch(query: String): AnnotatedString {
-    val highlightColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)
-    val highlightTextColor = MaterialTheme.colorScheme.onSurface
-    return remember(this, query, highlightColor, highlightTextColor) {
-        val normalizedQuery = query.trim().lowercase(Locale.ROOT)
-        if (isBlank() || normalizedQuery.isBlank()) {
-            return@remember AnnotatedString(this)
-        }
-
-        val normalizedText = lowercase(Locale.ROOT)
-        val highlightedRanges = mutableListOf<IntRange>()
-        buildAnnotatedString {
-            append(this@highlightHistoryMatch)
-            var startIndex = normalizedText.indexOf(normalizedQuery)
-            while (startIndex >= 0) {
-                val endExclusive = startIndex + normalizedQuery.length
-                val range = startIndex until endExclusive
-                val hasOverlap = highlightedRanges.any { existing ->
-                    range.first <= existing.last && range.last >= existing.first
-                }
-                if (!hasOverlap) {
-                    addStyle(
-                        style = SpanStyle(
-                            color = highlightTextColor,
-                            background = highlightColor
-                        ),
-                        start = startIndex,
-                        end = endExclusive
-                    )
-                    highlightedRanges += range
-                }
-                startIndex = normalizedText.indexOf(normalizedQuery, startIndex + normalizedQuery.length)
-            }
-        }
+private fun String.highlightHistoryMatch(
+    /** 当前输入按完整短语匹配，不套用结果的拆词规则。 */ query: String,
+): AnnotatedString {
+    /** 与结果卡片共用主题红色，移除旧背景标记。 */
+    val highlightTextColor = MaterialTheme.colorScheme.error
+    return remember(this, query, highlightTextColor) {
+        buildSearchHighlightedText(this, query, SearchMatchMode.Phrase, highlightTextColor)
     }
 }

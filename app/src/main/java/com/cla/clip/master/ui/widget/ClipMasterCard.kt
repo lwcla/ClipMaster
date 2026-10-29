@@ -1,6 +1,8 @@
 package com.cla.clip.master.ui.widget
 
+import android.content.res.Configuration
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
@@ -20,11 +22,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.cla.clip.master.ui.theme.cardCornerShape
 import com.cla.clip.master.ui.theme.clipMasterCardElevation
+import com.cla.clip.master.ui.theme.ClipMasterTheme
 
 /**
  * ClipMaster 主要内容卡片的默认外壳参数。
@@ -61,10 +65,11 @@ object ClipMasterCardDefaults {
     /**
      * 默认边框色。
      *
-     * 页面没有业务状态色时使用主题 outlineVariant；剪贴列表等页面可以传入自己的边框色。
+     * 亮暗模式均直接使用当前主题 outline，保留完整不透明度，避免默认边框融入卡片底色。
+     * 动态配色随主题自动更新；剪贴列表等页面仍可传入来源 App 色，不覆盖业务颜色。
      */
     @Composable
-    fun borderColor(): Color = MaterialTheme.colorScheme.outlineVariant
+    fun borderColor(): Color = MaterialTheme.colorScheme.outline
 }
 
 /**
@@ -176,25 +181,29 @@ private fun ClipMasterCardShell(
 }
 
 /**
- * 展示默认内容卡片和自定义边框色卡片。
+ * 在应用固定亮暗主题下展示默认内容卡片和自定义边框色卡片。
  *
- * 预览用于提醒后续维护者：公共组件统一的是外壳契约，业务颜色仍可由调用方传入。
+ * 预览关闭动态配色以保持样本稳定；公共组件统一外壳契约，业务颜色仍可由调用方传入。
+ * 使用既有详情和复制文案作为合成样本，不保存状态或启动业务副作用。
  */
-@Preview(showBackground = true)
+@Preview(name = "亮色默认与自定义边框", showBackground = true, uiMode = Configuration.UI_MODE_NIGHT_NO)
+@Preview(name = "暗色默认与自定义边框", showBackground = true, uiMode = Configuration.UI_MODE_NIGHT_YES)
 @Composable
 private fun ClipMasterCardPreview() {
-    Column(modifier = Modifier.padding(16.dp)) {
-        ClipMasterCard(modifier = Modifier.fillMaxWidth()) {
-            Text(text = "默认内容卡片")
-        }
+    ClipMasterTheme(dynamicColor = false) {
+        Column(modifier = Modifier.background(MaterialTheme.colorScheme.background).padding(16.dp)) {
+            ClipMasterCard(modifier = Modifier.fillMaxWidth()) {
+                Text(text = stringResource(com.cla.clip.base.general.R.string.base_general_clip_detail))
+            }
 
-        ClipMasterCard(
-            modifier = Modifier
-                .padding(top = 12.dp)
-                .width(220.dp),
-            borderColor = MaterialTheme.colorScheme.primary,
-        ) {
-            Text(text = "自定义边框色卡片")
+            ClipMasterCard(
+                modifier = Modifier
+                    .padding(top = 12.dp)
+                    .width(220.dp),
+                borderColor = MaterialTheme.colorScheme.primary,
+            ) {
+                Text(text = stringResource(com.cla.clip.base.general.R.string.base_general_copy))
+            }
         }
     }
 }

@@ -2,6 +2,9 @@ package com.cla.clip.master.sourceapp
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.transformLatest
 
@@ -17,6 +20,11 @@ internal class SourceAppLoadGate {
         if (visible) owners.add(owner) else owners.remove(owner)
         active.value = owners.isNotEmpty()
     }
+
+    /** 连续名称投影观察同样服从页面可见性；隐藏取消订阅，恢复重建，不持有后台数据库观察。 */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun <T> observe(/** 每次重新可见时重新建立观察，隐藏取消数据库订阅。 */ read: () -> Flow<T>): Flow<T> =
+        active.flatMapLatest { visible -> if (visible) read() else emptyFlow() }
 
     /** 两态均参与 latest：隐藏取消当前子读取，恢复重试；父任务取消仍直接传播。 */
     @OptIn(ExperimentalCoroutinesApi::class)
