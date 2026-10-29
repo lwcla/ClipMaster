@@ -22,6 +22,13 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
+          
+      - name: 准备 Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          # 固定命令行工具版本，配合前面的 JDK 17。
+          cmdline-tools-version: '12266719'
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
 
       - name: 准备 Android SDK
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
