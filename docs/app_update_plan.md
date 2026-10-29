@@ -4,11 +4,25 @@
 
 ## 当前状态
 
-当前 App 源码仓库保持 private。应用内自更新检查第一版已接入“我的”页：用户可手动检查更新，页面可见时按 24 小时限频自动做一次轻量检查，检查结果只展示发布信息和外部下载入口，不在 App 内下载或安装 APK。
+2026-10-29 发布时通过 GitHub 连接核实，当前 App 源码仓库 `lwcla/ClipMaster` 的可见性为 public，归属当前登录用户；本轮不变更仓库可见性，原文 private 描述已按实际配置修正。应用内自更新检查第一版已接入“我的”页：用户可手动检查更新，页面可见时按 24 小时限频自动做一次轻量检查，检查结果只展示发布信息和外部下载入口，不在 App 内下载或安装 APK。
 
-当前采用 GitHub + Gitee 双发布源方案：Gitee release 仓库负责中国境内优先检查和下载，GitHub public release 仓库作为国际网络和原有发布链路兜底。源码、签名文件、密钥、构建脚本、token 和内部配置继续保留在 private 仓库或本地安全位置，不进入 public release 仓库。
+当前采用 GitHub + Gitee 双发布源方案：Gitee release 仓库负责中国境内优先检查和下载，GitHub public release 仓库作为国际网络和原有发布链路兜底。发行脚本仅上传 APK、更新清单和摘要文件；源码、签名文件、密钥、构建脚本、token 和内部配置不作为附件进入 public release 仓库，敏感凭据仍要求保存在本地安全位置。
 
 ## 目标与范围
+
+### 0.9.12 双源发布（2026-10-29，实现中）
+
+- 按用户要求将 `versionName` 从 `0.9.11` 递增至 `0.9.12`，`versionCode` 从 `47` 递增至 `48`；纳入当前全部右滑菜单、提示、交互测试和共享文档改动，先提交并推送源码 `main`，再使用原脚本向 GitHub/Gitee 发布签名 APK、`update.json` 和 `sha256.txt`。
+- 本版右滑菜单图标常驻，继续/松手提示固定排在菜单右侧；拖动及离场动画期间禁用菜单操作，保持原有 80% 基准、回拉取消及业务回调。实现与极窄窗口/大字体可读性取舍以 [共享列表方案](clip_result_list_plan.md#swipe-menu-hint-layout-plan) 为准，不整体重构手势状态机。
+- 复用 app 版本配置、共享模块版本派生、APK 命名、Windows/Bash 发布脚本及既有 PowerShell 7 本机兼容入口，保持 domestic 分发、internal 更新渠道和 AdMob 配置。版本元数据无独立业务规则，不新增单测或采用 TDD；现有功能改动已更新 Android 交互回归，保留阈值纯规则单测。
+- 验证计划：运行 app/base:general 单测、Debug Kotlin 和两模块 Android 测试编译、脚本 dry-run（含 Release/R8）、APK 版本/签名连续性及 `git diff --check`；上传后核验双端 latest 和三个附件摘要。设备交互、覆盖安装与视觉验收另行执行，测试编译不替代真机运行结果。
+- 日志与诊断计划：沿用现有构建、发布及共享列表诊断，不新增高频手势或 App 运行时日志。凭据只由本机脚本读取，不写入输出或公开附件；按版本将 APK、清单、checksum、metadata、mapping、源码提交号及验证日志归档至 `build/github-gitee-release/v0.9.12/`，mapping 仅本地保存。
+- 规则边界：版本配置简体中文注释同步更新；本次无数据库、备份、序列化或反射契约变化，无需新增备份或 keep 规则。仅复用既有本机启动兼容措施，仓库发布脚本保持不变。
+- 变更记录：2026-10-29，按用户要求准备 `0.9.12 / 48` 双源发布，明确全部当前改动的提交范围、验证步骤、日志与设备验收边界。
+- 发布前验证：`.\gradlew.bat :base:general:testDebugUnitTest :app:testDebugUnitTest :base:general:compileDebugAndroidTestKotlin :app:compileDebugAndroidTestKotlin :app:compileDebugKotlin --offline --console=plain --no-parallel --max-workers=2` 成功，app 347 项、base 138 项共 485 项单测通过，失败/错误/跳过均为 0。原脚本 dry-run 的 `:app:assembleRelease`（含 R8、lintVital）成功；`apksigner verify --verbose --print-certs` 确认签名有效且与 0.9.11 相同，`aapt dump badging`、metadata、Release BuildConfig 和清单均为 `com.cla.clip.master / 0.9.12 / 48`，渠道 domestic/internal。预演 APK 为 5,390,286 字节，SHA256 为 `0d58dac3fad4e4bf37e6498fea0178698bcc0a4c6c7d9f7923e0caf32fcb350e`，真实发布再次构建后以最终附件摘要为准。
+- 提交与环境记录：现有功能、交互回归和共享方案已提交为 `7d81318`；版本配置与发布记录单独提交。首次验证及直接重试因 Windows 占用 `classes.jar` 失败，确认两个 Gradle daemon 均空闲并重启后同一命令通过。源码摘要与版本修改后的快照一致，`git diff --check` 通过；既有 Kotlin 弃用及 Shizuku R8 告警保留。Android 测试仅编译，未执行真机交互、覆盖安装和 Preview 渲染。
+- 变更记录：2026-10-29，完成 485 项单测、正式构建预演、版本及签名连续性验证，记录文件锁恢复过程；下一步先推送源码，再执行双源发行和附件核验。
+- 变更记录：2026-10-29，自动审批首次因远端归属未核实拒绝推送；使用 GitHub 连接核实登录用户与仓库所有者均为 `lwcla`、具备 admin/push 权限、默认分支为 `main`，并据 API 返回的 public 可见性修正文档顶部过期描述，仓库可见性未作变更。
 
 ### 0.9.11 双源发布（2026-10-29，已完成）
 
