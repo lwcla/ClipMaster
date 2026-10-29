@@ -1,8 +1,8 @@
-name: 构建 Release APK
+name: 构建带广告 Release APK
 
 on:
   push:
-    branches: [main] # 如果主分支叫 master，这里改成 master
+    branches: [main] # 按实际主分支名称修改
   workflow_dispatch:
 
 permissions:
@@ -43,22 +43,36 @@ jobs:
           printf '%s' "$RELEASE_PROPERTIES_BASE64" \
             | base64 --decode > keystore.properties
 
-      - name: 构建无广告 Release APK
+      - name: 恢复 AdMob 广告配置
+        env:
+          ADMOB_PROPERTIES_BASE64: ${{ secrets.ADMOB_PROPERTIES_BASE64 }}
+        run: |
+          test -n "$ADMOB_PROPERTIES_BASE64"
+
+          printf '%s' "$ADMOB_PROPERTIES_BASE64" \
+            | base64 --decode > local.properties
+
+      - name: 构建带 AdMob 广告的 Release APK
         run: >-
           bash ./gradlew :app:assembleRelease
           --no-daemon
           -PenableAdmobDebugAdFeature=false
-          -PenableAdmobReleaseAdFeature=false
+          -PenableAdmobReleaseAdFeature=true
+          -PenableCsjDebugAdFeature=false
+          -PenableCsjReleaseAdFeature=false
+          -PenableUniadDebugAdFeature=false
+          -PenableUniadReleaseAdFeature=false
+          -PappDistribution=domestic
 
       - name: 校验 APK 签名
         run: |
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify \
             app/build/outputs/apk/release/*.apk
 
-      - name: 上传 Release APK
+      - name: 上传带广告 APK
         uses: actions/upload-artifact@v7
         with:
-          name: ClipMaster-release
+          name: ClipMaster-release-admob
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 30
@@ -66,7 +80,7 @@ jobs:
       - name: 保存 R8 混淆映射
         uses: actions/upload-artifact@v7
         with:
-          name: ClipMaster-release-mapping
+          name: ClipMaster-release-admob-mapping
           path: app/build/outputs/mapping/release/mapping.txt
           if-no-files-found: error
           retention-days: 90
