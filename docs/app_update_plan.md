@@ -10,7 +10,7 @@
 
 ## 目标与范围
 
-### 0.9.11 双源发布（2026-10-29，实现中）
+### 0.9.11 双源发布（2026-10-29，已完成）
 
 - 按用户要求将 `versionName` 从 `0.9.10` 递增至 `0.9.11`，`versionCode` 从 `46` 递增至 `47`；纳入当前全部右滑交互、测试和对应文档改动，先提交并推送源码 `main`，再使用原脚本向 GitHub/Gitee 发布正式签名 APK、`update.json` 和 `sha256.txt`。
 - 本版统一折叠、取消折叠和回收站彻底删除的 80% 基准阈值、菜单后保护距离及继续/松手两阶段提示，保留回拉取消和离场后执行。共享规则、组件拆分、注释、测试与设备验收边界以 [共享列表方案](clip_result_list_plan.md#swipe-threshold-plan) 及各页面接入摘要为准。
@@ -22,6 +22,9 @@
 - 发布前验证：`.\gradlew.bat :base:general:testDebugUnitTest :app:testDebugUnitTest :base:general:compileDebugAndroidTestKotlin :app:compileDebugAndroidTestKotlin :app:compileDebugKotlin --offline --console=plain --no-parallel --max-workers=2` 成功，app 347 项、base 138 项，共 485 项单测通过，无失败、错误或跳过。原脚本 dry-run 的 `:app:assembleRelease`（含 R8、lintVital）成功，耗时 2 分 23 秒；`apksigner verify --verbose --print-certs` 确认 v2 签名有效且与 0.9.10 一致，`aapt dump badging`、metadata、Release BuildConfig 和预演清单均为 `com.cla.clip.master / 0.9.11 / 47`，渠道 domestic/internal。预演 APK 为 5,373,902 字节，SHA256 为 `e762c37730f853c95b7dd1df312d8bba7575871eefcc617bb2848c95fb5a4756`；真实上传若再次打包，以最终附件摘要为准。
 - 提交与环境记录：现有右滑功能、测试及五份方案文档归入 `ba945b1`，版本配置与本记录单独提交；源码构建期间内容摘要一致，工作区与暂存区 `git diff --check` 通过。首次 Gradle 沙箱访问 E 盘缓存锁失败，获准使用本机缓存后同一命令成功；无连接设备，Android 测试仅编译，既有 Kotlin 弃用提示与 Shizuku R8 告警保留。
 - 变更记录：2026-10-29，完成 485 项单测、正式构建预演、版本及签名连续性检查；补录功能提交和预演摘要，后续按源码先推送、APK 再发布的顺序执行。
+- 发布结果：功能提交 `ba945b1` 和版本提交 `7b6d5a8` 已先推送 `origin/main` 并核对远端一致，随后原脚本真实发布返回 0。GitHub/Gitee latest 均为 `v0.9.11`，两端均包含 `ClipMaster-v0.9.11-admob.apk`、`update.json` 和 `sha256.txt`；GitHub 三附件服务端 SHA256 与 Gitee 三附件回下载 SHA256 全部匹配本地。最终 APK 为 5,373,902 字节，SHA256 为 `b97ede4a8a26a49a35fea67a09d4f671d89c2be237633cfdfb3225c83c64792f`，已重新核对 `0.9.11 / 47` 版本和签名连续性，发布验收以最终摘要为准。
+- 发布地址：[GitHub v0.9.11](https://github.com/clip-master-2/ClipMaster-Releases/releases/tag/v0.9.11)、[Gitee v0.9.11](https://gitee.com/clip-master-2/clip-master-releases/releases/tag/v0.9.11)。最终 APK、清单、校验文件、metadata、mapping、源码提交号及测试/构建/上传/核验日志已归档到 `build/github-gitee-release/v0.9.11/`，mapping 仅本地留存。发布前后源码摘要一致；初始快照包含的 `.kotlin/sessions/*.salive` 为构建完成后自动清理的临时会话标记，排除此项后源码核验通过。
+- 变更记录：2026-10-29，完成 `0.9.11 / 47` 双源发行和六项附件摘要核验，补录最终摘要、源码提交及本地归档，发布小节更新为已完成；设备交互、覆盖安装和视觉验收仍待执行。
 
 ### 0.9.10 双源发布（2026-10-29，已完成）
 
