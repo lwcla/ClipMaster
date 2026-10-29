@@ -241,6 +241,7 @@ private fun LinkPreviewContent(
  *
  * 按钮高度由外层 item 决定，图标始终放在点击区域中心；点击区域保持透明，
  * 让侧滑操作区沿用卡片背后的整体底色。
+ * 禁用时只关闭输入和可访问点击，不移除或改变图标，供拖动/动画期间保持布局稳定。
  */
 @Composable
 internal fun SwipeActionButton(
@@ -250,10 +251,12 @@ internal fun SwipeActionButton(
     iconSize: Dp,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    /** 由调用方控制交互忙碌期；默认启用以兼容原有独立使用方式。 */
+    enabled: Boolean = true,
 ) {
     Box(
         modifier = modifier
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Icon(

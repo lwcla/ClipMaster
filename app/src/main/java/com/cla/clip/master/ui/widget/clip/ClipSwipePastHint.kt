@@ -32,7 +32,8 @@ internal data class ClipSwipePastTexts(
 
 /**
  * 绘制第二段滑动提示，直接消费与松手相同的阶段，不保存手势状态或执行副作用。
- * 调用方通过 modifier 限定完整已暴露区域与裁剪；两行居中适配窄屏/大字体。
+ * 调用方通过 modifier 固定菜单后的排版区域与裁剪；文字起点对齐、垂直居中，随既有布局方向镜像。
+ * 保留两行及系统字号，窄屏/大字体允许被正文部分遮挡或因空间不足省略。
  */
 @Composable
 internal fun ClipSwipePastHint(
@@ -41,23 +42,23 @@ internal fun ClipSwipePastHint(
     modifier: Modifier = Modifier,
 ) {
     if (state == ClipSwipePastState.Hidden) return
-    Box(modifier = modifier.padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
+    Box(modifier = modifier.padding(horizontal = 12.dp), contentAlignment = Alignment.CenterStart) {
         Text(
             text = if (state == ClipSwipePastState.Ready) texts.releaseText else texts.continueText,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = if (state == ClipSwipePastState.Ready) FontWeight.SemiBold else FontWeight.Normal,
             color = MaterialTheme.colorScheme.onSurface,
-            textAlign = TextAlign.Center,
+            textAlign = TextAlign.Start,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
     }
 }
 
-/** 纯资源预览覆盖三种动作的前后阶段及窄屏、大字、亮暗主题，不创建业务依赖。 */
-@Preview(name = "三种动作", widthDp = 288, showBackground = true)
-@Preview(name = "窄屏大字", widthDp = 192, fontScale = 2f, showBackground = true)
-@Preview(name = "深色", widthDp = 288, uiMode = Configuration.UI_MODE_NIGHT_YES, showBackground = true)
+/** 以整卡减菜单后的固定区域预览排版；未模拟前景遮挡，极限宽度允许省略。 */
+@Preview(name = "360dp卡片的右侧区域", widthDp = 215, showBackground = true)
+@Preview(name = "240dp卡片的右侧区域·双倍字", widthDp = 95, fontScale = 2f, showBackground = true)
+@Preview(name = "右侧区域·深色", widthDp = 215, uiMode = Configuration.UI_MODE_NIGHT_YES, showBackground = true)
 @Composable
 private fun ClipSwipePastHintPreview() {
     ClipMasterTheme(dynamicColor = false) {
@@ -68,7 +69,7 @@ private fun ClipSwipePastHintPreview() {
             ClipSwipePastTexts(stringResource(BaseR.string.base_general_continue_swipe_to_delete_permanently), stringResource(BaseR.string.base_general_release_to_delete_permanently)),
         )
         Column {
-            // 每组展示未达标和达标结果，布局宽度模拟实际暴露区域。
+            // 每组展示两阶段排版，宽度固定为卡片减菜单，不随手指偏移变化。
             examples.forEach { texts ->
                 ClipSwipePastHint(ClipSwipePastState.Dragging, texts, Modifier.fillMaxWidth().heightIn(min = 80.dp))
                 ClipSwipePastHint(ClipSwipePastState.Ready, texts, Modifier.fillMaxWidth().heightIn(min = 80.dp))

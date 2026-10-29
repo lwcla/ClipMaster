@@ -339,6 +339,7 @@ internal fun ClipResultList(
  * 快捷动作区背景只作为底层视觉提示，内容始终按完整卡片宽度铺满。
  * 无有效来源主色时，边框、快捷区和角标统一使用主题 outline；仅来源色边框保留 30% 不透明度。
  * 第二段提示与松手共用纯规则，使用实测宽度的 80% 与菜单后保护距离，回拉或取消不提交。
+ * 菜单图标贯穿拖动阶段保留，提示固定排在菜单右侧，由前景卡片移动决定露出量。
  *
  * 因此普通列表页和搜索页可以在各自页面层决定置顶、删除、复制和详情跳转行为。
  */
@@ -425,6 +426,8 @@ internal fun ClipCard(
         minimumExtraDistancePx = with(density) { 48.dp.toPx() },
     )
     val offsetDp = with(density) { offsetPx.toDp() }
+    /** 提示按整卡减菜单的固定宽度排版，拖动只揭示文字，不触发反复换行。 */
+    val swipePastHintWidth = with(density) { (itemWidthPx - maxOffsetPx).coerceAtLeast(0f).toDp() }
     val pinDescription = stringResource(
         if (clip.isPinned) {
             com.cla.clip.base.general.R.string.base_general_unpinned
@@ -600,8 +603,8 @@ internal fun ClipCard(
                 itemWidthPx = size.width.toFloat()
             }
     ) {
-        // 第二段使用完整暴露区展示提示；菜单移出组合，避免文字叠加和隐藏按钮仍可点击/访问。
-        if (showActionMenu && swipePastState == ClipSwipePastState.Hidden) {
+        // 有效菜单始终保留；跨第二段和达标边界只更新右侧文字，避免图标来回消失。
+        if (showActionMenu) {
             // 外层 item 需要保留未裁剪空间给公共卡片阴影；侧滑菜单自身仍按卡片圆角裁剪，避免右滑露出方角背景。
             Box(
                 modifier = Modifier
@@ -628,10 +631,15 @@ internal fun ClipCard(
                             iconContentDescription = copyDescription,
                             iconSize = actionIconSize,
                             painterRes = R.drawable.host_icon_copy,
+                            // 拖动和动画保留图标但不接收新操作，避免与折叠提交竞争。
+                            enabled = !isDragging && !isSwipeOffsetAnimating,
                             onClick = {
-                                offsetPx = 0f
-                                currentOnMenuInactive(clip.id)
-                                currentOnCopy?.invoke(currentClip)
+                                // 回调再读取当前忙碌状态，覆盖动画开始与重组更新之间的间隙。
+                                if (!isDragging && !isSwipeOffsetAnimating) {
+                                    offsetPx = 0f
+                                    currentOnMenuInactive(clip.id)
+                                    currentOnCopy?.invoke(currentClip)
+                                }
                             }
                         )
                         hasPreviousAction = true
@@ -660,14 +668,20 @@ internal fun ClipCard(
                             } else {
                                 R.drawable.host_icon_to_pinned
                             },
+                            // 与复制/删除共用忙碌边界，图标常驻不代表拖动中允许修改数据。
+                            enabled = !isDragging && !isSwipeOffsetAnimating,
                             onClick = {
-                                val latestClip = currentClip
-                                if (latestClip.isPinned) {
-                                    currentOnKeepCurrentScrollPosition()
+                                // 同时守住点击回调入口，避免已排队的点击穿过禁用更新。
+                                if (!isDragging && !isSwipeOffsetAnimating) {
+                                    // 置顶状态读取最新记录，取消置顶仍沿用原滚动位置保护。
+                                    val latestClip = currentClip
+                                    if (latestClip.isPinned) {
+                                        currentOnKeepCurrentScrollPosition()
+                                    }
+                                    offsetPx = 0f
+                                    currentOnMenuInactive(clip.id)
+                                    currentOnPinToggle?.invoke(latestClip)
                                 }
-                                offsetPx = 0f
-                                currentOnMenuInactive(clip.id)
-                                currentOnPinToggle?.invoke(latestClip)
                             }
                         )
                         hasPreviousAction = true
@@ -692,10 +706,15 @@ internal fun ClipCard(
                             iconContentDescription = deleteDescription,
                             iconSize = actionIconSize,
                             painterRes = BaseR.drawable.base_general_ic_delete,
+                            // 离场动画期间禁止再删除同一记录，按钮仍按原布局绘制。
+                            enabled = !isDragging && !isSwipeOffsetAnimating,
                             onClick = {
-                                offsetPx = 0f
-                                currentOnMenuInactive(clip.id)
-                                currentOnDelete?.invoke(currentClip)
+                                // 直接使用实时状态阻止并发业务动作，不依赖上次重组的 enabled。
+                                if (!isDragging && !isSwipeOffsetAnimating) {
+                                    offsetPx = 0f
+                                    currentOnMenuInactive(clip.id)
+                                    currentOnDelete?.invoke(currentClip)
+                                }
                             }
                         )
                     }
@@ -704,6 +723,7 @@ internal fun ClipCard(
         }
 
         if (effectiveSwipePastTexts != null && swipePastState != ClipSwipePastState.Hidden) {
+            // 提示固定接在菜单后；沿用菜单和正文的布局方向，本层不接收输入或遮盖按钮。
             Box(
                 modifier = Modifier
                     .matchParentSize()
@@ -715,7 +735,11 @@ internal fun ClipCard(
                 ClipSwipePastHint(
                     state = swipePastState,
                     texts = effectiveSwipePastTexts,
-                    modifier = Modifier.width(offsetDp.coerceAtLeast(0.dp)).fillMaxHeight(),
+                    modifier = Modifier
+                        .offset(x = actionAreaWidth)
+                        .width(swipePastHintWidth)
+                        .fillMaxHeight()
+                        .clipToBounds(),
                 )
             }
         }

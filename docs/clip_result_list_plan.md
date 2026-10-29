@@ -2,11 +2,69 @@
 
 # 剪贴结果列表组件设计文档
 
+<a id="swipe-menu-hint-layout-plan"></a>
+
+## 图标常驻与右侧提示修改方案（2026-10-29，已完成）
+
+用户反馈右滑进入第二段时图标被“继续右滑折叠数据”替换，稍微回拉又变回图标，视觉跳变明显；明确要求提示位于图标右侧，不能随滑动阶段切换几个图标的显示/隐藏。已按用户授权完成共享布局与防并发点击保护，80% 基准不变；单测及编译通过，设备交互和实际视觉仍待验收。共享布局以本节为准，上一轮完整暴露区/菜单互斥方案不再采用。
+
+### 目标与最终交互
+
+- 菜单固定在左侧，保持现有图标顺序、48dp 按钮宽度、分隔线、颜色及点击回调。只要该记录有对应菜单动作且不在多选模式，菜单就持续保留，不能再以 Hidden/Dragging/Ready 决定整组菜单是否存在。
+- 提示固定放在菜单右侧：`复制 | 置顶/取消置顶 | 删除 | 继续右滑折叠数据`；达标只把最后的文字换成“松手折叠”。取消折叠同理使用已有文案对。
+- 正文卡片仍覆盖在菜单与提示上方并随手指右移，依次露出图标、提示；回拉只是让正文卡片重新覆盖右侧文字，菜单图标不替换、不淡出、不重新创建。不使用 Crossfade、AnimatedVisibility 或宽度动画来切换菜单与提示。
+- 拖动及吸附/离场动画进行中，菜单图标继续显示但按钮暂不可用；手势结束并完成菜单吸附后恢复点击。禁用状态与回调入口共同防御，避免图标常驻后多指点击或动画中的二次点击与既定折叠/删除并发。
+- 保留已确认的 80% 基准和菜单后保护距离、松手提交、回拉取消、系统/配置取消清理及离场后一次回调。本轮修正展示布局，不改变折叠、取消折叠、彻底删除的资格判定。
+- 回收站没有菜单（菜单宽度为 0），继续只显示“继续右滑彻底删除 / 松手彻底删除”；不新增占位图标或菜单留白。
+
+### 原因、复用与布局边界
+
+- 已按当前 `ui/widget/clip`、app 共享 UI、`base/general` 资源及全仓调用检查。问题直接来自 `ClipCard` 的 `if (showActionMenu && swipePastState == ClipSwipePastState.Hidden)`；不需要另建手势识别器或状态机。
+- 复用现有 `SwipeActionButton`、菜单 Row、`ClipSwipePastHint`、`ClipSwipePastTexts`、六项字符串资源和 `ClipSwipePastPolicy`。调整菜单的展示条件和提示布局，不新增类、页面参数、文案资源、业务层依赖或持久化状态。
+- 设卡片实测宽度为 W、菜单宽度为 M、当前偏移为 D。当前从左至右布局下，菜单固定占 `[0, M]`，提示容器固定占 `[M, W]`；提示实际能露出的宽度为 `max(0, min(D, W) - M)`。容器从菜单末尾固定偏移 M，不能使用随剩余宽度变化的居中方式，也不能把提示重新铺到图标下面。实现沿用菜单与正文现有的 `Start`/`offset` 布局方向；RTL 下整体镜像，避免只将提示改为物理左侧造成错位。
+- 提示的排版宽度固定为 `max(0, W - M)`，从菜单右侧固定起点向右绘制；保留水平内边距 12dp，改为左对齐、垂直居中。前景卡片及裁剪负责自然揭示/遮挡，不使用 D 改变文字测量宽度，避免一边拖动一边重新换行、文字左右漂移。
+- 有效第二段启用后，只有提示本身按阶段选用已有继续/松手文案；阶段不加入 `pointerInput` key，提示区域不消费点击或拖动，不覆盖菜单按钮命中区域。多选及无动作配置继续走已有禁用逻辑。
+- 普通 360dp 卡片、145dp 菜单在 80% 位置露出 143dp 提示空间，可显示常规字号的“松手折叠/取消折叠”。240dp 卡片的达标暴露空间约为 47.5dp，不能同时承诺图标常驻、阈值不变和任何字体下整句全显。本方案优先遵循用户的固定并排要求：保留两行自然换行与现有省略，窄屏/超大字体下允许提示部分被前景卡片遮挡或因容器不足省略；继续右滑会增加暴露区域，但不能保证消除极端字号的排版省略。不隐藏图标、不缩小系统字号、不暗中提高阈值来补偿。极限可读性作为明确取舍和设备验收项。
+
+### 文件、接口与实施步骤
+
+本节使用 `superpowers:brainstorming` / `superpowers:writing-plans` 整理，后续实施可按 `superpowers:executing-plans` 执行。以下只改共享能力，页面已有参数和引用不变，避免把同一布局规则重复写入五个页面方案。
+
+| 文件 | 调整内容 |
+| --- | --- |
+| `app/src/main/java/com/cla/clip/master/ui/widget/clip/ClipResultList.kt` | 菜单恢复为仅由 `showActionMenu` 决定是否提供，移除与滑动阶段互斥的条件；提示容器从菜单末尾起排版，使用固定剩余卡片宽度，前景卡片继续负责遮挡。保留取消清理、动画和最新回调接线。 |
+| `app/src/main/java/com/cla/clip/master/ui/widget/clip/ClipSwipePastHint.kt` | `ClipSwipePastHint(state, texts, modifier)` 接口保持；布局改为左对齐、垂直居中，沿用两行/字号/资源。Preview 使用菜单右侧真实可用宽度，区分正常可读和极限受限场景。 |
+| `app/src/main/java/com/cla/clip/master/ui/widget/clip/ClipCardContent.kt` | 原 `SwipeActionButton` 增加默认启用的 `enabled` 参数，将交互忙碌状态传给现有 clickable，图标外观和布局不变。 |
+| `app/src/androidTest/java/com/cla/clip/master/ui/widget/clip/ClipSwipePastInteractionTest.kt` | 更新上一轮“第二段时图标不存在”的测试契约，新增连续右滑/回拉时三个图标与提示并存、菜单位置稳定、文案位于菜单右侧且不拦按钮的回归。更新窄屏大字体测试，不能继续假设提示占满完整暴露区。 |
+| `app/src/test/java/com/cla/clip/master/ui/widget/clip/ClipSwipePastPolicyTest.kt` | 现有 80%、菜单保护、回拉与无菜单规则继续作为回归保护；不因纯布局变化改动期望值。 |
+| 本文 | 实施后将本节标为已完成，更新共享当前布局说明和验证记录，保留上一轮日期记录便于追踪原因。 |
+
+- [x] 先改交互测试：把 `menuReturnsAfterPullback` 改为 `menuStaysVisibleAcrossSwipeStages`，从图标已露出但尚未超过菜单宽度的位置开始，验证第二段未达标、达标、回拉低于阈值及退回菜单阶段时，复制/置顶/删除三个图标仍显示，坐标不变；只切换右侧文字。松手吸附后用真实触摸点击复制，验证禁用状态解除、菜单恢复可用。
+- [x] 新增 `hintStaysToTheRightOfMenu`：读取真实按钮/提示边界，断言提示不与菜单重叠；在两个第二段偏移之间比较相同文案的左边界、排版大小和行数，防止随 D 居中移动/反复换行。测试使用真实 `ClipCard` 和合成数据。
+- [x] 将旧窄屏全显测试替换为 `normalUnfoldHintFitsExposedArea` 和 `narrowLargeFontKeepsIconsAndUnfoldAction`：常规尺寸检查每行文字实际右边界位于前景卡片左侧且无省略；240dp/双倍字体/深色下检查图标、提示起点和动作一次回调，允许遮挡/省略。没有缩小字体；语义存在不等于整句可见。
+- [x] 先补回归并执行 `:app:compileDebugAndroidTestKotlin`，BUILD SUCCESSFUL 后修改生产布局（日志 `build/swipe-menu-hint/test-first-compile.log`）。`adb devices` 返回空列表，未获得设备 UI 红绿证据。本轮没有新增独立纯规则，不为布局像素编写镜像 JVM 单测；保留原阈值规则测试。
+- [x] 修改菜单展示条件、提示固定起点/宽度及对齐；静态复核 0/1/2/3 个动作均复用原菜单宽度，无菜单为零偏移/整卡宽度，多选仍关闭菜单与第二段。方法、变量和关键分支已补简体中文注释，旧“菜单移出组合”注释已替换。回收站及其他页面自动共用本次布局。
+- [x] 独立复核发现图标常驻新增离场动画中菜单并发点击路径；先补 `menuCannotRunDuringDragOrExitAnimation`，再为三个菜单接入启用状态和实时回调防御。暂停帧时钟的用例检查拖动和动画中按钮禁用且图标显示、真实点击无复制副作用、离场结束只触发一次折叠。受设备限制未执行红绿，已编译。
+- [x] `.\gradlew.bat :app:testDebugUnitTest :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin --console=plain`：独立复核修复后再次 BUILD SUCCESSFUL；app 347 项单测通过，0 失败/错误/跳过，16 项 Android 交互测试编译通过，日志 `build/swipe-menu-hint/final-validation.log`。阈值策略及测试期望未改。
+- [ ] 连接设备后执行 `.\gradlew.bat :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.cla.clip.master.ui.widget.clip.ClipSwipePastInteractionTest --console=plain` 并验收五个入口。重点检查菜单边界和达标边界反复回拉、三个动作、亮暗主题、240dp/360dp、字体倍率 1/2、配置变化取消与动画一次回调；本轮未执行设备测试或 Preview 渲染，不能据编译断言手感/观感通过。
+- [x] 更新文档状态与真实验证结果，`git diff --check` 通过；未执行的设备测试/Preview 渲染单独说明，不把上一轮通过记录当作本轮验证。本轮未提交或推送。
+
+### 日志与诊断计划、取舍与变更记录
+
+- 仅改变布局及菜单展示条件，无新增网络、文件、数据库写入或后台任务，不新增拖动、重组或逐帧日志；现有动作失败诊断继续沿用。不记录剪贴内容、搜索词或来源信息。
+- 无实体、协议、设置、备份或反射变化，无需新增日志/备份逻辑/keep，也无需 release/R8。本次计划只复用已有组件，不整体拆分 `ClipResultList.kt`；原因是调整范围集中在现有菜单和提示接线，避免同时重构手势状态机。
+- 本次方案文档仅更新本共享主文档；页面接入方式和动作语义不变，既有页面引用继续有效。调整 `ClipCard`、`ClipSwipePastHint`、`SwipeActionButton` 及 Preview，新增两个测试读取 helper；所有新增/修改声明及关键分支补简体中文注释。`repo-unit-test-gate` 判定采用先更新交互回归、保留纯规则单测及编译；设备未连接，未执行 UI 红绿，未渲染 Preview。执行日志保存在 `build/swipe-menu-hint/`，未提交或推送。
+- 开放问题：极窄窗口/超大字体的右侧文字可读性，后续依据设备结果单独评估；未经另行确认，不再通过隐藏图标、改变阈值或缩小字号解决。
+- 使用的项目 skill：`repo-coding-gate`、`repo-compose-discipline`、`repo-unit-test-gate`、`repo-docs-logs`、`repo-git-discipline`、`repo-final-self-check`。
+- 变更记录：2026-10-29，按用户实际体验反馈制定“图标常驻、提示固定右侧”的替代布局方案；修订上一轮菜单与提示互斥的验收要求，保留 80% 与业务行为。本轮仅形成草案，未修改产品代码。
+- 变更记录：2026-10-29，用户确认实施，状态改为实现中；先更新交互回归，再调整共享布局。当前 `adb devices` 无设备，设备红绿及视觉验收暂无法执行。
+- 变更记录：2026-10-29，完成图标常驻与固定右侧提示，独立复核后补拖动/动画期间的菜单防并发点击；保持原 80% 与菜单保护规则。app 347 项单测和应用/16 项 Android 测试编译通过，状态改为已完成；设备与 Preview 视觉待验收，极窄/超大字体遮挡取舍不变。
+
 <a id="swipe-threshold-plan"></a>
 
 ## 右滑阈值与松手提示修改计划（2026-10-29，已完成）
 
-用户授权的 80% 基准、48dp 菜单保护及完整暴露区提示已接入首页、普通/折叠搜索、折叠列表和回收站；达标分别显示“松手折叠”“松手取消折叠”“松手彻底删除”。纯规则测试先红后绿，完整 app 单测及应用/Android 测试编译通过，独立复核后已补配置取消清理；实现完成，未连接设备，手感及实际指针交互尚未验收。
+用户授权的 80% 基准及 48dp 菜单保护已接入首页、普通/折叠搜索、折叠列表和回收站；达标分别显示“松手折叠”“松手取消折叠”“松手彻底删除”。本节保留上一轮实施与验证记录；提示布局已由上方[图标常驻与右侧提示方案](#swipe-menu-hint-layout-plan)替换，当前显示契约同步见下文第 4/5 项。纯规则测试先红后绿，独立复核后已补配置取消清理；设备手感及实际指针交互尚未验收。
 
 **目标**：普通列表、普通搜索、折叠列表、折叠搜索和回收站用更短、可预期的右滑距离完成相应操作，并在可以松手时给出准确提示。
 
@@ -19,7 +77,7 @@
 - 已按 `ui/widget/clip`、app 共享 UI/各调用页、`base/general`、全仓的顺序搜索。修改前阈值和松手判断都在 `ClipResultList.kt` 内的 `ClipCard`，为 `max(菜单宽度, 卡片宽度 × 0.85)`；折叠、取消折叠及回收站完全共用，没有可直接复用的独立阈值工具或达标状态测试。本轮已提取纯规则并替换该旧判断。
 - `ClipCardGestures.kt` 已负责点击、长按、横纵向竞争、取消和拖动分发；本轮沿用，不引入速度触发，也不重写指针识别。达标后回拉仍按松手时当前偏移决定，不锁定曾经达到的最大距离。
 - 复用三项已有继续滑动资源，新增三项松手资源；普通/折叠搜索已在原 `SearchScope` 映射处补充松手资源映射。
-- 旧提示位于菜单右侧；以 360dp 卡片、145dp 菜单为例，80% 阈值处多露出 143dp，窄屏或大字体仍可能遮住提示。已改用完整暴露区域承载两阶段文案，并补两行布局与 Preview，实际边界可读性待设备验收。
+- 以 360dp 卡片、145dp 菜单为例，80% 阈值处多露出 143dp，窄屏或大字体可能遮住提示。上一轮为完整提示曾采用菜单互斥布局；用户反馈图标跳变后已改为菜单常驻、提示固定右侧，明确接受极限宽度下的可读性限制，细节与 Preview 以顶部最新方案为准。
 - 回收站单条右滑当前直接调用 `deleteClipPermanently`，没有二次确认；本计划保留该入口语义，按用户要求同步降低阈值并明确“彻底删除”。多选删除、清空、还原的确认流程不受影响。
 
 ### 方案取舍
@@ -35,8 +93,8 @@
 1. 三种动作统一使用用户指定的 80% 基准；回收站不保留 85% 特例。以实际测量的卡片宽度 `W`、菜单宽度 `M`、48dp 转换后的像素距离 `G` 计算，所有计算输入统一为 px：`T = max(W × 0.80, M + min(G, (W - M) / 2))`。常规尺寸在菜单后保留至少 48dp；剩余空间不足 96dp 时使用一半剩余空间，保证第二段存在且不用拖到底。无菜单 `M = 0` 时结果为 `W × 0.80`。
 2. 例如 W=360dp、M=145dp：原阈值 306dp，新阈值 288dp，少拖 18dp，完整展开菜单后再拖 143dp；回收站同宽也是 288dp。W=240dp、M=145dp 时阈值仍为 192.5dp，因为菜单后的保护距离略高于整卡 80% 的 192dp。80% 为用户指定的试用基准，48dp 为计划保护值，须设备验收，不宣称已验证手感。
 3. 无有效测量、非有限数值、W≤0、M<0、M≥W 或 G≤0 时返回不可用阈值，第二段不提示“松手”、不提交动作；菜单的既有点击/收回保持。实际测量前不以 160dp 等兜底值触发业务动作。没有动作回调、没有成对文案或进入多选态时，同样禁用第二段。
-4. 偏移不大于菜单宽度时只显示菜单；超过菜单宽度且低于 T 显示继续提示；达到 T（包含等于）显示松手提示。回拉低于 T 立即恢复继续提示，回到菜单宽度以内恢复菜单。用户正常松手且当前状态为达标才提交；系统取消、父级接管和配置变化取消手势均不提交。
-5. 进入第二段后，提示占用从卡片左缘到当前偏移的完整已露出区域，菜单按钮暂不显示且不保留可点击/无障碍节点；回退到菜单区恢复。提示随暴露宽度约束布局并居中，允许两行，达标提示保持清晰不透明，不再放在菜单宽度之后。长文案、大字体与窄屏由 Preview/设备检查；不缩小系统字体来硬塞文案。
+4. 菜单按钮贯穿拖动阶段保留；偏移不大于菜单宽度时只露出菜单，超过菜单宽度且低于 T 显示右侧继续提示，达到 T（包含等于）切换松手提示。回拉低于 T 恢复继续提示，回到菜单宽度以内隐藏提示而不切换图标。用户正常松手且当前状态为达标才提交；系统取消、父级接管和配置变化取消手势均不提交。
+5. 提示固定在菜单之后、宽度为整卡减菜单，允许两行、起点对齐和省略，不用当前偏移重新测量文字。前景卡片随拖动遮挡/揭示，提示不绘制到图标下方；菜单保留原点击与无障碍节点。详细布局及极限字体取舍以顶部最新方案为准。
 6. 达标提示和松手执行共用同一阶段计算，不能分别维护不同阈值；达标状态只从当前偏移派生，不用 `rememberSaveable` 保存。提示状态不得加入 `pointerInput` 的动态 key，否则跨阈值重组可能取消正在进行的手势；协程回调读取当前偏移、当前配置和最新业务回调。
 7. 仅正常松手提交时沿用 220ms 离场动画，完整滑出卡片后调用一次页面回调；未达标或取消沿用 280ms 吸附。保留菜单单展开、稳定 clip id、广告交互保护及多选禁用，动画过程中不能重复提交。
 8. 拖动中尺寸/动作配置等 key 变化会直接取消指针协程，不触发系统指针取消回调。与 `pointerInput` 相同 key 的 `DisposableEffect` 只清理未结束的拖动：偏移归零、清除按压与菜单归属，不执行业务回调。临时 `isDragging` 不持久化、不作为 key；已吸附菜单或已开始离场的动画不在这条清理路径中重置。
@@ -54,7 +112,7 @@
 | 文件 | 计划变化与契约 |
 | --- | --- |
 | `app/src/main/java/com/cla/clip/master/ui/widget/clip/ClipSwipePastPolicy.kt`（新增） | 纯规则：`calculateClipSwipePastThreshold(itemWidthPx: Float, menuWidthPx: Float, minimumExtraDistancePx: Float): Float?`，非法/未测量返回 null；`resolveClipSwipePastState(offsetPx: Float, menuWidthPx: Float, triggerPx: Float?): ClipSwipePastState`，枚举为 Hidden、Dragging、Ready；非法偏移/阈值一律 Hidden，正常输入按上节边界判定。 |
-| `app/src/main/java/com/cla/clip/master/ui/widget/clip/ClipSwipePastHint.kt`（新增） | `ClipSwipePastTexts(continueText: String, releaseText: String)` 成对表达文案；`ClipSwipePastHint(state: ClipSwipePastState, texts: ClipSwipePastTexts, modifier: Modifier = Modifier)` 只绘制提示，不持有页面/ViewModel/Repository，不执行动作。暴露宽度与卡片圆角由调用方 Modifier 限制。 |
+| `app/src/main/java/com/cla/clip/master/ui/widget/clip/ClipSwipePastHint.kt`（新增） | `ClipSwipePastTexts(continueText: String, releaseText: String)` 成对表达文案；`ClipSwipePastHint(state: ClipSwipePastState, texts: ClipSwipePastTexts, modifier: Modifier = Modifier)` 只绘制提示，不持有页面/ViewModel/Repository，不执行动作。固定菜单后宽度与卡片圆角由调用方 Modifier 限制。 |
 | `app/src/main/java/com/cla/clip/master/ui/widget/clip/ClipResultList.kt` | 把列表/卡片 `swipePastActionText: String?` 同步替换为 `swipePastTexts: ClipSwipePastTexts? = null`；接入规则和提示，保留 `onSwipePastAction`。删除第二段阈值兜底及旧进度文案计算；同步尺寸、阈值、回调、Preview 中文注释。 |
 | `app/src/main/java/com/cla/clip/master/ui/page/list/ClipListPage.kt`、`app/src/main/java/com/cla/clip/master/ui/page/list/FoldedClipListPage.kt` | 分别传入折叠/取消折叠的资源化文案对，业务回调保持。 |
 | `app/src/main/java/com/cla/clip/master/ui/page/search/SearchPage.kt` | 将现有 `SearchScope.swipePastTextRes` 扩为同位置的继续/松手资源映射，普通与折叠范围成对传入；沿用现有范围与查询身份。 |
@@ -90,7 +148,7 @@
 消费任务一的纯规则；产出成对文案和 `ClipSwipePastHint`，列表/卡片/四个页面/Preview 同步迁移，不保留两套字符串接口。
 
 - [x] 在组件接入前建立真实卡片的合成 Android 测试，覆盖有菜单松手折叠/无菜单松手彻底删除；ADB 设备列表为空，无法执行此层旧实现红测，已明确记录例外；纯规则仍严格先红后绿。
-- [x] 新增三项字符串、文案对及提示组件；补继续/达标、折叠/取消折叠/彻底删除、亮暗主题和大字体 Preview。新提示布局按完整暴露区域绘制；菜单和提示互斥，隐藏菜单不留可点击或可访问节点。
+- [x] 新增三项字符串、文案对及提示组件；补继续/达标、折叠/取消折叠/彻底删除、亮暗主题和大字体 Preview。历史上采用完整暴露区及菜单互斥，后续已被顶部图标常驻方案替换，不能作为当前验收要求。
 - [x] 在 `ClipCard` 接入单一阶段规则与真实测量保护，展示与 `onDragEnd` 均用当前规则结果；保持取消路径只吸附、正常松手先离场后回调。新阶段不加入手势 key，不捕获过期阶段值。
 - [x] 同步迁移首页、折叠列表、搜索两个范围、回收站及所有 Preview；静态复核无文案/无回调/多选禁用、最新回调和宽度变化边界。
 - [x] `.\gradlew.bat :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin --console=plain`：BUILD SUCCESSFUL，日志 `build/swipe-past/integration-compile.log`；资源链接、旧参数引用和调用方迁移通过。
@@ -115,7 +173,7 @@
 ### 已知取舍、开放问题与本轮检查
 
 - 暂不整体拆分较大的 `ClipResultList.kt`，仅提取本次新增纯规则与提示，入口保留菜单/动画编排，避免同时重构主手势状态机；这是范围控制例外，后续若继续扩展侧滑行为再评估独立交互状态持有者。
-- 80% 为用户指定的试用基准，已连同 48dp 保护和完整暴露区提示实施；实际单手距离、窄屏可读性与回收站误触率尚未设备验收。本轮未增加震动、速度捷径、自动提交或新的二次确认弹窗。
+- 80% 为用户指定的试用基准，已连同 48dp 保护实施；最新提示布局以顶部图标常驻方案为准。实际单手距离、窄屏可读性与回收站误触率尚未设备验收。本轮未增加震动、速度捷径、自动提交或新的二次确认弹窗。
 - `repo-unit-test-gate` 判断：阈值/阶段纯规则必须先测后改，已完成 5 项先红后绿；13 项 Android 测试及 Preview 已补充并编译，但设备为空，未运行交互测试或渲染 Preview。配置取消清理属于 Compose 生命周期接线，先新增真实交互回归再修复，受设备限制未能执行红绿，已以编译及独立静态复核补充，不能宣称运行时验收通过。
 - 新增 `ClipSwipePastPolicy` 文件、`ClipSwipePastState`、`ClipSwipePastTexts`、`ClipSwipePastHint` 及对应测试，改动声明和关键分支补简体中文注释；既有未涉及声明不作无关重写。复用原手势识别、卡片外壳、资源和业务回调，数据/备份/生命周期/测试依赖未变。
 - 保留用户当前工作区与未提交计划，不创建 worktree、不提交/推送；Windows 以 `build/swipe-past/progress.md` 与验证日志替代 skill 的 Bash 执行脚本。初次 Gradle 缓存锁被沙箱拦截，授权执行后验证通过；无自动审批拒绝。上述为执行方式调整，不改变产品契约。
