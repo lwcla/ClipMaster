@@ -30,9 +30,6 @@ jobs:
           cmdline-tools-version: '12266719'
           packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
 
-      - name: 准备 Android SDK
-        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
-
       - name: 恢复固定 Debug 签名
         env:
           DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
