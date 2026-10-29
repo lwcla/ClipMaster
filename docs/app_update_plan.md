@@ -10,7 +10,7 @@
 
 ## 目标与范围
 
-### 0.9.10 双源发布（2026-10-29，实现中）
+### 0.9.10 双源发布（2026-10-29，已完成）
 
 - 按用户要求将 `versionName` 从 `0.9.9` 递增至 `0.9.10`，`versionCode` 从 `45` 递增至 `46`；用户已确认纳入全部现有改动，先提交并推送源码 `main`，再使用原脚本发布 GitHub/Gitee 正式签名 APK、`update.json` 和 `sha256.txt`。
 - 本版包含七字段多选、完整短语搜索与高亮、固定同行筛选及菜单宽度修正；功能实现、测试先行和设备验收边界以 [搜索页方案](search_page_plan.md)、[共享列表方案](clip_result_list_plan.md) 和 [共享表单方案](shared_form_components_plan.md) 为准，不重复维护细节。
@@ -20,6 +20,9 @@
 - 规则边界：无数据库、备份或反射契约变化，不调整备份与 keep 规则；沿用已记录的本机启动兼容措施，仓库发布脚本保持原有实现。真机覆盖安装、Room 仪器测试实际执行、页面视觉/交互与大数据搜索性能仍需设备验收。
 - 发布前验证：`.\gradlew.bat :base:general:testDebugUnitTest :app:testDebugUnitTest :base:general:compileDebugAndroidTestKotlin :app:compileDebugKotlin --offline --console=plain --no-parallel --max-workers=2` 成功，app 342 项、base 138 项，共 480 项测试通过，失败/错误/跳过均为 0。原脚本 dry-run 的 `:app:assembleRelease`（含 R8、lintVital）成功，耗时 1 分 41 秒；`apksigner verify --verbose --print-certs` 确认 v2 签名有效且与 0.9.9 一致，`aapt dump badging`、metadata、Release BuildConfig 与预演清单均为 `com.cla.clip.master / 0.9.10 / 46`，渠道 domestic/internal。预演 APK 为 5,388,994 字节，SHA256 为 `2fbe097b0dbf0a89367bed672de4f39df9860c12ea9cac16d2c3b62b8b165534`；真实上传若再次打包，以最终附件摘要为准。暂存及工作区 `git diff --check` 通过，保留既有 Shizuku Kotlin/R8 告警。
 - 变更记录：2026-10-29，按用户要求准备 `0.9.10 / 46` 双源发布；确认纳入全部现有搜索改动，补录发布范围、验证步骤及日志边界。
+- 发布结果：功能提交 `671f5b0`、版本提交 `c335070` 已先推送 `origin/main` 并核对远端一致，随后原脚本真实上传返回 0。GitHub/Gitee latest 均为 `v0.9.10`，均包含 `ClipMaster-v0.9.10-admob.apk`、`update.json` 和 `sha256.txt`；GitHub 三附件服务端 SHA256 与 Gitee 三附件回下载 SHA256 全部匹配本地。真实发布再次打包后的最终 APK 为 5,388,994 字节，SHA256 为 `d0e948000e33eb6af93d4cf4421e33a80b05befc95f04ebc3f207f168306bafd`，已重新核对版本及签名连续性，发布验收以最终摘要为准。
+- 发布地址：[GitHub v0.9.10](https://github.com/clip-master-2/ClipMaster-Releases/releases/tag/v0.9.10)、[Gitee v0.9.10](https://gitee.com/clip-master-2/clip-master-releases/releases/tag/v0.9.10)。最终 APK、清单、校验文件、metadata、mapping、源码提交号及测试/构建/上传/核验日志已归档到 `build/github-gitee-release/v0.9.10/`；mapping 仅保存在本地。
+- 变更记录：2026-10-29，完成 `0.9.10 / 46` 双源发行与全部附件摘要核验；补录最终摘要、源码提交和本地归档位置，发布小节更新为已完成，保留设备与性能验收边界。
 
 ### 0.9.9 双源发布（2026-10-29，已完成）
 
