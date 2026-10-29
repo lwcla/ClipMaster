@@ -46,6 +46,7 @@ import com.cla.clip.master.ui.widget.ShizukuServiceUnavailableTip
 import com.cla.clip.master.ui.widget.TitleBar
 import com.cla.clip.master.ui.widget.TitleBarText
 import com.cla.clip.master.ui.widget.clip.ClipResultList
+import com.cla.clip.master.ui.widget.clip.ClipSwipePastTexts
 
 /**
  * 剪贴数据列表页
@@ -202,7 +203,11 @@ fun ClipListPage(
                         onDelete = { clip -> deleteClip = clip },
                         onCopy = { viewModel.copyToClipboard(it) },
                         onSwipePastAction = { clip -> viewModel.updateFoldStatus(clip, true) },
-                        swipePastActionText = stringResource(com.cla.clip.base.general.R.string.base_general_continue_swipe_to_fold_clip),
+                        // 继续与松手文案成对传入，阈值及提示阶段由共享卡片统一维护。
+                        swipePastTexts = ClipSwipePastTexts(
+                            continueText = stringResource(com.cla.clip.base.general.R.string.base_general_continue_swipe_to_fold_clip),
+                            releaseText = stringResource(com.cla.clip.base.general.R.string.base_general_release_to_fold_clip),
+                        ),
                         quickAction = quickAction,
                         enableQuickAction = !selectionMode && quickAction != ClipItemQuickAction.None,
                         selectedIds = selectedIds,

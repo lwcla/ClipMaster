@@ -56,7 +56,6 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -78,7 +77,6 @@ import com.cla.clip.master.ui.widget.pagingAppendStateItem
 import com.cla.clip.master.ui.widget.ad.FixedListAdLayout
 import com.cla.clip.master.ui.widget.ad.ListAdContentState
 import kotlinx.coroutines.launch
-import kotlin.math.max
 
 /**
  * 取消置顶会触发分页结果重新排序，LazyColumn 默认会按稳定 key 跟随被移动的 item。
@@ -135,7 +133,8 @@ internal fun ClipResultList(
     contentPadding: PaddingValues = PaddingValues(10.dp),
     /** 本次查询与字段绑定的高亮配置，普通列表为空。 */
     highlight: ClipSearchHighlight? = null,
-    swipePastActionText: String? = null,
+    /** 页面提供的继续/松手提示；为空时只保留普通菜单。 */
+    swipePastTexts: ClipSwipePastTexts? = null,
     timeMode: ClipCardTimeMode = ClipCardTimeMode.ClipTime,
     selectedIds: Set<Long> = emptySet(),
     selectionMode: Boolean = false,
@@ -286,7 +285,7 @@ internal fun ClipResultList(
                                                 openedMenuClipId = null
                                             }
                                         },
-                                        swipePastActionText = swipePastActionText,
+                                        swipePastTexts = swipePastTexts,
                                         // 取消置顶前同步保留业务视口，固定广告协调器在该待恢复期间让出优先权。
                                         onKeepCurrentScrollPosition = {
                                             pendingPinScrollRestore = PendingPinScrollRestore(
@@ -339,6 +338,7 @@ internal fun ClipResultList(
  * 其余区域进入详情；折叠列表、折叠搜索和回收站保持整卡点击语义。
  * 快捷动作区背景只作为底层视觉提示，内容始终按完整卡片宽度铺满。
  * 无有效来源主色时，边框、快捷区和角标统一使用主题 outline；仅来源色边框保留 30% 不透明度。
+ * 第二段提示与松手共用纯规则，使用实测宽度的 80% 与菜单后保护距离，回拉或取消不提交。
  *
  * 因此普通列表页和搜索页可以在各自页面层决定置顶、删除、复制和详情跳转行为。
  */
@@ -356,7 +356,8 @@ internal fun ClipCard(
     modifier: Modifier = Modifier,
     /** 本次查询与字段绑定的高亮配置，普通列表为空。 */
     highlight: ClipSearchHighlight? = null,
-    swipePastActionText: String? = null,
+    /** 页面提供的动作提示对；组件不解析文案来决定业务类型。 */
+    swipePastTexts: ClipSwipePastTexts? = null,
     selected: Boolean = false,
     selectionMode: Boolean = false,
     onToggleSelection: (ClipShowEntity) -> Unit = {},
@@ -406,12 +407,6 @@ internal fun ClipCard(
         0.dp
     }
     val maxOffsetPx = with(density) { actionAreaWidth.toPx() }
-    val fallbackSwipePastOffsetPx = if (maxOffsetPx > 0f) {
-        maxOffsetPx * 2f
-    } else {
-        // 回收站无菜单模式首次测量前没有操作区宽度，给继续右滑一个兜底距离，避免阈值为 0 导致误触发。
-        with(density) { 160.dp.toPx() }
-    }
     val swipePastExitAnimationMs = 220
     val swipeSettleAnimationMs = 280
     val scope = rememberCoroutineScope()
@@ -419,10 +414,16 @@ internal fun ClipCard(
     var offsetPx by rememberSaveable(clip.id) { mutableStateOf(0f) }
     // 松手吸附和继续滑动离场都通过动画改变偏移；动画期间禁止继续拖动，避免状态和手势互相抢占。
     var isSwipeOffsetAnimating by rememberSaveable(clip.id) { mutableStateOf(false) }
+    /** 实际布局宽度，未测量为零；不使用可误触发动作的兜底尺寸。 */
     var itemWidthPx by remember(clip.id) { mutableStateOf(0f) }
-    val swipePastDragMaxPx = itemWidthPx.takeIf { it > 0f } ?: fallbackSwipePastOffsetPx
-    // 继续右滑触发阈值按 item 宽度 85% 计算，让最后阶段仍跟随手指，同时降低触发折叠/取消折叠的拖动压力。
-    val swipePastTriggerPx = max(maxOffsetPx, swipePastDragMaxPx * 0.85f)
+    /** 拖动和离场终点均为完整实测宽度，触发距离由独立规则计算。 */
+    val swipePastDragMaxPx = itemWidthPx.coerceAtLeast(0f)
+    /** 80% 基准并保留菜单后保护距离；无有效测量时 null 禁止第二段。 */
+    val swipePastTriggerPx = calculateClipSwipePastThreshold(
+        itemWidthPx = itemWidthPx,
+        menuWidthPx = maxOffsetPx,
+        minimumExtraDistancePx = with(density) { 48.dp.toPx() },
+    )
     val offsetDp = with(density) { offsetPx.toDp() }
     val pinDescription = stringResource(
         if (clip.isPinned) {
@@ -460,6 +461,8 @@ internal fun ClipCard(
     val currentOnMenuInactive by rememberUpdatedState(onMenuInactive)
     // 按压态只用于绘制轻量反馈；任何拖动、长按、取消或 item 复用都会清空，避免三角反馈卡亮。
     var pressedZone by remember(clip.id) { mutableStateOf<ClipCardPressedZone?>(null) }
+    /** 当前是否有未结束的拖动；只用于 key 重启清理，不保存到页面恢复状态或参与手势 key。 */
+    var isDragging by remember(clip.id) { mutableStateOf(false) }
     // 外层 Card、侧滑内容和边框共用同一个圆角，保证阴影、水波纹和裁剪视觉一致。
     val cardShape = ClipMasterCardDefaults.shape
     /** 多选态点击语义文案，TalkBack 会据此说明当前点击是选中或取消选中，而不是查看详情。 */
@@ -470,8 +473,27 @@ internal fun ClipCard(
             com.cla.clip.base.general.R.string.base_general_select
         }
     )
-    /** 多选态是否允许第二段右滑；选择状态下必须关闭，避免批量管理和折叠/删除手势互相冲突。 */
-    val effectiveSwipePastActionText = if (selectionMode) null else swipePastActionText
+    /** 同时具备文案、回调及实测阈值才允许第二段；多选态始终关闭。 */
+    val effectiveSwipePastTexts = if (selectionMode || onSwipePastAction == null || swipePastTriggerPx == null) null else swipePastTexts
+    /** 展示阶段只从当前偏移派生；不能用作 pointerInput key，以免跨阈值时取消拖动。 */
+    val swipePastState = resolveClipSwipePastState(
+        offsetPx = offsetPx,
+        menuWidthPx = maxOffsetPx,
+        triggerPx = if (effectiveSwipePastTexts != null) swipePastTriggerPx else null,
+    )
+
+    // 与下方 pointerInput 的配置 key 保持一致：key 重启是协程取消，不会经过指针 cancel 回调。
+    // 只清理正在拖动的状态，不重置已吸附菜单或正在执行的离场动画，也不执行任何业务动作。
+    DisposableEffect(clip.id, maxOffsetPx, swipePastDragMaxPx, swipePastTriggerPx, effectiveSwipePastTexts, canRunQuickAction, selectionMode) {
+        onDispose {
+            if (isDragging && !isSwipeOffsetAnimating) {
+                offsetPx = 0f
+                currentOnMenuInactive(clip.id)
+            }
+            isDragging = false
+            pressedZone = null
+        }
+    }
 
     /** 执行普通列表/普通搜索快捷动作区动作，具体业务仍由页面层回调决定。 */
     fun runQuickAction() {
@@ -574,11 +596,12 @@ internal fun ClipCard(
         modifier = modifier
             .fillMaxWidth()
             .onSizeChanged { size ->
-                // 记录 item 实际宽度，第二段动作按 85% 宽度触发，并在触发后把卡片滑到屏幕外再刷新数据库。
+                // 实测宽度驱动 80% 与菜单保护规则；首次测量之前禁止提交，离场后才刷新数据库。
                 itemWidthPx = size.width.toFloat()
             }
     ) {
-        if (showActionMenu) {
+        // 第二段使用完整暴露区展示提示；菜单移出组合，避免文字叠加和隐藏按钮仍可点击/访问。
+        if (showActionMenu && swipePastState == ClipSwipePastState.Hidden) {
             // 外层 item 需要保留未裁剪空间给公共卡片阴影；侧滑菜单自身仍按卡片圆角裁剪，避免右滑露出方角背景。
             Box(
                 modifier = Modifier
@@ -680,7 +703,7 @@ internal fun ClipCard(
             }
         }
 
-        if (effectiveSwipePastActionText != null) {
+        if (effectiveSwipePastTexts != null && swipePastState != ClipSwipePastState.Hidden) {
             Box(
                 modifier = Modifier
                     .matchParentSize()
@@ -689,27 +712,11 @@ internal fun ClipCard(
                     .clipToBounds(),
                 contentAlignment = Alignment.CenterStart
             ) {
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .padding(start = actionAreaWidth),
-                    contentAlignment = Alignment.CenterStart
-                ) {
-                    val progress = ((offsetPx - maxOffsetPx) / (swipePastTriggerPx - maxOffsetPx))
-                        .takeIf { it.isFinite() }
-                        ?.coerceIn(0f, 1f)
-                        ?: if (offsetPx >= swipePastTriggerPx) 1f else 0f
-                    Text(
-                        text = effectiveSwipePastActionText,
-                        modifier = Modifier
-                            .padding(horizontal = 12.dp)
-                            .alpha(progress),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+                ClipSwipePastHint(
+                    state = swipePastState,
+                    texts = effectiveSwipePastTexts,
+                    modifier = Modifier.width(offsetDp.coerceAtLeast(0.dp)).fillMaxHeight(),
+                )
             }
         }
 
@@ -740,7 +747,7 @@ internal fun ClipCard(
                         true
                     }
                 }
-                .pointerInput(clip.id, maxOffsetPx, swipePastDragMaxPx, swipePastTriggerPx, effectiveSwipePastActionText, canRunQuickAction, selectionMode) {
+                .pointerInput(clip.id, maxOffsetPx, swipePastDragMaxPx, swipePastTriggerPx, effectiveSwipePastTexts, canRunQuickAction, selectionMode) {
                     detectClipCardGestures(
                         isMenuOpened = { offsetPx > 0f },
                         isAnimating = { isSwipeOffsetAnimating },
@@ -759,20 +766,27 @@ internal fun ClipCard(
                         onLongPress = { currentOnLongClick(currentClip) },
                         onDrag = { dragAmount ->
                             if (!isSwipeOffsetAnimating) {
+                                // 标记真实拖动，以便布局或配置重启协程时收回未提交偏移。
+                                isDragging = true
+                                // 当前横向增量与已有偏移叠加，动画期间不接受新的拖动。
                                 val nextOffset = offsetPx + dragAmount
                                 if (showActionMenu && nextOffset > 0f) {
                                     // 当前 item 一旦开始展开菜单，就抢占单展开归属，让上一个已展开 item 自动收回。
                                     currentOnMenuActive(clip.id)
                                 }
                                 // 只允许向右展开、向左收回；存在继续滑动动作时允许进入第二段提示区，但仍限制最大距离避免 item 被拖离过远。
-                                val dragMaxOffset = if (effectiveSwipePastActionText == null) maxOffsetPx else swipePastDragMaxPx
+                                val dragMaxOffset = if (effectiveSwipePastTexts == null) maxOffsetPx else swipePastDragMaxPx
                                 offsetPx = nextOffset.coerceIn(0f, dragMaxOffset)
                             }
                         },
                         onDragEnd = {
-                            // 第二段继续右滑只在松手且超过阈值时触发，避免用户只是查看菜单时误折叠、误取消折叠或误彻底删除。
-                            val shouldRunSwipePastAction = onSwipePastAction != null && effectiveSwipePastActionText != null && offsetPx >= swipePastTriggerPx
+                            // 正常松手结束当前拖动，后续阶段交给动画锁保护。
+                            isDragging = false
+                            // 松手读取当前偏移并复用展示规则，不捕获上一帧阶段；缺回调或回拉不提交。
+                            val shouldRunSwipePastAction = currentOnSwipePastAction != null &&
+                                resolveClipSwipePastState(offsetPx, maxOffsetPx, if (effectiveSwipePastTexts != null) swipePastTriggerPx else null) == ClipSwipePastState.Ready
                             if (shouldRunSwipePastAction && !isSwipeOffsetAnimating) {
+                                // 达标后仍滑出整卡，只有动画结束才更新数据，且动画锁防止重复提交。
                                 val targetOffsetPx = swipePastDragMaxPx
                                 // 先让卡片完整滑出当前 item，动画结束后再更新折叠状态，避免 Paging 立刻刷新造成半途消失。
                                 animateOffsetTo(
@@ -795,6 +809,8 @@ internal fun ClipCard(
                             }
                         },
                         onDragCancel = {
+                            // 指针取消走既有吸附；配置取消由与 pointerInput 同 key 的清理补齐。
+                            isDragging = false
                             // 手势被系统或父级中断时同样做吸附，避免停在半展开的不可预期位置。
                             val targetOffsetPx = if (showActionMenu && !isSwipeOffsetAnimating && offsetPx > maxOffsetPx / 2f) {
                                 maxOffsetPx
@@ -930,7 +946,10 @@ private fun ClipCardPreview() {
         onSwipePastAction = {},
         onClick = {},
         onLongClick = {},
-        swipePastActionText = "继续右滑折叠数据",
+        swipePastTexts = ClipSwipePastTexts(
+            continueText = stringResource(BaseR.string.base_general_continue_swipe_to_fold_clip),
+            releaseText = stringResource(BaseR.string.base_general_release_to_fold_clip),
+        ),
         onKeepCurrentScrollPosition = {}
     )
 }

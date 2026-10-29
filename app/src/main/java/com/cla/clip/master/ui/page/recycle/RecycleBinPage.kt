@@ -58,6 +58,7 @@ import com.cla.clip.master.ad.rememberPageAdSession
 import com.cla.clip.master.ad.adInteractionGuard
 import com.cla.clip.master.ui.widget.clip.ClipListAdConfig
 import com.cla.clip.master.ui.widget.clip.ClipResultList
+import com.cla.clip.master.ui.widget.clip.ClipSwipePastTexts
 
 /**
  * 回收站页面。
@@ -160,7 +161,11 @@ fun RecycleBinPage(
                 onDelete = null,
                 onCopy = null,
                 onSwipePastAction = viewModel::deleteClipPermanently,
-                swipePastActionText = stringResource(com.cla.clip.base.general.R.string.base_general_continue_swipe_to_delete_permanently),
+                // 无菜单回收站共用 80% 阈值，松手文案明确操作为不可恢复的彻底删除。
+                swipePastTexts = ClipSwipePastTexts(
+                    continueText = stringResource(com.cla.clip.base.general.R.string.base_general_continue_swipe_to_delete_permanently),
+                    releaseText = stringResource(com.cla.clip.base.general.R.string.base_general_release_to_delete_permanently),
+                ),
                 onClick = { clip ->
                     if (selectionMode) {
                         viewModel.toggleSelection(clip)

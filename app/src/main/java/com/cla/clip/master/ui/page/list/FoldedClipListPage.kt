@@ -38,6 +38,7 @@ import com.cla.clip.master.ad.rememberPageAdSession
 import com.cla.clip.master.ad.adInteractionGuard
 import com.cla.clip.master.ui.widget.clip.ClipListAdConfig
 import com.cla.clip.master.ui.widget.clip.ClipResultList
+import com.cla.clip.master.ui.widget.clip.ClipSwipePastTexts
 
 /**
  * 折叠数据列表页。
@@ -104,7 +105,11 @@ fun FoldedClipListPage(
                 onDelete = { clip -> deleteClip = clip },
                 onCopy = viewModel::copyToClipboard,
                 onSwipePastAction = { clip -> viewModel.updateFoldStatus(clip, false) },
-                swipePastActionText = stringResource(com.cla.clip.base.general.R.string.base_general_continue_swipe_to_unfold_clip),
+                // 折叠范围只替换动作语义，80% 与回拉取消沿用共享规则。
+                swipePastTexts = ClipSwipePastTexts(
+                    continueText = stringResource(com.cla.clip.base.general.R.string.base_general_continue_swipe_to_unfold_clip),
+                    releaseText = stringResource(com.cla.clip.base.general.R.string.base_general_release_to_unfold_clip),
+                ),
                 timeMode = ClipCardTimeMode.FoldedTime,
                 onClick = { onNavigate(DetailRoute(it.id)) },
                 onLongClick = {},

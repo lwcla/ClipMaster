@@ -46,6 +46,8 @@
     <string name="base_general_folded_search_result_empty">没有找到相关折叠数据</string>
     <string name="base_general_continue_swipe_to_fold_clip">继续右滑折叠数据</string>
     <string name="base_general_continue_swipe_to_unfold_clip">继续右滑取消折叠</string>
+    <string name="base_general_release_to_fold_clip">松手折叠</string>
+    <string name="base_general_release_to_unfold_clip">松手取消折叠</string>
     <string name="base_general_data_load_failed_retry">数据加载出错，点击重试！</string>
     <string name="base_general_mine">我的</string>
     <string name="base_general_mine_tab">我的页</string>
@@ -175,6 +177,7 @@
     <string name="base_general_deleted_at_prefix">删除于 </string>
     <string name="base_general_folded_at_prefix">折叠于 </string>
     <string name="base_general_continue_swipe_to_delete_permanently">继续右滑彻底删除</string>
+    <string name="base_general_release_to_delete_permanently">松手彻底删除</string>
     <string name="base_general_clear_recycle_bin">清空回收站</string>
     <string name="base_general_recycle_bin_settings">回收站设置</string>
     <string name="base_general_clear_recycle_bin_message">将彻底删除回收站中的所有剪贴数据。彻底删除后不可恢复。</string>

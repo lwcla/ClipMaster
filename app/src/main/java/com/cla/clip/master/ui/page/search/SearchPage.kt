@@ -83,6 +83,7 @@ import com.cla.clip.master.ui.widget.clip.ClipListAdConfig
 import com.cla.clip.master.ui.widget.clip.ClipListAdHost
 import com.cla.clip.master.ui.widget.clip.ClipSearchHighlight
 import com.cla.clip.master.ui.widget.clip.ClipResultList
+import com.cla.clip.master.ui.widget.clip.ClipSwipePastTexts
 import com.cla.clip.master.ui.widget.clip.rememberClipListAdPresentation
 import com.cla.clip.master.ui.widget.ad.FixedListAdLayout
 import kotlinx.coroutines.Job
@@ -573,7 +574,11 @@ fun SearchPage(
                             isFolded = scope == SearchScope.VisibleOnly
                         )
                     },
-                    swipePastActionText = stringResource(scope.swipePastTextRes),
+                    // 同一搜索范围提供完整提示对，防止普通与折叠结果出现相反的松手文案。
+                    swipePastTexts = ClipSwipePastTexts(
+                        continueText = stringResource(scope.swipePastTextRes),
+                        releaseText = stringResource(scope.swipePastReleaseTextRes),
+                    ),
                     timeMode = if (isVisibleSearch) ClipCardTimeMode.ClipTime else ClipCardTimeMode.FoldedTime,
                     quickAction = quickAction,
                     enableQuickAction = isVisibleSearch && !clipSelectionMode && quickAction != ClipItemQuickAction.None,
@@ -752,6 +757,13 @@ private val SearchScope.swipePastTextRes: Int
     get() = when (this) {
         SearchScope.VisibleOnly -> com.cla.clip.base.general.R.string.base_general_continue_swipe_to_fold_clip
         SearchScope.FoldedOnly -> com.cla.clip.base.general.R.string.base_general_continue_swipe_to_unfold_clip
+    }
+
+/** 松手提示与当前范围的继续提示/业务回调一致；仅作 UI 资源映射，不参与查询。 */
+private val SearchScope.swipePastReleaseTextRes: Int
+    get() = when (this) {
+        SearchScope.VisibleOnly -> com.cla.clip.base.general.R.string.base_general_release_to_fold_clip
+        SearchScope.FoldedOnly -> com.cla.clip.base.general.R.string.base_general_release_to_unfold_clip
     }
 
 /** 搜索页当前展示模式，明确区分结果列表折叠链路和历史列表固定顶部链路。 */
