@@ -17,6 +17,7 @@
 - 日志与诊断沿用下节自动发布计划；不输出签名/广告配置或令牌。推送前核实 GitHub 登录用户与仓库所有者为 `lwcla`，具备 push 权限。推送后观察 Actions 的版本判定、Release/R8 构建、签名校验与上传结果；云端完成前不宣称 APK 已发布。本次不调用既有双源发布脚本，不改变 App 内更新地址。
 - 待验收：工作流首次运行的 Secrets 可用性、构建与发布权限、Release 附件及目标提交；APK 安装和广告展示仍属于真机验收。
 - 推送前验证：17 项 Python 测试通过，版本门禁对本轮修改输出 `changed=true / v0.9.13-49`；`.\gradlew.bat :app:compileDebugKotlin :app:generateReleaseBuildConfig --offline --console=plain --no-parallel --max-workers=2` 成功，生成的 Release BuildConfig 为 `0.9.13 / 49`。远端 main 与本地起点 `42e16dd` 一致，当前源码仓库尚无 Release；待提交推送后核验云端产物。既有 AGP 废弃选项警告保留。
+- 已创建提交 `4c0cad4`（发布：升级至 0.9.13 并启用版本变更自动发行），普通推送 `main` 成功。对应 [Actions 运行 40904721405](https://github.com/lwcla/ClipMaster/actions/runs/40904721405) 的 `check-version` 成功，已进入构建 job；SDK、正式签名和 AdMob 配置恢复成功，当前等待 Release 构建与发布结果。
 
 ### 修改版本后自动发布到源码仓库（2026-10-29，本地实现已完成）
 
