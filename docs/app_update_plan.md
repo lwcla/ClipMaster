@@ -10,6 +10,33 @@
 
 ## 目标与范围
 
+### 0.9.13 源码仓库自动发布验收（2026-10-29，实现中）
+
+- 按用户要求将 `versionName` 从 `0.9.12` 改为 `0.9.13`，`versionCode` 从 `48` 改为 `49`，将版本修改与已经验证的版本触发工作流、判定脚本及测试一起提交并推送 `main`。预期发布标签为 `v0.9.13-49`，目标为当前源码仓库 `lwcla/ClipMaster` 的 Releases。
+- 复用现有版本元数据、共享模块版本派生、正式签名、AdMob 参数和 APK 命名，不引入新的 App 类、备份字段、协议或 keep 规则。版本常量本身无独立业务逻辑，不新增专用单测；沿用版本门禁的 8 项回归测试，执行相关 Python 测试、Debug Kotlin 编译、Release BuildConfig 生成和 `git diff --check`。
+- 日志与诊断沿用下节自动发布计划；不输出签名/广告配置或令牌。推送前核实 GitHub 登录用户与仓库所有者为 `lwcla`，具备 push 权限。推送后观察 Actions 的版本判定、Release/R8 构建、签名校验与上传结果；云端完成前不宣称 APK 已发布。本次不调用既有双源发布脚本，不改变 App 内更新地址。
+- 待验收：工作流首次运行的 Secrets 可用性、构建与发布权限、Release 附件及目标提交；APK 安装和广告展示仍属于真机验收。
+- 推送前验证：17 项 Python 测试通过，版本门禁对本轮修改输出 `changed=true / v0.9.13-49`；`.\gradlew.bat :app:compileDebugKotlin :app:generateReleaseBuildConfig --offline --console=plain --no-parallel --max-workers=2` 成功，生成的 Release BuildConfig 为 `0.9.13 / 49`。远端 main 与本地起点 `42e16dd` 一致，当前源码仓库尚无 Release；待提交推送后核验云端产物。既有 AGP 废弃选项警告保留。
+
+### 修改版本后自动发布到源码仓库（2026-10-29，本地实现已完成）
+
+- 用户确认的触发条件：推送到 `main` 后，比较本次 push 的 `before` 与 `after` 提交中 `app/build.gradle.kts` 的 `versionName` 和 `versionCode`。任一字段变化才构建正式签名 AdMob APK；普通代码、注释和其他 Gradle 配置变化只执行轻量检查，不打包、不发布。一次 push 包含多个提交时比较两端，只发布最终版本；本地 commit 尚未 push 不会触发。
+- 首次创建分支、没有 before 提交时跳过，避免把初始化仓库视为版本升级。版本配置必须继续使用可直接读取的静态字符串/整数；缺失、重复、动态表达式或不安全标签字符均报错终止，不能默认为需要发布。
+- 使用固定标签 `v<versionName>-<versionCode>`（例如 `v0.9.13-49`），使仅修改 versionCode 也能区分版本。工作流不自动递增 App 版本，不覆盖已有 Release 或附件；同版本重跑若已发布则由 GitHub 拒绝重复创建，需要核对已有发布结果。
+- 发布目标是运行工作流的源码仓库 Releases，使用本仓库 `GITHUB_TOKEN` 与 `contents: write`，标签明确指向实际构建提交。App 的双源更新地址和 `update.json` 契约保持原状；此发布不是原有 `ClipMaster-Releases`/Gitee 双源发行，不生成应用内更新清单。
+- 复用现有 `assembleRelease`、APK 命名、R8、签名属性读取与 AdMob Gradle 开关。需要三个仓库 Secrets：`RELEASE_KEYSTORE_BASE64`、`RELEASE_PROPERTIES_BASE64`、`ADMOB_PROPERTIES_BASE64`；分别恢复 `keystore.jks`、`keystore.properties`、只含广告参数的 `local.properties`。签名属性中的 `storeFile` 继续使用 `keystore.jks`，不复制 Windows SDK 路径到 Linux。
+- 原有 `scripts/publish_github_release.sh` 面向双源发行、构建后读取 APK 元数据并生成更新清单，不适合在构建前判断版本变化；本次新增 `scripts/github_release_version.py` 只负责版本解析、比较与 Actions 输出，发布仍用 GitHub CLI，不新增网络 SDK 或 App 类。
+- 验证计划与实现顺序：先用合成 Gradle 文本为版本变化/不变/无效配置写失败测试，再实现纯比较函数及 Git 读取入口；随后改 `.github/workflows/build-apk.yml` 的检查 job、受控构建和发布步骤；最后运行 Python 单测、真实本地提交的只读比较、YAML/嵌入 Bash 语法检查与 `git diff --check`。不修改 Kotlin、Android 资源或混淆规则，不重复运行 Android 全量测试；云端 Secrets、签名/R8 构建和实际发布留待首次版本推送验证。
+- 后续验收：确认云端三个 Secrets 已配置，修改版本后一次真实 push 能产生附件；普通提交应显示 build job 跳过。跨版本构建允许并行，不用取消旧构建的 concurrency；Releases 的 Latest 排序使用 GitHub 默认行为。
+- 边界约束：`v<versionName>-<versionCode>` 标签由此工作流专用，不应手工预建或移动；GitHub CLI 的 `--target` 只控制新标签，已有同名标签会被沿用。强推后若 before 提交已不在可获取历史中，版本检查安全失败，不回退为盲目发布。正常版本升级应沿主分支提交历史向前推进。
+- 本地验证：版本解析/比较新增 8 项测试采用先失败后实现，连同既有文档工具测试共 17 项通过；补测并修复了静态声明后再次动态赋值的拒绝边界。使用真实 `0.9.11 → 0.9.12` 提交验证 changed=true，相同提交、全零基线、非法 SHA 的 CLI 输出/退出码均符合预期。YAML、权限、job 依赖/条件检查与全部 7 段 Bash `-n` 通过；Bash 初次受沙箱命名对象权限限制，改为沙箱外只读语法检查后通过。`git diff --check` 通过。未推送、未触发真实签名构建或 GitHub Release，不能将这些检查视为云端发布成功。
+
+#### 自动发布日志与诊断计划
+
+- INFO：版本检查只输出 `changed`、包含版本名/版本码的标签和低敏 reasonCode；未变更或无基线明确记录跳过原因。
+- ERROR：版本无法解析、Git 提交读取失败以稳定 reasonCode 报错；Secret 缺失、Base64 无效、签名校验失败或 GitHub 发布失败沿用现有工具的非零退出码与 Actions 阶段名定位并终止流水线，不输出文件内容或 Secret 值。
+- Secrets 只在恢复步骤注入环境，GitHub token 只在发布步骤注入；上传白名单限定 APK 和独立 mapping artifact，签名、local.properties、日志或整个工作目录不作为 Release 附件。构建及发布状态由 Actions 日志留存，不新增 App 运行时日志。
+
 ### 0.9.12 双源发布（2026-10-29，已完成）
 
 - 按用户要求将 `versionName` 从 `0.9.11` 递增至 `0.9.12`，`versionCode` 从 `47` 递增至 `48`；纳入当前全部右滑菜单、提示、交互测试和共享文档改动，先提交并推送源码 `main`，再使用原脚本向 GitHub/Gitee 发布签名 APK、`update.json` 和 `sha256.txt`。
@@ -291,6 +318,12 @@ public 仓库 README 作为人可读发布页维护，至少包含最新版版�
 - 是否需要把发布页入口放到关于页或错误弹窗外的常驻位置，方便两个自动源都不可达时用户主动查看。
 
 ## 变更记录
+
+- 2026-10-29：按用户明确指令准备 `0.9.13 / 49`，将版本变更与版本门禁一起推送，触发当前源码仓库自动 Release；原因：实际验证“修改版本并推送后自动构建发布”的完整链路。
+
+- 2026-10-29：按用户更正，将源码仓库自动发行限定为 `main` push 前后版本字段发生变化；规划版本比较脚本、回归测试和带广告 Release 工作流，复用既有签名及构建配置。原因：普通代码提交不应自动创建 Release，版本提交应自动完成构建和 APK 附件上传。
+- 2026-10-29：完成版本判定 job、静态版本解析脚本与当前仓库 Release 上传步骤，保留用户同步到本地的正式广告包配置；17 项 Python 测试、真实提交 CLI 检查、YAML/权限检查、7 段 Bash 语法及差异检查通过。原因：落实“仅版本变化自动发布”的最终范围；云端 Secrets、Release/R8 和真实上传仍待版本推送验收。
+- 2026-10-29：独立只读审查无必改项，复跑 8 项版本测试及差异检查通过；补充专用标签命名空间和强推丢失 before 提交的边界，避免把常规 push 验证解释为任意历史改写或手工标签场景均已覆盖。
 
 - 2026-10-26（已完成）：按用户要求发布 `0.9.6 / 42`，原脚本完成 GitHub/Gitee 双端上传，两端 latest、六项附件摘要、APK 签名与版本核验通过；保存本地 mapping 和发布记录，沿用已记录的本机 Bash 启动兼容方式。本轮仅修改版本配置与方案文档，无新增业务逻辑、单测或运行时日志，设备验收未执行。
 

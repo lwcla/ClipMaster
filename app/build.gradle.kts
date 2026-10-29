@@ -96,10 +96,10 @@ android {
         applicationId = "com.cla.clip.master"
         minSdk = 24
         targetSdk = 36
-        /** 安装升级与更新判断使用单调递增的版本码，0.9.12 发行值为 48。 */
-        versionCode = 48
-        /** 用户可见的版本名称，复用现有 APK 文件名生成规则。 */
-        versionName = "0.9.12"
+        /** 安装升级与更新判断使用单调递增的版本码，0.9.13 发行值为 49。 */
+        versionCode = 49
+        /** 用户可见的版本名称，同时用于 APK 命名与版本变化自动发布检查。 */
+        versionName = "0.9.13"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

@@ -1,20 +1,56 @@
-name: 构建带广告 Release APK
+# main 推送先检查版本；只有版本字段变化才构建并公开发布正式广告包。
+name: 版本更新后构建并发布 APK
 
 on:
   push:
-    branches: [main] # 按实际主分支名称修改
-  workflow_dispatch:
+    branches: [main]
 
+# 版本比较只读仓库，创建 Release 的写权限限定到下游构建 job。
 permissions:
   contents: read
 
 jobs:
-  build:
+  check-version:
     runs-on: ubuntu-24.04
+    outputs:
+      # changed 控制构建，tag 绑定版本名和版本码，重跑保持同一版本身份。
+      changed: ${{ steps.version.outputs.changed }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: 获取版本历史
+        uses: actions/checkout@v6
+        with:
+          # 读取整个 push 的前后提交，多提交推送不能只比较 HEAD 的父提交。
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: 验证版本判定规则
+        run: python3 -m unittest scripts.test_github_release_version
+
+      - name: 比较推送前后版本
+        id: version
+        env:
+          # 固定比较事件中的旧提交，避免 main 后续推送改变比较基线。
+          BEFORE_SHA: ${{ github.event.before }}
+        run: >-
+          python3 scripts/github_release_version.py
+          --before "$BEFORE_SHA"
+          --after "$GITHUB_SHA"
+          --output "$GITHUB_OUTPUT"
+
+  build:
+    needs: check-version
+    # 普通提交在准备 SDK 和读取 Secrets 前跳过整个 Android job。
+    if: needs.check-version.outputs.changed == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
 
     steps:
       - name: 获取代码
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: 配置 Java
         uses: actions/setup-java@v6
@@ -84,3 +120,17 @@ jobs:
           path: app/build/outputs/mapping/release/mapping.txt
           if-no-files-found: error
           retention-days: 90
+
+      - name: 发布 APK 到当前仓库 Releases
+        env:
+          # GH_TOKEN 只供此步骤使用，GH_REPO 绑定当前仓库而非本机双源发布仓库。
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          # 标签来自已验证的版本输出，目标提交必须与本次 APK 构建一致。
+          RELEASE_TAG: ${{ needs.check-version.outputs.tag }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            app/build/outputs/apk/release/*.apk \
+            --target "$GITHUB_SHA" \
+            --title "ClipMaster $RELEASE_TAG" \
+            --generate-notes
