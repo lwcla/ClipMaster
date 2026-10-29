@@ -10,6 +10,17 @@
 
 ## 目标与范围
 
+### 0.9.9 双源发布（2026-10-29，实现中）
+
+- 按用户要求将 `versionName` 从 `0.9.8` 递增至 `0.9.9`，`versionCode` 从 `44` 递增至 `45`；先提交并推送源码主分支，再使用原脚本发布 GitHub/Gitee 正式签名 APK、`update.json` 和 `sha256.txt`。用户已确认纳入当前全部改动：搜索字段筛选、来源名称查询与分页会话、结果/历史红色加粗高亮、公共卡片描边及隐私文档；实现细节仍以各功能主方案为准。
+- 复用现有版本配置、APK 命名、双端发布脚本及此前验证的 PowerShell 7/Git Bash 本机兼容入口，保留 domestic 分发、internal 更新渠道及 AdMob 配置。本轮版本递增不新增组件、类、方法或协议。
+- 单元测试门禁：版本元数据没有独立业务规则，不新增单测或采用 TDD；已有功能改动使用现有测试验证。运行 app/base:general 单测、Debug Kotlin 与 Room 仪器测试编译，原脚本 dry-run（含 `:app:assembleRelease`、R8）、APK 版本/签名/SHA256 和 `git diff --check`；上传后核对两端 latest 及三项附件摘要。
+- 日志与诊断计划：沿用原发布日志和构建诊断，不增加 App 运行时日志；凭据由原脚本在本机读取，不写入日志、文档或公开产物。按版本保留 APK、最终清单、metadata、mapping 与发布核验日志，mapping 仅保存在本地。
+- 版本配置简体中文注释同步更新；版本递增不影响数据库、备份或反射契约。沿用已记录的本机启动兼容措施，不修改仓库发布脚本；真机覆盖安装、Room 仪器测试实际执行与页面视觉/交互不属于本轮自动发布验证。
+- 发布前验证：`.\gradlew.bat :base:general:testDebugUnitTest :app:testDebugUnitTest :base:general:compileDebugAndroidTestKotlin :app:compileDebugKotlin --offline --console=plain --no-parallel --max-workers=2` 成功，app 337 项、base 132 项共 469 项测试通过，失败/错误/跳过均为 0。原脚本 dry-run 的 `:app:assembleRelease`（含 R8、lintVital）成功，耗时 3 分 48 秒；`apksigner verify --verbose --print-certs` 确认 v2 签名有效且与 0.9.8 一致，`aapt dump badging`、metadata、Release BuildConfig 和预演清单均确认为 `com.cla.clip.master / 0.9.9 / 45`。渠道为 domestic/internal，APK 5,386,482 字节，SHA256 为 `b9247ab957c79c84a6956caead49e83211645a7a3d3ca62880da13825e36d2df`。
+- 提交范围：功能及测试归入 `1e2bb52`，隐私政策归入 `d2b3cd9`，版本配置与本记录独立提交；用户确认纳入全部已有改动。隐私 HTML 静态校验通过，政策网站未部署。发布前 Git 范围及差异检查通过，既有 Shizuku Kotlin/R8 告警未导致构建失败。
+- 变更记录：2026-10-29，按用户要求准备 `0.9.9 / 45` 双源发布；全部已有改动的范围已确认，发布前单测、正式构建、版本与签名核验完成；真实上传结果随发布完成补录。
+
 ### 0.9.8 双源发布（2026-10-26，已完成）
 
 - 按用户要求将 `versionName` 从 `0.9.7` 递增至 `0.9.8`，`versionCode` 从 `43` 递增至 `44`，发布 `bcb2f03` 已提交的广告正文检查移除实现；搜索、共享列表和详情不再根据剪贴关键词切换广告资格。
