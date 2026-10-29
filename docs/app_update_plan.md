@@ -10,6 +10,17 @@
 
 ## 目标与范围
 
+### 0.9.10 双源发布（2026-10-29，实现中）
+
+- 按用户要求将 `versionName` 从 `0.9.9` 递增至 `0.9.10`，`versionCode` 从 `45` 递增至 `46`；用户已确认纳入全部现有改动，先提交并推送源码 `main`，再使用原脚本发布 GitHub/Gitee 正式签名 APK、`update.json` 和 `sha256.txt`。
+- 本版包含七字段多选、完整短语搜索与高亮、固定同行筛选及菜单宽度修正；功能实现、测试先行和设备验收边界以 [搜索页方案](search_page_plan.md)、[共享列表方案](clip_result_list_plan.md) 和 [共享表单方案](shared_form_components_plan.md) 为准，不重复维护细节。
+- 复用现有版本配置、APK 命名、双端发布脚本与本机 PowerShell 7/Git Bash 兼容入口，沿用 domestic 分发、internal 更新渠道及 AdMob 配置。本轮版本递增不新增组件、类、方法或外部协议，版本配置简体中文注释同步更新。
+- 单元测试门禁：版本元数据无独立业务规则，不新增单测或采用 TDD；现有功能改动已有对应测试，本轮重新运行 app/base:general 单测、Debug Kotlin 与 Room 仪器测试编译，执行脚本 dry-run（含 `:app:assembleRelease`、R8）、APK 版本/签名/SHA256 和 `git diff --check`，上传后核验双端 latest 与三项附件摘要。
+- 日志与诊断计划：沿用原发布日志和构建诊断，不增加 App 运行时日志；凭据只由原脚本在本机读取，不写入日志、文档或公开产物。按版本保留 APK、最终清单、metadata、mapping 与验证日志，mapping 仅保存在本地。
+- 规则边界：无数据库、备份或反射契约变化，不调整备份与 keep 规则；沿用已记录的本机启动兼容措施，仓库发布脚本保持原有实现。真机覆盖安装、Room 仪器测试实际执行、页面视觉/交互与大数据搜索性能仍需设备验收。
+- 发布前验证：`.\gradlew.bat :base:general:testDebugUnitTest :app:testDebugUnitTest :base:general:compileDebugAndroidTestKotlin :app:compileDebugKotlin --offline --console=plain --no-parallel --max-workers=2` 成功，app 342 项、base 138 项，共 480 项测试通过，失败/错误/跳过均为 0。原脚本 dry-run 的 `:app:assembleRelease`（含 R8、lintVital）成功，耗时 1 分 41 秒；`apksigner verify --verbose --print-certs` 确认 v2 签名有效且与 0.9.9 一致，`aapt dump badging`、metadata、Release BuildConfig 与预演清单均为 `com.cla.clip.master / 0.9.10 / 46`，渠道 domestic/internal。预演 APK 为 5,388,994 字节，SHA256 为 `2fbe097b0dbf0a89367bed672de4f39df9860c12ea9cac16d2c3b62b8b165534`；真实上传若再次打包，以最终附件摘要为准。暂存及工作区 `git diff --check` 通过，保留既有 Shizuku Kotlin/R8 告警。
+- 变更记录：2026-10-29，按用户要求准备 `0.9.10 / 46` 双源发布；确认纳入全部现有搜索改动，补录发布范围、验证步骤及日志边界。
+
 ### 0.9.9 双源发布（2026-10-29，已完成）
 
 - 按用户要求将 `versionName` 从 `0.9.8` 递增至 `0.9.9`，`versionCode` 从 `44` 递增至 `45`；先提交并推送源码主分支，再使用原脚本发布 GitHub/Gitee 正式签名 APK、`update.json` 和 `sha256.txt`。用户已确认纳入当前全部改动：搜索字段筛选、来源名称查询与分页会话、结果/历史红色加粗高亮、公共卡片描边及隐私文档；实现细节仍以各功能主方案为准。
