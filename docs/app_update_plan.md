@@ -10,7 +10,7 @@
 
 ## 目标与范围
 
-### 0.9.9 双源发布（2026-10-29，实现中）
+### 0.9.9 双源发布（2026-10-29，已完成）
 
 - 按用户要求将 `versionName` 从 `0.9.8` 递增至 `0.9.9`，`versionCode` 从 `44` 递增至 `45`；先提交并推送源码主分支，再使用原脚本发布 GitHub/Gitee 正式签名 APK、`update.json` 和 `sha256.txt`。用户已确认纳入当前全部改动：搜索字段筛选、来源名称查询与分页会话、结果/历史红色加粗高亮、公共卡片描边及隐私文档；实现细节仍以各功能主方案为准。
 - 复用现有版本配置、APK 命名、双端发布脚本及此前验证的 PowerShell 7/Git Bash 本机兼容入口，保留 domestic 分发、internal 更新渠道及 AdMob 配置。本轮版本递增不新增组件、类、方法或协议。
@@ -19,7 +19,9 @@
 - 版本配置简体中文注释同步更新；版本递增不影响数据库、备份或反射契约。沿用已记录的本机启动兼容措施，不修改仓库发布脚本；真机覆盖安装、Room 仪器测试实际执行与页面视觉/交互不属于本轮自动发布验证。
 - 发布前验证：`.\gradlew.bat :base:general:testDebugUnitTest :app:testDebugUnitTest :base:general:compileDebugAndroidTestKotlin :app:compileDebugKotlin --offline --console=plain --no-parallel --max-workers=2` 成功，app 337 项、base 132 项共 469 项测试通过，失败/错误/跳过均为 0。原脚本 dry-run 的 `:app:assembleRelease`（含 R8、lintVital）成功，耗时 3 分 48 秒；`apksigner verify --verbose --print-certs` 确认 v2 签名有效且与 0.9.8 一致，`aapt dump badging`、metadata、Release BuildConfig 和预演清单均确认为 `com.cla.clip.master / 0.9.9 / 45`。渠道为 domestic/internal，APK 5,386,482 字节，SHA256 为 `b9247ab957c79c84a6956caead49e83211645a7a3d3ca62880da13825e36d2df`。
 - 提交范围：功能及测试归入 `1e2bb52`，隐私政策归入 `d2b3cd9`，版本配置与本记录独立提交；用户确认纳入全部已有改动。隐私 HTML 静态校验通过，政策网站未部署。发布前 Git 范围及差异检查通过，既有 Shizuku Kotlin/R8 告警未导致构建失败。
-- 变更记录：2026-10-29，按用户要求准备 `0.9.9 / 45` 双源发布；全部已有改动的范围已确认，发布前单测、正式构建、版本与签名核验完成；真实上传结果随发布完成补录。
+- 发布结果：源码版本提交 `7f2b183` 已先推送 `origin/main` 并核对远端提交一致，随后执行原脚本真实上传，返回 0。GitHub/Gitee latest 均为 `v0.9.9`，均包含 `ClipMaster-v0.9.9-admob.apk`、`update.json` 和 `sha256.txt`；GitHub 三附件服务端 SHA256 及 Gitee 三附件回下载 SHA256 全部与本地一致。真实发布再次打包后的最终 APK 为 5,386,482 字节，SHA256 为 `98a0a478d132506b6420c10f3bdb569ee310af19fcc4aad1f1c344466ccedc0c`，与预演摘要不同，已重新核对最终 APK 的 `0.9.9 / 45` 版本和签名连续性，发布验收以最终摘要为准。
+- 发布地址：[GitHub v0.9.9](https://github.com/clip-master-2/ClipMaster-Releases/releases/tag/v0.9.9)、[Gitee v0.9.9](https://gitee.com/clip-master-2/clip-master-releases/releases/tag/v0.9.9)。最终 APK、更新清单、校验文件、metadata、mapping、源码提交号及测试/构建/上传/核验日志已归档到 `build/github-gitee-release/v0.9.9/`，mapping 仅保存在本地。
+- 变更记录：2026-10-29，按用户要求完成 `0.9.9 / 45` 双源发布；纳入已确认的全部已有改动，完成 469 项单测、正式构建、版本/签名与双端附件核验，保留真机覆盖安装、Room 仪器执行和 UI 验收边界。
 
 ### 0.9.8 双源发布（2026-10-26，已完成）
 
