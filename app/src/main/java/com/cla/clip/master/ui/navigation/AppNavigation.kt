@@ -28,6 +28,7 @@ import com.cla.clip.master.ui.page.list.ClipListPage
 import com.cla.clip.master.ui.page.list.FoldedClipListPage
 import com.cla.clip.master.ui.page.main.MainPage
 import com.cla.clip.master.ui.page.mine.MinePage
+import com.cla.clip.master.ui.page.privacy.PrivacyPolicyPage
 import com.cla.clip.master.ui.page.mine.ClipSourceBlockSettingPage
 import com.cla.clip.master.ui.page.recycle.RecycleBinPage
 import com.cla.clip.master.ui.page.search.SearchPage
@@ -218,6 +219,11 @@ fun AppNavigation(
                 },
                 visibleToUser = true,
             )
+        }
+
+        // 常驻政策入口不依赖广告模块；无参数路由只在进入后创建离线阅读页。
+        composable<PrivacyPolicyRoute> {
+            PrivacyPolicyPage(onBack = onBack)
         }
 
         // 剪贴来源过滤设置页

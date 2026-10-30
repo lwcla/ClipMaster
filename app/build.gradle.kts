@@ -50,6 +50,37 @@ val enableAdmobDebugAdFeature = extra["enableAdmobDebugAdFeature"] as Boolean
 val enableAdmobReleaseAdFeature = extra["enableAdmobReleaseAdFeature"] as Boolean
 /** Play 渠道禁止应用内下载安装更新。 */
 val isPlayDistribution = extra["isPlayDistribution"] as Boolean
+
+/** 单文件资产生成任务；输入缺失直接构建失败，避免生成无法阅读政策的安装包。 */
+abstract class GeneratePrivacyPolicyAssets : DefaultTask() {
+    /** 政策唯一源文件；内容变化才重新生成，不依赖机器上的绝对路径。 */
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val policyFile: RegularFileProperty
+
+    /** 每个构建变体由 AGP 分配独立生成目录，避免 Debug/Release 并行互相覆盖。 */
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+
+    /** 原样复制政策正文，不引入第二份手动维护的 HTML；失败由 Gradle 报告。 */
+    @TaskAction
+    fun generate() {
+        // 输出文件固定命名，阅读页通过同一资产名读取；目录只能来自 AGP 生成路径。
+        val target = outputDirectory.file("privacy-policy.html").get().asFile
+        target.parentFile.mkdirs()
+        policyFile.get().asFile.copyTo(target, overwrite = true)
+    }
+}
+
+// 使用官方生成资源 API 连接生产任务依赖；不放宽 AGP 的 SourceSet Provider 限制。
+androidComponents.onVariants { variant ->
+    // 每个变体只生成政策正文，不打包 play-store 目录中的内部维护说明。
+    val policyAssets = tasks.register<GeneratePrivacyPolicyAssets>("generate${variant.name.replaceFirstChar { it.uppercaseChar() }}PrivacyPolicyAssets") {
+        policyFile.set(rootProject.layout.projectDirectory.file("play-store/privacy-policy.html"))
+    }
+    variant.sources.assets?.addGeneratedSourceDirectory(policyAssets, GeneratePrivacyPolicyAssets::outputDirectory)
+}
+
 android {
     namespace = "com.cla.clip.master"
     resourcePrefix("host_")
@@ -96,10 +127,10 @@ android {
         applicationId = "com.cla.clip.master"
         minSdk = 24
         targetSdk = 36
-        /** 安装升级与更新判断使用单调递增的版本码，0.9.15 发行值为 51。 */
-        versionCode = 51
+        /** 安装升级与更新判断使用单调递增的版本码，0.9.16 发行值为 52。 */
+        versionCode = 52
         /** 用户可见的版本名称，同时用于 APK 命名与版本变化自动发布检查。 */
-        versionName = "0.9.15"
+        versionName = "0.9.16"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

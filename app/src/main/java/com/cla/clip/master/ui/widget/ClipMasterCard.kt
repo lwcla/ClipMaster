@@ -65,11 +65,11 @@ object ClipMasterCardDefaults {
     /**
      * 默认边框色。
      *
-     * 亮暗模式均直接使用当前主题 outline，保留完整不透明度，避免默认边框融入卡片底色。
+     * 亮暗模式均使用当前主题 outline 的 30% 不透明度，与剪贴数据卡片的描边强度一致。
      * 动态配色随主题自动更新；剪贴列表等页面仍可传入来源 App 色，不覆盖业务颜色。
      */
     @Composable
-    fun borderColor(): Color = MaterialTheme.colorScheme.outline
+    fun borderColor(): Color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
 }
 
 /**
@@ -183,7 +183,7 @@ private fun ClipMasterCardShell(
 /**
  * 在应用固定亮暗主题下展示默认内容卡片和自定义边框色卡片。
  *
- * 预览关闭动态配色以保持样本稳定；公共组件统一外壳契约，业务颜色仍可由调用方传入。
+ * 预览关闭动态配色以保持样本稳定；默认色和自定义色均展示 30% 描边，业务颜色仍由调用方传入。
  * 使用既有详情和复制文案作为合成样本，不保存状态或启动业务副作用。
  */
 @Preview(name = "亮色默认与自定义边框", showBackground = true, uiMode = Configuration.UI_MODE_NIGHT_NO)
@@ -200,7 +200,7 @@ private fun ClipMasterCardPreview() {
                 modifier = Modifier
                     .padding(top = 12.dp)
                     .width(220.dp),
-                borderColor = MaterialTheme.colorScheme.primary,
+                borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
             ) {
                 Text(text = stringResource(com.cla.clip.base.general.R.string.base_general_copy))
             }

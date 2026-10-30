@@ -10,6 +10,18 @@
 
 ## 目标与范围
 
+### 0.9.16 版本准备（2026-10-30，已完成）
+
+- 按用户要求将 `versionName` 从 `0.9.15` 递增至 `0.9.16`，`versionCode` 从 `51` 递增至 `52`；纳入当前全部修改并普通推送到 `origin/main`，由既有工作流检查版本并自动构建发布，预期标签为 `v0.9.16-52`。
+- 本版包含常驻隐私政策入口、浏览器打开与内置离线正文兜底、单源政策资产生成、文档链接边界测试，以及公共卡片 30% 描边和联网预览入口图标配色。功能契约和设备验收边界以 [我的页方案](mine_page_plan.md)、[导航方案](app_navigation_plan.md)、[公共卡片主方案](shared_card_component_plan.md)、[剪贴结果列表主方案](clip_result_list_plan.md) 与 [政策维护说明](../play-store/PRIVACY_SETUP.md) 为准。
+- 复用 app 静态版本声明、base/general 版本派生、BuildConfig、APK 命名与版本变化判定脚本；版本调整不新增组件、类、方法或业务规则，同步版本码中文注释。按单元测试门禁无需为常量递增新增镜像单测或采用 TDD，已有功能测试随全部改动提交并复跑。
+- 验证计划：执行 app/base:general 单测、app Debug Kotlin 编译、Release/R8、Debug/Release 政策资产合并、版本判定脚本单测、真实版本比较与 `git diff --check`；核对生成版本和政策资产与源文件一致。设备交互未覆盖项继续由功能主方案记录，不将构建通过等同于真机验收或云端发布完成。
+- 日志与诊断计划：版本递增沿用既有 Gradle、版本判定脚本和 Actions 输出，不新增运行时日志；政策入口与阅读失败日志沿用我的页方案的低敏原因码，不输出正文、URL、凭据或用户内容。无新增持久化数据和备份契约；新导航路由沿用既有 Keep 规则和显式序列化名，本轮复验 R8。
+- 当前全部工作区改动属于用户明确要求的提交范围；不丢弃已有修改、不改写历史，推送前核对远端主分支，完成后核对远端提交与本地一致。
+- 本地验证：`.\gradlew.bat :base:general:testDebugUnitTest :app:testDebugUnitTest :app:compileDebugKotlin :app:minifyReleaseWithR8 :app:mergeDebugAssets :app:mergeReleaseAssets --offline --console=plain --no-parallel --max-workers=2` 成功（5m 52s）；app 372 项、base/general 145 项，共 517 项 JVM 单测，失败、错误、跳过均为 0。`python -m unittest discover -s scripts -p test_github_release_version.py` 的 8 项测试及暂存区 `git diff --staged --check` 通过。
+- 产物核对：app/base:general 的 Debug/Release BuildConfig 均为 `0.9.16 / 52`；真实版本变化判定为 `changed=true / v0.9.16-52`。Debug/Release 最终合并的政策资产与唯一源文件逐字节一致，未打包内部维护说明；mapping 保留于 `app/build/outputs/mapping/release/mapping.txt`。保留既有 AGP/Kotlin 弃用、Manifest 与 Shizuku 接口警告，本轮未重新安装或执行设备验收。
+- 提交前边界：远端 `main` 与本地起点 `5d3687e` 一致；GitHub 连接确认当前用户和仓库所有者均为 `lwcla`，具有 push 权限，全部 20 个版本、源码、测试与文档文件已审阅。首次沙箱构建因工作区外缓存锁权限失败，批准缓存访问后验证完成；版本调整无新增运行时日志或备份字段，无缺少中文注释或临时拆分类例外。云端自动发布结果需在推送后单独查看，不能由本地构建成功推定。
+
 ### 0.9.15 版本递增与全部改动推送（2026-10-30，已完成）
 
 - 按用户要求将 `versionName` 从 `0.9.14` 递增至 `0.9.15`，`versionCode` 从 `50` 递增至 `51`，提交当前全部修改并普通推送到源码仓库 `main`，由既有工作流执行版本判定及自动构建发布；预期标签为 `v0.9.15-51`，不另行手动发布或改写历史。
@@ -340,6 +352,9 @@ public 仓库 README 作为人可读发布页维护，至少包含最新版版�
 - 是否需要把发布页入口放到关于页或错误弹窗外的常驻位置，方便两个自动源都不可达时用户主动查看。
 
 ## 变更记录
+
+- 2026-10-30：按用户“版本号+1、提交所有修改并推送主分支”的要求准备 `0.9.16 / 52`，纳入隐私政策入口、离线阅读、卡片样式及全部对应文档测试，记录复用、验证计划和自动发布边界。
+- 2026-10-30：完成 517 项 JVM 单测、8 项版本判定测试、Debug 编译、Release/R8、资产一致性及派生版本核对，版本准备标记已完成；全部 20 个文件普通提交推送，设备待验收项与既有构建警告按功能主方案保留。
 
 - 2026-10-30：按用户“版本号+1、提交所有修改并推送主分支”的要求准备 `0.9.15 / 51`，将说明展开及对应测试、文档全部纳入本轮提交范围，记录验证计划、复用和自动发布边界。
 - 2026-10-30：完成 513 项 JVM 单测、8 项版本脚本测试、Kotlin/Android 测试编译及生成版本核对，按全部 13 个文件的范围完成版本准备，普通提交推送沿用现有 `origin/main`；设备与云端发布验收边界见本版记录。

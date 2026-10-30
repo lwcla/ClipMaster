@@ -1,4 +1,11 @@
 <resources>
+    <string name="host_privacy_policy_title">隐私政策</string>
+    <string name="host_privacy_policy_description">在浏览器中查看最新隐私政策</string>
+    <!-- 已发布的公开政策地址，与 Play Console 一致；固定配置不参与翻译。 -->
+    <string name="host_privacy_policy_url" translatable="false">https://lwcla.github.io/clipmaster-privacy/</string>
+    <string name="host_privacy_policy_loading">正在读取隐私政策…</string>
+    <string name="host_privacy_policy_load_failed">隐私政策暂时无法显示，请返回后重试。</string>
+    <string name="host_privacy_policy_open_failed">无法打开链接，请检查是否安装了浏览器或邮件应用。</string>
     <string name="host_log_title">日志</string>
     <string name="host_log_directory" translatable="false">Download/ClipMaster/logs/</string>
     <string name="host_log_file_count">日志文件：%1$d 个</string>

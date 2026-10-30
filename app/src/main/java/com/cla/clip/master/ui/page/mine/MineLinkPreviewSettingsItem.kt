@@ -27,7 +27,14 @@ internal fun MineLinkPreviewSettingsItem(viewModel: LinkPreviewSettingsVm = hilt
         title = stringResource(R.string.host_link_preview_title),
         description = stringResource(R.string.host_link_preview_description),
         checked = current?.enabled == true, enabled = current != null && !saving,
-        icon = { Icon(Icons.Default.Language, contentDescription = null) },
+        // 沿用同页 Material 图标与主题主色，避免继承正文颜色造成入口风格不一致。
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Language,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        },
         onCheckedChange = viewModel::setEnabled,
         supportingContent = {
             // 错误反馈和重试始终可见，不与静态说明一起折叠，也不触发开关保存。

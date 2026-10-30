@@ -34,6 +34,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.cla.clip.base.general.R
+import com.cla.clip.base.general.utils.logW
 import com.cla.clip.base.general.utils.toPermissionSetting
 import com.cla.clip.base.general.utils.toast
 import com.cla.clip.feature.torrent.search.api.TorrentSearchFeatureEntry
@@ -42,6 +43,7 @@ import com.cla.clip.master.ad.adHostActivity
 import com.cla.clip.master.ui.widget.ListEntryCard
 import com.cla.clip.master.entity.SettingSwitchItemUi
 import com.cla.clip.master.ui.navigation.ClipSourceBlockSettingRoute
+import com.cla.clip.master.ui.navigation.PrivacyPolicyRoute
 import com.cla.clip.master.ui.navigation.Route
 import com.cla.clip.master.ui.theme.ClipMasterThemeTokens
 import com.cla.clip.master.ui.widget.TopLevelPageScaffold
@@ -52,7 +54,7 @@ import rikka.shizuku.Shizuku
 /**
  * 我的页面。
  *
- * 当前承载权限项和授权入口，后续增加设置项时也应保持 ViewModel 只发动作、页面执行系统跳转的边界。
+ * 当前承载权限、设置和常驻隐私政策入口；政策优先交给浏览器，启动失败再导航到内置正文。
  *
  * @param torrentSearchFeatures 可选入口集合；关闭实现模块时为空，因此页面不会留下占位项。
  * @param onLaunchTorrentSearch 用户点击入口后的无副作用回调；页面不持有 Context 或启动来源。
@@ -181,6 +183,30 @@ fun MinePage(
             }
 
             item { MineSectionHeader(title = stringResource(R.string.base_general_mine_settings_section)) }
+            // 政策入口常驻，不依赖 UMP、广告开关或设置加载；固定 key 保持列表身份稳定。
+            item(key = "privacy_policy") {
+                ListEntryCard(
+                    // 复用现有入口图标槽和主题颜色，不复制卡片布局。
+                    icon = { Icon(Icons.Default.PrivacyTip, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                    title = stringResource(com.cla.clip.master.R.string.host_privacy_policy_title),
+                    description = stringResource(com.cla.clip.master.R.string.host_privacy_policy_description),
+                    // 仅在明确点击后打开公开政策，不随页面进入或重组预加载网页。
+                    onClick = {
+                        runCatching {
+                            // 固定 HTTPS 地址与 Play Console 一致，不附加用户数据或跟踪参数。
+                            val policyIntent = Intent(
+                                Intent.ACTION_VIEW,
+                                Uri.parse(context.getString(com.cla.clip.master.R.string.host_privacy_policy_url)),
+                            )
+                            context.startActivity(policyIntent)
+                        }.onFailure { error ->
+                            // 无浏览器或系统拒绝启动时保留阅读能力；只记录异常类型，不输出 URL 或异常正文。
+                            logW("PrivacyPolicy") { "公开政策打开失败，改用内置正文 reasonCode=public_policy_open_failed type=${error.javaClass.simpleName}" }
+                            onNavigate(PrivacyPolicyRoute)
+                        }
+                    },
+                )
+            }
             // 独立日志 VM/平台薄适配不继续膨胀页面主 VM，身份不依赖列表下标。
             item(key = "log_capture_settings") { MineLogSettingsItem(visibleToUser = visibleToUser) }
             if (settingsLoadFailed) {

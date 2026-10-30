@@ -2,6 +2,50 @@
 
 # 我的页方案
 
+## 隐私政策常驻入口（2026-10-30，已完成）
+
+- 用户确认在“我的”添加常驻“隐私政策”；接入时公开网页尚未发布，因此先提供随包正文。2026-10-30 已将同一政策发布至 <https://lwcla.github.io/clipmaster-privacy/>，用户进一步要求入口接入此公开地址；Play Console 填写仍待完成。托管、正文同步及部署证据以 [隐私政策维护说明](../play-store/PRIVACY_SETUP.md) 为准。
+- 在“设置”分组复用 `ListEntryCard` 和稳定 `privacy_policy` key，独立于广告源、UMP、权限及设置加载状态。点击通过 `ACTION_VIEW` 打开公开 HTTPS 地址；系统无法启动处理应用时，回退到无参数 `PrivacyPolicyRoute` 的内置阅读页。启动浏览器后的网站断网或服务器错误由浏览器处理，不将启动成功当成网页加载成功。
+- 地址存放在不可翻译的 `host_privacy_policy_url` 字符串资源中，与 Play Console 使用同一 URL；入口说明改为在浏览器中查看最新政策。只在点击时启动外部应用，不在页面进入或重组时预加载网页。
+- `play-store/privacy-policy.html` 是唯一正文源，`GeneratePrivacyPolicyAssets` 通过 AGP Variant API 只将此 HTML 放入各变体生成的 assets，不打包维护说明。阅读页按需在 IO 线程读取，失败显示资源化提示；不引入 ViewModel、持久设置或备份字段。
+- 复用 `SecondaryPageScaffold` 和状态组件；新增共享 `OfflineHtmlDocument` 承载静态 HTML。现有 `ProbeWebView` 服务媒体探测，启用脚本、Cookie 和网络，职责不同，不直接复用。
+- 阅读组件关闭 JavaScript、DOM storage、文件/内容访问和网络加载，不注入 JS；内部语言与章节锚点留在本页，用户主动点击 HTTPS/mailto 链接才交给外部应用，其他跳转拒绝。暂停时暂停 WebView，离页停止加载并销毁；不修改全局 Cookie 设置。
+- 新路由使用 `@Keep`、`@Serializable` 和固定 `@SerialName`；运行 Debug 编译、链接规则 JVM 单测及 Release/R8。入口本身属于薄导航，不单独写镜像测试；真机滚动、返回、锚点、外链和深色/大字体需设备验收。
+
+本次接入步骤：复用现有入口、标准外部打开方式和离线阅读路由，补充固定网址资源并调整点击回调，再运行 Debug 编译、既有文档链接边界测试和 diff 检查。选择系统浏览器以保持现有外链交互；不增加联网 WebView，避免扩大脚本、Cookie 与页面网络生命周期范围。
+
+本次单元测试检查：属于固定地址的薄导航接线，未抽出纯规则、状态机或新平台工具，按 `repo-unit-test-gate` 不新增镜像单测或强制 TDD；浏览器启动与无处理应用时回退需 Android 集成验收，JVM 编译/已有测试不能替代该项。路由类型、Intent 协议及混淆规则未变，不重复 Release/R8；无用户数据、设置或备份契约变更。
+
+验证结果：新增 4 项 `LocalDocumentLinkPolicyTest` 经先失败后通过验证；`:app:compileDebugKotlin`、`:app:testDebugUnitTest --tests '*LocalDocumentLinkPolicyTest'`、`:app:minifyReleaseWithR8`、`:app:mergeDebugAssets` 与 `:app:mergeReleaseAssets` 均通过。因默认输出目录受到其他构建占用，本轮使用 `-I build/privacy-policy-validation.init.gradle` 将验证输出隔离到 `build/privacy-policy-validation/`；最终合并的 Debug/Release HTML 与源文件逐字节一致，未打包 `PRIVACY_SETUP.md`。26 个 HTML ID、13 个链接与资源 XML 校验通过，`git diff --check` 通过。mapping 保留于独立输出的 `app/outputs/mapping/release/`，确认新路由名称保留；现有 Shizuku 接口及 Kotlin 弃用告警仍存在。未安装覆盖用户 App，真机离线滚动、锚点/外链、返回和深色/大字体仍待验收；本轮 ADB 服务启动未成功，编译/单测不能替代设备视觉结果。
+
+日志与诊断：入口启动浏览器失败并进入内置正文时用 WARN，字段仅 `reasonCode=public_policy_open_failed` 与异常类型；正文读取失败用 WARN，字段仅 `reasonCode=asset_read_failed` 与异常类型；正文外链打开失败用 WARN 和 `reasonCode=external_open_failed`；WebView 主文档失败用 WARN 和数值错误码。不记录 HTML、URL、邮箱或异常 message；成功打开、阅读和重组不记录日志，避免噪声。
+
+实现取舍：通过 `loadDataWithBaseURL` 提供内存正文与固定虚拟文档身份，不使用 file URL、不新增 WebKit 依赖，也不把虚拟地址交给外部浏览器；只允许同一正文的锚点。此方式与 [Android 本地内容文档](https://developer.android.com/develop/ui/views/layout/webapps/load-local-content) 一致；生成资产使用 [AGP Sources API](https://developer.android.com/reference/tools/gradle-api/9.2/com/android/build/api/variant/SourceDirectories)。
+
+变更记录：2026-10-30，落实已确认常驻入口；公开地址缺失时选择可离线阅读的正文，公开托管仍留在发布清单。
+
+变更记录：2026-10-30，常驻入口、阅读页、单源资产、链接边界回归及 Debug/Release 验证完成，补充现有联网预览开关的双语政策说明。没有新增业务设置、数据库或备份协议；无未拆分或缺少中文注释的例外，设备验收与公开托管保留为待办。
+
+变更记录：2026-10-30，同源政策已发布至独立公开仓库的 GitHub Pages，关闭上述公开托管待办；本页入口和离线阅读行为不变，无新增运行时日志或 App 测试需求。Play Console 填写及应用阅读页设备验收仍待完成，发布详情仅维护在政策主说明中。
+
+变更记录：2026-10-30，按用户后续要求将常驻入口改接公开政策 URL，默认系统浏览器阅读，无法启动浏览器时复用内置正文兜底；本次只调整入口编排、字符串与诊断，不新增组件或设置。
+
+公开链接接入验证：`.\gradlew.bat -I build/privacy-policy-validation.init.gradle :app:compileDebugKotlin :app:testDebugUnitTest --tests '*LocalDocumentLinkPolicyTest' --console=plain` 通过，4 项已有文档链接测试全部成功，日志位于 `build/privacy-policy-public-link-validation.log`；XML 校验确认公开 URL 唯一、与实际发布地址一致且不可翻译。`git diff --check` 通过。首次沙箱构建因 Gradle 缓存锁文件无写权限失败，批准正常构建权限后通过；当时沿用隔离输出，未安装覆盖用户设备 App。现有 AGP 配置弃用及 Shizuku 类型检查告警不属于本次改动。当时浏览器启动、系统返回及无浏览器回退尚未真机验收；后续公开打开与返回验收见下节，无浏览器回退仍未实测。本轮不改变导航协议，无需重跑 Release/R8，方法、局部变量及点击/失败回调已补中文说明。
+
+### 公开链接真机验收（2026-10-30，已完成）
+
+- 设备：Samsung Galaxy S10 / SM-G9730，Android 12 / API 31；通过 Android Studio Running Devices 操作真实连接设备。使用设备现有字体、深色外观和 Samsung Internet 浏览器，不修改权限、账号同意或默认浏览器。
+- 构建安装：`.\gradlew.bat -I build/privacy-policy-validation.init.gradle :app:assembleDebug --console=plain` 成功，日志为 `build/privacy-policy-device-build.log`；对本次产物执行 `adb install -r` 成功，保留应用数据。安装版本为 `0.9.15` / `51`，最后更新时间为 2026-10-30 20:42:18（北京时间）。
+- 产物：`build/privacy-policy-validation/app/outputs/apk/debug/ClipMaster-v0.9.15-admob-debug.apk`，SHA-256 为 `d2a1559a8226c07937b9b899bbfb784d243bee5778fc144e346d863c92e0fe01`。
+- 实测路径：启动 App → 我的 → 滚动到设置 → 点击隐私政策。可见副标题为“在浏览器中查看最新隐私政策”；实际前台切换至 `com.sec.android.app.sbrowser/.SBrowserMainActivity`，Activity 的 VIEW 目标确认为 `https://lwcla.github.io/clipmaster-privacy/`。手机显示 HTTPS 锁图标、政策标题、更新日期 2026-10-30、开发者及正文区域，无登录门槛或页面错误。
+- 返回行为：本设备 Samsung Internet 第一次系统返回关闭政策标签并显示浏览器首页，第二次系统返回恢复 `com.cla.clip.master/.MainActivity` 的“我的”页。原滚动位置、选中 Tab 和入口均保留；不能承诺所有浏览器均一次返回就回 App。
+- 连续两轮打开与返回通过；第二轮浏览器额外显示“三星账号政策已更新”流程，点击取消后政策正常显示，未代用户接受条款。最终停留在 App 的“我的”页，入口仍可使用。
+- 诊断：首次打开前和两轮返回后的 App PID 均为 `29705`；仅针对该 PID 统计 `AndroidRuntime:E` 和 `PrivacyPolicy:W` 中崩溃、公开政策打开失败及正文读取失败事件，匹配数为 `0`。不保存完整业务 Logcat、剪贴列表截图或用户数据库。
+- 截图保存在本次会话可视化目录 `C:/Users/18883/.codex/visualizations/2026/10/27/01a17b79-946f-72a2-bd0e-350f6623f2c1/`：`privacy-device-entry.png`、`privacy-device-browser.png`、`privacy-device-return.png`；设备临时目录内的截图已清理，本地证据保留。
+- 范围与例外：本次只执行现有代码的设备验收并更新文档，无生产代码、组件、方法、注释、运行时日志、备份或协议变更，不新增单测、不重跑 R8。未覆盖其他浏览器/Android 版本、无浏览器回退、网络不可达及内置正文完整交互；现有公共网页返回能力已取得真机证据。
+
+变更记录：2026-10-30，按用户要求构建并保留数据覆盖安装最新 Debug 包，完成 Galaxy S10 上两轮公开政策打开和返回验收；记录 Samsung Internet 的两次返回行为及其额外账号条款弹窗，关闭当前设备上公开打开与返回的待验收项。
+
 ## 三项说明展开接入（2026-10-30，已完成）
 
 Shizuku、通知和联网预览统一接入 [共享表单主方案](shared_form_components_plan.md#开关卡片说明展开2026-10-30已完成)：说明默认一行，点击 item 仅展开/收起，只有右侧 Switch 执行授权、跳转或保存；各项独立保持组合内展开状态，联网预览错误与重试不折叠。原权限动作、可见性约束与数据流程不变，不新增日志、持久状态或备份字段。具体组件、动画、测试和执行步骤以共享主方案为准。
@@ -22,6 +66,7 @@ Shizuku、通知和联网预览统一接入 [共享表单主方案](shared_form_
 
 - 保留现有唯一 Shizuku 开关：关闭时操作开关进入现有申请授权流程，打开时操作开关跳转 Shizuku，由用户手动撤销；返回后读取真实状态。点击 item 仅展开说明，不增加“自动记录总开关”或“已授权但未开启”分类。
 - 我的页新增独立“联网预览”开关，复用 `ExpandableSettingSwitchEntryCard`；只控制自动网页信息及远程封面请求，不联动 Shizuku 或通知。通知项保持现有独立权限行为。
+- 联网预览沿用 Material `Icons.Default.Language` 地球图标，显式使用 `MaterialTheme.colorScheme.primary`，与 Shizuku、通知及其他入口图标保持同一主题配色；尺寸与布局继续复用共享卡片，不另建图标组件。
 - 首次弹窗只在全新安装后展示一次；选择“暂不开启”不影响前台读取和保存，用户后续仍可从我的页分别操作现有权限入口和预览开关，不重复完整首次弹窗，也不新增前台读取开关或恢复入口。
 - `MineLinkPreviewSettingsItem` 为页面薄适配，`LinkPreviewSettingsVm` 独立管理加载、提交、失败重试，只在我的页可见时挂载观察；Shizuku 只展示用途说明，已授权时操作右侧开关仍直接跳转 Shizuku，不追加撤权指引；通知说明明确不影响读取和保存。失败只记录原因/异常类型，完整测试边界引用主方案。
 
@@ -165,6 +210,9 @@ Shizuku、通知和联网预览统一接入 [共享表单主方案](shared_form_
 
 ## 测试验证
 
+- 2026-10-30 联网预览图标配色修正仅涉及展示，不改变状态、事件或持久化；按 `repo-unit-test-gate` 不新增 JVM 单测、不走 TDD，已运行 `:app:compileDebugKotlin` 和 `git diff --check` 并通过。随后在三星 Galaxy S10（SM-G9730，Android 12）安装 0.9.15 debug（versionCode 51），实测浅色、深色主题下与 Shizuku、通知及管理入口图标配色一致，尺寸和对齐正常；点击标题展开及收起说明正常，联网预览开关保持关闭。验证后恢复原 custom 定时夜间模式（19:00–08:00）。不涉及外部协议、反射或备份，无需 release/R8 或备份链路调整。
+- 本次真机构建使用 `.\gradlew.bat :app:assembleDebug '-Pandroid.sourceset.disallowProvider=false' --console=plain`，构建和 ADB 安装成功，日志位于 `build/mine-icon-device-build.log`。该参数仅兼容并行开发中的隐私政策 assets Provider 配置，不修改构建脚本；默认命令当次因 SourceSet 不接受 Provider 而失败。浅色、深色及展开态截图保存在本次会话可视化目录的 `mine-icon-light.png`、`mine-icon-dark.png`、`mine-icon-expanded.png`；本轮仅补真机验收记录，不新增产品代码或测试代码。
+
 - Shizuku 权限项在已授权和未授权时均只展示既有用途说明，不追加关闭指引；已授权时操作右侧开关仍进入 Shizuku。卡片展开行为及点击隔离由共享组件设备回归验证。
 - 切换到我的页后，最上方应先显示“权限”分组，分组下只有 Shizuku 和通知两个权限项，且两个权限项应分别展示为独立卡片。
 - 权限单项卡片内部应展示权限语义图标、Shizuku/通知短标题、完整说明文案和对应开关。
@@ -203,6 +251,7 @@ Shizuku、通知和联网预览统一接入 [共享表单主方案](shared_form_
 
 ## 日志与诊断计划
 
+- 2026-10-30 联网预览图标只对齐主题配色，无新增副作用或错误分支，不新增运行时日志，避免 UI 重组噪声。
 - 2026-10-30 权限说明精简只删除静态撤权提示，不改变权限动作或副作用，不新增运行时日志。
 - 2026-10-13 日志保存开关已接入；已提交开关、采集状态和权限/存储/原生轮转错误仅输出低频状态变更，禁止重组日志与路径/敏感正文；logcat 子进程、大小/数量限制、递归隔离和运行诊断统一由应用日志主方案维护。
 - 2026-10-11 失败原因展示复用备份主方案的类型/HTTP 状态低敏原因记录，以及结果读取失败的既有 WARN；页面不新增副作用或重组日志，不记录地址、凭据、请求体、备份内容或异常原文。通过纯映射回归核对原因不丢失，设备验收核对入口实际文案与已有失败原因码一致。
@@ -212,6 +261,8 @@ Shizuku、通知和联网预览统一接入 [共享表单主方案](shared_form_
 
 ## 变更记录
 
+- 2026-10-30：按用户要求补充联网预览图标的 Android 12 真机验收；浅色、深色和说明展开状态均通过，记录实际构建兼容参数及主题恢复边界，取代此前待设备验收说明。
+- 2026-10-30：联网预览图标补齐同页统一的主题主色，复用现有 Material 图标和开关卡片；原因是原实现遗漏 tint，继承默认前景色后与其他入口视觉不一致。
 - 2026-10-30：删除我的页 Shizuku 已授权状态追加的关闭指引及闲置字符串资源；用户认为说明冗长，且点击已有跳转行为。复用现有权限卡片和用途文案，仅收敛展示表达，不新增组件、状态或权限流程。
 - 2026-10-30：按用户确认接入独立联网预览设置及权限文案，首次“暂不开启”保留前台读取；复用共享设置卡片，新增小型专属 ViewModel/适配层，避免继续扩张 MineVm。测试与设备待验收范围以首次安装说明主方案为准。
 

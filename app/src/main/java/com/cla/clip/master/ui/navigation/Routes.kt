@@ -127,6 +127,12 @@ data object BackupRestoreRoute : Route()
 @Serializable
 data object MineRoute : Route()
 
+/** 隐私政策阅读页；Navigation 序列化依赖稳定路由名，复用统一 Keep 规则。 */
+@Keep
+@Serializable
+@kotlinx.serialization.SerialName("privacy_policy")
+data object PrivacyPolicyRoute : Route()
+
 /** 剪贴来源过滤设置页 */
 @Keep
 @Serializable

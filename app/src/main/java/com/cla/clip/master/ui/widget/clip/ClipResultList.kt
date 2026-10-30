@@ -380,8 +380,8 @@ internal fun ClipCard(
     /** 来源主色沿用原有无效值约定；缺失或 -1 返回 null，不能通过颜色相等判断是否走默认色。 */
     val sourceAppColor = appIconEntry?.primaryColor
         ?.takeIf { it != -1 }?.let { Color(it) }
-    /** 默认基础色复用公共卡片入口，随当前亮暗或动态主题变化，各绘制区域独立设置不透明度。 */
-    val defaultCardColor = ClipMasterCardDefaults.borderColor()
+    /** 公共描边已有 30% 不透明度；还原同源基础色供各区域独立取强度，避免置顶角标再叠乘变淡。 */
+    val defaultCardColor = ClipMasterCardDefaults.borderColor().copy(alpha = 1f)
     /** 快捷区和置顶角标的共同基础色；冷缓存先用 outline，来源主色到达后与图标一起更新。 */
     val appColor = sourceAppColor ?: defaultCardColor
     /** 默认色与来源色边框统一使用 30% 不透明度，避免默认边框过深；侧滑分隔线沿用同一结果。 */
