@@ -6,13 +6,14 @@ import androidx.compose.material.icons.filled.PermIdentity
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import com.cla.clip.master.entity.SettingSwitchItemUi
-import com.cla.clip.master.ui.widget.SettingSwitchEntryCard
+import com.cla.clip.master.ui.widget.ExpandableSettingSwitchEntryCard
 
 /**
  * 权限设置项卡片列表。
  *
- * 每个权限项都独立成卡；权限刷新、系统跳转和授权动作仍由页面与 ViewModel 负责。
+ * 每个权限项都独立成卡，点击卡片仅展开说明，右侧开关才发送权限动作；权限刷新和系统跳转由页面负责。
  */
 @Composable
 internal fun PermissionSettingItems(
@@ -20,20 +21,23 @@ internal fun PermissionSettingItems(
     onItemCheckedChange: (id: SettingSwitchItemUi.Id, checked: Boolean) -> Unit,
 ) {
     items.forEach { item ->
-        /** 当前权限项的稳定业务 id，用于把共享卡片点击映射回 ViewModel 权限动作。 */
+        /** 当前权限项的稳定业务 id，用于保持阅读状态身份并把开关操作映射回 ViewModel。 */
         val itemId = item.id
-        SettingSwitchEntryCard(
-            title = item.title,
-            description = item.description,
-            checked = item.checked,
-            enabled = item.enabled,
-            icon = { PermissionSettingIcon(id = itemId) },
-            onCheckedChange = { checked ->
-                /** 用户点击卡片或开关后请求切换到的目标状态；ViewModel 会按系统真实状态决定动作。 */
-                val requestedChecked = checked
-                onItemCheckedChange(itemId, requestedChecked)
-            },
-        )
+        // 按权限身份保存各卡片的阅读状态，后续调整顺序也不串用展开状态。
+        key(itemId) {
+            ExpandableSettingSwitchEntryCard(
+                title = item.title,
+                description = item.description,
+                checked = item.checked,
+                enabled = item.enabled,
+                icon = { PermissionSettingIcon(id = itemId) },
+                onCheckedChange = { checked ->
+                    /** 用户点击右侧开关后请求的目标状态；ViewModel 按系统真实状态决定动作。 */
+                    val requestedChecked = checked
+                    onItemCheckedChange(itemId, requestedChecked)
+                },
+            )
+        }
     }
 }
 

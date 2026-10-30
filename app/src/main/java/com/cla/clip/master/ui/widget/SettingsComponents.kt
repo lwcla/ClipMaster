@@ -14,6 +14,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.cla.clip.master.ui.theme.ClipMasterThemeTokens
@@ -38,42 +40,10 @@ internal data class SettingSwitchRowState<Id>(
 )
 
 /**
- * 入口式开关卡片。
- *
- * 适用于“我的页权限项”这类需要和导航入口保持同一卡片节奏、但右侧仍展示开关状态的单项设置。
- * 组件只展示图标、标题、说明和开关，不直接读取权限、不保存设置，也不执行系统跳转。
- *
- * @param title 设置项主标题，承担入口扫描语义。
- * @param description 设置项说明，承担权限影响、偏好边界或状态解释。
- * @param checked 当前开关展示状态，只用于 UI 展示和计算整卡点击目标状态。
- * @param enabled 当前卡片和开关是否允许交互，禁用时保留说明但不触发回调。
- * @param icon 左侧语义图标，由调用方决定具体业务含义和颜色。
- * @param onCheckedChange 用户点击整卡或开关后的目标状态回调，具体授权、保存或跳转由调用方处理。
- * @param modifier 调用方附加的布局修饰符，组件自身仍负责默认页面外边距。
+ * 入口式开关卡片骨架；说明 slot 和卡片入口可拥有独立阅读动作。
+ * enabled 仅控制 Switch，默认空白区不点击；调用方通过 onEntryClick 决定卡片是否可点击，
+ * 避免保存中禁用开关时连带阻止说明阅读或日志浏览。组件不执行系统跳转或数据写入。
  */
-@Composable
-internal fun SettingSwitchEntryCard(
-    title: String,
-    description: String,
-    checked: Boolean,
-    enabled: Boolean,
-    icon: @Composable () -> Unit,
-    onCheckedChange: (Boolean) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    // 原字符串入口仍允许整卡切换，现有权限项不改变行为。
-    SettingSwitchEntryCard(
-        title = title, checked = checked, enabled = enabled, icon = icon,
-        onCheckedChange = onCheckedChange, modifier = modifier,
-        onEntryClick = { onCheckedChange(!checked) },
-        descriptionContent = {
-            Text(text = description, style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-        },
-    )
-}
-
-/** 说明 slot 可拥有独立动作；默认空白区不点击，Switch 的可用状态不禁止说明浏览。 */
 @Composable
 internal fun SettingSwitchEntryCard(
     title: String,
@@ -92,7 +62,6 @@ internal fun SettingSwitchEntryCard(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = spacing.large, vertical = spacing.small),
-        enabled = enabled,
         onClick = onEntryClick,
     ) {
         Row(
@@ -120,6 +89,8 @@ internal fun SettingSwitchEntryCard(
 
             // 已知设置默认 Switch；未知设置可由调用方用状态 slot 替代，避免伪造关闭语义。
             if (trailingContent != null) trailingContent() else Switch(
+                // 开关是独立读屏操作节点，必须带标题，不能依赖父卡片的阅读文案命名。
+                modifier = Modifier.semantics { contentDescription = title },
                 checked = checked,
                 onCheckedChange = { requestedChecked ->
                     /** Switch 原生回调给出的目标状态；传给调用方保持控件语义完整。 */

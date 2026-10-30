@@ -14,7 +14,6 @@
     <string name="host_log_retry">重试读取</string>
     <string name="host_shizuku_permission_title">Shizuku 权限</string>
     <string name="host_shizuku_service_require">通过 Shizuku，在使用其他应用时读取并保存剪贴板内容，方便查看历史记录。未授权不影响本应用前台读取。</string>
-    <string name="host_shizuku_revoke_hint">如需关闭，请前往 Shizuku 取消本应用授权。</string>
     <string name="host_notification_permission_title">通知权限</string>
     <string name="host_notification_permission_is_required">通知提醒</string>
     <string name="host_notification_permission_tip">用于显示剪贴保存、下载进度和 Shizuku 状态提醒。关闭后不影响剪贴板读取和保存。</string>

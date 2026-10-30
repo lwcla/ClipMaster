@@ -153,7 +153,7 @@ fun MinePage(
             contentPadding = PaddingValues(top = spacing.small, bottom = spacing.large),
         ) {
             item { MineSectionHeader(title = stringResource(R.string.base_general_mine_permission_section)) }
-            item { Permission(mineVm = mineVm) }
+            item(key = "permission_settings") { Permission(mineVm = mineVm) }
 
             // 预览是独立偏好，只有我的页可见时挂载其设置观察。
             item(key = "link_preview_setting") { if (visibleToUser) MineLinkPreviewSettingsItem() }
@@ -302,9 +302,8 @@ private fun Permission(
         SettingSwitchItemUi(
             id = SettingSwitchItemUi.Id.Permission.Shizuku,
             title = stringResource(com.cla.clip.master.R.string.host_shizuku_permission_title),
-            // 首页复用用途说明；取消授权指引仅属于我的页的已授权状态。
-            description = stringResource(com.cla.clip.master.R.string.host_shizuku_service_require) +
-                if (mineVm.shizukuChecked) "\n" + stringResource(com.cla.clip.master.R.string.host_shizuku_revoke_hint) else "",
+            // 与首页共用用途说明；展开阅读与右侧授权开关分离，无需追加关闭指引。
+            description = stringResource(com.cla.clip.master.R.string.host_shizuku_service_require),
             checked = mineVm.shizukuChecked,
         ),
         SettingSwitchItemUi(

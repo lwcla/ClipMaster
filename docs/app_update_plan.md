@@ -10,6 +10,16 @@
 
 ## 目标与范围
 
+### 0.9.15 版本递增与全部改动推送（2026-10-30，已完成）
+
+- 按用户要求将 `versionName` 从 `0.9.14` 递增至 `0.9.15`，`versionCode` 从 `50` 递增至 `51`，提交当前全部修改并普通推送到源码仓库 `main`，由既有工作流执行版本判定及自动构建发布；预期标签为 `v0.9.15-51`，不另行手动发布或改写历史。
+- 本版纳入 Shizuku、通知、联网预览三项说明默认单行及动画展开、仅右侧开关执行业务动作、读屏语义与对应设备回归测试，以及冗余 Shizuku 关闭指引移除。完整共享契约、复用与设备验收记录以 [共享表单主方案](shared_form_components_plan.md)、[我的页方案](mine_page_plan.md) 和 [首次启动方案](first_launch_consent_plan.md) 为准。
+- 版本调整复用 app 版本声明、base/general 的版本派生、BuildConfig 和 APK 命名，不新增组件、类、方法或独立规则，中文版本注释同步更新；无需新增版本专用单测或采用 TDD。已有 UI 改动复用 `SettingSwitchEntryCard` 骨架，新展开组件与设备测试一并纳入，不改业务授权或存储流程。
+- 验证计划：运行 app/base:general 的 `testDebugUnitTest`、app `compileDebugKotlin`、Android 测试 Kotlin/Java 编译、Release BuildConfig 生成、版本脚本单测、真实版本变化判定与 `git diff --check`。本轮不重复设备测试或本地 Release/R8，既有九项设备测试结果和未人工验收项以共享主方案为准；推送完成不等于云端发布完成。
+- 日志与诊断计划：沿用既有版本判定、Gradle 和 Actions 诊断，版本元数据及纯阅读交互不增加运行时日志；不输出凭据或用户内容。无备份数据、外部协议或反射契约变化，不新增备份或 keep 规则。
+- 本地验证：`.\gradlew.bat :base:general:testDebugUnitTest :app:testDebugUnitTest :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin :app:compileDebugAndroidTestJavaWithJavac :app:generateReleaseBuildConfig --offline --console=plain --no-parallel --max-workers=2` 成功；app 368 项、base/general 145 项，共 513 项 JVM 测试，失败、错误、跳过均为 0。`python -m unittest discover -s scripts -p test_github_release_version.py` 的 8 项测试及 `git diff --check` 通过。app Debug/Release 和共享模块 Debug BuildConfig 均为 `0.9.15 / 51`，真实版本判定输出 `changed=true / v0.9.15-51`。保留既有 AGP/Kotlin 废弃警告。
+- 推送前核对：远端 `main` 与本轮起点 `f94698b` 一致；GitHub 连接确认当前用户和仓库所有者均为 `lwcla`，具有 push 权限。提交范围为全部 13 个版本、UI、测试及文档文件。云端 Release 构建、发布完成及 APK 安装不属于本轮本地验证结论。
+
 ### 0.9.14 版本递增与全部改动提交（2026-10-30，已完成）
 
 - 按用户要求将 `versionName` 从 `0.9.13` 递增至 `0.9.14`，`versionCode` 从 `49` 递增至 `50`，将工作区全部已有代码、测试、工具及对应方案文档纳入本地提交。
@@ -331,6 +341,8 @@ public 仓库 README 作为人可读发布页维护，至少包含最新版版�
 
 ## 变更记录
 
+- 2026-10-30：按用户“版本号+1、提交所有修改并推送主分支”的要求准备 `0.9.15 / 51`，将说明展开及对应测试、文档全部纳入本轮提交范围，记录验证计划、复用和自动发布边界。
+- 2026-10-30：完成 513 项 JVM 单测、8 项版本脚本测试、Kotlin/Android 测试编译及生成版本核对，按全部 13 个文件的范围完成版本准备，普通提交推送沿用现有 `origin/main`；设备与云端发布验收边界见本版记录。
 - 2026-10-30：按用户“版本号+1、提交所有修改”的要求准备 `0.9.14 / 50`，记录全部工作区改动的提交范围、复用决策、验证计划和本地提交边界；功能细节继续引用既有主方案。
 - 2026-10-30：完成 513 项 JVM 单测、8 项版本脚本单测、Debug Kotlin 与 Android 测试 Kotlin/Java 编译、BuildConfig 版本及备份 HTML 同步核对，记录验证结果并将本轮版本递增状态更新为已完成；设备交互及 Release/R8 未在本轮重复运行。
 - 2026-10-29：按用户明确指令准备 `0.9.13 / 49`，将版本变更与版本门禁一起推送，触发当前源码仓库自动 Release；原因：实际验证“修改版本并推送后自动构建发布”的完整链路。

@@ -2,6 +2,23 @@
 
 # 共享表单与选择组件方案
 
+## 开关卡片说明展开（2026-10-30，已完成）
+
+- 已确认需求：Shizuku、通知和联网预览说明默认一行省略；点击 item 仅动画展开或收起，只有右侧 Switch 执行原授权、跳转或设置提交动作。三个 item 各自独立，不弹窗、不互斥展开。
+- 方案取舍：采用原地高度动画，减少阅读说明的步骤；不采用弹窗，避免几句话也需要额外关闭操作。卡片复用 `SettingSwitchEntryCard` 的说明 slot 和 `ClipMasterCard`，新增共享 `ExpandableSettingSwitchEntryCard`，不在页面复制视觉和交互。
+- 状态与布局：展开状态用组件内 `remember`，新进入组合默认收起，不写设置或备份；权限列表按稳定 id 建立组合身份。说明行带展开箭头及资源化读屏状态，200ms 高度和箭头动画；窄屏、大字体仍只限制折叠态一行，展开后完整换行。说明和错误反馈分别放置，联网预览失败/重试始终可见，不随说明折叠隐藏。
+- 点击边界：基础 slot 卡片的入口 callback 与 Switch enabled 独立；加载、失败或保存中禁用开关时仍可阅读说明。Switch 不冒泡触发卡片展开。日志卡片继续使用基础 slot，目录与开关行为不变。
+- 测试判断：没有新增独立业务规则、持久状态或协议，不写镜像 JVM 单测；用 Compose 设备回归验证默认一行、卡片点击无操作回调、开关点击不展开、禁用开关仍可展开、各项独立及动画高度。先让权限适配用例在旧实现失败，再实现共享组件；运行 app 单测、Debug/AndroidTest 编译和定向设备用例。
+- 日志与诊断计划：组件只管理瞬时展示状态，无 IO、权限请求或设置写入；不新增点击/重组日志，原权限与提交日志由调用方负责。无备份数据或外部协议/反射/R8 改动。
+- 文件与实施步骤（本次直接在已有工作区继续，保留上一轮文案改动；不提交或改写 Git 历史）：
+  - [x] 在 `app/src/androidTest/.../ui/widget/ExpandableSettingSwitchEntryCardTest.kt` 先验证权限 item 的点击隔离与折叠行为，旧实现 4 项失败（默认 5 行及整卡触发权限回调），符合预期。
+  - [x] 新建 `ui/widget/ExpandableSettingSwitchEntryCard.kt`；复用基础卡片，删除无调用的旧字符串重载；在 `MineSettingComponents.kt`、`MineLinkPreviewSettingsItem.kt` 统一接入。
+  - [x] 核对禁用、重试、字体和稳定身份，完成设备测试、编译、app 单测、差异检查与独立审查。
+- 验证记录：首轮 4 项设备回归先失败再通过；独立审查指出的展开语义与点击节点分离、Switch 缺少标题问题均先复现失败再修复。最终 `.\gradlew.bat :app:compileDebugKotlin :app:testDebugUnitTest :app:connectedDebugAndroidTest '-Pandroid.testInstrumentationRunnerArguments.class=com.cla.clip.master.ui.widget.ExpandableSettingSwitchEntryCardTest' --console=plain` 成功（43s），app 368 项单测、Android 12 设备 9 项 UI 用例全部通过，日志 `build/expandable-settings-final.log`；`git diff --check` 通过。设备用例使用合成 UI 状态，不主动申请权限或修改用户设置。
+- 验证边界：已验证动画中间高度、点击隔离、禁用阅读、大字体反馈及读屏语义；未人工逐项操作真实权限或开启 TalkBack 试听，Preview 提供亮色/深色大字体样本但未导出渲染。纯 Compose 展示和接线不新增 JVM 规则测试，未运行 Release/R8；无外部协议变化，不调整 keep、日志或备份。
+- 变更记录：2026-10-30，用户确认动画展开及仅右侧开关操作，更新共享契约和执行计划；替代此前权限说明常驻全文和整卡切换的约定。
+- 变更记录：2026-10-30，完成统一组件、三项接入和读屏修复，新增 9 项设备回归并完成编译与 app 单测；状态转为已完成，保留上一轮 Shizuku 冗余指引删除，未创建提交。
+
 ## 固定同行与无全选多选菜单（2026-10-29，已完成）
 
 本节记录已接入的共享 API，编译与单测随搜索页执行记录验证。页面字段/查询规则引用 [搜索页方案](search_page_plan.md#搜索范围多选与固定同行修订2026-10-29已确认)，此处只维护共享布局与菜单契约。
@@ -35,6 +52,8 @@
 下载历史消费者已删除，共享组件及其其余调用方保留；完整范围见 [下载记录主方案](download_history_plan.md)。本次只更新调用方索引，不改共享 UI API，不新增日志或独立测试，验证随主方案执行。
 
 ## 入口式开关说明 slot 与独立动作（2026-10-13，已完成）
+
+以下记录当时的接入过程；2026-10-30 已删除无调用的字符串重载，权限和联网预览改用顶部定义的展开组件及仅右侧开关操作契约，日志说明 slot 的行为继续保留。
 
 本节状态：已完成，说明 slot 与独立 Switch 已接入。我的页日志 item 在标题/开关之外展示蓝色目录，2026-10-15 按用户要求移除文件数量及其加载/失败展示；点击目录打开系统文件夹，开关独立控制采集。原字符串重载整卡切换继续沿用，新增 descriptionContent 重载默认空白区无点击；日志说明区域使用自己的打开 callback。业务与文件打开完整契约归 [应用日志主方案](app_logging_plan.md)，页面摘要归 [我的页方案](mine_page_plan.md)，本文只维护共享 UI API 与交互边界。
 
@@ -200,7 +219,7 @@
 
 ## 测试验证
 
-- 我的页入口点击、快捷动作选择和权限开关行为保持不变，Shizuku 与通知权限项分别独立成卡，权限卡片内部展示图标、短标题、完整说明和右侧开关，说明文案完整显示且不使用省略号截断。
+- 我的页普通入口与快捷动作保持原行为；Shizuku、通知、联网预览按顶部“开关卡片说明展开”契约默认一行、点击卡片展开全文、仅右侧开关执行操作。
 - 搜索页输入、清空和键盘搜索行为保持不变；时间/来源已改为即时下拉选择，最终交互以搜索页主方案为准。
 - 回收站多选彻底删除、还原确认、清空确认和保留天数设置行为保持不变。
 - 已运行 `./gradlew :app:compileDebugKotlin`，结果通过；仅保留既有 Gradle 配置和弃用 API 警告。
@@ -214,7 +233,7 @@
 
 - `ListEntryCard` 承载图标、标题、说明和点击入口，当前由我的页折叠数据、回收站等普通入口复用。
 - `SettingDropdownEntryCard` 承载单行即时选择设置，当前由我的页快捷操作入口接入；复用卡片外壳和单选项模型，当前值/菜单状态/保存均由调用方管理。
-- `SettingSwitchEntryCard` 承载入口式开关卡片，当前由我的页 Shizuku/通知权限项复用；页面传入权限标题、说明、状态、图标和回调，使权限卡片与其他入口保持图标、标题、说明和统一卡片外壳。页面仍负责权限刷新、系统跳转和 Shizuku 回调，权限说明文本完整换行展示。
+- `SettingSwitchEntryCard` 承载入口式开关卡片骨架及说明 slot；Shizuku、通知和联网预览通过 `ExpandableSettingSwitchEntryCard` 统一折叠阅读，日志保留独立目录 slot。页面仍负责权限刷新、系统跳转和 Shizuku 回调。
 - `SettingSwitchListCard`、`SettingSwitchRow` 和 `SettingSwitchRowState` 承载固定设置组与开关行，保留给后续多项表单式设置列表使用，不再承载我的页权限入口卡片。
 - `SingleChoiceDialog` 和 `SingleChoiceRow` 承载回收站保留天数等单选弹窗/行；`SingleChoiceOption` 同时复用于搜索时间与我的页快捷操作下拉菜单。
 - `SearchTopBar` 由过滤页搜索态与普通/折叠剪贴搜索共用无边框顶部输入外观；各页面自行处理返回、清空和提交。`SearchInputField` 保留正文描边输入契约，`HorizontalFilterChips` 与 `FilterChipOption` 承载横向互斥筛选；剪贴搜索继续使用 `FilterDropdown`，保留时间/来源等宽入口及折叠语义。

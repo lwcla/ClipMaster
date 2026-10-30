@@ -18,12 +18,12 @@ data class SettingSwitchItemUi(
     /** 当前是否已开启或已授权；只反映 UI 状态，不负责执行授权动作。 */
     val checked: Boolean,
 
-    /** 当前条目是否可点击，false 时通常表示前置条件未满足或系统能力不可用。 */
+    /** 当前业务开关是否可操作；false 时禁用授权动作，但仍允许点击卡片展开说明。 */
     val enabled: Boolean = true,
 ) {
     /** 设置项 id 层级，后续新增设置分类时应扩展这里而不是复用字符串常量。 */
     sealed class Id {
-        /** 权限类设置项 id，点击后通常跳转系统设置或第三方授权流程。 */
+        /** 权限类设置项 id，操作右侧开关后通常跳转系统设置或第三方授权流程。 */
         sealed class Permission : Id() {
             /** Shizuku 授权项，用于读取其他应用剪贴板来源信息。 */
             object Shizuku : Permission()
