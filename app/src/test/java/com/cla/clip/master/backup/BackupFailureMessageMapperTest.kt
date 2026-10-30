@@ -5,6 +5,14 @@ import org.junit.Test
 
 /** 明确失败提示必须基于稳定证据，不能靠耗时或截图猜测。 */
 class BackupFailureMessageMapperTest {
+    /** 同名文件夹保护失败必须有独立提示，不能继续显示未知或笼统不可写。 */
+    @Test fun localDirectoryConflictHasSpecificPresentation() {
+        // 合成原因码仅表示目标位置被目录占用，不包含路径或文件夹名称。
+        val presentation = BackupFailureMessageMapper.map("local_directory_conflict")
+        assertEquals(BackupFailureMessage.LocalDirectoryConflict, presentation)
+        assertEquals(BackupFailureMessage.Storage, BackupFailureMessageMapper.map("storage_not_writable"))
+    }
+
     /** 已知 WebDAV 证据不能继续降级未知，也不能与系统执行时限混淆。 */
     @Test fun webDavEvidenceHasSpecificPresentation() {
         // code 为本次已确认的稳定原因，非真实服务返回内容。

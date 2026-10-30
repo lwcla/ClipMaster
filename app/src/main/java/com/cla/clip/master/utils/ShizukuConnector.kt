@@ -12,6 +12,7 @@ import com.cla.clip.base.general.utils.logE
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.logW
 import com.cla.clip.master.BuildConfig
+import com.cla.clip.master.onboarding.FirstLaunchInitializer
 import com.cla.clip.shizuku.ClipboardShizukuService
 import com.cla.clip.shizuku.IClipboardShizukuService
 import com.cla.clip.shizuku.ShizukuCallback
@@ -39,7 +40,7 @@ import rikka.shizuku.Shizuku
  * adb shell ps | findstr "com.cla.clip.master"
  */
 @Singleton
-class ShizukuConnector @Inject constructor(
+class ShizukuConnector @Inject internal constructor(
     /** 应用级协程作用域；用于异步发起 bind，避免阻塞 UI。 */
     @param:ApplicationScope private val scope: CoroutineScope,
     /** 应用 Context；用于 Shizuku 状态检查和通知文案。 */
@@ -48,6 +49,8 @@ class ShizukuConnector @Inject constructor(
     private val notificationHelper: Lazy<NotificationHelper>,
     /** 宿主安装身份仓库；应用协程先等 ID 和期望进程名持久化，再执行绑定。 */
     private val identityRepository: InstallationIdentityRepository,
+    /** 首次选择之前禁止任何自动重连入口绑定后台服务；不保存第二套后台开关。 */
+    private val firstLaunchInitializer: FirstLaunchInitializer,
 ) {
 
     companion object {
@@ -242,6 +245,8 @@ class ShizukuConnector @Inject constructor(
             connectMutex.withLock {
                 /** 已提交的安装身份和进程名；存储错误不得按默认身份继续绑定。 */
                 val preparedProcess = try {
+                    // 统一覆盖启动、首页及 Provider 修复入口；稍后选择完成后仍需真实 Shizuku 授权。
+                    if (!firstLaunchInitializer.initialize().firstLaunchCompleted) return@withLock
                     prepareExpectedShizukuProcess()
                 } catch (exception: CancellationException) {
                     throw exception

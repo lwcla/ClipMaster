@@ -337,7 +337,7 @@ internal fun ClipResultList(
  * 普通列表和普通搜索可以按设置开启斜向快捷动作区：左下三角执行页面传入的动作，
  * 其余区域进入详情；折叠列表、折叠搜索和回收站保持整卡点击语义。
  * 快捷动作区背景只作为底层视觉提示，内容始终按完整卡片宽度铺满。
- * 无有效来源主色时，边框、快捷区和角标统一使用主题 outline；仅来源色边框保留 30% 不透明度。
+ * 无有效来源主色时，边框、快捷区和角标统一使用主题 outline；默认色与来源色边框均使用 30% 不透明度。
  * 第二段提示与松手共用纯规则，使用实测宽度的 80% 与菜单后保护距离，回拉或取消不提交。
  * 菜单图标贯穿拖动阶段保留，提示固定排在菜单右侧，由前景卡片移动决定露出量。
  *
@@ -380,12 +380,12 @@ internal fun ClipCard(
     /** 来源主色沿用原有无效值约定；缺失或 -1 返回 null，不能通过颜色相等判断是否走默认色。 */
     val sourceAppColor = appIconEntry?.primaryColor
         ?.takeIf { it != -1 }?.let { Color(it) }
-    /** 默认色复用公共卡片入口，随当前亮暗或动态主题变化，不额外降低不透明度。 */
+    /** 默认基础色复用公共卡片入口，随当前亮暗或动态主题变化，各绘制区域独立设置不透明度。 */
     val defaultCardColor = ClipMasterCardDefaults.borderColor()
     /** 快捷区和置顶角标的共同基础色；冷缓存先用 outline，来源主色到达后与图标一起更新。 */
     val appColor = sourceAppColor ?: defaultCardColor
-    /** 来源色边框保持原来的 30%，默认边框直接使用 outline，侧滑分隔线沿用同一结果。 */
-    val borderColor = sourceAppColor?.copy(alpha = 0.3f) ?: defaultCardColor
+    /** 默认色与来源色边框统一使用 30% 不透明度，避免默认边框过深；侧滑分隔线沿用同一结果。 */
+    val borderColor = appColor.copy(alpha = 0.3f)
     /** 快捷区常驻底色保留 5% 同源色，只作轻提示，避免压住整卡正文。 */
     val quickActionBackgroundColor = appColor.copy(alpha = 0.05f)
     /** 按压时在常驻底色上再叠加 10% 同源色，保留现有绘制顺序与反馈强度。 */

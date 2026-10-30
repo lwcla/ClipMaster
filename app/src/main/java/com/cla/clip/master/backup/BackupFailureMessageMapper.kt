@@ -2,6 +2,8 @@ package com.cla.clip.master.backup
 
 /** 纯展示分类，不序列化，不将类型名称作为稳定错误协议。 */
 internal enum class BackupFailureMessage {
+    /** 目标 ZIP 或临时文件被同名文件夹占用，提示重命名或改选目录。 */
+    LocalDirectoryConflict,
     Storage, Auth, Remote, Space, TempFile, Interrupted, Timeout, Quota, Network, DeviceState, Cancelled, Schedule, Handoff,
     RequestTimeout, Tls, RequestNetwork, DirectoryCreate, Http, NoReason, Unknown
 }
@@ -16,6 +18,7 @@ internal object BackupFailureMessageMapper {
         "webdav_network_failed" -> BackupFailureMessage.RequestNetwork
         "webdav_directory_create_failed" -> BackupFailureMessage.DirectoryCreate
         "storage_not_writable" -> BackupFailureMessage.Storage
+        "local_directory_conflict" -> BackupFailureMessage.LocalDirectoryConflict
         "auth_failed" -> BackupFailureMessage.Auth
         "remote_failed" -> BackupFailureMessage.Remote
         "insufficient_space" -> BackupFailureMessage.Space

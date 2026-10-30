@@ -18,6 +18,27 @@ import java.io.File
 
 /** 分目标结果与待上传身份回归测试；只使用合成配置。 */
 class BackupTargetResultsTest {
+    /** 同名目录原因经过真实设置事务保存后仍可重读，且不能污染另一目标的成功状态。 */
+    @Test fun localDirectoryConflictPersistsWithoutChangingWebDavSuccess() = runBlocking {
+        /** 测试独占设置协程，不读取安装内实际偏好。 */
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            /** 合成介质可让新仓库重读已经保存的结果。 */
+            val store = createTestHostSettingsStore(scope, File(folder.root, "directory-conflict.preferences_pb"))
+            /** 真正的结果仓库负责固定原因码的持久化。 */
+            val repository = BackupRuntimeRepository(store)
+            repository.recordTargetResult(BackupResultTarget.WebDav, 100L)
+            repository.recordTargetResult(BackupResultTarget.Local, 200L, BackupFailure.LocalDirectoryConflict().backupReasonCode())
+            /** 重建仓库模拟页面重新订阅，不依赖先前页面内存。 */
+            val restored = BackupRuntimeRepository(store).snapshot()
+            assertEquals(BackupTargetResult(200L, true, "local_directory_conflict"), restored.localResult)
+            assertEquals(BackupTargetResult(100L), restored.webDavResult)
+            assertEquals("storage_not_writable", BackupFailure.StorageNotWritable().backupReasonCode())
+        } finally {
+            scope.cancel()
+        }
+    }
+
     /** 一个 taskId 只有一次许可，回到 queued 和重建仓库不重置；新任务才重新获得机会。 */
     @Test fun directoryRecoveryPermitPersistsAcrossRescheduleAndNewRepository() = runBlocking {
         /** 使用合成 DataStore，实际事务参与验证，不模拟标记写入。 */

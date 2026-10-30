@@ -4,6 +4,80 @@
 
 <!-- flow-title: WebDAV本地自动备份恢复流程 -->
 
+## 本地同名文件夹失败原因（2026-10-30）
+
+本节状态：已完成。用户要求“我的”和备份页明确说明备份失败原因。本次复用两页共用的 `BackupResultsSummary`、`BackupFailureMessageMapper` 和运行态 reasonCode 链路，不增加页面专用提示组件或目录扫描。
+
+- 仅当目标 ZIP 或临时文件的位置被同名文件夹占用时，抛出 `BackupFailure.LocalDirectoryConflict`，固定原因码 `local_directory_conflict`。未知 MIME、查询失败及其他不可写情况仍使用 `storage_not_writable`，不能猜测为名称冲突；已存在的备份父目录照常使用。
+- 两页历史结果和备份页即时提示使用同一资源：“备份目录中存在与 ZIP 或临时文件同名的文件夹，无法保存。请重命名该文件夹或更换备份目录，原内容已保留。”沿用自然换行，保留两目标独立结果及上次失败语义。
+- 调整现有 Writer 查询的分类与异常透传，扩展领域失败、稳定原因映射、共享摘要及即时提示，不改变保存、覆盖、清理、恢复和调度规则。旧 `storage_not_writable` 记录不追溯推断。
+- 测试先行覆盖原因分类、领域原因码及运行态保存/展示；更新真实 SAF 同名正式/临时目录回归的错误断言，并验证共享摘要在设备上的文案。运行 app/base 单元测试、Debug/测试包构建及 HTML 同步检查。
+- 日志与诊断计划：沿用 Writer/Coordinator 既有 ERROR 失败日志与 taskId，记录新的固定 reasonCode；不新增页面重组日志，不输出文件夹名称、完整路径、授权 URI 或异常正文。
+- 备份边界：错误分类属于安装内运行态，不纳入备份包、不触发 dirty、不改变 schema。新异常与展示枚举仅编译期调用，稳定原因码显式定义，无新增反射或 keep；本轮不要求 R8 验证。
+- 后续待办：其他品牌与第三方 Provider 的文案及故障验收沿用本地单 ZIP 章节；本次不扩展未知 IO 故障分类。
+
+验证记录：先运行 `:app:testDebugUnitTest --tests '*BackupFailureMessageMapperTest'` 确认新原因原先降级为 Unknown；后续真实 SAF 用例确认 `.zip.tmp` 碰撞在 `createOrReplaceFile` 被二次包装，补齐已有 `BackupFailure` 透传后回归通过。完整命令 `.\gradlew.bat :app:testDebugUnitTest :base:general:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest --init-script tools\backup-device-test.init.gradle --console=plain` 通过，app 368 项、base 145 项，共 513 项测试零失败/错误/跳过。
+
+三星 Galaxy S10 / Android 12 隔离安装执行 `adb -s <设备序列号> shell am instrument -w -r -e class com.cla.clip.master.backup.local.LocalBackupSafDeviceTest,com.cla.clip.master.ui.widget.BackupFailureReasonUiTest com.cla.clip.master.backuptest.test/androidx.test.runner.AndroidJUnitRunner`，`OK (4 tests)`。覆盖真实系统 Provider 正式/临时同名目录错误及内容保留、单 ZIP 列表/排序/清理/恢复闭环、我的页生产入口组件与备份页共用摘要的大字体提示。当前 UI 用例是生产组件渲染，未声称重跑完整页面导航；结果持久化及重新读取由真实 DataStore 单测覆盖。原应用未覆盖，测试包和空目录已清理。证据：`build/backup-failure-reason-red.log`、`backup-failure-reason-saf-red.log`、`backup-failure-reason-fixed-build.log`、`backup-failure-reason-device.log`。
+
+变更记录：2026-10-30，按用户要求把同名文件夹保护失败从通用不可写中区分，复用两页共享展示并保留可行动指引；补齐临时文件层异常透传，独立审查复核、513 项 JVM 测试及 4 项设备测试通过，同步流程图并保留验证边界。
+
+## 首次说明与预览选择的备份排除（2026-10-30）
+
+`PrivacySettingsRepository` 的 `first_launch_completed` 与 `link_preview_enabled` 是本安装隐私选择，不进入 `BackupSettings` / `ClipSettingsSnapshot.toBackupSettings()` 白名单，也不触发备份调度。宿主 `datastore/app_settings.preferences_pb` 已在云备份与设备迁移规则中排除，无需扩大排除范围或改变备份 schema。卸载重装后重新说明、联网预览默认关闭；恢复历史记录不恢复网络许可。后续暂无跨安装迁移这两项选择的计划。此处仅登记数据分类，不改备份执行链路或日志；实现与验证见 [首次安装说明主方案](first_launch_consent_plan.md)。
+
+变更记录：2026-10-30，按首次说明及联网预览功能的设备绑定隐私边界登记排除项，复用现有白名单和系统排除，保留其他备份改动。
+
+## 本地目录统一单 ZIP（2026-10-30）
+
+本节状态：已完成（JVM 单测、构建、三星 Android 12 真机 SAF 与实际页面恢复验收）。用户已确认本地目录与 WebDAV 均只保存 ZIP，并同步调整列表、排序及保留清理；本节替代下方历史设计中“本地继续保留外部摘要”的约定。
+
+### 真机验收补充（2026-10-30，已完成）
+
+使用已连接三星 SM-G9730 / Android 12（API 31），以独立 applicationId `com.cla.clip.master.backuptest` 安装当前代码，不更新或清除设备上的正式安装。通过应用系统目录选择器授权专属 `Documents/ClipMasterBackupDeviceCheck_20261030` 目录。新增 app androidTest：真实 ExternalStorageProvider 上单 ZIP 发布、列表读取/排序、旧摘要忽略、普通份数清理、目录/safety/未知文件保护、复制预检、真实 Room 与设置恢复及重复恢复幂等；另用合成目录验证正式名/临时名碰撞不能删除目录。测试使用内存 Room 与私有临时 DataStore，不读取正式库或访问 WebDAV。
+
+复用现有包协议、恢复器和设置仓库，测试装配保留在 androidTest；Gradle init script 只在显式启用时改用独立测试包名与构建目录，不改变正式打包配置。普通安装运行常规设备套件时跳过本专项；隔离安装必须先授权空专属目录。每个用例精确记录并回收自己创建的 SAF 文档，不清空整个授权树；只有一个合成 ZIP 留在测试安装私有目录供后续 UI 验收。日志只记录步骤、数量、错误类型，不打印用户内容、授权 URI 或完整包。
+
+真机首轮：正常闭环通过；碰撞用例失败，实际观察到正式 ZIP 同名目录被删除并替换为文件。根因是 `findChildUri` 只检查名称，调用方直接删除返回文档。修复改为同时查询 MIME：同名目录、未知类型、查询失败都返回明确不可写错误；临时创建也复用此检查，并在旧文件删除失败时终止。对目录不调用删除 API，异常仍交给既有写入失败日志与本次临时文件清理，保持无敏感日志。
+
+修复后设备套件两项连续运行两轮通过，每轮结束专属目录为空：
+
+| 验收项 | 实际结果 |
+| --- | --- |
+| 本地发布 | 三份真实 ZIP 字节流发布成功；无外部 JSON、无临时残留 |
+| 列表、排序 | 新包先写、旧包后写，仍按文件名时间倒序；大小来自真实 Provider |
+| 保留两份 | 仅删除最旧普通 ZIP；旧摘要、未知 ZIP、旧 safety、ZIP 名目录及子项保留 |
+| 恢复与重复恢复 | 从 SAF 复制并通过预检；真实 Room 新增 1 条、设置恢复为 90 天；重复恢复新增/更新均 0，跳过 1 |
+| 同名目录碰撞 | 目录及内部哨兵仍存在；首次保护修复使用 StorageNotWritable，现已细分为上方专用原因 LocalDirectoryConflict |
+| 真实页面 | 本地列表显示 1.5 KB ZIP；预览校验通过；恢复完成显示新增 1、更新 0、跳过 0；完成后回到主页，列表可见合成记录 |
+
+构建与回归命令：`.\gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest :base:general:testDebugUnitTest --init-script tools\backup-device-test.init.gradle --console=plain`，构建通过，app 366 项、base 144 项，共 510 项 JVM 测试零失败/错误/跳过。补齐测试清理后再次构建 androidTest 通过；执行 `adb -s <设备序列号> shell am instrument -w -r -e class com.cla.clip.master.backup.local.LocalBackupSafDeviceTest com.cla.clip.master.backuptest.test/androidx.test.runner.AndroidJUnitRunner` 两次均 `OK (2 tests)`。本地证据位于 `build/backup-device-roundtrip.log`、`backup-device-collision-red.log`、`backup-device-fixed.log`、`backup-device-repeat.log`、`backup-device-restored.png`、`backup-device-list.png`（均为本机临时验证产物）。
+
+收尾已卸载本轮两个隔离测试 APK，核对并清理合成 ZIP、空专属目录和设备临时截图；原应用仍为 0.9.11 / versionCode 47，未覆盖或清除其数据。独立代码审查未发现生产修复阻断项；测试可重复性意见已通过定点清理和连续复跑闭环。
+
+### 设计、范围与实现步骤
+
+- 本地发布沿用同一 `BackupExportResult.packageFile`，只写 `.zip.tmp` 后重命名为正式 ZIP；失败清理仍只针对本次创建的文件，不再创建、读取或删除 `.manifest.json`。历史摘要留在原处并被忽略，不新增迁移或批量清理。
+- 列表只查询 SAF 文件名、文档 ID、大小、修改时间和 MIME 类型，不读取 ZIP/JSON 内容；排除目录及临时文件。复用现有文件名时间/旧 safety 解析能力，排序为文件名时间（缺失时修改时间、再缺失为 0）、修改时间、文件名，均倒序。
+- 普通备份必须具有应用前缀、ZIP 后缀及可解析时间，并且不是历史 safety；未知文件不因修改时间可用而进入保留清理。保留最近 N 份，只删除选中的 ZIP，不影响旧摘要或其他文件。
+- 将文件名/元数据规则放入 `backup/local/LocalBackupMetadata.kt`，目录写入器继续负责 SAF IO；`LocalBackupFile` 连接元数据与 URI。页面复用 `BackupFileCard`，只调整时间来源，不新增组件、字符串或页面任务。
+- 恢复继续只复制所选 ZIP 到私有临时目录，复用 `BackupPackageReader` 的包内 manifest/checksum 预检和现有恢复器。ZIP 内容、schemaVersion、字段白名单、私有待上传描述、系统 Auto Backup、恢复报告及幂等规则均不变；内部任务描述仍用于后台任务接管，不属于用户目录导出产物。
+- [x] 先补元数据排序、保留资格及单 ZIP 可预检/读取的回归测试。
+- [x] 修改本地发布、列表、清理与页面接线，删除无调用的外部摘要 IO。
+- [x] 运行 `:app:testDebugUnitTest :base:general:testDebugUnitTest :app:compileDebugKotlin`，同步流程 HTML 并运行 `git diff --check`。
+
+### 日志与诊断计划
+
+沿用本地写入开始/成功、目录失败、清理开始/逐项结果/汇总日志；发布失败补 `logE`，仅记录 taskId、reasonCode 和异常类型。现有 `logD` 记录文件名、大小、keepCount/candidates/toDelete/deleted，失败使用 `logE`；不输出 SAF URI、路径、JSON、剪贴内容或异常原文。没有新增高频列表逐项日志。真机和代码审查确认单 ZIP 及目录碰撞失败清理范围；授权撤销和其他 Provider 故障注入仍属后续覆盖。
+
+### 测试与取舍
+
+本次属于排序、过滤、保留及文件 IO 行为变更，按 `repo-unit-test-gate` 采用选择性 TDD。纯元数据不依赖 Android，测试覆盖时间兜底、稳定顺序、未知文件、旧 safety 和临时文件；包协议用合成 ZIP 验证脱离外部 JSON 后仍可预检与读取业务数据。正常 SAF 重命名已通过上方真机验收；授权失效和 Provider IO 故障注入仍待验证，不为单元测试引入 Android 模拟框架。列表时间精度与 WebDAV 一致为文件名秒级，保留原文件名时区语义。新增元数据仅编译期使用，不是序列化/反射契约，无需 keep 或本轮 Release/R8。
+
+首次 JVM 验证记录（2026-10-30）：新增 `LocalBackupMetadataTest` 8 项，抽取原规则后 2 项按预期因修改时间兜底缺失而失败，修复后全部通过；扩展 `BackupPackageIoTest`，只复制 ZIP 到空目录后通过真实 Reader 预检并读回合成剪贴数据。运行 `.\gradlew.bat :app:testDebugUnitTest :base:general:testDebugUnitTest :app:compileDebugKotlin --console=plain` 成功，app 355 项、base 138 项，共 493 项，失败/错误/跳过均为 0。HTML 生成、`--check` 与 `git diff --check` 通过。当时仅完成静态复核与 JVM 验证；后续已完成设备恢复、数据库及设置集成验收，最新结果以上方真机验收补充为准。
+
+后续待办：其他品牌/Android 版本和第三方 SAF Provider、授权撤销及写流/重命名故障注入。本轮真实系统 Provider 的单 ZIP、列表/排序/保留、恢复和同名目录保护均已验收；不把单设备结果扩大为所有 Provider 的兼容性承诺。未执行 Release/R8，本次只改平台 IO 校验及测试装配，无备份协议、序列化或 keep 变更。
+
 ## 下载媒体任务退出备份恢复方案（2026-10-26）
 
 本节状态：已完成（代码、单测、编译和 Release/R8；设备验收未执行）。用户明确当前开发阶段不要求兼容旧数据；完整功能删除范围与执行任务见 [下载记录主方案](download_history_plan.md#下载媒体记录功能移除方案2026-10-26)。本文只维护备份契约及恢复流程影响。当前代码采用格式 5，导航/恢复图已同步删除媒体流程。下方带日期的早期媒体设计只作历史记录；当前契约以本节为准。
@@ -450,7 +524,7 @@ taskId 使用现有 roundId/artifactId，与 Worker UUID 区分；每次系统�
 
 ### 列表、保留清理与恢复兼容
 
-远端列表一次 PROPFIND 读取文件名、路径、getcontentlength、getlastmodified 和 resourcetype；集合类型或目录 href 不进入文件列表，防止清理递归删除同名集合。不逐包 GET sidecar，也不为了列表下载 ZIP。RemoteBackupFile 改为目录元数据模型，移除远端 sidecar 依赖；本地列表模型和包导出模型继续保留现有 manifest。
+远端列表一次 PROPFIND 读取文件名、路径、getcontentlength、getlastmodified 和 resourcetype；集合类型或目录 href 不进入文件列表，防止清理递归删除同名集合。不逐包 GET sidecar，也不为了列表下载 ZIP。RemoteBackupFile 改为目录元数据模型，移除远端 sidecar 依赖；本地列表按 2026-10-30 方案同样移除外部摘要，包导出模型仍保留任务接管需要的 manifest。
 
 | 列表信息 | 数据来源与边界 |
 | --- | --- |
@@ -465,7 +539,7 @@ taskId 使用现有 roundId/artifactId，与 Worker UUID 区分；每次系统�
 
 BackupRestoreVm.previewRemoteBackup 继续按选中条目下载 ZIP，再调用既有包内 manifest/checksum 预检；缺少外部 manifest 不影响恢复。ZIP 内协议、数据表/设置白名单、媒体排除、恢复报告和冲突处理不变；包内 fileSize=0 的既有约定不改，实际大小由目录元数据或本地文件长度提供。
 
-本地 SAF 的独立摘要、私有待上传目录的小型描述、自动/手动来源字段仍服务既有本地发布、有效任务判断或预览，不随 WebDAV sidecar 一起删除。类型字符串仍被预览使用，不能因列表去掉类型而全局删除资源。列表稳定 key、页面生命周期、分页与导航继续复用既有实现。
+本地 SAF 的独立摘要已按 2026-10-30 方案停止发布与读取；私有待上传目录的小型描述、自动/手动来源字段仍服务有效任务判断或预览。类型字符串仍被预览使用，不能因列表去掉类型而全局删除资源。列表稳定 key、页面生命周期、分页与导航继续复用既有实现。
 
 ### 文件影响与职责分工
 
@@ -530,7 +604,7 @@ BackupRestoreVm.previewRemoteBackup 继续按选中条目下载 ZIP，再调用�
 - 直接正式 PUT 在中断时可能留下远端不完整文件；本轮不引入事务发布或上传回读，恢复预检仍拒绝损坏 ZIP。
 - 目录被外部持续删除时，同 taskId 也不再次修复；404/409 共用一次许可是用户最终选择，减少反复网络操作，接受一次修复后再次路径失败就结束。新任务重置机会，旧任务系统重调度不重置。
 - 系统重新调度没有本轮新增次数/期限上限，下一轮会淘汰旧任务；持续后台限制仍可能无法完成，日志只说明实际停止证据。
-- 自动/手动继续保留为内部业务来源和包内元信息，列表不展示；本地 SAF 摘要继续使用。本轮不新增业务数据、schema 或备份字段，任务/临时包/凭据仍排除用户与系统备份。
+- 自动/手动继续保留为内部业务来源和包内元信息，列表不展示；本地 SAF 摘要按 2026-10-30 方案停止使用。本轮不新增业务数据、schema 或备份字段，任务/临时包/凭据仍排除用户与系统备份。
 
 本节局部替代 2026-10-08 的“先查目录、ZIP 与外部 manifest 均成功才结束、运行中断终结且不重传”规则；其他最新轮次、两目标独立和条件结果提交约束延续。代码采用该最终契约；无阻塞待确认点，设备验收作为后续边界保留，不自动部署或访问用户服务器。
 
@@ -1407,10 +1481,12 @@ flowchart TD
 %% title: 当前实现：基础列表与恢复入口
 flowchart TD
     Open["页面可见时按需刷新远端列表<br/>人工验证"] --> List["一次 PROPFIND 读取目录元数据<br/>零 sidecar GET，已单测，接线编译验证"]
+    LocalOpen["页面可见时按需刷新本地列表<br/>人工验证"] --> LocalList["SAF 只查询目录元数据、排除目录<br/>不读 ZIP 或 JSON，编译验证、人工验证"]
+    LocalList --> Filter
     List --> Filter["筛选标准 ZIP，排除集合并隐藏旧 safety<br/>按文件名时间及元数据稳定排序，已单测，接线编译验证"]
     Filter --> Card["本地和远端共用列表卡片<br/>文件名、时间、大小；无自动/手动行<br/>人工验证"]
     Card --> Click["用户选择预览某个 ZIP<br/>人工验证"]
-    Click --> Download["下载所选 ZIP，进入既有恢复预检<br/>人工验证"]
+    Click --> Download["本地复制或远端下载所选 ZIP<br/>进入既有恢复预检，人工验证"]
     Download --> Inspect["读取 ZIP 内 manifest 并校验 checksum<br/>缺少外部摘要不影响预检，已单测，接线编译验证"]
     Inspect -->|通过| Preview["沿用恢复预览与后续流程<br/>人工验证"]
     Inspect -->|损坏或不兼容| Reject["拒绝恢复并展示既有错误<br/>已单测，接线编译验证"]
@@ -1458,7 +1534,11 @@ flowchart TD
     Start["本地 Worker 获得执行机会<br/>人工验证"] --> Check{"开始保存前检查任务 ID 与目标<br/>仍有效且未结束？编译验证"}
     Check -->|否| Skip["旧请求或重复请求跳过<br/>不覆盖新结果，编译验证"]
     Check -->|是| Read["固定本轮完整 ZIP<br/>不重查数据库，编译验证"]
-    Read --> Write["复用本地临时文件与正式发布<br/>真实 SAF 人工验证"]
+    Read --> Write["只写临时 ZIP 并发布正式 ZIP<br/>不写外部 JSON，真机测试通过"]
+    Write -->|目标位置被同名文件夹占用| Conflict["拒绝替换并保留目录内容<br/>记录专用原因，透传到两页提示"]
+    Conflict --> Failure
+    Write -->|未知类型或查询失败| Storage["拒绝写入，记录不可写原因<br/>不猜测为同名文件夹冲突"]
+    Storage --> Failure
     Write -->|成功| Success["事务内比较本任务 ID 与最新任务 ID<br/>相等才保存本地结果，已单测<br/>保存成功再清理历史备份，编译验证"]
     Read -->|失败| Failure["同一事务比较任务 ID，已单测<br/>相等才保存失败，否则跳过，编译验证"]
     Write -->|失败| Failure
@@ -1585,7 +1665,7 @@ flowchart TD
 
 1. 用户通过系统目录选择器选择本地备份文件夹，应用保存持久化读写授权 URI，并尽量解析目录 displayName 或 URI 尾段作为页面展示路径。
 2. 本地备份文件夹 URI 只保存在本机配置，不进入备份包，系统 Auto Backup 也需要排除。
-3. 后续 WebDAV 手动备份或自动备份复用该目录时，必须用同一份 `BackupExportResult` 写入 `.zip` 文件和 manifest sidecar，确保本地与远端备份内容一致。
+3. 后续 WebDAV 手动备份或自动备份复用该目录时，只复制同一份 `BackupExportResult.packageFile` 为 `.zip`，确保本地与远端备份内容一致；不再创建外部 manifest JSON。
 4. 本地授权失效或发布失败时仅结束本地目标；云端已独立登记，两目标互不覆盖。
 
 ### 本地导入
@@ -1618,10 +1698,10 @@ flowchart TD
 
 1. 普通备份默认保留 5 份，用户可设置 1-20；本地和 WebDAV 都按该数量保留最近的普通备份。
 2. 手动备份和自动备份都算普通备份，统一参与保留清理，不再区分当前安装标识或旧安装标识。
-3. 本地沿用 manifest 安全识别；WebDAV 仅清理标准普通 ZIP 文件，不删除 safety、不可识别文件、集合目录或其它用户资源，不查询/删除旧 sidecar。
+3. 本地与 WebDAV 均仅清理标准普通 ZIP 文件，不删除 safety、不可识别文件、集合目录或其它用户资源，不查询/删除旧 sidecar。
 4. 新备份完整写入、校验和发布成功后才清理旧备份，避免新备份失败时旧备份也被删除；手动刷新列表也会触发一次保留清理，让历史超额备份立即收敛。
-5. 本地排序沿用 manifest `created_at`；WebDAV 使用标准文件名时间，失败时用修改时间和文件名兜底，但修改时间不能使未知文件获得清理资格。
-6. 只统计可识别普通 ZIP；本地仍删除其 sidecar，WebDAV 只删除 ZIP，旧 sidecar 不参与保留份数。
+5. 本地与 WebDAV 均使用标准文件名时间，失败时用修改时间和文件名兜底，但修改时间不能使未知文件获得清理资格。
+6. 只统计可识别普通 ZIP；两目标都只删除选中的 ZIP，旧 sidecar 不参与保留份数且不批量清除。
 7. 每次备份或刷新清理后记录本地/WebDAV 清理了多少旧备份，最近成功摘要中展示自动备份产生的清理结果。
 
 ### 恢复安全边界
@@ -1743,7 +1823,7 @@ manifest 简化示例：
 - 自动备份调度记录每日周期更新、旧任务取消、同包入队、阶段切换、身份替换和终态清理；字段只包含开关、24 小时周期、source、artifactId、网络约束和稳定 reasonCode，不记录 WebDAV 地址或本地授权 URI。
 - 自动备份执行记录开始、跳过、快照生成、本地写入开始/成功/失败、WebDAV 上传开始/成功/失败、结束和失败，不记录应用已取消的重试路径；字段包括目标是否配置、保留份数、备份类型、文件名、文件大小、条目数量、清理数量、耗时和 reasonCode。
 - 手动本地备份记录开始、快照生成和成功；手动 WebDAV 备份记录开始、本地镜像写入、WebDAV 上传和成功；字段包括文件名、文件大小、条目数量、耗时和目标状态，不记录用户选择文件 URI、WebDAV endpoint、用户名或密码。
-- 备份 zip 组装阶段不再把真实 `fileSize` 写回包内 manifest；包内 manifest 固定 `fileSize = 0`，避免 fileSize 字段改变 JSON 长度后影响 zip 压缩结果并产生大小震荡。当前实现保留本地目录 sidecar、私有描述、导出摘要和阶段日志中的真实文件大小，WebDAV 不独立发布 sidecar，不需要另一份共享摘要；日志字段包含 `taskId`、文件名、真实文件大小、包内 manifest fileSize 和 entry 数量，不输出临时目录绝对路径和备份内容。
+- 备份 ZIP 组装阶段不再把真实 `fileSize` 写回包内 manifest；包内 manifest 固定 `fileSize = 0`，避免 fileSize 字段改变 JSON 长度后影响 ZIP 压缩结果并产生大小震荡。真实文件大小保留在私有描述、导出摘要和阶段日志中，两目标均不独立发布 sidecar；列表使用目录元数据。日志字段包含 `taskId`、文件名、真实文件大小、包内 manifest fileSize 和 entry 数量，不输出临时目录绝对路径和备份内容。
 - 恢复流程记录 `restore start/success/failed`，字段包括备份类型、文件大小、预检数量摘要、新增/更新/跳过数量、未来时间归一化字段数、正向时钟偏移毫秒数和耗时；失败日志输出 reasonCode 和异常类型，不输出备份内容。
 - 来源过滤名单恢复裁剪时记录 `reasonCode=backup_blocked_packages_trimmed`、本机数量、备份数量和合并后数量；禁止记录具体包名列表、App 名称或拦截次数。
 - 导出职责拆分后，`BackupSnapshotExporter` 继续复用既有 high-water mark、分页兜底和快照生成日志；本轮不新增新的敏感字段，也不记录单条业务 JSONL 内容。
@@ -1776,7 +1856,7 @@ manifest 简化示例：
 
 ### 当前阶段：大数据量备份导出/导入流式化
 
-- 本地对外仍保持单个 `.zip` 备份文件和 manifest sidecar，WebDAV 对外只发布单 `.zip`，不改成本地目录包，不备份媒体文件本体。
+- 本地与 WebDAV 对外均只发布单 `.zip`，不额外保存 manifest sidecar，不改成本地目录包，不备份媒体文件本体。
 - 新导出使用 `schemaVersion = 5` 和 JSONL 数据文件，旧数组模型与恢复入口已删除；所有非当前版本在预检阶段拒绝。
 - `BackupFeatureContributor` 继续追加模块白名单数据和 `feature_counts`，宿主五个必需 entry 不限制模块额外条目。
 - 导出不再生成整包 `ByteArray`：先分页写 JSONL 临时文件并计算 size/checksum，再生成 manifest，最后组装 zip。
@@ -1809,13 +1889,13 @@ manifest 简化示例：
 - 同一个备份重复恢复不会产生重复数据。
 - App 身份不匹配、schemaVersion 不支持、checksum 损坏、半截 zip 或缺失业务数据文件均禁止导入。
 - WebDAV 默认目录可用，用户修改目录后能保存并规范化。
-- 设置本地备份文件夹后，同一完整包独立交给本地和 WebDAV；本地发布 ZIP/sidecar，WebDAV 只 PUT ZIP，互不等待。
+- 设置本地备份文件夹后，同一完整包独立交给本地和 WebDAV；本地只发布 ZIP，WebDAV 只 PUT ZIP，互不等待。
 - 设置本地备份文件夹后，页面展示已设置的目录路径或目录名。
 - 本地备份文件夹授权失效时，只记录本地失败；同轮 WebDAV 不受影响。
 - WebDAV 目录存在时不应触发创建；只有服务端明确返回 404 时才逐级创建目录。TLS、证书、网络、认证、跳转失败或服务端错误不能被误判为“目录不存在”，应直接按远端失败或认证失败提示。
 - WebDAV 列表只读取目录元数据；旧 sidecar/共享指针存在、缺失或损坏都不影响列表，恢复仍校验 ZIP 内 manifest/checksum。
 - 大量剪贴数据备份时不明显卡死或 OOM。
-- 备份包内 manifest 的 `fileSize` 保持为 0，本地目录 sidecar 与私有描述 manifest 的 `fileSize` 应等于真实 zip 大小，WebDAV 不独立上传 sidecar；导出不应再因为 `43333/43334` 这类自引用大小震荡而失败。
+- 备份包内 manifest 的 `fileSize` 保持为 0，私有任务描述 manifest 的 `fileSize` 等于真实 ZIP 大小；本地和 WebDAV 都不独立发布 sidecar，列表从目录元数据取得大小。导出不应再因为 `43333/43334` 这类自引用大小震荡而失败。
 - 从远端或本地恢复来自未来时间轴的备份后，剪贴卡片不再长期显示“现在”；恢复后新复制的普通数据应排在置顶数据下方、旧恢复普通数据上方。
 - 恢复结果没有媒体关联入口，恢复期间不申请相册权限；自定义导出/恢复完全不读写三张下载任务表。
 - release/R8 构建下最近自动备份状态和 WebDAV 健康状态应能从宿主 DataStore 的稳定 code 恢复，不依赖枚举名。
@@ -1918,6 +1998,10 @@ manifest 简化示例：
 - 2026-05-21：将媒体重新定位入口文案从“重新定位媒体”调整为“恢复本地媒体关联”，已运行 `./gradlew :app:compileDebugKotlin`、`./gradlew :app:testDebugUnitTest` 和 `git diff --check`，结果通过；原因是后者更贴近用户语言，也能避免误以为会恢复媒体文件本体。
 
 ## 变更记录
+
+- 2026-10-30：完成三星 Android 12 的隔离 SAF/Room/设置设备测试和真实页面恢复，修复真机复现的同名目录被发布替换删除问题：复用名称查询补 MIME 校验并在查询/删除失败时中止。新增可重复运行的设备用例、测试专用装配及隔离构建脚本；两轮设备套件、510 项 JVM 测试和构建通过，保留原安装并清理本轮设备产物。原因是用户要求实际验证并直接修复发现的问题。
+
+- 2026-10-30：按用户确认将本地目录改为单 ZIP 发布，列表、排序及保留清理只使用文件名和 SAF 元数据，历史 JSON 忽略且不批量清理；提取纯元数据规则并补排序/资格和独立 ZIP 预检读取测试，同步本地流程及日志计划。原因是本地与 WebDAV 应统一用户可见产物，避免重复保存外部摘要；包内协议及恢复规则不变。
 
 - 2026-10-27：按用户确认回退三类过滤候选；跨设备恢复的未安装规则重新隐藏，不从保存名单删除，修改其他可见规则仍走原子增删。来源记录、过滤名单 key、恢复并集、500 项上限、格式 5、dirty 标记及系统 Auto Backup 均未改变，也未访问或改写用户现有备份/数据库。前一日的三源展示仅为历史记录，当前界面行为见 [过滤主方案](clip_source_app_filter_plan.md)。
 

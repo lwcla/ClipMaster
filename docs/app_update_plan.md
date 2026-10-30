@@ -10,6 +10,17 @@
 
 ## 目标与范围
 
+### 0.9.14 版本递增与全部改动提交（2026-10-30，已完成）
+
+- 按用户要求将 `versionName` 从 `0.9.13` 递增至 `0.9.14`，`versionCode` 从 `49` 递增至 `50`，将工作区全部已有代码、测试、工具及对应方案文档纳入本地提交。
+- 本版包含首次启动说明与独立联网预览设置、本地备份仅发布 ZIP、同名目录保护及失败原因展示、剪贴卡片默认色与来源色边框统一为 30% 不透明度。功能设计和验证边界以 [首次启动方案](first_launch_consent_plan.md)、[备份主方案](webdav_backup_plan.md) 及相关页面、共享组件文档为准，不重复维护功能细节。
+- 复用 app 版本声明、共享模块版本派生、BuildConfig 与 APK 命名规则；版本递增不新增组件、类、方法或独立业务规则，不新增专用单测或采用 TDD，中文配置注释同步更新。已有功能测试一并提交并重新验证。
+- 验证计划：运行 app/base:general 单测、app Debug Kotlin 和 Android 测试编译、Release BuildConfig 生成、版本判定脚本单测与 `git diff --check`。本轮不执行设备安装、实际权限交互或 Release/R8；已有功能的设备验证记录以各主方案为准，不将测试编译等同于设备执行。
+- 日志与诊断计划：版本元数据沿用既有构建及版本判定输出，不新增 App 运行时日志；首次说明、预览与备份的低敏日志按各自主方案执行，不输出凭据、剪贴内容或授权 URI。版本调整本身不改变备份 schema、设置白名单或 keep 契约。
+- 提交范围为本地全部现有修改；本轮不推送、不创建标签、不上传 APK，自动发布须在后续推送后由既有工作流触发。
+- 验证结果：`.\gradlew.bat :base:general:testDebugUnitTest :app:testDebugUnitTest :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin :app:generateReleaseBuildConfig --offline --console=plain --no-parallel --max-workers=2` 成功；app 368 项、base/general 145 项，共 513 项单测，失败、错误、跳过均为 0。补充 `:app:compileDebugAndroidTestJavaWithJavac`（相同离线参数）成功，覆盖新增 Java 测试装配工厂。
+- 版本核对：app Debug/Release 与 base/general Debug BuildConfig 均为 `0.9.14 / 50`；`python -m unittest discover -s scripts -p test_github_release_version.py` 的 8 项测试通过，真实工作区版本判定为 `changed=true / v0.9.14-50`；`python tools/render_doc_flow_html.py docs/webdav_backup_plan.md --check` 和 `git diff --check` 通过。首次 Gradle 沙箱执行因工作区外缓存锁文件访问受限失败，获准访问现有缓存后验证完成；保留已有 AGP/Kotlin 废弃警告，未改构建环境或业务实现。
+
 ### 0.9.13 源码仓库自动发布验收（2026-10-29，实现中）
 
 - 按用户要求将 `versionName` 从 `0.9.12` 改为 `0.9.13`，`versionCode` 从 `48` 改为 `49`，将版本修改与已经验证的版本触发工作流、判定脚本及测试一起提交并推送 `main`。预期发布标签为 `v0.9.13-49`，目标为当前源码仓库 `lwcla/ClipMaster` 的 Releases。
@@ -320,6 +331,8 @@ public 仓库 README 作为人可读发布页维护，至少包含最新版版�
 
 ## 变更记录
 
+- 2026-10-30：按用户“版本号+1、提交所有修改”的要求准备 `0.9.14 / 50`，记录全部工作区改动的提交范围、复用决策、验证计划和本地提交边界；功能细节继续引用既有主方案。
+- 2026-10-30：完成 513 项 JVM 单测、8 项版本脚本单测、Debug Kotlin 与 Android 测试 Kotlin/Java 编译、BuildConfig 版本及备份 HTML 同步核对，记录验证结果并将本轮版本递增状态更新为已完成；设备交互及 Release/R8 未在本轮重复运行。
 - 2026-10-29：按用户明确指令准备 `0.9.13 / 49`，将版本变更与版本门禁一起推送，触发当前源码仓库自动 Release；原因：实际验证“修改版本并推送后自动构建发布”的完整链路。
 
 - 2026-10-29：按用户更正，将源码仓库自动发行限定为 `main` push 前后版本字段发生变化；规划版本比较脚本、回归测试和带广告 Release 工作流，复用既有签名及构建配置。原因：普通代码提交不应自动创建 Release，版本提交应自动完成构建和 APK 附件上传。

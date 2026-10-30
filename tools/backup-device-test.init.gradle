@@ -1,0 +1,11 @@
+// 真机验证显式使用独立产物目录，避免与常规构建或其他任务互相覆盖。
+allprojects {
+    layout.buildDirectory.set(file("build/backup-device-check"))
+    // 只替换验证宿主身份，不更改仓库正式 applicationId 或签名配置。
+    plugins.withId("com.android.application") {
+        extensions.getByName("androidComponents").finalizeDsl { android ->
+            android.defaultConfig.applicationId = "com.cla.clip.master.backuptest"
+            android.defaultConfig.testApplicationId = "com.cla.clip.master.backuptest.test"
+        }
+    }
+}

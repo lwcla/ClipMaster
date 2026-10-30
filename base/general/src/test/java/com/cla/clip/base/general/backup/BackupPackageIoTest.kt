@@ -1,6 +1,7 @@
 package com.cla.clip.base.general.backup
 
 import com.cla.clip.base.general.BuildConfig
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -19,7 +20,7 @@ import org.junit.Test
  * 和 zip entry 路径安全边界在普通 JVM 单元测试中也能被快速验证。
  */
 class BackupPackageIoTest {
-    /** v5 Writer 生成的 zip 必须能通过 manifest、数据格式、文件清单和 checksum 校验。 */
+    /** v5 ZIP 单独复制后仍可预检并读取业务数据，保护本地移除外部摘要后的恢复入口。 */
     @Test
     fun writerCreatesValidV5JsonlPackage() {
         // 此用例的合成备份目录，结束后只清理该目录。
@@ -68,12 +69,29 @@ class BackupPackageIoTest {
                 summary = BackupSummary(clipCount = 1)
             )
 
-            // 完成打包后的文件，交给真实校验器读取。
-
+            // 完成打包后的文件，只把 ZIP 发布到独立空目录。
             val result = writer.finish(session, manifest)
+            // 模拟用户只保存 ZIP；目录中没有外部 manifest 或生成中间文件。
+            val publishedDir = File(taskDir, "published").apply { mkdir() }
+            // 复制原始字节，与本地目录和 WebDAV 发布同包的契约一致。
+            val publishedZip = result.packageFile.copyTo(File(publishedDir, result.fileName))
+            // 与本地恢复相同的文件引用，只指向独立 ZIP。
+            val ref = BackupPackageRef(publishedZip, result.fileName, publishedDir)
+            // 真实包读取器执行恢复前预检和 JSONL 读取，不使用导出结果中的摘要。
+            val reader = BackupPackageReader()
             // 通过版本、大小、路径和摘要校验的协议对象。
-            val validated = result.packageFile.validateBackupPackageFile(BuildConfig.APPLICATION_ID)
+            val validated = reader.preview(ref)
+            // 实际读回的合成剪贴数据，确认包外元数据缺失不影响内容读取。
+            val restoredClips = mutableListOf<BackupClip>()
+            // 仅驱动流式读取入口；不连接数据库或 Android 系统。
+            runBlocking {
+                reader.readJsonLines(ref, CLIPS_JSONL_PATH, BackupClip.serializer()) { clip ->
+                    restoredClips += clip
+                }
+            }
 
+            assertEquals(listOf(result.fileName), publishedDir.list()?.toList())
+            assertEquals(listOf("hello"), restoredClips.map { it.content })
             assertEquals(BACKUP_SCHEMA_VERSION, validated.schemaVersion)
             assertEquals(BACKUP_DATA_FORMAT_JSONL, validated.dataFormat)
             assertEquals(1, validated.summary.clipCount)

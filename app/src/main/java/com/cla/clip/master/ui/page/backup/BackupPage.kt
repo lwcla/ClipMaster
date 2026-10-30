@@ -629,7 +629,7 @@ private fun EmptyRemoteBackups() {
     )
 }
 
-/** 本地备份列表项。 */
+/** 本地备份列表项复用共享卡片；时间只来自文件名/目录元数据，点击后才读取 ZIP 内摘要。 */
 @Composable
 private fun LocalBackupCard(
     file: LocalBackupFile,
@@ -638,7 +638,7 @@ private fun LocalBackupCard(
 ) {
     BackupFileCard(
         fileName = file.fileName,
-        createdAt = file.manifest?.createdAt ?: file.sortCreatedAt.takeIf { it > 0L } ?: file.lastModified,
+        createdAt = file.sortCreatedAt.takeIf { it > 0L } ?: file.lastModified,
         size = file.size,
         isBusy = isBusy,
         onPreview = onPreview

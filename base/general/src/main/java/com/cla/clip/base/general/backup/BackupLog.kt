@@ -72,6 +72,7 @@ fun BackupFailure.reasonCode(): String {
         is BackupFailure.UnsupportedSchema -> "schema_unsupported"
         is BackupFailure.ChecksumMismatch -> "checksum_mismatch"
         is BackupFailure.StorageNotWritable -> "storage_not_writable"
+        is BackupFailure.LocalDirectoryConflict -> "local_directory_conflict"
         is BackupFailure.AuthenticationFailed -> "auth_failed"
         is BackupFailure.RemoteFailed -> {
             /** 有界展开协程复制的同类异常，仍仅按类型/状态分类，不读取 message。 */

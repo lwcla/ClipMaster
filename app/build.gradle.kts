@@ -96,10 +96,10 @@ android {
         applicationId = "com.cla.clip.master"
         minSdk = 24
         targetSdk = 36
-        /** 安装升级与更新判断使用单调递增的版本码，0.9.13 发行值为 49。 */
-        versionCode = 49
+        /** 安装升级与更新判断使用单调递增的版本码，0.9.14 发行值为 50。 */
+        versionCode = 50
         /** 用户可见的版本名称，同时用于 APK 命名与版本变化自动发布检查。 */
-        versionName = "0.9.13"
+        versionName = "0.9.14"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -261,6 +261,9 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.compose.ui.test.junit4)
+    // 真机备份测试装配内存 Room 与专属 DataStore，复用基础模块版本且不扩大生产依赖。
+    androidTestImplementation(libs.room.runtime)
+    androidTestImplementation(libs.androidx.datastore.preferences)
 
     // Coil3依赖项
     implementation(libs.bundles.io.coil)

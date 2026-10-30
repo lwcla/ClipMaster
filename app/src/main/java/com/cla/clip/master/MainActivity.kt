@@ -23,6 +23,8 @@ import com.cla.clip.feature.ad.api.AdSourceEntry
 import com.cla.clip.feature.ad.api.AdSourceSelector
 import com.cla.clip.feature.torrent.search.api.TorrentSearchFeatureEntry
 import com.cla.clip.master.ad.AdHostProvider
+import com.cla.clip.master.onboarding.FirstLaunchHost
+import com.cla.clip.master.utils.ShizukuConnector
 import com.cla.clip.master.ui.navigation.AppNavigation
 import com.cla.clip.master.ui.navigation.DetailRoute
 import com.cla.clip.master.ui.navigation.VideoDownloadRoute
@@ -54,6 +56,10 @@ class MainActivity : ComponentActivity() {
     /** 剪贴板读取助手，使用 Lazy 避免 Activity 创建时立即触发较重的依赖初始化。 */
     @Inject
     lateinit var clipHelper: dagger.Lazy<ClipHelper>
+
+    /** 首次授权成功后复用现有连接器，不另建后台启用开关。 */
+    @Inject
+    lateinit var shizukuConnector: ShizukuConnector
 
     /** 可选 TorrentSearch 入口；默认构建集合为空，启用实现模块时由 Hilt multibinding 注入。 */
     @Inject
@@ -93,61 +99,68 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             ClipMaterTheme {
-                val navController = rememberNavController()
-                /** 图片通知打开目录失败时需要从 Compose 侧发起 Toast 协程，避免在 LaunchedEffect 中阻塞 UI。 */
-                val coroutineScope = rememberCoroutineScope()
-                /** 当前是否运行在应用主进程；广告 SDK 只能在主进程懒初始化。 */
-                val isAppMainProcess = (application as? BaseApplication)?.isMainProcess ?: false
-
-                Scaffold(
-                    modifier = Modifier.fillMaxSize(),
+                FirstLaunchHost(
+                    // 任一首次选择后重新检查真实焦点，避免把“暂不开启”当作禁用前台读取。
+                    onReadyForForegroundRead = { clipHelper.get().readNow(resume = true, hasFocus = hasWindowFocus()) },
+                    onShizukuGranted = { shizukuConnector.connect() },
                 ) {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        LaunchedEffect(mainVm.pendingClipId) {
-                            mainVm.pendingClipId()?.let { id ->
-                                logI(TAG) { "跳转到详情页 id=$id" }
-                                navController.navigate(DetailRoute(id)) { launchSingleTop = true }
+                    /** 主导航仅在首次说明处理完成后创建，避免其他功能抢先显示弹窗。 */
+                    val navController = rememberNavController()
+                    /** 图片通知打开目录失败时需要从 Compose 侧发起 Toast 协程，避免在 LaunchedEffect 中阻塞 UI。 */
+                    val coroutineScope = rememberCoroutineScope()
+                    /** 当前是否运行在应用主进程；广告 SDK 只能在主进程懒初始化。 */
+                    val isAppMainProcess = (application as? BaseApplication)?.isMainProcess ?: false
+
+                    Scaffold(
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            LaunchedEffect(mainVm.pendingClipId) {
+                                mainVm.pendingClipId()?.let { id ->
+                                    logI(TAG) { "跳转到详情页 id=$id" }
+                                    navController.navigate(DetailRoute(id)) { launchSingleTop = true }
+                                }
                             }
-                        }
 
-                        LaunchedEffect(mainVm.pendingTaskId) {
-                            mainVm.pendingTaskId()?.let { id ->
-                                logI(TAG) { "onCreate: 跳转到下载结果页 id=$id" }
-                                navController.navigate(VideoDownloadRoute(id)) { launchSingleTop = true }
+                            LaunchedEffect(mainVm.pendingTaskId) {
+                                mainVm.pendingTaskId()?.let { id ->
+                                    logI(TAG) { "onCreate: 跳转到下载结果页 id=$id" }
+                                    navController.navigate(VideoDownloadRoute(id)) { launchSingleTop = true }
+                                }
                             }
-                        }
 
-                        LaunchedEffect(mainVm.pendingImageFolderOpenData) {
-                            mainVm.pendingImageFolderOpenData()?.let { data ->
-                                logI(TAG) { "onCreate: 打开图片相册 outputDir=${data.outputDir}" }
-                                when (ImageFolderOpenHelper.openDownloadedImageFolder(this@MainActivity, data.outputDir)) {
-                                    ImageFolderOpenResult.Gallery -> {
-                                        Unit
-                                    }
+                            LaunchedEffect(mainVm.pendingImageFolderOpenData) {
+                                mainVm.pendingImageFolderOpenData()?.let { data ->
+                                    logI(TAG) { "onCreate: 打开图片相册 outputDir=${data.outputDir}" }
+                                    when (ImageFolderOpenHelper.openDownloadedImageFolder(this@MainActivity, data.outputDir)) {
+                                        ImageFolderOpenResult.Gallery -> {
+                                            Unit
+                                        }
 
-                                    ImageFolderOpenResult.None -> {
-                                        coroutineScope.launch {
-                                            this@MainActivity.toast(R.string.base_general_no_available_app_to_open_image_folder)
+                                        ImageFolderOpenResult.None -> {
+                                            coroutineScope.launch {
+                                                this@MainActivity.toast(R.string.base_general_no_available_app_to_open_image_folder)
+                                            }
                                         }
                                     }
                                 }
                             }
-                        }
 
-                        AdHostProvider(adSources, adSourceSelector, adSessionFailureFuse, isAppMainProcess, mainVm.adSettings) {
-                        AppNavigation(
-                            navController = navController,
-                            torrentSearchFeatures = torrentSearchFeatures,
-                            adSources = adSources,
-                            adSourceSelector = adSourceSelector,
-                            activeAdSourceIdFlow = mainVm.activeAdSourceIdFlow,
-                            adsGlobalEnabledFlow = mainVm.adsGlobalEnabledFlow,
-                            adConsentStateFlow = mainVm.adConsentStateFlow,
-                            adPrivacyPolicyVersionFlow = mainVm.adPrivacyPolicyVersionFlow,
-                            adDisabledSourceIdsFlow = adSessionFailureFuse.disabledSourceIdsFlow,
-                            isMainProcess = isAppMainProcess,
-                            onDisableAdSource = adSessionFailureFuse::disableSource,
-                        )
+                            AdHostProvider(adSources, adSourceSelector, adSessionFailureFuse, isAppMainProcess, mainVm.adSettings) {
+                            AppNavigation(
+                                navController = navController,
+                                torrentSearchFeatures = torrentSearchFeatures,
+                                adSources = adSources,
+                                adSourceSelector = adSourceSelector,
+                                activeAdSourceIdFlow = mainVm.activeAdSourceIdFlow,
+                                adsGlobalEnabledFlow = mainVm.adsGlobalEnabledFlow,
+                                adConsentStateFlow = mainVm.adConsentStateFlow,
+                                adPrivacyPolicyVersionFlow = mainVm.adPrivacyPolicyVersionFlow,
+                                adDisabledSourceIdsFlow = adSessionFailureFuse.disabledSourceIdsFlow,
+                                isMainProcess = isAppMainProcess,
+                                onDisableAdSource = adSessionFailureFuse::disableSource,
+                            )
+                            }
                         }
                     }
                 }
@@ -159,6 +172,12 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         clipHelper.get().readNow(resume = true)
+    }
+
+    /** 暂停立即撤销前台读取条件，避免异步设置读取结束后在后台触碰剪贴板。 */
+    override fun onPause() {
+        clipHelper.get().readNow(resume = false, hasFocus = false)
+        super.onPause()
     }
 
     /** 窗口重新获得焦点时读取剪贴板，覆盖用户从其他应用复制后回到本应用的常见路径。 */

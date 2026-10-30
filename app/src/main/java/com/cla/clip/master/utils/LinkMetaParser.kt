@@ -1,8 +1,10 @@
 package com.cla.clip.master.utils
 
 import com.cla.clip.base.general.di.LinkPreviewClient
-import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logE
+import com.cla.clip.master.preview.awaitPreviewHtml
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -102,9 +104,9 @@ class LinkMetaParser @Inject constructor(
      *
      * 这条路径网络控制更强，可以精确设置总超时、请求头和最大读取体积。
      */
-    private fun parseWithOkHttp(url: String): LinkMeta {
+    private suspend fun parseWithOkHttp(url: String): LinkMeta {
         return runCatching {
-            logD(TAG) { "parse html with okhttp: url=$url" }
+            /** 仅保留预览所需的限量 HTML，不记录 URL 或响应正文。 */
             val html = fetchHtml(url)
             if (html.isNullOrBlank()) {
                 return@runCatching LinkMeta(null, null, null, extractSiteNameFromUrl(url))
@@ -112,7 +114,8 @@ class LinkMetaParser @Inject constructor(
 
             parseHtml(Jsoup.parse(html, url), url)
         }.getOrElse {
-            logE(TAG, it) { "Failed to parse link preview with okhttp" }
+            if (it is CancellationException) throw it
+            logE(TAG) { "OkHttp 预览失败 type=${it.javaClass.simpleName}" }
             LinkMeta(null, null, null, extractSiteNameFromUrl(url))
         }
     }
@@ -122,12 +125,12 @@ class LinkMetaParser @Inject constructor(
      *
      * 部分短链站点对 Jsoup 的请求更友好，因此保留这条路径作为 OkHttp 的并发兜底。
      */
-    private fun parseWithJsoup(url: String): LinkMeta {
+    private suspend fun parseWithJsoup(url: String): LinkMeta {
         return runCatching {
             if (!url.isHttpUrl()) return@runCatching LinkMeta(null, null, null, null)
 
-            logD(TAG) { "parse html with jsoup: url=$url" }
-            val doc = Jsoup.connect(url)
+            /** 阻塞兼容路径放入可中断 IO；不支持中断的底层读取仍受七秒超时限制。 */
+            val doc = runInterruptible(Dispatchers.IO) { Jsoup.connect(url)
                 .userAgent(USER_AGENT)
                 .referrer(extractOrigin(url) ?: "https://www.google.com/")
                 .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
@@ -135,11 +138,12 @@ class LinkMetaParser @Inject constructor(
                 .maxBodySize(MAX_BODY_SIZE)
                 .timeout(JSOUP_TIMEOUT_MS)
                 .followRedirects(true)
-                .get()
+                .get() }
 
             parseHtml(doc, url)
         }.getOrElse {
-            logE(TAG, it) { "Failed to parse link preview with jsoup" }
+            if (it is CancellationException) throw it
+            logE(TAG) { "Jsoup 预览失败 type=${it.javaClass.simpleName}" }
             LinkMeta(null, null, null, extractSiteNameFromUrl(url))
         }
     }
@@ -160,9 +164,10 @@ class LinkMetaParser @Inject constructor(
      *
      * 这里只读取响应体前 2MB，避免预览解析为了大页面消耗过多内存和时间。
      */
-    private fun fetchHtml(url: String): String? {
+    private suspend fun fetchHtml(url: String): String? {
         if (!url.isHttpUrl()) return null
 
+        /** 沿用既有请求头与站点兼容性，实际 Call 由可取消适配器执行。 */
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", USER_AGENT)
@@ -171,14 +176,7 @@ class LinkMetaParser @Inject constructor(
             .header("Referer", extractOrigin(url) ?: "https://www.google.com/")
             .build()
 
-        return client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                logD(TAG) { "fetch html failed: code=${response.code}, url=$url" }
-                return@use null
-            }
-
-            response.peekBody(MAX_BODY_SIZE.toLong()).string()
-        }
+        return client.newCall(request).awaitPreviewHtml(MAX_BODY_SIZE.toLong())
     }
 
     private fun parseJsonLd(doc: Document, sourceUrl: String): LinkMeta? {

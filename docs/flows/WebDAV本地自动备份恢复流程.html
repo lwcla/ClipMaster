@@ -200,10 +200,12 @@
 <h2>当前实现：基础列表与恢复入口</h2>
 <section class="diagram-card"><pre class="mermaid">flowchart TD
     Open[&quot;页面可见时按需刷新远端列表&lt;br/&gt;人工验证&quot;] --&gt; List[&quot;一次 PROPFIND 读取目录元数据&lt;br/&gt;零 sidecar GET，已单测，接线编译验证&quot;]
+    LocalOpen[&quot;页面可见时按需刷新本地列表&lt;br/&gt;人工验证&quot;] --&gt; LocalList[&quot;SAF 只查询目录元数据、排除目录&lt;br/&gt;不读 ZIP 或 JSON，编译验证、人工验证&quot;]
+    LocalList --&gt; Filter
     List --&gt; Filter[&quot;筛选标准 ZIP，排除集合并隐藏旧 safety&lt;br/&gt;按文件名时间及元数据稳定排序，已单测，接线编译验证&quot;]
     Filter --&gt; Card[&quot;本地和远端共用列表卡片&lt;br/&gt;文件名、时间、大小；无自动/手动行&lt;br/&gt;人工验证&quot;]
     Card --&gt; Click[&quot;用户选择预览某个 ZIP&lt;br/&gt;人工验证&quot;]
-    Click --&gt; Download[&quot;下载所选 ZIP，进入既有恢复预检&lt;br/&gt;人工验证&quot;]
+    Click --&gt; Download[&quot;本地复制或远端下载所选 ZIP&lt;br/&gt;进入既有恢复预检，人工验证&quot;]
     Download --&gt; Inspect[&quot;读取 ZIP 内 manifest 并校验 checksum&lt;br/&gt;缺少外部摘要不影响预检，已单测，接线编译验证&quot;]
     Inspect --&gt;|通过| Preview[&quot;沿用恢复预览与后续流程&lt;br/&gt;人工验证&quot;]
     Inspect --&gt;|损坏或不兼容| Reject[&quot;拒绝恢复并展示既有错误&lt;br/&gt;已单测，接线编译验证&quot;]</pre></section>
@@ -236,7 +238,11 @@
     Start[&quot;本地 Worker 获得执行机会&lt;br/&gt;人工验证&quot;] --&gt; Check{&quot;开始保存前检查任务 ID 与目标&lt;br/&gt;仍有效且未结束？编译验证&quot;}
     Check --&gt;|否| Skip[&quot;旧请求或重复请求跳过&lt;br/&gt;不覆盖新结果，编译验证&quot;]
     Check --&gt;|是| Read[&quot;固定本轮完整 ZIP&lt;br/&gt;不重查数据库，编译验证&quot;]
-    Read --&gt; Write[&quot;复用本地临时文件与正式发布&lt;br/&gt;真实 SAF 人工验证&quot;]
+    Read --&gt; Write[&quot;只写临时 ZIP 并发布正式 ZIP&lt;br/&gt;不写外部 JSON，真机测试通过&quot;]
+    Write --&gt;|目标位置被同名文件夹占用| Conflict[&quot;拒绝替换并保留目录内容&lt;br/&gt;记录专用原因，透传到两页提示&quot;]
+    Conflict --&gt; Failure
+    Write --&gt;|未知类型或查询失败| Storage[&quot;拒绝写入，记录不可写原因&lt;br/&gt;不猜测为同名文件夹冲突&quot;]
+    Storage --&gt; Failure
     Write --&gt;|成功| Success[&quot;事务内比较本任务 ID 与最新任务 ID&lt;br/&gt;相等才保存本地结果，已单测&lt;br/&gt;保存成功再清理历史备份，编译验证&quot;]
     Read --&gt;|失败| Failure[&quot;同一事务比较任务 ID，已单测&lt;br/&gt;相等才保存失败，否则跳过，编译验证&quot;]
     Write --&gt;|失败| Failure</pre></section>

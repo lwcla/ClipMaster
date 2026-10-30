@@ -588,6 +588,7 @@ class BackupVm @Inject constructor(
             is BackupFailure.AuthenticationFailed -> R.string.base_general_backup_error_auth
             is IllegalArgumentException -> HostR.string.host_webdav_config_invalid
             is BackupFailure.StorageNotWritable -> R.string.base_general_backup_error_storage
+            is BackupFailure.LocalDirectoryConflict -> R.string.base_general_backup_error_local_directory_conflict
             is BackupFailure.RemoteFailed -> R.string.base_general_backup_error_remote
             is BackupFailure.FileTooLarge -> R.string.base_general_backup_error_file_too_large
             is BackupFailure.TempFileUnavailable -> R.string.base_general_backup_error_temp_file_unavailable

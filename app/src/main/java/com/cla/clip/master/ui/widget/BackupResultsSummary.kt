@@ -69,6 +69,7 @@ private fun BackupFailureReasonText(reasonCode: String): String {
     /** UI 仅选择资源，业务分类在既有纯 mapper 中维护。 */
     val resource = when (BackupFailureMessageMapper.map(reasonCode)) {
         BackupFailureMessage.Storage -> BaseR.string.base_general_backup_error_storage
+        BackupFailureMessage.LocalDirectoryConflict -> BaseR.string.base_general_backup_error_local_directory_conflict
         BackupFailureMessage.Auth -> R.string.host_backup_error_auth_reason
         BackupFailureMessage.Remote -> R.string.host_backup_error_remote_reason
         BackupFailureMessage.Space -> BaseR.string.base_general_backup_error_insufficient_space
@@ -123,5 +124,17 @@ private fun BackupFailureReasonsPreview() {
     MaterialTheme(colorScheme = darkColorScheme()) {
         BackupResultsSummary(BackupEntryState(BackupResultPresentation(BackupResultKind.Failed),
             BackupResultPresentation(BackupResultKind.Failed, reasonCode = "webdav_http_409")))
+    }
+}
+
+/** 同名目录指引较长，覆盖两个页面共用摘要在窄屏和大字体下的自然换行。 */
+@Preview(widthDp = 220, fontScale = 1.6f)
+@Composable
+private fun BackupLocalDirectoryConflictPreview() {
+    MaterialTheme {
+        BackupResultsSummary(BackupEntryState(
+            local = BackupResultPresentation(BackupResultKind.Failed, reasonCode = "local_directory_conflict"),
+            webDav = BackupResultPresentation(BackupResultKind.Success, completedAt = 100L),
+        ))
     }
 }

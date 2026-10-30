@@ -17,11 +17,13 @@ import com.cla.clip.base.general.utils.ApplicationScope
 import com.cla.clip.base.general.utils.LinkUtils
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logI
+import com.cla.clip.base.general.utils.logW
+import com.cla.clip.master.onboarding.FirstLaunchInitializer
+import com.cla.clip.master.preview.AutomaticLinkPreviewLoader
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -40,7 +42,7 @@ import javax.inject.Singleton
  * 该类是应用级单例，内部状态需要能承受 MainActivity 与 Shizuku 服务几乎同时上报同一条剪贴内容。
  */
 @Singleton
-class ClipHelper @Inject constructor(
+class ClipHelper @Inject internal constructor(
     /** 应用级 Context，用于访问 ClipboardManager、文件目录和字符串资源。 */
     @param:ApplicationContext private val appContext: Context,
 
@@ -50,8 +52,11 @@ class ClipHelper @Inject constructor(
     /** 通知工具延迟注入，只有成功保存剪贴记录后才需要创建通知。 */
     private val notificationHelper: dagger.Lazy<NotificationHelper>,
 
-    /** 链接预览解析器，用于异步补齐标题、描述和封面图。 */
-    private val linkMetaParser: LinkMetaParser,
+    /** 自动链接预览入口，按已提交设置跳过或取消网络任务。 */
+    private val linkPreviewLoader: AutomaticLinkPreviewLoader,
+
+    /** 首次说明未完成前暂缓读取，完成任一选择后前台读取照常。 */
+    private val firstLaunchInitializer: FirstLaunchInitializer,
 
     /** 应用级协程作用域，保证后台剪贴处理不依赖单个 Activity 生命周期。 */
     @param:ApplicationScope private val scope: CoroutineScope,
@@ -89,7 +94,9 @@ class ClipHelper @Inject constructor(
      * 因此只有“刚 resume 且有焦点”同时满足时才读取，其他调用只刷新最近状态。
      */
     fun readNow(resume: Boolean? = null, hasFocus: Boolean? = null) {
+        /** 本次生命周期信号；无新信号时沿用上次尚未消费的恢复事件。 */
         val resume2 = resume?.let { LiveEvent(it) } ?: lastResume
+        /** 当前真实窗口焦点，不以首次按钮或 Shizuku 授权推断。 */
         val hasFocus2 = hasFocus ?: lastHasFocus
 
         lastResume = resume2
@@ -108,7 +115,15 @@ class ClipHelper @Inject constructor(
      * 这里延迟 500ms 是为了等待 Shizuku 回调可能先完成入库，再通过 lastClipContent 去重，降低双通道重复保存概率。
      */
     private suspend fun readNow() {
+        try {
+            if (!firstLaunchInitializer.initialize().firstLaunchCompleted || lastHasFocus != true) return
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: Exception) {
+            logW(TAG) { "首次说明状态读取失败，暂缓前台读取 type=${failure.javaClass.simpleName}" }
+            return
+        }
         // 切换到前台时，读取一次剪贴板
+        /** 在设置和焦点均满足时获取的单次系统快照。 */
         val clip = runCatching { clipboardManager.primaryClip?.getItemAt(0) }.getOrNull()
         if (clip == null) {
             return
@@ -117,6 +132,7 @@ class ClipHelper @Inject constructor(
         // 复制内容到剪贴板之后马上拉起app，可能会在shizuku和MainActivity同时触发读取剪贴板的逻辑，导致重复保存，所以这里增加一个短暂的延迟，判断一下保存的剪贴板内容是否是一样的，一样的话就不重复保存
         delay(500)
 
+        /** 用于和后台通道去重的当前文本，不输出到日志。 */
         val contentText = clip.text?.toString()
         if (!lastClipContent.get().isNullOrBlank() && contentText == lastClipContent.get()) {
             logD(TAG) { "readNow: textLength=${contentText?.length} 和上一条重复，跳过保存" }
@@ -310,16 +326,10 @@ class ClipHelper @Inject constructor(
             return@withContext initialSaveResult
         }
 
-        logD(TAG) { "processClipText 去解析链接 linkLength=${extractedLink.length}" }
-        // 解析链接可能会比较慢，所以放在协程里，解析完成之后再保存数据
-        // 避免网络比较差的情况下，需要很长时间才能看到保存的剪贴数据
-        val deferred = async {
-            val linkMeta = linkMetaParser.parse(extractedLink)
-            logD(TAG) { "processClipText 链接解析完成 hasImage=${!linkMeta.imageUrl.isNullOrBlank()}" }
-            linkMeta
-        }
-
-        save(extractedLink, deferred.await())
+        // 文本已成功入库；关闭预览只跳过网络补齐，不撤回前台或后台保存结果。
+        /** 许可执行器观察实时开关，关闭时取消本次解析并返回 null。 */
+        val linkMeta = linkPreviewLoader.load(extractedLink) ?: return@withContext initialSaveResult
+        save(extractedLink, linkMeta)
     }
 
     /**

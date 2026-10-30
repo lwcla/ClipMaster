@@ -155,6 +155,9 @@ fun MinePage(
             item { MineSectionHeader(title = stringResource(R.string.base_general_mine_permission_section)) }
             item { Permission(mineVm = mineVm) }
 
+            // 预览是独立偏好，只有我的页可见时挂载其设置观察。
+            item(key = "link_preview_setting") { if (visibleToUser) MineLinkPreviewSettingsItem() }
+
             item { MineSectionHeader(title = stringResource(R.string.base_general_mine_data_management_section)) }
             item { BackupEntry(state = backupEntryState, onNavigate = onNavigate) }
             item { FoldedClipsEntry(foldedClipCount = foldedClipCount, onNavigate = onNavigate) }
@@ -299,7 +302,9 @@ private fun Permission(
         SettingSwitchItemUi(
             id = SettingSwitchItemUi.Id.Permission.Shizuku,
             title = stringResource(com.cla.clip.master.R.string.host_shizuku_permission_title),
-            description = stringResource(com.cla.clip.master.R.string.host_shizuku_service_require),
+            // 首页复用用途说明；取消授权指引仅属于我的页的已授权状态。
+            description = stringResource(com.cla.clip.master.R.string.host_shizuku_service_require) +
+                if (mineVm.shizukuChecked) "\n" + stringResource(com.cla.clip.master.R.string.host_shizuku_revoke_hint) else "",
             checked = mineVm.shizukuChecked,
         ),
         SettingSwitchItemUi(

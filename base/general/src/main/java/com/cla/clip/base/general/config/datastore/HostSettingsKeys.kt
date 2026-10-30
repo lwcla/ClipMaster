@@ -8,6 +8,10 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 
 /** 宿主设置的持久化键，仅供同模块领域仓库使用。 */
 internal object HostSettingsKeys {
+    /** 本安装是否已处理首次功能说明；false 也需持久化，以区分未选择的新安装与旧版缺键。 */
+    val FIRST_LAUNCH_COMPLETED = booleanPreferencesKey("first_launch_completed")
+    /** 自动链接元信息及远程封面的本机许可，不进入自定义备份或设备迁移。 */
+    val LINK_PREVIEW_ENABLED = booleanPreferencesKey("link_preview_enabled")
     /** 本机排障保存意图；不加入用户备份设置白名单。 */
     val LOG_CAPTURE_ENABLED = booleanPreferencesKey("log_capture_enabled")
     /** 普通剪贴 item 快捷动作的稳定 code。 */

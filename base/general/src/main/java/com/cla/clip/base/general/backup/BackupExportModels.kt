@@ -6,7 +6,7 @@ import java.io.File
 data class BackupExportResult(
     /** 完整 zip 备份包临时文件。 */
     val packageFile: File,
-    /** 列表 sidecar manifest。 */
+    /** 导出与私有任务接管使用的摘要；用户目录只发布 ZIP。 */
     val manifest: BackupManifest,
     /** manifest JSON。 */
     val manifestJson: String,

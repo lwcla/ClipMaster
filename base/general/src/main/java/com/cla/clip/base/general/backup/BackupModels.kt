@@ -453,6 +453,9 @@ sealed class BackupFailure(message: String, cause: Throwable? = null) : Exceptio
     /** WebDAV 路径不可写或本地 URI 不可写。 */
     class StorageNotWritable(cause: Throwable? = null) : BackupFailure("storage_not_writable", cause)
 
+    /** 本地 ZIP 或临时文件的目标位置被文件夹占用；仅编译期传递，原因码显式固定，不携带路径。 */
+    class LocalDirectoryConflict : BackupFailure("local_directory_conflict")
+
     /** WebDAV 认证失败。 */
     class AuthenticationFailed : BackupFailure("authentication_failed")
 

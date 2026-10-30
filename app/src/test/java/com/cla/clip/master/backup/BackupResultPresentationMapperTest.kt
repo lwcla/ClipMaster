@@ -6,6 +6,21 @@ import org.junit.Test
 
 /** 两条结果展示规则，不依赖 Compose、默认时区或真实时间。 */
 class BackupResultPresentationMapperTest {
+    /** 两页读取的展示状态保留本地目录冲突原因，新任务不能掩盖上次失败或影响云端成功。 */
+    @Test fun localDirectoryConflictSurvivesPendingRoundPresentation() {
+        /** 合成运行态同时包含旧结果和新一轮排队任务。 */
+        val runtime = BackupRuntimeSnapshot(
+            localResult = BackupTargetResult(100L, true, "local_directory_conflict"),
+            webDavResult = BackupTargetResult(200L),
+            pendingUpload = BackupPendingUpload("next", "hash", "auto", "queued", 300L, "local", "queued"),
+        )
+        /** 我的页和备份页都消费此共享映射，不能丢失原因。 */
+        val state = BackupResultPresentationMapper.map(BackupSettingsSnapshot(), runtime)
+        assertEquals(BackupResultKind.Failed, state.local.kind)
+        assertEquals("local_directory_conflict", state.local.reasonCode)
+        assertEquals(BackupResultKind.Success, state.webDav.kind)
+    }
+
     /** 备份页另行展示等待包，不用新等待状态覆盖历史结果。 */
     @Test fun pendingDetailsKeepCreationTimeAndActualWaitPolicy() {
         /** 合成等待身份不涉及真实网络或文件路径。 */

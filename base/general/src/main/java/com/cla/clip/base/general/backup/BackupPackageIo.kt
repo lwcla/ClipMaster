@@ -70,12 +70,12 @@ class BackupPackageWriter @Inject constructor() {
             }
             throw BackupFailure.StorageNotWritable(throwable)
         }
-        // actualPackageSize 是 zip 完成后的真实大小，只写入 sidecar/latest manifest 和导出摘要，不再回写包内 manifest。
+        // actualPackageSize 是 ZIP 完成后的真实大小，只供私有任务描述及导出摘要使用，不再回写包内 manifest。
         val actualPackageSize = packageFile.length()
         if (actualPackageSize > MAX_BACKUP_PACKAGE_BYTES) throw BackupFailure.FileTooLarge()
-        // finalManifest 是本地目录和 WebDAV 独立 sidecar 使用的摘要，真实 fileSize 用于列表展示。
+        // finalManifest 供私有待上传目录接管任务，本地/WebDAV 用户目录均不再发布外部摘要。
         val finalManifest = packageManifest.copy(fileSize = actualPackageSize)
-        // manifestJson 是本地目录和 WebDAV sidecar 使用的最终摘要，必须带真实 fileSize。
+        // manifestJson 用于后台任务的私有描述，必须带真实 fileSize，不能当作用户目录发布产物。
         val manifestJson = BackupJson.encodeManifest(finalManifest)
         logD(TAG) {
             "备份 zip 组装完成 taskId=${session.taskId} fileName=${session.fileName} fileSize=$actualPackageSize " +
@@ -191,7 +191,7 @@ internal data class BackupPackageTempEntry(
 data class BackupPackageFileResult(
     /** 完整 zip 备份包临时文件。 */
     val packageFile: File,
-    /** 列表 sidecar manifest。 */
+    /** 导出与私有任务接管使用的摘要；不在用户目录单独发布。 */
     val manifest: BackupManifest,
     /** manifest JSON。 */
     val manifestJson: String,
