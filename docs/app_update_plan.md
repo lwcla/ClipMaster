@@ -10,7 +10,7 @@
 
 ## 目标与范围
 
-### 0.9.17 双源发布（2026-10-31，实现中）
+### 0.9.17 双源发布（2026-10-31，已完成）
 
 - 按用户要求将 `versionName` 从 `0.9.16` 递增至 `0.9.17`，`versionCode` 从 `52` 递增至 `53`，纳入当前全部修改，先提交并普通推送源码 `main`，再用既有脚本发布 GitHub/Gitee APK、`update.json` 和 `sha256.txt`。双源标签为 `v0.9.17`；源码仓库工作流另行使用 `v0.9.17-53`，两套发布目标保持原约定。
 - 本版包含首次标记缺失时重新说明且关闭联网预览、移除 APK 更新时间推断，以及我的页检查更新置底和空功能分类隐藏；完整实现、回归测试及设备验收边界以 [首次启动方案](first_launch_consent_plan.md) 和 [我的页方案](mine_page_plan.md) 为准。
@@ -21,6 +21,9 @@
 - 发布前验证：`.\gradlew.bat :base:general:testDebugUnitTest :app:testDebugUnitTest :app:compileDebugKotlin --offline --console=plain --no-parallel --max-workers=2 --project-cache-dir build/first-launch-validation/project-cache -I build/first-launch-validation/init.gradle` 成功（2m 9s）；base/general 147 项、app 372 项，共 519 项单测，失败、错误、跳过均为 0。`python -m unittest discover -s scripts -p test_github_release_version.py` 的 8 项测试通过，真实版本比较输出 `changed=true / v0.9.17-53`，`git diff --check` 通过。
 - 构建与产物：原发布脚本 dry-run 的 `:app:assembleRelease`（含 lintVital 和 R8）成功（5m）；`apksigner verify --verbose --print-certs` 确认 v2 签名有效且证书与上次双源发行 0.9.12 一致，`aapt dump badging`、APK metadata 及 app/共享模块 BuildConfig 均为 `com.cla.clip.master / 0.9.17 / 53`。1216 个受控源码/构建文件摘要无变化；真实上传重新执行构建后，以最终上传附件摘要为准。
 - 环境与边界：默认 Debug 输出中的 `classes.jar` 被其他进程占用导致首次验证失败，复用已有隔离目录后通过，未终止其他程序或修改正式构建配置。发布复用既有 PowerShell 7/Git Bash 兼容入口，保留原脚本和已有 Kotlin/AGP 弃用、Shizuku R8 警告；本轮不重复设备安装和 UI 验收，不新增运行时日志或备份字段。推送前远端 `main` 与起点 `1c538ac` 一致，全部 13 个版本、源码、测试及文档文件均已审阅。
+- 发布结果：全部 13 个文件已提交为 `6ccc70a`，先普通推送 `origin/main` 并核对远端一致，再执行原双源脚本，正式上传返回 0。GitHub/Gitee 的 latest 均为 `v0.9.17`，均包含 `ClipMaster-v0.9.17-admob.apk`、`update.json` 和 `sha256.txt`；GitHub 三附件服务端 SHA256 与 Gitee 三附件回下载 SHA256 全部匹配本地。
+- 最终产物：APK 为 5,430,826 字节，SHA256 为 `ef115fbcfa38a3647c92aefc8b0377098b4a61745f0fd3cf1c44a6dda3857479`；上传构建重打包后已重新核对 `0.9.17 / 53` 和正式签名连续性。APK、清单、metadata、mapping、源码提交号、测试/预演/上传/核验日志归档于 `build/github-gitee-release/v0.9.17/`，mapping 不上传公开发行仓库。
+- 发布地址：[GitHub v0.9.17](https://github.com/clip-master-2/ClipMaster-Releases/releases/tag/v0.9.17)、[Gitee v0.9.17](https://gitee.com/clip-master-2/clip-master-releases/releases/tag/v0.9.17)。源码仓库推送额外触发 [Actions 41178331957](https://github.com/lwcla/ClipMaster/actions/runs/41178331957)，双源验收时仍在运行；它的 `v0.9.17-53` 自动发布与上述已验证双源发行分开记录，不作为本次脚本发布成功的依据。
 
 ### 0.9.16 版本准备（2026-10-30，已完成）
 
@@ -364,6 +367,8 @@ public 仓库 README 作为人可读发布页维护，至少包含最新版版�
 - 是否需要把发布页入口放到关于页或错误弹窗外的常驻位置，方便两个自动源都不可达时用户主动查看。
 
 ## 变更记录
+
+- 2026-10-31：完成 `0.9.17 / 53` 全部修改提交推送、519 项 JVM 单测、8 项版本脚本测试、Release/R8 及原脚本双源发行；两端 latest 和六项附件摘要核验通过，补录最终签名/摘要、源码提交与本地归档，发布小节标记已完成。保留默认 Debug 文件占用的隔离验证取舍及设备未重复验收边界。
 
 - 2026-10-31：按用户要求准备 `0.9.17 / 53`，将首次说明修复、检查更新入口置底及全部既有修改纳入主分支提交，记录先推送源码再脚本双源发布的流程、复用、验证与日志边界。
 
