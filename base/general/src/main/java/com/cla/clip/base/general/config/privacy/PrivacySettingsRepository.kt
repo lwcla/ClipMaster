@@ -28,12 +28,14 @@ class PrivacySettingsRepository @Inject internal constructor(
     /** 网络消费者只观察预览字段，不被其他设置写入反复唤醒。 */
     val previewEnabled: Flow<Boolean> = state.map { it.previewEnabled }.distinctUntilChanged()
 
-    /** 区分首次安装与旧版升级；已经持久化的 false/true 均不得被升级覆盖。 */
-    suspend fun initialize(existingInstallation: Boolean) {
+    /** 缺键只代表尚未处理说明；正常重启与升级均保留已提交的选择，IO 失败向外传播。 */
+    suspend fun initialize() {
+        /** 在同一事务内初始化两个隐私字段，其他设置或 APK 更新历史不能替代用户选择。 */
         store.edit { preferences ->
             if (preferences[HostSettingsKeys.FIRST_LAUNCH_COMPLETED] == null) {
-                preferences[HostSettingsKeys.FIRST_LAUNCH_COMPLETED] = existingInstallation
-                preferences[HostSettingsKeys.LINK_PREVIEW_ENABLED] = existingInstallation
+                // 系统清除数据后 APK 仍可能保留更新时间；首次标记缺失时必须重新说明且禁止自动预览。
+                preferences[HostSettingsKeys.FIRST_LAUNCH_COMPLETED] = false
+                preferences[HostSettingsKeys.LINK_PREVIEW_ENABLED] = false
             }
         }
     }

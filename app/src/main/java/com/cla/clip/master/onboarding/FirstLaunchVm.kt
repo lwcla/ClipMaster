@@ -31,7 +31,7 @@ internal sealed interface FirstLaunchUiState {
 /** 仅负责首次说明和一次权限序列；联网开关独立由设置页管理。 */
 @HiltViewModel
 internal class FirstLaunchVm @Inject constructor(
-    /** 本机安装识别与一次初始化。 */ private val initializer: FirstLaunchInitializer,
+    /** 本机首次标记的一次初始化，不根据安装或更新时间跳过说明。 */ private val initializer: FirstLaunchInitializer,
     /** 已提交的隐私选择。 */ private val repository: PrivacySettingsRepository,
     /** 应用级连接器不持有 Activity，授权回调在界面重建期间仍可使用。 */ connector: ShizukuConnector,
 ) : ViewModel() {

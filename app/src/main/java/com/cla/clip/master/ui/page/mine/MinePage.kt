@@ -54,7 +54,8 @@ import rikka.shizuku.Shizuku
 /**
  * 我的页面。
  *
- * 当前承载权限、设置和常驻隐私政策入口；政策优先交给浏览器，启动失败再导航到内置正文。
+ * 当前承载权限、设置和常驻隐私政策入口；检查更新固定为列表最后一项，不单独分类。
+ * 政策优先交给浏览器，启动失败再导航到内置正文。
  *
  * @param torrentSearchFeatures 可选入口集合；关闭实现模块时为空，因此页面不会留下占位项。
  * @param onLaunchTorrentSearch 用户点击入口后的无副作用回调；页面不持有 Context 或启动来源。
@@ -165,12 +166,12 @@ fun MinePage(
             item { FoldedClipsEntry(foldedClipCount = foldedClipCount, onNavigate = onNavigate) }
             item { RecycleBinEntry(recycleBinCount = recycleBinCount, onNavigate = onNavigate) }
 
-            item { MineSectionHeader(title = stringResource(R.string.base_general_mine_feature_section)) }
-            item {
-                AppUpdateEntry(
-                    state = appUpdateUiState,
-                    onClick = mineVm::checkUpdateManually,
-                )
+            // 更新入口移到列表末尾后，仅在存在可选功能时保留分类，避免出现空标题。
+            if (torrentSearchFeatures.isNotEmpty()) {
+                // 固定分类身份，避免可选入口变化时沿用其他位置的列表状态。
+                item(key = "feature_section") {
+                    MineSectionHeader(title = stringResource(R.string.base_general_mine_feature_section))
+                }
             }
             /** 可选入口按稳定功能 ID 排序，避免 Hilt Set 的无序性造成列表跳动。 */
             torrentSearchFeatures.sortedBy { it.featureId }.forEach { feature ->
@@ -249,6 +250,14 @@ fun MinePage(
                         onClick = { onNavigate(ClipSourceBlockSettingRoute) }
                     )
                 }
+            }
+            // 检查更新固定为最后一项；稳定 key 保持设置异步加载前后的入口身份。
+            item(key = "app_update") {
+                AppUpdateEntry(
+                    state = appUpdateUiState,
+                    // 复用手动检查链路，位置调整不改变限频、检查状态或弹窗处理。
+                    onClick = mineVm::checkUpdateManually,
+                )
             }
         }
     }
