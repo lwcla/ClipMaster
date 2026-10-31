@@ -12,27 +12,28 @@
     :root { color-scheme: light; }
     * { box-sizing: border-box; }
     html { scroll-padding-top: 24px; }
-    body { margin: 0; color: #23332f; background: #f4f6f3; font: 16px/1.85 system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }
-    a { color: #14644e; text-underline-offset: .22em; overflow-wrap: anywhere; }
-    a:hover { color: #0a4031; }
-    a:focus-visible { outline: 3px solid #b67a24; outline-offset: 5px; border-radius: 3px; }
+    /* 全页仅使用黑白灰；链接通过下划线、按钮轮廓和可见焦点保持可辨识。 */
+    body { margin: 0; color: #222; background: #f5f5f5; font: 16px/1.85 system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }
+    a { color: #444; text-underline-offset: .22em; overflow-wrap: anywhere; }
+    a:hover { color: #111; }
+    a:focus-visible { outline: 3px solid #555; outline-offset: 5px; border-radius: 3px; }
     .skip { position: absolute; left: 16px; top: -100px; padding: 8px 14px; background: white; z-index: 2; }
     .skip:focus { top: 12px; }
     .shell { max-width: 1000px; margin: auto; padding: 52px 28px 40px; }
     header { padding-bottom: 34px; }
     .brand { display: flex; align-items: center; gap: 12px; font-weight: 650; letter-spacing: .02em; }
-    .mark { display: inline-grid; place-items: center; width: 42px; height: 42px; border-radius: 13px; color: #fff; background: #185d48; font-size: 15px; }
-    .eyebrow { margin: 32px 0 8px; font-size: 12px; font-weight: 700; letter-spacing: .18em; color: #4c6a5e; text-transform: uppercase; }
+    .mark { display: inline-grid; place-items: center; width: 42px; height: 42px; border-radius: 13px; color: #fff; background: #333; font-size: 15px; }
+    .eyebrow { margin: 32px 0 8px; font-size: 12px; font-weight: 700; letter-spacing: .18em; color: #666; text-transform: uppercase; }
     h1 { margin: 0; font-size: clamp(32px, 6vw, 48px); line-height: 1.3; letter-spacing: -.04em; }
-    .subtitle { margin: 10px 0 20px; color: #55665f; }
-    .meta { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 0; font-size: 14px; color: #526159; }
+    .subtitle { margin: 10px 0 20px; color: #666; }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 0; font-size: 14px; color: #666; }
     nav { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
-    nav a { padding: 7px 17px; border: 1px solid #b9cec2; border-radius: 99px; font-size: 14px; font-weight: 600; text-decoration: none; background: #fff; }
-    article { background: #fff; border: 1px solid #dce5de; border-radius: 20px; padding: 36px 42px; margin-bottom: 28px; }
-    .language { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding-bottom: 18px; border-bottom: 1px solid #dce5de; }
+    nav a { padding: 7px 17px; border: 1px solid #d6d6d6; border-radius: 99px; font-size: 14px; font-weight: 600; text-decoration: none; background: #fff; }
+    article { background: #fff; border: 1px solid #e0e0e0; border-radius: 20px; padding: 36px 42px; margin-bottom: 28px; }
+    .language { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding-bottom: 18px; border-bottom: 1px solid #e0e0e0; }
     .language h2 { margin: 0; font-size: 25px; }
     .language a { font-size: 13px; }
-    .summary { margin: 26px 0; padding: 18px 22px; border-left: 3px solid #27775b; background: #f0f7f2; border-radius: 0 10px 10px 0; }
+    .summary { margin: 26px 0; padding: 18px 22px; border-left: 3px solid #888; background: #f5f5f5; border-radius: 0 10px 10px 0; }
     .summary p { margin: 0; }
     section { margin-top: 30px; }
     h3 { margin: 0 0 12px; font-size: 19px; line-height: 1.5; }
@@ -40,10 +41,10 @@
     ul { padding-left: 1.4em; margin: 0 0 16px; }
     li { margin-bottom: 9px; }
     strong { font-weight: 650; }
-    .contact { padding: 20px 24px; background: #f4f6f3; border-radius: 12px; }
+    .contact { padding: 20px 24px; background: #f5f5f5; border-radius: 12px; }
     .contact p:last-child { margin-bottom: 0; }
-    .small { font-size: 14px; color: #56665d; }
-    footer { font-size: 13px; color: #617168; text-align: center; padding: 8px; }
+    .small { font-size: 14px; color: #666; }
+    footer { font-size: 13px; color: #666; text-align: center; padding: 8px; }
     @media (max-width: 600px) {
       .shell { padding: 28px 16px; }
       header { padding: 0 6px 26px; }
@@ -56,15 +57,18 @@
     }
     @media (prefers-color-scheme: dark) {
       :root { color-scheme: dark; }
-      body { background: #141c18; color: #e0e9e3; }
-      article, nav a { background: #1c2721; border-color: #34483b; }
-      a { color: #96d7b3; }
-      a:hover { color: #c7efda; }
-      .subtitle, .meta, .small, footer, .eyebrow { color: #b4c5b9; }
-      .summary, .contact { background: #23372b; }
-      .language { border-color: #34483b; }
-      nav a { border-color: #4d6d59; }
-      .skip { background: #1c2721; }
+      /* 深色模式沿用中性灰层级，避免整页偏绿，并保留正文与卡片的明暗区分。 */
+      body { background: #121212; color: #e5e5e5; }
+      article, nav a { background: #1e1e1e; border-color: #383838; }
+      a { color: #d4d4d4; }
+      a:hover { color: #fff; }
+      /* 深色焦点框使用浅灰，保证键盘导航轮廓在深色表面上清晰可见。 */
+      a:focus-visible { outline-color: #bdbdbd; }
+      .subtitle, .meta, .small, footer, .eyebrow { color: #bdbdbd; }
+      .summary, .contact { background: #282828; }
+      .language { border-color: #383838; }
+      nav a { border-color: #555; }
+      .skip { background: #1e1e1e; }
     }
     @media print {
       :root { color-scheme: light; }
