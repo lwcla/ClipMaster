@@ -79,4 +79,7 @@ dependencies {
     // 复用版本目录中现有设备测试依赖，不引入新的生产库。
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+    // 回归运行生产 Compose 广告入口，独立测试 Activity 不访问宿主备份数据。
+    androidTestImplementation(libs.compose.ui.test.junit4)
+    debugImplementation(libs.compose.ui.test.manifest)
 }

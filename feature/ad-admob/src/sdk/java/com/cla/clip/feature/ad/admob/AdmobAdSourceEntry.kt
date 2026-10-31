@@ -42,7 +42,7 @@ internal class AdmobAdSourceEntry @Inject constructor(
             !runtimePolicy.remoteKillSwitchEnabled &&
             sourceId !in runtimePolicy.sessionDisabledSourceIds && privacyController.state.value.canRequestAds
 
-    /** 页面拥有资源，组合只绑定 View；暂停和普通重组不创建新请求。 */
+    /** 页面拥有资源；容器在同次更新中同步当前请求再绑定 View，暂停和普通重组不创建新请求。 */
     @Composable
     override fun NativeAdSlot(request: AdSlotRequest, onEvent: (AdSlotEvent) -> Unit, modifier: Modifier) {
         // themed Context 仅在页面资源存活期间保留。
@@ -64,7 +64,7 @@ internal class AdmobAdSourceEntry @Inject constructor(
         } ?: return
         // 每次组合绑定拥有独立身份，旧 onDispose 不能解绑后来的挂载。
         val binding = remember(session) { Any() }
-        // 仅前台且未遮挡才启动新工作；更新已加载素材不会重新请求。
+        // 零高或尚未创建容器时也要推进加载与许可；容器挂载不能只等这里稍后同步请求。
         SideEffect {
             session.update(binding, request, onEvent)
             if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) && request.canRequest) session.start()
@@ -94,11 +94,9 @@ internal class AdmobAdSourceEntry @Inject constructor(
                 request.contentPresentable && request.contentPresentableNow(), session.presented,
                 request.canReveal && request.canRevealNow())) {
             AndroidView(
-                // 每次挂载独享外壳；搬移 SDK View 前移除旧父节点，避免双重挂载。
+                // 每次挂载独享外壳；首次与后续绑定统一在 update 完成，避免 factory 读取旧请求。
                 factory = { viewContext ->
-                    AdmobNativeContainer(viewContext).apply {
-                        session.bindView(binding, this)
-                    }
+                    AdmobNativeContainer(viewContext)
                 },
                 modifier = modifier,
                 // 外壳销毁只解除子 View 关系，素材销毁始终属于页面资源所有者。
@@ -113,7 +111,10 @@ internal class AdmobAdSourceEntry @Inject constructor(
                 },
                 // 暂停/弹窗不改广告外观，仅拦住触摸；SDK 原有点击注册保持完整。
                 update = { container ->
-                    // 绑定登记和 View 搬移统一处理，也能修复应用阶段中新旧外壳交接。
+                    // Lazy 回绑会先执行 AndroidView.update、后执行 SideEffect；必须先替换 detach 留下的旧许可。
+                    // 读取最新请求也让许可恢复直接驱动本更新，不能依赖额外重组或新增回显状态。
+                    session.update(binding, latestRequest, onEvent)
+                    // 请求同步与 View 搬移在同次主线程提交内完成；重复更新由会话现有保护保持幂等。
                     session.bindView(binding, container)
                     container.canInteract = {
                         latestRequest.contentPresentable && latestRequest.contentPresentableNow() &&

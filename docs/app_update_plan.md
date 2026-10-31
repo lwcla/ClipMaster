@@ -10,6 +10,18 @@
 
 ## 目标与范围
 
+### 0.9.18 版本准备与全部改动提交范围（2026-10-31，已完成）
+
+- 按用户要求将 `versionName` 从 `0.9.17` 递增至 `0.9.18`，`versionCode` 从 `53` 递增至 `54`，提交当前全部修改并普通推送到源码仓库 `main`。既有 Actions 按版本变化执行自动构建发布，预期标签为 `v0.9.18-54`；源码推送完成不代表云端发布完成。
+- 本版纳入 AdMob 广告离屏回绑顺序修复、4 项设备回归、测试专用缓存夹具及 Compose 测试依赖；完整根因、复用、测试先行证据和设备验收边界以 [广告主方案](ad_module_plan.md#备份页广告离屏回绑修复方案2026-10-31已完成) 与 [单元测试方案](unit_test_plan.md) 为准。
+- 复用 app 静态版本声明、base/general 派生版本、BuildConfig、APK 命名和版本判定脚本。版本递增仅修改构建元数据，不新增组件、类、方法或独立业务规则，不新增版本常量镜像单测或采用 TDD；版本码简体中文注释同步更新。
+- 本轮验证计划：运行 app、base/general、ad-api、ad-admob 的 JVM 单测，app Debug Kotlin 编译、AdMob Android 测试 Kotlin/Java 编译、Release BuildConfig 生成、8 项版本脚本测试、真实版本变化判定及 `git diff --check`。广告修复的设备与 Release/R8 验证已有主方案记录，本轮版本准备不重复设备安装与 R8；未改变生产反射、序列化或 keep 契约。
+- 日志与诊断计划：沿用现有 Gradle、版本判定脚本和 Actions 输出，不新增运行时日志，不输出凭据、广告素材或用户内容。没有新增持久化数据、设置、备份协议或 dirty 状态，不调整备份恢复逻辑。
+- 提交范围：全部 8 个版本、源码、测试与文档文件；起点 `5411746` 与已抓取的 `origin/main` 一致，保留用户现有修改，使用快进合并与普通推送，不改写历史。
+- 本地验证：`.\gradlew.bat :base:general:testDebugUnitTest :feature:ad-api:testDebugUnitTest :feature:ad-admob:testDebugUnitTest :app:testDebugUnitTest :app:compileDebugKotlin :feature:ad-admob:compileDebugAndroidTestKotlin :feature:ad-admob:compileDebugAndroidTestJavaWithJavac :app:generateReleaseBuildConfig --offline --console=plain --no-parallel --max-workers=2 --project-cache-dir build/first-launch-validation/project-cache -I build/first-launch-validation/init.gradle` 成功（2m 41s）；app 372 项、base/general 147 项、ad-api 18 项、ad-admob 16 项，共 553 项 JVM 单测，失败、错误、跳过均为 0。`python -m unittest discover -s scripts -p test_github_release_version.py` 的 8 项测试及 `git diff --check` 通过。
+- 版本与环境核对：app Debug/Release 及 base/general Debug BuildConfig 均为 `0.9.18 / 54`，真实版本比较输出 `changed=true / v0.9.18-54`。首次沙箱执行受工作区外 Gradle 缓存锁访问限制；授权缓存访问后，默认 Debug 输出又遇到 Windows 的 `classes.jar` 文件占用，复用既有隔离初始化脚本后验证成功，未修改正式构建配置或终止其他进程。保留已有 AGP/Kotlin 弃用及 Manifest 警告；本轮未重复设备测试或 R8，不将此前广告验证记录当成本轮重复执行结果。
+- 推送前核对：GitHub 连接确认当前用户与仓库所有者均为 `lwcla`，具备 push 权限，默认分支为 `main`；构建临时文件未纳入提交。版本调整无额外方法、变量注释缺口或职责拆分例外，未新增运行时日志、备份字段或 keep 规则。
+
 ### 0.9.17 双源发布（2026-10-31，已完成）
 
 - 按用户要求将 `versionName` 从 `0.9.16` 递增至 `0.9.17`，`versionCode` 从 `52` 递增至 `53`，纳入当前全部修改，先提交并普通推送源码 `main`，再用既有脚本发布 GitHub/Gitee APK、`update.json` 和 `sha256.txt`。双源标签为 `v0.9.17`；源码仓库工作流另行使用 `v0.9.17-53`，两套发布目标保持原约定。
@@ -367,6 +379,10 @@ public 仓库 README 作为人可读发布页维护，至少包含最新版版�
 - 是否需要把发布页入口放到关于页或错误弹窗外的常驻位置，方便两个自动源都不可达时用户主动查看。
 
 ## 变更记录
+
+- 2026-10-31：完成 `0.9.18 / 54` 本地版本准备、553 项 JVM 单测、8 项版本脚本测试、Debug 和设备测试源码编译及版本核对，记录文件占用下复用隔离目录的验证方式；全部改动按用户要求纳入主分支提交推送，云端发布结果另行验收。
+
+- 2026-10-31：按用户“版本号+1、提交当前所有修改并推送主分支”的要求准备 `0.9.18 / 54`，纳入广告离屏回绑修复及全部对应测试与文档，记录复用、验证和自动发布边界。
 
 - 2026-10-31：完成 `0.9.17 / 53` 全部修改提交推送、519 项 JVM 单测、8 项版本脚本测试、Release/R8 及原脚本双源发行；两端 latest 和六项附件摘要核验通过，补录最终签名/摘要、源码提交与本地归档，发布小节标记已完成。保留默认 Debug 文件占用的隔离验证取舍及设备未重复验收边界。
 
