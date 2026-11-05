@@ -112,8 +112,8 @@ internal fun <T> SharedImagePreviewDialog(
             CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides Color.White) {
                 Column(modifier.fillMaxSize().background(Color.Black).safeDrawingPadding()) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(stringResource(R.string.image_preview_title), Modifier.weight(1f).padding(start = 16.dp))
-                        TextButton(onClick = onDismiss) { Text(stringResource(R.string.image_preview_close)) }
+                        Text(stringResource(R.string.host_image_preview_title), Modifier.weight(1f).padding(start = 16.dp))
+                        TextButton(onClick = onDismiss) { Text(stringResource(R.string.host_image_preview_close)) }
                     }
                     HorizontalPager(
                         state = pagerState,
@@ -126,7 +126,7 @@ internal fun <T> SharedImagePreviewDialog(
                     }
                     // 计数固定在图片缩放区域外；长元信息使用独立受限高度区域。
                     Text(
-                        stringResource(R.string.image_preview_position, current.index + 1, renderedItems.size),
+                        stringResource(R.string.host_image_preview_position, current.index + 1, renderedItems.size),
                         modifier = Modifier.align(Alignment.CenterHorizontally).padding(8.dp),
                         color = Color.White,
                     )
@@ -147,7 +147,7 @@ private fun SharedImagePreviewDialogSample() {
         onDismiss = {},
         imageContent = { _, _ ->
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(stringResource(R.string.image_preview_image))
+                Text(stringResource(R.string.host_image_preview_image))
             }
         },
     )

@@ -96,7 +96,7 @@ internal fun ImagePreviewContent(
                 model = model,
                 imageLoader = imageLoader,
                 state = state,
-                contentDescription = stringResource(R.string.image_preview_image),
+                contentDescription = stringResource(R.string.host_image_preview_image),
                 modifier = Modifier.fillMaxSize().testTag("image_preview_zoomable"),
                 contentScale = if (tallImage) ContentScale.FillWidth else ContentScale.Fit,
                 alignment = if (tallImage) Alignment.TopCenter else Alignment.Center,
@@ -104,9 +104,9 @@ internal fun ImagePreviewContent(
             when (loadState) {
                 PreviewImageLoadState.Loading -> CircularProgressIndicator()
                 PreviewImageLoadState.Failed -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(stringResource(R.string.image_preview_load_failed))
+                    Text(stringResource(R.string.host_image_preview_load_failed))
                     // 重试仅重新执行图片显示请求，不触发提取或下载任务。
-                    TextButton(onClick = { retry += 1 }) { Text(stringResource(R.string.image_preview_retry)) }
+                    TextButton(onClick = { retry += 1 }) { Text(stringResource(R.string.host_image_preview_retry)) }
                 }
                 PreviewImageLoadState.Loaded -> Unit
             }

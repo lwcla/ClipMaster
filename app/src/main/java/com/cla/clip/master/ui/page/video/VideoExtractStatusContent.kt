@@ -45,8 +45,8 @@ internal fun VideoProbeControls(
             is ProbeState.Failed -> InlineErrorState(videoProbeMessageText(videoProbeFailureMessage(state.reason)))
             is ProbeState.Success -> Unit
             is ProbeState.Probing -> when (pageState) {
-                is VideoProbePageState.Loading -> InlineLoadingState(stringResource(R.string.video_probe_loading, pageState.percent))
-                is VideoProbePageState.Loaded -> Text(stringResource(R.string.video_probe_waiting))
+                is VideoProbePageState.Loading -> InlineLoadingState(stringResource(R.string.host_video_probe_loading, pageState.percent))
+                is VideoProbePageState.Loaded -> Text(stringResource(R.string.host_video_probe_waiting))
                 is VideoProbePageState.Error -> InlineErrorState(
                     videoProbeMessageText(videoProbeFailureMessage(VideoProbeFailure.PageLoad(pageState.failure))),
                 )
@@ -57,24 +57,24 @@ internal fun VideoProbeControls(
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = if (interactive) onHide else onShow) {
                     Text(stringResource(when {
-                        interactive -> R.string.video_probe_hide_page
-                        state is ProbeState.Failed -> R.string.video_probe_view_retry
-                        else -> R.string.video_probe_show_process
+                        interactive -> R.string.host_video_probe_hide_page
+                        state is ProbeState.Failed -> R.string.host_video_probe_view_retry
+                        else -> R.string.host_video_probe_show_process
                     }))
                 }
                 if (interactive || state is ProbeState.Failed) {
-                    TextButton(onClick = onRetry) { Text(stringResource(R.string.video_probe_retry)) }
+                    TextButton(onClick = onRetry) { Text(stringResource(R.string.host_video_probe_retry)) }
                 }
             }
         }
         if (interactive) {
-            Text(stringResource(R.string.video_probe_help), style = MaterialTheme.typography.bodySmall)
+            Text(stringResource(R.string.host_video_probe_help), style = MaterialTheme.typography.bodySmall)
         }
         if (notice != null && state is ProbeState.Probing) {
             Text(stringResource(when (notice) {
-                VideoProbeNotice.LongRunning -> R.string.video_probe_long_running
-                VideoProbeNotice.Reloaded -> R.string.video_probe_reloaded
-                VideoProbeNotice.ExternalAppBlocked -> R.string.video_probe_external
+                VideoProbeNotice.LongRunning -> R.string.host_video_probe_long_running
+                VideoProbeNotice.Reloaded -> R.string.host_video_probe_reloaded
+                VideoProbeNotice.ExternalAppBlocked -> R.string.host_video_probe_external
             }), style = MaterialTheme.typography.bodySmall)
         }
     }

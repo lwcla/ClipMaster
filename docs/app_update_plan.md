@@ -10,6 +10,17 @@
 
 ## 目标与范围
 
+### 0.9.19 Release 资源前缀修复（2026-11-05，已完成）
+
+- GitHub Actions `41999375268` 对提交 `126ed65` 的构建在 `:app:lintVitalRelease` 失败，报告 21 个 `ResourceName` 错误：新增图片预览与视频探测字符串未遵循 app 的 `resourcePrefix("host_")`。此前 Debug 编译、单测和单独 R8 不能替代完整 Release Lint；这属于发布前验证遗漏。
+- 修复范围：为 6 个 `image_preview_*` 和 15 个 `video_probe_*` 字符串统一增加 `host_`，同步 4 个生产 Kotlin 文件及 `VideoProbeMessageMapperTest` 的全部资源引用。文案、占位符、测试 tag、页面交互、版本 `0.9.19 / 55` 和已有资源前缀门禁保持不变；不新增组件、类、方法或资源查找兼容层。
+- 复用与测试：使用既有 app 资源约定、共享图片组件、视频文案 mapper 及映射单测。修复前已确认云端 Lint 失败，并通过本地资源断言复现恰好 21 个违规；不添加重复实现 Lint 的常量镜像单测。同步已有测试引用，运行 app 单测、Debug/仪器测试编译，并按 CI 的国内 AdMob 配置执行完整 `:app:assembleRelease`，覆盖 Lint、R8 和 APK 打包。
+- 日志与诊断计划：沿用 Gradle、Lint 报告和构建日志，核对违规消失、版本、签名与 mapping；不新增运行时日志，不输出本机配置、签名密码、凭据或用户内容。无持久化数据、备份、生命周期、反射或外部协议变化，不调整备份/keep。
+- 工作区边界：在独立 worktree 从 `origin/main` 修复，仅提交本次 7 个文件；保留原工作区其他视频功能修改。验证后普通推送 `main`，不改写历史。版本未再次递增，因此现有版本门禁会跳过该修复提交的云端 Android 构建；本次完整 Release 验收以本机结果为准，不声称旧失败运行已恢复。
+- 最终验证：`.\gradlew.bat :app:assembleRelease :app:testDebugUnitTest :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin :app:compileDebugAndroidTestJavaWithJavac --console=plain --no-daemon --no-parallel --max-workers=2 '-Pkotlin.compiler.execution.strategy=in-process' -PenableAdmobDebugAdFeature=false -PenableAdmobReleaseAdFeature=true -PenableCsjDebugAdFeature=false -PenableCsjReleaseAdFeature=false -PenableUniadDebugAdFeature=false -PenableUniadReleaseAdFeature=false -PappDistribution=domestic` 成功（2m 13s）。完整 Release 的 Lint、R8、签名与 APK 打包均通过，Lint 文本报告为 `No issues found.`；app 97 个测试类、393 项单测，失败/错误/跳过均为 0，Debug 和仪器测试 Kotlin/Java 编译通过。
+- 产物核验：`apksigner verify --verbose` 通过（v2 签名），`aapt dump badging` 与 metadata 均确认为 `com.cla.clip.master / 0.9.19 / 55`。APK 为 5,538,282 字节，SHA256 为 `3d93024b29a6d34fc9d6f155e91a208acbbebb79c9e048045eb3bd6dce37ba1b`；APK 位于该 worktree 的 `app/build/outputs/apk/release/ClipMaster-v0.9.19-admob.apk`，mapping 保留于 `app/build/outputs/mapping/release/mapping.txt`。源代码核对确认恰好 21 个名称变更、文案/占位符/属性一致、无重复资源或旧引用。
+- 环境与例外：首次命令的带点 Gradle 参数受 PowerShell 解析影响，改为显式引号后恢复；离线轮次完成 Release，但附加 Debug 准备缺少 `error_prone_annotations:2.18.0` 缓存，允许下载后同一完整命令全部通过。日志为 `build/resource-prefix-release-final.log`，保留已有 AGP/Kotlin/隐藏接口警告；本轮不重复设备交互验收，因为仅等价资源重命名，无新行为。既有方法/变量中文注释继续适用，无新增声明或拆分例外。
+
 ### 0.9.19 版本准备与全部改动提交范围（2026-11-05，已完成）
 
 - 按用户要求将 `versionName` 从 `0.9.18` 递增至 `0.9.19`，`versionCode` 从 `54` 递增至 `55`，将当前全部修改提交并普通推送至源码仓库 `main`。既有 Actions 的预期标签为 `v0.9.19-55`；源码推送与云端发行结果分别验收。
@@ -390,6 +401,10 @@ public 仓库 README 作为人可读发布页维护，至少包含最新版版�
 - 是否需要把发布页入口放到关于页或错误弹窗外的常驻位置，方便两个自动源都不可达时用户主动查看。
 
 ## 变更记录
+
+- 2026-11-05：完成 21 个媒体字符串的 `host_` 前缀和全部引用修复，完整 Release/Lint/R8、393 项 app 单测、Debug/仪器源码编译、APK 签名及版本核验通过；记录本机参数/依赖缓存处理、产物摘要和同版本推送的云端门禁边界。
+
+- 2026-11-05：根据云端完整 Release 构建的 21 个资源前缀错误，记录同版本修复范围、验证遗漏与完整 Release 验收要求；仅修复命名和引用，保留其他功能工作。
 
 - 2026-11-05：完成 `0.9.19 / 55` 版本准备，540 项 JVM 单测、8 项版本脚本测试、Debug/仪器测试源码编译及版本一致性核验通过；记录 51 个文件的提交范围、构建环境和未重复设备/R8 的边界。
 
