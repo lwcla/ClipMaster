@@ -10,6 +10,16 @@
 
 ## 目标与范围
 
+### 0.9.20 版本递增与 GitHub 构建发布验收（2026-11-05，实现中）
+
+- 按用户要求将 `versionName` 从 `0.9.19` 递增至 `0.9.20`，`versionCode` 从 `55` 递增至 `56`，提交并普通推送到 `main`，触发既有 GitHub Actions 构建和发布；预期标签为 `v0.9.20-56`，需确认构建 job、APK 签名校验、附件上传、mapping 留存和 Release 创建全部成功。
+- 基线为已推送的资源前缀修复 `340002a`；复用 app 静态版本、base/general 派生版本、BuildConfig、APK 命名和 `github_release_version.py`。本轮仅修改版本元数据及方案记录，不新增组件、类、方法、独立业务规则或重复版本常量单测；版本码的中文注释同步更新。
+- 验证计划：本地按 CI 国内 AdMob 配置运行完整 `:app:assembleRelease`，复核 Lint、R8、APK 版本和签名；运行 8 项版本脚本测试、真实版本比较及 `git diff --check`。业务代码未再变化，不重复上一轮 393 项 app 单测或设备交互测试；云端成功与实际 Release 附件另行核实，不以本地通过或推送成功代替。
+- 日志与诊断计划：沿用 Gradle、版本脚本和 Actions 的任务状态/低敏分类，记录源码 SHA、run ID、tag、附件名称及摘要；禁止输出签名配置、凭据或用户内容。无新增持久化字段、备份协议、运行时日志或 keep 规则，沿用原能力。
+- 工作区边界：继续使用当前干净的独立 worktree，保留原工作区其他功能改动。云端验收后将最终运行和 Release 结果补回本节，并单独提交记录；文档补录不再次触发 Android 构建。
+- 本地验证：`.\gradlew.bat :app:assembleRelease --offline --console=plain --no-daemon --no-parallel --max-workers=2 '-Pkotlin.compiler.execution.strategy=in-process' -PenableAdmobDebugAdFeature=false -PenableAdmobReleaseAdFeature=true -PenableCsjDebugAdFeature=false -PenableCsjReleaseAdFeature=false -PenableUniadDebugAdFeature=false -PenableUniadReleaseAdFeature=false -PappDistribution=domestic` 成功（3m 40s），Lint 报告为 `No issues found.`，R8/打包通过。`apksigner verify --verbose` 确认 APK v2 签名有效，`aapt dump badging` 与 metadata 均为 `com.cla.clip.master / 0.9.20 / 56`；mapping 保留在 `app/build/outputs/mapping/release/mapping.txt`。
+- 发布门禁验证：`python -m unittest discover -s scripts -p test_github_release_version.py` 的 8 项测试通过，真实版本比较为 `changed=true / v0.9.20-56`，`git diff --check` 通过；构建日志为 `build/release-0.9.20-local.log`。保留已有 AGP/Kotlin/隐藏接口警告，云端验收待推送后记录。
+
 ### 0.9.19 Release 资源前缀修复（2026-11-05，已完成）
 
 - GitHub Actions `41999375268` 对提交 `126ed65` 的构建在 `:app:lintVitalRelease` 失败，报告 21 个 `ResourceName` 错误：新增图片预览与视频探测字符串未遵循 app 的 `resourcePrefix("host_")`。此前 Debug 编译、单测和单独 R8 不能替代完整 Release Lint；这属于发布前验证遗漏。
@@ -401,6 +411,8 @@ public 仓库 README 作为人可读发布页维护，至少包含最新版版�
 - 是否需要把发布页入口放到关于页或错误弹窗外的常驻位置，方便两个自动源都不可达时用户主动查看。
 
 ## 变更记录
+
+- 2026-11-05：按用户要求准备 `0.9.20 / 56`，使用已修复资源前缀的主分支重新触发 GitHub 完整构建和发布，明确本地检查与云端验收、Release 附件核对及记录补录边界。
 
 - 2026-11-05：完成 21 个媒体字符串的 `host_` 前缀和全部引用修复，完整 Release/Lint/R8、393 项 app 单测、Debug/仪器源码编译、APK 签名及版本核验通过；记录本机参数/依赖缓存处理、产物摘要和同版本推送的云端门禁边界。
 
