@@ -101,6 +101,14 @@ internal class VideoProbeSession {
         }
     }
 
+    /** 仅当前已完成文档的确定业务错误结束两种模式；成功、旧导航与暂停结果一律拒绝。 */
+    fun onPageUnavailable(expectedSession: Int, expectedDocument: Int): Boolean {
+        if (!accepts(expectedSession) || pageState !is VideoProbePageState.Loaded ||
+            pageState.documentId != expectedDocument) return false
+        fail(expectedSession, VideoProbeFailure.PageContent)
+        return true
+    }
+
     /** 当前网页的首个候选进入终态，成功后任何迟到事件都被拒绝。 */
     fun accept(expectedSession: Int, candidate: VideoCandidate): Boolean {
         if (!accepts(expectedSession)) return false

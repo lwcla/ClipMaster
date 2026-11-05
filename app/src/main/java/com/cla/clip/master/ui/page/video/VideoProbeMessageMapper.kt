@@ -13,6 +13,8 @@ internal data class VideoProbeMessage(
 
 /** 提取失败分类到用户文案的纯映射，未知平台错误按通用网络失败处理。 */
 internal fun videoProbeFailureMessage(reason: VideoProbeFailure): VideoProbeMessage = when (reason) {
+    // 页面内容诊断使用宿主前缀资源，只显示通用文案，不暴露站点原文或推测原因。
+    VideoProbeFailure.PageContent -> VideoProbeMessage(R.string.host_video_probe_failed)
     VideoProbeFailure.Timeout -> VideoProbeMessage(R.string.host_video_probe_timeout)
     is VideoProbeFailure.PageLoad -> when (reason.error.kind) {
         ProbeWebFailureKind.Http -> VideoProbeMessage(R.string.host_video_probe_http, reason.error.code)

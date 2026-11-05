@@ -7,6 +7,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -21,10 +22,11 @@ import com.cla.clip.master.ui.navigation.VideoDownloadRoute
 import com.cla.clip.master.ui.widget.PageBackground
 import com.cla.clip.master.ui.widget.ProbeLifecycleEffect
 import com.cla.clip.master.ui.widget.SecondaryPageScaffold
+import com.cla.clip.master.ui.widget.media.MediaAdFooter
 import com.cla.clip.master.ui.widget.media.MediaSourceSummary
 import kotlinx.coroutines.delay
 
-/** 视频页编排摘要、状态与单一网页宿主；显示模式不改变网页身份，生命周期决定资源许可。 */
+/** 视频页编排摘要、状态、固定广告底栏与单一网页宿主；结果独立滚动，生命周期决定资源许可。 */
 @Composable
 fun VideoExtractPage(
     videoExtractVm: VideoExtractVm = hiltViewModel(),
@@ -95,7 +97,12 @@ fun VideoExtractPage(
         }
     }
     SecondaryPageScaffold(title = stringResource(R.string.base_general_video_extract), onBack = onBack) { padding ->
-        PageBackground(modifier = Modifier.imePadding(), contentPadding = padding) {
+        PageBackground(
+            // 骨架已消费普通导航栏；三星零高导航栏仍有必需手势区，仅补尚未消费的底部安全距离。
+            modifier = Modifier.imePadding()
+                .windowInsetsPadding(WindowInsets.mandatorySystemGestures.only(WindowInsetsSides.Bottom)),
+            contentPadding = padding,
+        ) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 // 小屏/大字体时给摘要和操作区设置独立上限，至少保留剩余区域供网页使用。
                 val summaryLimit = maxHeight * 0.30f
@@ -131,8 +138,12 @@ fun VideoExtractPage(
                             logI("VideoProbe") { "重新提取视频 sessionId=${session.sessionId} mode=${session.mode}" }
                         },
                     )
-                    // 同一组合位置和 session key 保证展开/收起沿用已有原生网页。
-                    Box(Modifier.weight(1f).fillMaxWidth()) {
+                    // 同一组合位置和 session key 保证展开/收起沿用已有原生网页；广告仅影响前景结果视口。
+                    BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                        // 摘要和操作区已在外层扣除，此高度只分配给结果/网页和固定底栏。
+                        val availableHeightPx = constraints.maxHeight
+                        // 与图片及列表底栏沿用同一操作视口基线，空间不足时优先保留视频操作。
+                        val minimumContentHeightPx = with(LocalDensity.current) { 96.dp.roundToPx() }
                         if (state is ProbeState.Probing) {
                             key(state.sessionId) {
                                 SharedVideoProbeWebViewLayer(
@@ -150,22 +161,39 @@ fun VideoExtractPage(
                                         }
                                     },
                                     onLoadEvent = { event -> session.onLoadEvent(state.sessionId, event) },
+                                    // 内容错误仅在当前文档仍提取时终结；日志不输出站点文案或资源信息。
+                                    onPageUnavailable = { documentId ->
+                                        if (session.onPageUnavailable(state.sessionId, documentId)) logW("VideoProbe") {
+                                            "网页不可继续提取 sessionId=${state.sessionId} documentId=$documentId reasonCode=site_error_page"
+                                        }
+                                    },
                                 )
                             }
                         }
                         if (!interactive) {
-                            Column(Modifier.fillMaxSize().verticalScroll(resultScroll),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                if (state is ProbeState.Success) {
-                                    Success(videoExtractVm, state.candidate) { permissionPending = it }
+                            Column(Modifier.fillMaxSize()) {
+                                // 结果占满广告以外的剩余高度：短内容留白靠底，长内容在广告上方滚动。
+                                Column(
+                                    modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(resultScroll),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    if (state is ProbeState.Success) {
+                                        // 权限等待继续由页面抑制广告请求及呈现，不改变下载提交逻辑。
+                                        Success(videoExtractVm, state.candidate) { permissionPending = it }
+                                    }
                                 }
-                                // 展开时整个广告槽离场并释放，不能只依赖 suppressed 隐藏已有 View。
+                                // 唯一底栏在滚动区外；展开网页时随前景移除并释放，零高状态不预留空槽。
                                 placement?.let { adPlacement ->
-                                    PageAdSlot(adSession, adPlacement, requestEnabled = !permissionPending,
+                                    MediaAdFooter(
+                                        session = adSession,
+                                        placement = adPlacement,
+                                        availableHeightPx = availableHeightPx,
+                                        minimumContentHeightPx = minimumContentHeightPx,
+                                        blocked = permissionPending,
                                         canReveal = !permissionPending && !resultScroll.isScrollInProgress,
-                                        retainOnDispose = false,
-                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
+                                        contentPadding = PaddingValues(horizontal = 16.dp),
+                                    )
                                 }
                             }
                         }

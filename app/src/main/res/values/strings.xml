@@ -15,6 +15,8 @@
     <string name="host_video_probe_loading">网页加载中（%1$d%%）</string>
     <string name="host_video_probe_waiting">网页已加载，等待视频请求</string>
     <string name="host_video_probe_timeout">自动提取超时，未识别到视频</string>
+    <!-- 页面内容错误只给出通用失败提示，沿用宿主资源前缀。 -->
+    <string name="host_video_probe_failed">视频提取失败</string>
     <string name="host_video_probe_network">网页加载失败，请检查网络连接</string>
     <string name="host_video_probe_network_timeout">网页连接超时，请重试</string>
     <string name="host_video_probe_http">网页加载失败（HTTP %1$d）</string>
