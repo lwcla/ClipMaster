@@ -10,15 +10,17 @@
 
 ## 目标与范围
 
-### 0.9.20 版本递增与 GitHub 构建发布验收（2026-11-05，实现中）
+### 0.9.20 版本递增与 GitHub 构建发布验收（2026-11-05，已完成）
 
-- 按用户要求将 `versionName` 从 `0.9.19` 递增至 `0.9.20`，`versionCode` 从 `55` 递增至 `56`，提交并普通推送到 `main`，触发既有 GitHub Actions 构建和发布；预期标签为 `v0.9.20-56`，需确认构建 job、APK 签名校验、附件上传、mapping 留存和 Release 创建全部成功。
+- 按用户要求将 `versionName` 从 `0.9.19` 递增至 `0.9.20`，`versionCode` 从 `55` 递增至 `56`，提交并普通推送到 `main`，触发既有 GitHub Actions 构建和发布；标签 `v0.9.20-56` 已发布，构建 job、APK 签名校验、附件上传、mapping 留存和 Release 创建全部成功。
 - 基线为已推送的资源前缀修复 `340002a`；复用 app 静态版本、base/general 派生版本、BuildConfig、APK 命名和 `github_release_version.py`。本轮仅修改版本元数据及方案记录，不新增组件、类、方法、独立业务规则或重复版本常量单测；版本码的中文注释同步更新。
 - 验证计划：本地按 CI 国内 AdMob 配置运行完整 `:app:assembleRelease`，复核 Lint、R8、APK 版本和签名；运行 8 项版本脚本测试、真实版本比较及 `git diff --check`。业务代码未再变化，不重复上一轮 393 项 app 单测或设备交互测试；云端成功与实际 Release 附件另行核实，不以本地通过或推送成功代替。
 - 日志与诊断计划：沿用 Gradle、版本脚本和 Actions 的任务状态/低敏分类，记录源码 SHA、run ID、tag、附件名称及摘要；禁止输出签名配置、凭据或用户内容。无新增持久化字段、备份协议、运行时日志或 keep 规则，沿用原能力。
-- 工作区边界：继续使用当前干净的独立 worktree，保留原工作区其他功能改动。云端验收后将最终运行和 Release 结果补回本节，并单独提交记录；文档补录不再次触发 Android 构建。
+- 工作区边界：继续使用当前独立 worktree，保留原工作区其他功能改动。云端验收结果已补回本节，单独提交记录；文档补录不改变版本，因此版本门禁将跳过 Android 构建。
 - 本地验证：`.\gradlew.bat :app:assembleRelease --offline --console=plain --no-daemon --no-parallel --max-workers=2 '-Pkotlin.compiler.execution.strategy=in-process' -PenableAdmobDebugAdFeature=false -PenableAdmobReleaseAdFeature=true -PenableCsjDebugAdFeature=false -PenableCsjReleaseAdFeature=false -PenableUniadDebugAdFeature=false -PenableUniadReleaseAdFeature=false -PappDistribution=domestic` 成功（3m 40s），Lint 报告为 `No issues found.`，R8/打包通过。`apksigner verify --verbose` 确认 APK v2 签名有效，`aapt dump badging` 与 metadata 均为 `com.cla.clip.master / 0.9.20 / 56`；mapping 保留在 `app/build/outputs/mapping/release/mapping.txt`。
-- 发布门禁验证：`python -m unittest discover -s scripts -p test_github_release_version.py` 的 8 项测试通过，真实版本比较为 `changed=true / v0.9.20-56`，`git diff --check` 通过；构建日志为 `build/release-0.9.20-local.log`。保留已有 AGP/Kotlin/隐藏接口警告，云端验收待推送后记录。
+- 发布门禁验证：`python -m unittest discover -s scripts -p test_github_release_version.py` 的 8 项测试通过，真实版本比较为 `changed=true / v0.9.20-56`，`git diff --check` 通过；本地构建日志为 `build/release-0.9.20-local.log`。保留已有 AGP/Kotlin/隐藏接口警告，未阻断本地或云端构建。
+- 源码与云端验收：版本提交 `aaac206a33d9dee6a457f0dcb98611ca323bb9b8` 已普通推送 `main`；对应 [Actions 42015825378](https://github.com/lwcla/ClipMaster/actions/runs/42015825378) 最终为 `completed / success`，`check-version` 和 `build` 均成功，Release 构建日志为 `BUILD SUCCESSFUL in 8m 49s`，包含 `lintVitalRelease`、`minifyReleaseWithR8` 和 `assembleRelease`。APK 签名校验、APK 上传、mapping 保存和 Release 发布步骤全部成功。
+- 发行产物验收：[GitHub Release v0.9.20-56](https://github.com/lwcla/ClipMaster/releases/tag/v0.9.20-56) 为正式公开发布，非草稿、非预发布，tag 指向上述版本提交。附件 `ClipMaster-v0.9.20-admob.apk` 状态为 `uploaded`，大小为 5,540,358 字节，GitHub 返回 SHA256 为 `9e386da2b038594cf464b87d93506cfa1ce4b71c616cd3bffdbcbfaf669e8ef4`；Actions 的 `ClipMaster-release-admob` 和 `ClipMaster-release-admob-mapping` 产物均存在且未过期，按既有策略分别保留 30 天和 90 天。云端签名由成功的校验步骤确认，本轮未重复下载云端 APK 或执行设备安装验收。
 
 ### 0.9.19 Release 资源前缀修复（2026-11-05，已完成）
 
@@ -412,6 +414,7 @@ public 仓库 README 作为人可读发布页维护，至少包含最新版版�
 
 ## 变更记录
 
+- 2026-11-05：完成 `0.9.20 / 56` 云端验收，记录成功的 Actions 运行、源码与 tag 对应关系、正式 Release、APK 摘要及 mapping 留存；补录结果以区分实际构建发布成功与单纯推送成功。
 - 2026-11-05：按用户要求准备 `0.9.20 / 56`，使用已修复资源前缀的主分支重新触发 GitHub 完整构建和发布，明确本地检查与云端验收、Release 附件核对及记录补录边界。
 
 - 2026-11-05：完成 21 个媒体字符串的 `host_` 前缀和全部引用修复，完整 Release/Lint/R8、393 项 app 单测、Debug/仪器源码编译、APK 签名及版本核验通过；记录本机参数/依赖缓存处理、产物摘要和同版本推送的云端门禁边界。
