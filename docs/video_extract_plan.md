@@ -2,9 +2,168 @@
 
 # 视频提取功能方案
 
+## 视频下载相关页面广告统一靠底（2026-11-05，已完成）
+
+已按用户追加要求完成视频下载页及其他视频提取相关页面的广告位置调整。沿用上一轮已确认的固定底栏布局，不修改广告资格或下载流程。检查路由与全部视频广告位后，当前视频流程只有 `VideoExtractPage` 和 `VideoDownloadPage` 两个页面；下载中、M3U8 合并中、成功结果是后者的状态分支，不存在额外独立的结果页或历史页需要改造。
+
+### 接入范围与复用
+
+| 页面/阶段 | 最终广告位置与规则 |
+| --- | --- |
+| 视频提取 | 沿用上一轮固定底栏；交互查看网页、Idle、失败等不满足原资格时无广告 |
+| 视频下载中、合并中 | 共用进度广告位，固定底部；摘要、进度和提示在上方独立滚动 |
+| 视频下载成功 | 原结果广告位固定底部，成功播放入口仍在内容区域 |
+| 视频准备、失败、任务不存在 | 沿用原无广告规则，内容占满可用区域 |
+
+- 当前 video package 复用 `videoDownloadAdPlacement`、`rememberPageAdSession(taskId to placement)`、`contentScroll` 及现有状态展示方法，不改 ViewModel、Worker、任务观察、重试或播放动作。进度百分比不参与广告会话身份，下载切合并不重复请求。
+- app 共享层继续复用 `MediaAdFooter`、`MediaAdFooterPolicy`、`SecondaryPageScaffold` 和 `PageBackground`；共享广告完整契约见 [广告主方案](ad_module_plan.md#视频提取页复用固定媒体广告底栏2026-11-05已完成)。不新增视频专用底栏，不把下载状态塞入共享组件。
+- 广告 API 模块只提供位置与请求契约；全仓检索三个视频广告位未发现其他页面直接呈现。详情页只是提取入口，其详情广告属于独立页面布局，保持现有行为。
+- `VideoDownloadPage` 的 `PageBackground` 内以有界 `BoxWithConstraints` 测得可用高度；外层 `Column` 中，摘要与状态放入 `weight(1f)` 的滚动区，唯一底栏作为后续兄弟节点。短内容自然留白，长内容可滚动到底，广告不覆盖内容。
+- 接入共享底栏的 96dp 最小内容视口、16dp 横向留白以及已加载素材放不下时释放的规则；无广告时零占位。页面补尚未消费的底部 `mandatorySystemGestures`，普通导航栏仍由骨架消费，不叠加固定尺寸或第二份导航栏留白。
+- 页面方法和新增/修改变量、回调补齐简体中文注释。仅调整当前入口的结构编排，不新增业务逻辑，不借机拆分既有状态 UI 或修改其外观。
+
+### 实施步骤与验证
+
+- 2026-11-05 真机补充验收（已完成）：用户已要求安装并验证下载、合并和成功三阶段。新增仅显式传入 `videoAdDeviceQa=true` 才运行的 `VideoDownloadAdDeviceTest`，复用正式页面、ViewModel、广告宿主及当前隐私/广告设置，用内存 DAO 提供合成阶段；不写下载表、不请求视频、不播放媒体。仅入队一个负数测试任务对应的延迟 Worker 占位，保证生产调度观察契约，结束后只取消该占位；嵌套 finally 保证页面清理异常时仍尝试取消，若测试进程被强杀而残留，负数输入不对应任何正式任务，之后运行只会查无任务并失败。使用真实 SDK 广告测量与合成页面截图，检查底部安全区、阶段切换、内容手势和关闭回收；截图只含此测试页。没有生产逻辑改动，不新增 JVM 规则测试或采用 TDD；该依赖设备与实时广告填充的验收不纳入默认自动回归。
+
+- [x] 调整 `app/src/main/java/com/cla/clip/master/ui/page/video/VIdeoDownloadPage.kt`，将滚动内容与 `MediaAdFooter` 分开，接入安全区与剩余高度。
+- [x] 运行 `.\gradlew.bat :app:testDebugUnitTest --tests '*MediaTaskAdPolicyTest' --tests '*MediaAdFooterPolicyTest' --tests '*VideoDownloadStartPolicyTest' --tests '*VideoDownloadFailureMessageTest' :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin :app:assembleDebug --init-script build\review-build-isolation.gradle --console=plain`，核对报告与编译结果。
+- [x] 完成本轮独立差异审查，确认三个下载阶段共用固定布局、阶段身份与失败重试不变；`git diff --check` 通过并同步文档状态。代码基线及验证证据保存在忽略的 `build/video-download-ad-footer/`。
+
+单测门禁：生产修改为纯 Compose 布局/Insets 接线，不新增纯规则或测试依赖，不采用 TDD；既有资格/空间/下载策略测试用于防止流程回归。用户追加要求后新增上述可选设备仪器用例，真实执行正式下载页面与 SDK 广告，专用合成内容截图不包含用户下载数据。没有通过数据库创建实际下载任务，也不能将合成阶段布局验收等同于 Worker 下载/合并链路测试。小屏/大字体、其他导航模式和设备矩阵仍为验证边界。
+
+### 实施结果与验证边界
+
+- 本轮生产改动只涉及 `VIdeoDownloadPage.kt`；复用已有共享底栏，无新增组件/类/方法。新增高度变量、底栏回调与页面布局说明均有简体中文注释，原业务状态分支与操作方法保持。提取页已在上一轮接入，不重复修改；当前 video package 无直接 `PageAdSlot` 接入，两个视频页面都通过固定底栏呈现。
+- 上述 Gradle 命令 `BUILD SUCCESSFUL`，24 秒完成。`MediaTaskAdPolicyTest` 5 项、`MediaAdFooterPolicyTest` 3 项、`VideoDownloadStartPolicyTest` 2 项、`VideoDownloadFailureMessageTest` 1 项，共 11 项，失败/错误/跳过均为 0；app 与 androidTest Kotlin 编译、Debug 打包通过。输出为 `build/video-download-ad-footer/verification.log`，APK 为 `app/build/review-20261011/outputs/apk/debug/ClipMaster-v0.9.19-admob-debug.apk`。
+- 独立只读审查未发现可确认的 Critical / Important / Minor 问题。检查覆盖高度约束、滚动兄弟布局、Insets 消费、底栏移除释放、下载/合并共享位置及成功切换身份、空态；既有下载观察、重试、播放和共享底栏内部策略不作额外重构。
+- 补充真机验收：已用 `adb install -r` 安装当前 Debug APK 与测试 APK，保留应用数据。三星 SM-G9730 / Android 12 / 1440×3040 / 当前字体与手势导航模式下，两次运行专项用例均 `OK (1 test)`；首次 18.939 秒，清理与状态同步加强后的最终版本 12.564 秒。测试源码只新增 `VideoDownloadAdDeviceTest` 和专用测量/截图方法，所有新增方法、变量均补中文注释；独立审查提出的异常清理问题已修正。
+- 三阶段真实 `Test Ad` 完整边界均为 `(96, 2428)–(1344, 2960)`，没有裁切；安全底边为 2960px，下方 80px 为系统手势区。内容区域到 2428px 截止，广告与内容不重叠，短内容后的余白由内容区吸收。下载切合并保持同一个原生广告 View，成功换成独立结果广告。点击宿主关闭控件后，原生 View 移除且内容区域扩展到 2960px，无残留广告空槽；未点击广告 CTA。
+- 长标题与描述更新后向上滑动，广告位置保持；该素材高度下实际最大滚动距离为 0，因此本轮只验证内容变化及手势后定位，**不声称已覆盖真正滚动中的固定效果**。横屏、大字体、三键导航、小屏、多窗口、无填充/超高素材及实际下载/合并执行链路仍未覆盖。未重复全量 app 单测或 release/R8，原因是本轮只新增可选设备测试，无生产外部协议、反射或持久化变动。
+- 本轮构建命令：`.\gradlew.bat :app:compileDebugAndroidTestKotlin :app:assembleDebug :app:assembleDebugAndroidTest --init-script build\review-build-isolation.gradle --console=plain`，最终 `BUILD SUCCESSFUL`（7 秒）。设备命令：`adb -s RF8NA2N81BV shell am instrument -w -r -e videoAdDeviceQa true -e class com.cla.clip.master.ui.page.video.VideoDownloadAdDeviceTest com.cla.clip.master.test/androidx.test.runner.AndroidJUnitRunner`。构建/仪器日志与最终截图、坐标记录保存在忽略的 `build/video-download-ad-footer/device-build.log`、`device-test-final.log` 和 `device-final/`。
+
+### 日志与诊断计划、数据边界
+
+纯布局不新增日志，沿用共享宿主的加载、关闭和释放诊断及现有下载任务日志，不打印重组、滚动帧、标题、完整媒体地址、授权 URI、Cookie 或任务实体。没有新状态协议、反射、序列化、持久化或备份字段，不新增 keep/备份适配，不运行完整 release/R8。当前工作区其他视频错误页、图片文档等改动保留，不自动提交或推送。
+
+## 视频提取页广告固定底部（2026-11-05，已完成）
+
+已按用户确认方案完成“广告放在最底部，不直接跟在内容下边”，编译、定向单测和合成真机回归通过，真实测试广告的底部定位及手势区避让已验收。沿用当前功能分支并保留已有错误页修复，不自动提交；完整设备矩阵缺口见本节验证结果，下方历史记录继续有效。
+
+### 目标、现状与方案选择
+
+- 目标：广告展示时固定在页面可用区域底部、系统导航栏上方；短内容与广告之间由剩余空间隔开，长内容在广告上方独立滚动，广告不随结果滚动，也不覆盖内容。
+- 修改前 `VideoExtractPage.kt` 把 `Success` 和 `PageAdSlot` 放进同一个 `verticalScroll(resultScroll)` 的 `Column`，两者按 12dp 间距依次排列，因此广告紧跟内容，而不是定位到底部。
+- 已在既有有界内容区内采用“上方结果滚动区占满剩余高度 + 下方固定广告底栏”的兄弟布局。复用 `MediaAdFooter` 的自然测高与空间不足释放能力，单一 WebView 宿主保留原组合位置。
+- 对比：`SecondaryPageScaffold.bottomBar` 也能固定到底部，但本页需要结合摘要、操作区之后的剩余高度保护网页/结果视口；在现有内容区内编排更直接。滚动容器内增加固定空白不能适配屏幕和内容长度；直接叠放到底部会遮挡内容，均不采用。
+- 上一轮范围为视频提取页及复用底栏所需的兼容参数调整；技术沿用 Kotlin / Compose。后续下载页扩展见顶部章节；提取算法、错误页提前失败、下载权限/任务创建和广告来源配置维持现有行为。
+
+### 复用检查与组件职责
+
+1. 当前 video package：继续使用 `VideoExtractPage`、`VideoProbeControls`、`Success`、`videoExtractAdPlacement` 和已有 `resultScroll`；不新增页面状态机、ViewModel 或广告资格规则。
+2. 当前 app 共享组件：复用 `SecondaryPageScaffold`、`PageBackground`、`MediaAdFooter`、`MediaAdFooterPolicy`、`PageAdSlot` 和 `rememberPageAdSession`。现有 `MediaAdGrid` 已采用内容与底栏分离布局，可沿用结构，但其图片索引/网格接口不适合视频结果，不整体接入。
+3. 共享模块与全仓兜底：广告 API/来源模块负责请求和资源契约，不应接管页面布局；`FixedListAdLayout` 是列表上方广告且依赖列表内容状态，也不适合作为视频底栏。无需新增平行布局组件或修改 SDK 适配器。
+4. 底栏的兼容参数、空间与释放规则只在 [广告主方案的固定媒体底栏章节](ad_module_plan.md#视频提取页复用固定媒体广告底栏2026-11-05已完成) 维护；本页仅记录接入差异。
+
+### 页面接入与边界
+
+- 保留“摘要 / 状态与操作区 / 剩余内容区”的外层结构。在原 `Box(Modifier.weight(1f).fillMaxWidth())` 内取得实际有界高度，非交互模式的前景布局改为：结果区域 `weight(1f)` 且使用原 `resultScroll`，之后为唯一 `MediaAdFooter`；不把底栏放回结果滚动容器。
+- `SharedVideoProbeWebViewLayer` 继续在同一个组合位置、同一个 session key 下；广告加载、关闭或结果尺寸变化仅重新布局，不重建网页、不重新加载 URL、不重置提取计时。
+- 短内容顶部位置维持现状，剩余空间由上方区域吸收；长内容仍能滚动到最后一个操作。底栏按素材真实高度占位，不硬编码广告高度，不增加常驻空白或额外固定底部垫高。
+- 视频调用方传入 `PaddingValues(horizontal = 16.dp)`，继续继承 `PageBackground` 的共同外边距；不叠加底栏原默认 12dp。普通导航栏由 `SecondaryPageScaffold` 统一避让，页面内不重复增加 `navigationBarsPadding`；页面只补尚未消费的底部 `mandatorySystemGestures`。真机发现三星手势模式的导航栏 Insets 为 0、必需手势区为 80px，仅依赖骨架会让提示条压住广告下沿；局部兜底跟随系统 Insets，不硬编码 80px，也不修改其他页面骨架。
+- 底栏可用高度取摘要、操作区之后的真实剩余区域；结果至少保留 96dp 可滚动操作视口，沿用已有媒体/列表底栏基线。小屏、横屏或大字体下素材放不下时不呈现广告，不能压缩、裁切广告或挤掉业务操作；超高素材的锁存与恢复时机以共享底栏既有规则为准。
+- 保留 `videoExtractAdPlacement`：自动提取且有可见描述、或提取成功时才可能展示；Idle、失败、交互查看网页等原无广告状态仍无广告。广告未加载、无填充、失败、关闭或不满足显示资格时零占位。
+- 查看提取网页时移除整个底栏组合并释放槽，网页获得剩余空间；收起后按原会话与资格规则接入。权限等待沿用现有请求/呈现抑制，保留 `retainOnDispose = false` 的释放边界；不以布局调整新增重试或刷新请求。
+- 保留页面触摸守卫和滚动期间延迟广告布局变更的规则；继续以页面生命周期控制请求与释放。验证摘要/操作区滚动、结果滚动和按压期间不发生会影响当前操作的突然呈现。
+
+### 单任务实施清单
+
+本节按 `writing-plans` 组织，由当前会话按 `executing-plans` 顺序完成；方案与实现记录继续维护在本文，不另建重复计划，不自动提交。本轮独立差异基线与执行记录保存在忽略的 `build/video-ad-footer/`，避免把已有错误页修复混入审查。
+
+- [x] 调整 `app/src/main/java/com/cla/clip/master/ui/widget/media/MediaAdFooter.kt` 的兼容参数与中文注释，按广告主方案保留默认图片行为；`MediaAdGrid.kt` 仅适配最小内容高度参数名，不调整网格逻辑。现有 `MediaAdFooterPolicy.kt` 的判定公式不变，只修正图片专属注释的适用范围。
+- [x] 调整 `app/src/main/java/com/cla/clip/master/ui/page/video/VideoExtractPage.kt`：把广告移出结果滚动区并接入上述底栏；按剩余区域传入高度、96dp 最小视口和 16dp 横向留白，沿用既有资格、会话和回调。新增/修改的方法、变量、回调与关键分支补齐简体中文注释。
+- [x] 运行定向 JVM 回归、app 与 androidTest Kotlin 编译、Debug 与测试包打包；最终命令及结果见下文。本轮单测门禁判断为纯布局接线、Insets 与兼容参数调整，不新造 JVM 规则测试、不强制 TDD；空间公式和广告资格没有变化。
+- [x] 三星真机复跑现有 `VideoExtractPageTest` 的网页显隐、键盘、成功及失败接线用例；真实测试广告验证固定底边与系统手势区避让，失败态无广告。下表为完整验收目标，本轮实际覆盖与缺口分别记录在验证结果中。
+- [x] 核对仅有一个广告槽、图片底栏默认边距未变、WebView 身份未变；完成四文件独立审查、两份文档同步与 `git diff --check`，保留当前工作区已有错误页修复。
+
+### 验收标准与风险
+
+| 场景 | 验收结果 |
+| --- | --- |
+| 成功态短标题、短结果 | 广告底边贴合页面内容安全区底边；内容与广告之间自然留出剩余空间 |
+| 长描述、长候选名、动态大字体 | 内容可以完整滚动，下载操作可达；广告位置不跟随结果滚动 |
+| 延迟加载、加载失败、关闭广告 | 成功加载后才占实际高度；不覆盖内容；失败/关闭后没有空槽 |
+| 查看网页、收起、失败重试 | 查看时无广告，触摸/键盘可用；显隐不因底栏迁移额外重载网页，失败状态不残留广告 |
+| 横屏、小屏、系统导航模式切换 | 系统栏只避让一次；素材过高时让位给内容，不能裁切或让操作区归零 |
+| 滚动/按压中广告完成加载，后台与返回 | 既有交互保护、请求与释放规则有效，无重复槽或新增循环请求 |
+| 图片提取/图片任务回归 | 底栏默认 12dp、96dp 最小网格视口、空间保护和关闭行为保持 |
+
+本次没有新增独立纯规则，主要风险是 Compose 测量、SDK 原生素材高度与窗口 Insets，需以页面/设备验收覆盖。现有页面仪器测试不包含广告底边坐标断言，不能把它通过当作本需求已经验收；需使用测试广告检查短/长内容时实际底边与遮挡情况，不点击广告 CTA。
+
+### 实施与验证结果
+
+- 生产改动为 `VideoExtractPage`、`MediaAdFooter`、`MediaAdGrid` 的布局/接口接线以及 `MediaAdFooterPolicy` 的职责注释；没有新增组件、类、业务规则或测试源码。页面采用剩余结果视口加固定底栏，单一网页宿主和原广告会话保留；默认图片边距与策略公式保持。
+- 最终命令：`.\gradlew.bat :app:testDebugUnitTest --tests '*MediaTaskAdPolicyTest' --tests '*MediaAdFooterPolicyTest' :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin :app:assembleDebug :app:assembleDebugAndroidTest --init-script build\review-build-isolation.gradle --console=plain`，`BUILD SUCCESSFUL`。资格回归 5 项、空间策略回归 3 项，失败/错误/跳过均为 0。日志为忽略的 `build/video-ad-footer/verification-final.log`；首次沙箱无法访问既有 Gradle 缓存锁，批准工作区外缓存访问后完成验证。
+- 三星 SM-G9730 / Android 12 保留数据覆盖安装最终 Debug 包，以 `adb -s <device> shell am instrument -w -r -e class com.cla.clip.master.ui.page.video.VideoExtractPageTest com.cla.clip.master.test/androidx.test.runner.AndroidJUnitRunner` 运行已有合成用例，最终 `OK (2 tests)`。覆盖三行长标题、真实网页点击、键盘、显隐同实例、超时重试、STOP/START、候选成功以及错误页双模式接线；日志为 `build/video-ad-footer/device-final.log`，不访问真实剪贴/下载仓库。
+- 用户另行明确授权只截取视频提取页。真实 `Test Ad` 在自动提取阶段加载后位于底部，与短内容之间自然留白。首轮截图发现设备导航栏 Insets 为 0，必需手势区为 80px；本页补尚未消费的底部手势 Insets 后，最终 `safe.png` 确认广告完整位于手势条上方。原始失败布局 `loading.png` 与最终布局均保存在忽略的 `build/video-ad-footer/`，不硬编码设备像素，也不提交含页面标题的截图。
+- 该真实网页仍按原十秒预算超时，本轮不把它记录为视频提取成功；失败状态没有残留广告。尝试关闭验收时，新一轮快照尚未出现广告关闭按钮，因此没有点击未知位置，也不宣称关闭路径实机通过；未点击广告 CTA、未创建下载任务。验收结束退出网页，并恢复临时切换的键盘语言。
+- 四文件独立只读审查无可确认的 Critical / Important / Minor 问题；手势区补充由失败截图、系统 Insets 证据、最终编译/回归及截图复核验证。审查明确原摘要/操作区惯性滚动的门禁与此前错误页修复属于既有行为，本轮不扩大为广告门禁或提取规则重构。`git diff --check` 通过。
+- 未完成完整横屏、超高素材、三键导航、图片页面视觉、深色模式及多设备矩阵；现有策略单测与默认参数兼容检查不能替代这些实机边界。当前未新增 JVM/UI 测试，不运行全量 app 单测或 release/R8，理由是纯布局/Insets 接线且没有反射、序列化、SDK 适配或持久化变化。以上为已记录验证边界，不把未运行项写为通过。
+
+### 日志与诊断计划、数据边界与后续待办
+
+- 纯布局迁移不新增运行时日志，避免在重组、测量和滚动回调刷屏。复用广告宿主的 DEBUG 关闭/释放与状态诊断、既有加载失败 WARN，以及 `VideoProbe` 生命周期日志；验证显隐与后台切换没有新增请求或重复释放。
+- 诊断只使用既有广告位、session、状态、reasonCode 等低敏字段；禁止打印网页正文、标题、完整 URL、Cookie、候选地址或广告素材。位置验收通过受控测试广告截图/布局检查完成，不把真实用户内容写入日志。
+- 无数据库、设置、备份或外部协议变化；不需新增备份适配、keep 或 R8 规则。此纯布局范围拟不运行完整 release/R8；如实施实际触及 SDK/反射/协议则重新评估。
+- 后续待办：补齐上文未覆盖的关闭、横屏、素材高度、图片页与多设备矩阵；若 96dp 在目标窗口的大字体验收中仍影响操作，先调整方案并评估共享调用方，不能通过裁切广告解决。
+
+## 抖音错误页提前失败（2026-11-05，已完成）
+
+用户已确认仅做错误页提前失败，对新增失败只提示“视频提取失败”，详情接口兜底后续再加。本节为本轮实施方案与进度记录，下方已完成验收保留为历史证据。沿用当前工作区保留既有文档修改，从当前 main 创建 `codex/video-error-early-failure` 分支，不自动提交；按用户已确认范围直接实施，不重复请求批准。
+
+### 范围、复用与接口
+
+- 只在已加载的抖音分享页识别本轮已核实的“抱歉出错了 / 请尝试在抖音内观看”错误组件；自动与交互模式均结束该轮、取消计时和扫描并释放网页，复用现有失败区、重新提取和查看网页重试入口。新失败只映射资源文案“视频提取失败”；其他既有网络/HTTP/SSL/超时文案不作全局调整。
+- 继续复用 `ProbeWebView` 原生加载/释放、`VideoProbeSession` 会话/文档身份、`VideoProbeMessageMapper` 和共享状态组件。站点错误属于页面内容，不混入共享原生网络错误枚举；图片页保持现有行为，不引入新的 Composable。
+- 新建视频领域 `DouyinErrorPagePolicy.kt`，以 `isDouyinSharePage(url: String?): Boolean` 校验完整域名白名单与数字作品路径；非法地址、伪造子域名、非分享页均不探测。`DouyinErrorPageScript.kt` 只读取 `.special-case-wrap .special-case-container` 内可见的标题、副标题、打开按钮，严格匹配完整错误文案；存在视频源时不提前判错。选择器来自本次公开分享组件脚本核查，站点未来改版时宁可回到原超时，不宽泛搜索页面全文。
+- `DouyinErrorPageProbe.kt` 在主线程有界调用 JS，只接收布尔快照；相隔 500 ms 的两次连续肯定结果才确认，单次回调上限 1 秒、每文档总预算 10 秒。空值、脚本异常、结构变化、正常引导及短暂错误都不直接失败；原自动十秒总预算不延长。没有新增 JS bridge 或 JSON 反射模型，布尔返回协议不依赖 R8 保留名称，无需新 keep；完整 release/R8 构建本轮不做。
+- 视频适配层持有当前文档扫描 Job，主文档切换、原生失败、候选成功、STOP/离场及时取消。`VideoProbeSession.onPageUnavailable(expectedSession, expectedDocument): Boolean` 仅接受当前已完成文档且仍在提取的回调，成功优先于迟到错误，失败后的旧超时不能改写新失败原因。已明确错误页退出后可显式重试，不自动反复加载。
+
+### 实施步骤与测试门禁
+
+本节作为 `writing-plans` / `executing-plans` 的单任务实施记录，规格即上述已确认范围；优先维护既有主文档，不新建重复方案。按仓库约定不自动提交，现有主机目录保留用户诊断文件，构建沿用 `build/review-build-isolation.gradle`。改动由当前会话实现，完成后做独立审查。
+
+- [x] 核对现有视频、共享网页、图片扫描与预览提取能力；无可直接复用的站点错误判定，复用 JS 回调模式但不依赖其他业务的私有封装。修改前 `:app:testDebugUnitTest --tests '*VideoProbe*Test'` 基线通过。
+- [x] 先写 URL 边界、当前文档提前失败、候选优先、旧导航/暂停/重试拒绝、统一提示的 JVM 回归；添加无行为的接口骨架以使测试可执行，观察预期断言失败后实现。
+- [x] 用合成 WebView 错误区验证真实 DOM：正确组件命中，隐藏组件、评论中的同文案、只有打开按钮、已有视频源不命中；短暂错误不直接结束。补页面接线测试，确认完成加载后在十秒前显示“视频提取失败”、网页释放且重试入口保留。
+- [x] 实现领域判定、JS 快照、有限扫描及页面/会话接线；新增和修改的方法、字段、变量、回调均补中文注释。
+- [x] 运行 `:app:testDebugUnitTest :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin`，构建并在已授权真机运行定向合成用例；按现有两条抖音样例补手动验证，证据仅保留安全状态与耗时。
+- [x] 独立审查本次差异，无阻塞项；核对 `git diff --check`、文档状态与变更范围。
+
+审查重点：普通 App 引导/评论不能误判；隐藏祖先或已有媒体源不能提前失败；两次快照之间恢复正常须清空确认；旧文档或停止后回调不能影响新会话；错误确认与候选成功竞态不能覆盖已成功结果。
+
+### 日志与诊断计划
+
+仅在会话接受明确错误时新增一条 WARN，字段为 sessionId、documentId、固定 reasonCode `site_error_page`，耗时沿用网页释放日志；不逐次打印扫描、网页文本、HTML、URL、资源 ID、Cookie 或异常 message。JS 异常/超时回到既有提取预算，不新增噪声日志。无数据表、设置、下载元数据、备份或外部持久化协议变化。详情接口兜底继续保留为后续工作。
+
+### 实施与验证结果
+
+- 已完成领域 URL 策略、布尔 DOM 脚本、有界扫描器及会话/页面接线；新增 `PageContent` 仅映射“视频提取失败”。复用共享 WebView、既有失败与重试组件；无新增 Composable 或共享原生错误类型。新增/修改方法、变量与关键分支均有简体中文注释。
+- 选择性 TDD：新增 6 条 JVM 回归，先观察 3 条预期行为断言失败再实现通过；真实 WebView 的 5 条 DOM 用例先观察 2 条预期失败，再补双模式页面接线用例并观察未接线时等待失败。测试发现 `loadDataWithBaseURL` 的空 historyUrl 使原生 URL 为 `about:blank`、与 JS 来源不一致，已仅修正合成 fixture，不放宽生产来源校验。
+- 最终执行 `.\gradlew.bat :app:testDebugUnitTest :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin :app:assembleDebug :app:assembleDebugAndroidTest --init-script build\review-build-isolation.gradle --console=plain`，`BUILD SUCCESSFUL`；app 全量 399 条 JVM 用例零失败、错误和跳过。
+- 三星 SM-G9730 / Android 12 真机覆盖安装最终 `0.9.19` Debug APK，保留应用数据。新增 DOM 与页面用例 `OK (6 tests)`；页面与共享生命周期回归 `OK (8 tests)`，剔除重复的双模式用例后共 13 条不同设备用例通过。最后注释/fixture 整理后重跑新增 6 条仍通过。设备命令为 `adb -s <device> shell am instrument -w -r -e class <testClasses> com.cla.clip.master.test/androidx.test.runner.AndroidJUnitRunner`，测试类为 `DouyinErrorPageProbeTest`、`VideoExtractPageTest`、`ProbeWebViewTest`、`ProbeLifecycleEffectTest`，没有运行全仓所有设备测试。
+- 原失败抖音记录真实验收：自动模式命中 `site_error_page` 后释放 WebView，总耗时 `2533 ms`；“查看网页并重试”交互模式同样命中，耗时 `2148 ms`。均显示“视频提取失败”且保留重试入口；日志未出现这两轮的超时或候选接受，确认无需等待十秒。
+- 对照记录本次环境出现变化：可见重试实际显示普通播放器封面与“打开看看”引导，不再是此前 Chrome 的错误页。自动轮次未捕获媒体、按原十秒预算超时；交互轮次正常保留网页，没有被新规则提前判错。未观察到该轮视频候选成功，不能宣称对照视频已在应用内完成提取或下载；当前结论仅为错误页提前失败与普通页面不误判。
+- 构建/设备证据保存在忽略的 `build/video-error-validation.log`、`build/video-error-device-green.log`、`build/video-error-device-regression.log`；真实阶段与耗时为 `build/video-error-real-validation.log`，对照页面截图为 `build/video-error-control-interactive.png`。日志只保留 `VideoProbe` 阶段字段，无正文、URL、资源 ID、Cookie 或请求头；验收结束离开网页，不创建下载任务。
+- 独立只读审查无 Critical / Important 问题；已有候选、旧导航、停止与迟到回调保护符合范围。未评判的详情兜底、既有候选启发式与站点未来改版均维持本节范围，不附带扩大实现。`git diff --check` 通过；不提交或推送。规则例外仅完整 release/R8 未运行：没有新增 bridge/反射/序列化名称依赖，布尔 JS 返回不需 keep；无持久化字段，因此不需备份适配。
+
+### 后续待办
+
+- 详情接口兜底按用户要求后续独立设计；站点改版或其他错误类型需先取得对应证据，再增加精确判定，未知状态继续沿用原预算。
+
 ## 视频提取页简化与可见网页辅助提取（2026-11-04，已完成）
 
-用户已确认按本方案实施。顶部状态对应本轮增量需求；下方历史实现、验证记录描述先前版本，不能作为本轮验收结果。沿用当前工作区并创建 `codex/video-extract-visible-webview` 分支，保留已确认文档，避免另建工作树后复制本地方案和构建配置；不自动提交。2026-11-04 用户随后明确要求在已连接真机测试，本次授权覆盖下文历史记录的设备限制；此前覆盖安装保留应用数据并使用合成网页与定向用例，本次追加真实公网网页的提取、下载和播放验证。
+用户已确认按本方案实施。本节记录 2026-11-04 已完成的增量需求；2026-11-05 错误页提前失败以顶部新章节为准。沿用当前工作区并创建 `codex/video-extract-visible-webview` 分支，保留已确认文档，避免另建工作树后复制本地方案和构建配置；不自动提交。2026-11-04 用户随后明确要求在已连接真机测试，本次授权覆盖下文历史记录的设备限制；此前覆盖安装保留应用数据并使用合成网页与定向用例，本次追加真实公网网页的提取、下载和播放验证。
 
 ### 真实公网网页补充验收（2026-11-04）
 
@@ -153,6 +312,8 @@
 
 ### 数据、取舍与开放问题
 
+- 2026-11-05 用户已选择仅做错误页提前失败；自动与交互模式都结束该轮并释放网页，新增失败统一提示“视频提取失败”，最终设计与验证以顶部主章节为准，替代此前草案的具体原因文案与模式待定项。共享原生错误仍只覆盖网络、HTTP、SSL；视频领域新增内容判定，处理 HTTP 200 的明确业务错误。
+- 详情接口查询兜底延期：需要独立设计作品精确匹配、空详情/过滤原因、资源 URI 缺失及请求预算。网页错误只能说明当前网页提取无法继续，不代表所有下载路径不可用；对照视频此前可通过独立接口完整下载这一证据仍成立。
 - 显隐模式、计时版本和诊断只存在内存，不新增设置、数据库字段、备份内容或导航参数；不能恢复上一轮网页现场，失败后查看需要重新加载。已有列表预览补全和下载数据契约不变。
 - 新状态/事件仅由编译期 Kotlin 调用，不新增 JS bridge、反射、序列化或 keep 规则；本轮无需 release/R8。若实施引入这些机制，重新评估并补充验证。
 - 本次不调整候选识别算法，仍可能先命中分片、广告视频或预加载资源；看到网页和诊断后再依据证据决定下一轮修复。
@@ -440,6 +601,22 @@
 - 已在用户授权的三星真机验证透明 WebView 触摸与候选识别；脚本导航、媒体播放和其他厂商差异仍需对应设备/站点覆盖。
 
 ## 变更记录
+
+- 2026-11-05：按用户明确要求完成下载、合并、成功页面的安装与真机广告定位验收；新增可选设备用例，合成任务不写业务库，沿用真实广告资格与宿主。两轮设备测试通过，三个阶段广告底边均贴住 2960px 安全底边，关闭后零占位；补录截图与坐标证据、加强异常清理，明确实际滚动及完整下载链路未覆盖。
+
+- 2026-11-05：完成视频下载、合并和成功结果的固定底栏接入，沿用共享边距、最小视口与手势区避让；11 项定向单测、Kotlin 编译、Debug 打包、独立审查与差异检查通过。明确未进行下载页实机验收、不新建真实下载任务，并保留其他任务改动。
+
+- 2026-11-05：按用户追加要求将固定底部广告扩展到视频下载中、合并中和成功结果；核对三阶段共用下载页，记录共享底栏复用、Insets、生命周期与验证边界，开始实施。
+
+- 2026-11-05：按已确认方案完成固定底部广告，复用共享媒体底栏并保持图片默认边距；真机发现三星零高导航栏仍有必需手势区，补本页 Insets 避让后截图验证通过。8 项定向 JVM、两项现有合成真机回归、编译打包及独立审查通过；记录未覆盖矩阵，不提交已有工作区改动。
+
+- 2026-11-05：按用户要求新增视频提取页广告固定底部草案；确认现有广告与结果共用滚动容器，拟复用固定媒体底栏并保留内容优先、空间保护、资格与生命周期边界。仅更新方案，尚未实施或执行代码/设备验收。
+
+- 2026-11-05：完成抖音明确错误页提前失败及统一提示；新增 6 条 JVM、6 条设备回归并完成真机验证，原错误样例两种模式约 2.53 / 2.15 秒结束。对照分享页本次显示正常播放器，保留原等待而未误判；记录环境变化与未验证下载边界，替换草案中的待选范围与具体失败原因文案。
+
+- 2026-11-05：用户确认仅实施抖音明确错误页提前失败，新增失败统一提示“视频提取失败”，接口兜底后续再加；记录复用、领域拆分、两次快照确认、双模式终止、测试先行及隐私日志计划，进入实施。
+
+- 2026-11-05：记录用户提出的抖音明确错误页提前失败讨论，核对现有原生加载错误与 HTTP 200 业务错误的差异；将最小网页提前失败与详情接口兜底列为待选范围，说明误判保护、交互模式边界及拟验证项，未修改代码或将草案标为已实施。
 
 - 2026-11-04：按用户要求核查抖音网页播放现状，记录官方帮助/嵌入播放资料；补测已下载成功对照视频的手机 Chrome 分享页同样报错，明确网页错误与媒体可用性不可等同，保留精确页面匹配与脱敏证据，不将平台策略或过滤原因的字面推测作为根因。
 

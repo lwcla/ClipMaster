@@ -36,6 +36,8 @@ sealed interface ProbeState {
 
 /** 自动未命中与平台加载失败分开表达，避免把所有失败都归为网络问题。 */
 sealed interface VideoProbeFailure {
+    /** 站点已呈现确定错误页，仅表示当前网页提取不可继续。 */
+    data object PageContent : VideoProbeFailure
     /** 自动预算内未发现候选，不代表网站不支持。 */
     data object Timeout : VideoProbeFailure
     /** 已获知的网页加载错误，只保留分类及数值码。 */

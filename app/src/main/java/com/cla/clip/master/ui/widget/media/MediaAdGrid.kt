@@ -78,7 +78,7 @@ internal fun <T> MediaAdGrid(
                     session = session,
                     placement = placement,
                     availableHeightPx = availableHeightPx,
-                    minimumGridHeightPx = minimumGridHeightPx,
+                    minimumContentHeightPx = minimumGridHeightPx,
                     blocked = blocked,
                     canReveal = !gridState.isScrollInProgress,
                 )

@@ -8,11 +8,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.logW
@@ -56,6 +60,7 @@ internal fun SharedVideoProbeWebViewLayer(
     onSaveLinkPreview: suspend (WebView) -> Unit,
     onVideoCandidate: (VideoCandidate) -> Unit,
     onLoadEvent: (ProbeWebViewEvent) -> Unit,
+    onPageUnavailable: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // 会话诊断使用统一标签，只记录阶段和数值，不展开网页或候选数据。
@@ -64,13 +69,29 @@ internal fun SharedVideoProbeWebViewLayer(
     val coroutineScope = rememberCoroutineScope()
     // 站内导航及时取消上一文档的辅助预览，不把旧 DOM 当作正文补写。
     var previewJob by remember(sessionId) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    // 站点错误扫描属于当前文档，显隐不重启，导航/候选/STOP 必须取消。
+    var errorProbeJob by remember(sessionId) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    // 主文档身份传给业务会话，避免旧页面的异步快照结束新页面。
+    var documentId by remember(sessionId) { mutableIntStateOf(0) }
+    // STOP 直接取消读取任务，避免组合尚未移除时访问已销毁 WebView。
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
     // 每轮开始时间只用于低频诊断，不打印 URL 或候选内容。
     val startedAt = remember(sessionId) { android.os.SystemClock.elapsedRealtime() }
     // 显隐不触发此 effect，只有新轮次或离场才开始/释放探测资源。
-    DisposableEffect(sessionId) {
+    DisposableEffect(sessionId, lifecycle) {
         logD(tag) { "开始网页提取 sessionId=$sessionId" }
+        // 生命周期只控制副作用许可，不用显隐模式代替前后台判断。
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP || event == Lifecycle.Event.ON_DESTROY) {
+                previewJob?.cancel()
+                errorProbeJob?.cancel()
+            }
+        }
+        lifecycle.addObserver(observer)
         onDispose {
+            lifecycle.removeObserver(observer)
             previewJob?.cancel()
+            errorProbeJob?.cancel()
             logD(tag) { "释放网页提取 sessionId=$sessionId durationMs=${android.os.SystemClock.elapsedRealtime() - startedAt}" }
         }
     }
@@ -83,13 +104,23 @@ internal fun SharedVideoProbeWebViewLayer(
         consumeUserTouch = mode == VideoProbeMode.Automatic,
         sessionId = sessionId,
         onWebViewReady = {},
-        onDocumentStarted = { previewJob?.cancel() },
+        // 同 URL 刷新也是新文档，不允许上一页的半次确认带入新页。
+        onDocumentStarted = {
+            previewJob?.cancel()
+            errorProbeJob?.cancel()
+        },
         // 仅记录阶段变化和去重后的错误，加载百分比不刷日志。
         onLoadEvent = { event ->
             when (event) {
-                is ProbeWebViewEvent.Started -> logD(tag) { "主文档开始 sessionId=$sessionId documentId=${event.documentId}" }
+                is ProbeWebViewEvent.Started -> {
+                    documentId = event.documentId
+                    logD(tag) { "主文档开始 sessionId=$sessionId documentId=${event.documentId}" }
+                }
                 is ProbeWebViewEvent.Finished -> logD(tag) { "主文档完成 sessionId=$sessionId documentId=${event.documentId}" }
-                is ProbeWebViewEvent.Failed -> logW(tag) { "网页加载错误 sessionId=$sessionId documentId=${event.documentId} reasonCode=${event.error.kind} code=${event.error.code}" }
+                is ProbeWebViewEvent.Failed -> {
+                    errorProbeJob?.cancel()
+                    logW(tag) { "网页加载错误 sessionId=$sessionId documentId=${event.documentId} reasonCode=${event.error.kind} code=${event.error.code}" }
+                }
                 is ProbeWebViewEvent.ExternalAppBlocked -> logW(tag) { "已拦截外部应用跳转 sessionId=$sessionId documentId=${event.documentId}" }
                 is ProbeWebViewEvent.Progress -> Unit
             }
@@ -97,6 +128,12 @@ internal fun SharedVideoProbeWebViewLayer(
         },
         // 正常主文档完成后补全预览并尝试触发视频请求，显隐本身不触发第二次播放。
         onPageFinished = { view, _ ->
+            // 捕获不可变文档身份，异步结果仍需会话层校验，不仅依赖协程取消。
+            val expectedDocument = documentId
+            errorProbeJob?.cancel()
+            errorProbeJob = coroutineScope.launch {
+                if (DouyinErrorPageProbe.awaitError(view)) onPageUnavailable(expectedDocument)
+            }
             previewJob = coroutineScope.launch {
                 // WebView 真实加载后补齐链接预览，解决首轮 OkHttp/Jsoup 被 403 拦截时列表只有域名兜底的问题。
                 onSaveLinkPreview(view)
@@ -118,6 +155,8 @@ internal fun SharedVideoProbeWebViewLayer(
                 // 候选资源的站点 Cookie 沿用既有鉴权透传，不因隐藏网页而清除。
                 val cookie = android.webkit.CookieManager.getInstance().getCookie(reqUrl)
                 view.post {
+                    // 已识别候选优先于页面错误诊断，业务会话仍拒绝过期实例。
+                    errorProbeJob?.cancel()
                     // 在 WebView 所在线程构造候选，交给页面完成成功状态切换和资源释放。
                     val candidate = VideoCandidate(
                         url = reqUrl,

@@ -56,24 +56,8 @@ class VideoExtractPageTest {
             <input id="entry" placeholder="Test input" style="margin:16px;font-size:18px">
             </body></html>
         """.trimIndent())
-        // 替身返回固定预览，所有非预览业务访问都抛错以防测试误触真实业务。
-        val preview = LinkPreviewData(url, title, null, "data:image/png;base64,AA==", "测试")
-        val clips = Proxy.newProxyInstance(ClipRepository::class.java.classLoader,
-            arrayOf(ClipRepository::class.java)) { _, method, _ ->
-            when (method.name) {
-                "loadLinkPreview" -> preview
-                "upsertLinkPreview" -> Unit
-                else -> error("测试禁止仓库操作：${method.name}")
-            }
-        } as ClipRepository
-        // 下载 DAO 不连接数据库；页面若误创建任务，测试立即失败。
-        val downloads = Proxy.newProxyInstance(DownloadDao::class.java.classLoader,
-            arrayOf(DownloadDao::class.java)) { _, method, _ ->
-            error("测试禁止下载操作：${method.name}")
-        } as DownloadDao
-        // 真实 ViewModel 连接替身，完整复用页面会话和计时逻辑。
-        val vm = VideoExtractVm(compose.activity.applicationContext, DownloadRepository(downloads),
-            WebViewLinkPreviewExtractor(dagger.Lazy { clips }), clips)
+        // 两条页面验收复用相同替身边界，完整使用生产会话和计时逻辑。
+        val vm = createViewModel(url, title)
         compose.setContent {
             ClipMasterTheme {
                 VideoExtractPage(vm, url, title, onBack = {}, onNavigate = { error("不应进入下载") })
@@ -149,6 +133,63 @@ class VideoExtractPageTest {
         compose.waitUntil(10_000) { vm.probeState is ProbeState.Success }
         compose.runOnIdle { assertNull(findWebView(compose.activity.window.decorView)) }
         screenshot("success")
+    }
+
+    /** 明确错误页在自动和交互模式均提前失败，且只显示通用提示、释放网页并保留重试。 */
+    @Test fun explicitErrorPageFailsEarlyInBothModes() {
+        // 初始空白页不联网，之后直接注入合成抖音错误组件。
+        val vm = createViewModel("about:blank", "合成错误页验收")
+        compose.setContent {
+            ClipMasterTheme {
+                VideoExtractPage(vm, "about:blank", "合成错误页验收", onBack = {},
+                    onNavigate = { error("错误页不能创建下载") })
+            }
+        }
+        VideoProbeMode.entries.forEach { mode ->
+            compose.waitUntil(5_000) { vm.probeSession.pageState is VideoProbePageState.Loaded }
+            compose.runOnIdle {
+                assertEquals(mode, vm.probeSession.mode)
+                // 生产探测仍读取当前文档来源；合成号不会触发真实站点请求。
+                val view = findWebView(compose.activity.window.decorView)!!
+                // historyUrl 同步原生导航地址与 JS 来源，不放宽生产域名校验。
+                view.loadDataWithBaseURL("https://www.iesdouyin.com/share/video/123/", """
+                    <html><body><div class="special-case-wrap"><div class="special-case-container">
+                    <div class="special-case-title">抱歉出错了</div>
+                    <div class="special-case-subtitle">请尝试在抖音内观看</div>
+                    <div class="special-case-btn">打开抖音</div>
+                    </div></div></body></html>
+                """.trimIndent(), "text/html", "UTF-8", "https://www.iesdouyin.com/share/video/123/")
+            }
+            // 五秒上限明确小于既有十秒超时；必须由页面业务错误驱动终态。
+            compose.waitUntil(5_000) { vm.probeState is ProbeState.Failed }
+            compose.onNodeWithText("视频提取失败").assertIsDisplayed()
+            compose.onNodeWithText("重新提取").assertIsDisplayed()
+            compose.runOnIdle {
+                assertEquals(ProbeState.Failed(VideoProbeFailure.PageContent), vm.probeState)
+                assertNull(findWebView(compose.activity.window.decorView))
+            }
+            if (mode == VideoProbeMode.Automatic) compose.onNodeWithText("查看网页并重试").performClick()
+        }
+    }
+
+    /** 构造固定预览与拒绝业务副作用的仓库，页面测试不触碰真实剪贴或下载记录。 */
+    private fun createViewModel(url: String, title: String): VideoExtractVm {
+        // 预览内容全部来自调用方合成值；封面用于既有无封面回归。
+        val preview = LinkPreviewData(url, title, null, "data:image/png;base64,AA==", "测试")
+        // 只允许页面已有的预览读取/补全，其余真实业务访问立即失败。
+        val clips = Proxy.newProxyInstance(ClipRepository::class.java.classLoader,
+            arrayOf(ClipRepository::class.java)) { _, method, _ ->
+            when (method.name) {
+                "loadLinkPreview" -> preview
+                "upsertLinkPreview" -> Unit
+                else -> error("测试禁止仓库操作：${method.name}")
+            }
+        } as ClipRepository
+        // 下载路径若被错误状态意外触发，直接报告测试失败而不落库。
+        val downloads = Proxy.newProxyInstance(DownloadDao::class.java.classLoader,
+            arrayOf(DownloadDao::class.java)) { _, method, _ -> error("测试禁止下载操作：${method.name}") } as DownloadDao
+        return VideoExtractVm(compose.activity.applicationContext, DownloadRepository(downloads),
+            WebViewLinkPreviewExtractor(dagger.Lazy { clips }), clips)
     }
 
     /** 按原生树定位唯一网页；找不到返回空，不访问业务对象。 */
