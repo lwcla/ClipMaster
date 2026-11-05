@@ -1,4 +1,27 @@
 <resources>
+    <!-- 全屏图片预览：计数由真实图片集合计算，关闭与重试仅作用于预览。 -->
+    <string name="image_preview_title">图片预览</string>
+    <string name="image_preview_close">关闭预览</string>
+    <string name="image_preview_position">%1$d / %2$d</string>
+    <string name="image_preview_image">预览图片，可双指缩放或双击放大</string>
+    <string name="image_preview_load_failed">图片加载失败</string>
+    <string name="image_preview_retry">重新加载图片</string>
+    <!-- 视频提取网页查看及诊断；只显示安全分类和数值，不显示网页原始错误文本。 -->
+    <string name="video_probe_show_process">查看提取过程</string>
+    <string name="video_probe_hide_page">收起网页</string>
+    <string name="video_probe_view_retry">查看网页并重试</string>
+    <string name="video_probe_retry">重新提取</string>
+    <string name="video_probe_help">可在网页中点击播放，辅助识别视频</string>
+    <string name="video_probe_loading">网页加载中（%1$d%%）</string>
+    <string name="video_probe_waiting">网页已加载，等待视频请求</string>
+    <string name="video_probe_timeout">自动提取超时，未识别到视频</string>
+    <string name="video_probe_network">网页加载失败，请检查网络连接</string>
+    <string name="video_probe_network_timeout">网页连接超时，请重试</string>
+    <string name="video_probe_http">网页加载失败（HTTP %1$d）</string>
+    <string name="video_probe_ssl">网页安全连接失败</string>
+    <string name="video_probe_long_running">尚未识别到视频，可尝试播放或重新提取</string>
+    <string name="video_probe_reloaded">网页已重新加载，请重新播放或操作</string>
+    <string name="video_probe_external">网页尝试打开外部应用，当前仍停留在提取页</string>
     <string name="host_privacy_policy_title">隐私政策</string>
     <string name="host_privacy_policy_description">在浏览器中查看最新隐私政策</string>
     <!-- 已发布的公开政策地址，与 Play Console 一致；固定配置不参与翻译。 -->

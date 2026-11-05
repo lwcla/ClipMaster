@@ -10,6 +10,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.cla.clip.master.ui.page.image.ImageProbeSession
 import com.cla.clip.master.ui.page.image.ImageProbeState
+import com.cla.clip.master.ui.page.video.VideoProbeSession
+import com.cla.clip.master.ui.page.video.VideoProbeMode
+import com.cla.clip.master.ui.page.video.ProbeState
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -20,6 +23,35 @@ import org.junit.runner.RunWith
 class ProbeLifecycleEffectTest {
     /** 空测试宿主提供 Compose 主线程；只允许在隔离无数据设备执行。 */
     @get:Rule val compose = createComposeRule()
+
+    /** 视频页恢复保持可见偏好，但重新创建网页身份，成功结果不因 START 重置。 */
+    @Test fun videoResumeKeepsModeButReplacesWebSession() {
+        // 生命周期和业务控制器均为合成状态，不触碰真实网页。
+        val owner = TestOwner()
+        val session = VideoProbeSession()
+        compose.runOnIdle { owner.registry.currentState = Lifecycle.State.CREATED }
+        compose.setContent {
+            CompositionLocalProvider(LocalLifecycleOwner provides owner) {
+                ProbeLifecycleEffect(session::resume, session::pause)
+            }
+        }
+        compose.runOnIdle {
+            owner.registry.currentState = Lifecycle.State.STARTED
+            session.showWebPage()
+            // 暂停前轮次在恢复后必须失效。
+            val previous = session.sessionId
+            owner.registry.currentState = Lifecycle.State.CREATED
+            assertEquals(ProbeState.Idle, session.state)
+            owner.registry.currentState = Lifecycle.State.STARTED
+            assertTrue(session.sessionId > previous)
+            assertEquals(VideoProbeMode.Interactive, session.mode)
+            session.accept(session.sessionId, com.cla.clip.master.entity.VideoCandidate(
+                "https://example.test/movie.mp4", null, null, null, "测试"))
+            owner.registry.currentState = Lifecycle.State.CREATED
+            owner.registry.currentState = Lifecycle.State.STARTED
+            assertTrue(session.state is ProbeState.Success)
+        }
+    }
 
     /** 暂停与移除组件必须关闭探测，恢复使用新轮次，待确认结果不被重置。 */
     @Test fun stopAndDisposeCloseProbeWhileReadySurvivesRestart() {

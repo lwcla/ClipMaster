@@ -10,6 +10,17 @@
 
 ## 目标与范围
 
+### 0.9.19 版本准备与全部改动提交范围（2026-11-05，已完成）
+
+- 按用户要求将 `versionName` 从 `0.9.18` 递增至 `0.9.19`，`versionCode` 从 `54` 递增至 `55`，将当前全部修改提交并普通推送至源码仓库 `main`。既有 Actions 的预期标签为 `v0.9.19-55`；源码推送与云端发行结果分别验收。
+- 本版纳入视频提取网页交互、探测会话及 WebView 生命周期拆分，以及 Telephoto 全屏图片预览、左右切换、缩放、原图尺寸读取和请求版本保护；包含对应的单测、仪器测试、合成图片资产与依赖。完整设计和前期验收记录以 [视频提取方案](video_extract_plan.md)、[共享媒体 UI 方案](shared_media_ui_plan.md) 和 [图片提取方案](image_extract_plan.md) 为准。
+- 复用 app 静态版本声明、base/general 派生版本、BuildConfig、APK 命名和版本判定脚本；版本调整不新增组件、类、方法或独立业务规则，不新增版本常量镜像测试或采用 TDD，版本配置的简体中文注释同步维护。
+- 验证计划：运行 app 与 base/general JVM 单测、app Debug Kotlin 和仪器测试 Kotlin/Java 编译、Release BuildConfig 生成、版本判定脚本测试、真实版本变化判定及 `git diff --check`。已有功能的设备与 Release/R8 记录保留在各自主方案，本轮不重复设备安装与 R8；版本调整不改变反射、序列化、keep 或外部协议。
+- 日志与诊断计划：沿用既有 Gradle、版本判定脚本及 Actions 输出，不新增 App 运行时日志，不输出凭据、网页内容或用户数据。无新增持久化字段、设置或备份协议，不修改备份恢复逻辑。
+- 提交边界：保留当前工作区全部已有修改及新文件，核对远端主分支后提交、快进合并并普通推送；构建输出及本机诊断文件继续忽略，不改写历史。
+- 本地验证：`.\gradlew.bat :base:general:testDebugUnitTest :app:testDebugUnitTest :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin :app:compileDebugAndroidTestJavaWithJavac :app:generateReleaseBuildConfig --offline --console=plain --no-parallel --max-workers=2 --init-script build\review-build-isolation.gradle` 成功（2m 10s）；app 393 项、base/general 147 项，共 540 项 JVM 单测，失败、错误、跳过均为 0。`python -m unittest discover -s scripts -p test_github_release_version.py` 的 8 项测试，以及工作区/暂存区 `git diff --check` 均通过。
+- 版本与范围核对：app Debug/Release 和 base/general Debug BuildConfig 均为 `0.9.19 / 55`，真实版本判定输出 `changed=true / v0.9.19-55`；51 个文件纳入提交，当前分支、main 及已抓取的 origin/main 起点均为 `4593d41`。首次沙箱构建受工作区外 Gradle 缓存锁访问限制，获准后使用已有隔离输出脚本验证成功；保留已有 AGP/Kotlin 与 Manifest 警告，编译临时会话文件已自动退出，不纳入提交。本轮未重复设备或 R8 验收，相关功能先前记录不作为本轮执行结果。
+
 ### 0.9.18 版本准备与全部改动提交范围（2026-10-31，已完成）
 
 - 按用户要求将 `versionName` 从 `0.9.17` 递增至 `0.9.18`，`versionCode` 从 `53` 递增至 `54`，提交当前全部修改并普通推送到源码仓库 `main`。既有 Actions 按版本变化执行自动构建发布，预期标签为 `v0.9.18-54`；源码推送完成不代表云端发布完成。
@@ -379,6 +390,10 @@ public 仓库 README 作为人可读发布页维护，至少包含最新版版�
 - 是否需要把发布页入口放到关于页或错误弹窗外的常驻位置，方便两个自动源都不可达时用户主动查看。
 
 ## 变更记录
+
+- 2026-11-05：完成 `0.9.19 / 55` 版本准备，540 项 JVM 单测、8 项版本脚本测试、Debug/仪器测试源码编译及版本一致性核验通过；记录 51 个文件的提交范围、构建环境和未重复设备/R8 的边界。
+
+- 2026-11-05：按用户“版本号+1、提交当前所有修改并推送主分支”的要求准备 `0.9.19 / 55`，纳入视频网页探测、全屏图片预览和全部对应测试与文档，记录复用、验证计划及提交边界。
 
 - 2026-10-31：完成 `0.9.18 / 54` 本地版本准备、553 项 JVM 单测、8 项版本脚本测试、Debug 和设备测试源码编译及版本核对，记录文件占用下复用隔离目录的验证方式；全部改动按用户要求纳入主分支提交推送，云端发布结果另行验收。
 

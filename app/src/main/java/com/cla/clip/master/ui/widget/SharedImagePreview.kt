@@ -9,32 +9,22 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,7 +39,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -76,20 +65,8 @@ import com.cla.clip.master.image.download.ImageRequestHeaderBuilder
  * 这些参数只描述图片缩略图和预览弹层的视觉边界，不包含图片提取、下载记录或相册业务语义。
  */
 internal object SharedImagePreviewDefaults {
-    /** 图片预览底部弹窗最多占屏高度比例，避免长图预览完全遮住页面上下文。 */
-    const val SheetMaxHeightFraction: Float = 0.86f
-
-    /** 图片预览最小宽高比，防止极端长图把预览区域压得过窄。 */
-    const val MinAspectRatio: Float = 0.2f
-
-    /** 图片预览最大宽高比，防止横幅图在底部弹窗中占用过高空白。 */
-    const val MaxAspectRatio: Float = 4f
-
     /** 缩略图请求尺寸，单位为像素；列表和网格只加载小图以降低滚动成本。 */
     const val ThumbnailSizePx: Int = 420
-
-    /** 图片预览底部弹窗形状，固定顶部圆角以保持和 Material 底部弹窗视觉一致。 */
-    val SheetShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
 
     /** 选择型图片缩略图形状，和选择描边共用以避免边框与图片裁剪不一致。 */
     val SelectableTileShape = RoundedCornerShape(8.dp)
@@ -258,181 +235,6 @@ internal fun ImageThumbnailTile(
 }
 
 /**
- * 单张图片预览底部弹窗。
- *
- * 适用于下载记录这种只展示图片本体的入口；图片按弹窗宽度完整排版，高图交给图片区域纵向滚动查看。
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-internal fun SharedImagePreviewBottomSheet(
-    model: Any,
-    onDismiss: () -> Unit,
-    modifier: Modifier = Modifier,
-    imageLoader: ImageLoader = rememberAnimatedImageLoader(LocalContext.current),
-) {
-    // 跳过半展开态，打开后直接给图片预览尽量多的垂直空间；超出屏幕的部分交给图片区域滚动。
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    // 每次打开预览都使用独立滚动状态，避免上一张高图的滚动位置影响下一张图片。
-    val imageScrollState = rememberScrollState()
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        shape = SharedImagePreviewDefaults.SheetShape,
-    ) {
-        Column(
-            modifier = modifier
-                .fillMaxWidth()
-                .padding(start = 16.dp, end = 16.dp, bottom = 24.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = stringResource(R.string.base_general_image_preview),
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                TextButton(onClick = onDismiss) {
-                    Text(stringResource(R.string.base_general_sure))
-                }
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(imageScrollState),
-                contentAlignment = Alignment.TopCenter
-            ) {
-                AsyncImage(
-                    model = model,
-                    imageLoader = imageLoader,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxWidth(),
-                    contentScale = ContentScale.FillWidth,
-                    error = rememberVectorPainter(Icons.Default.BrokenImage),
-                    placeholder = rememberVectorPainter(Icons.Default.Image)
-                )
-            }
-        }
-    }
-}
-
-/**
- * 带元信息和可选选择动作的图片预览内容。
- *
- * 图片提取页会传入选择状态和切换回调；普通预览入口可以不传选择动作，只复用图片、元信息和长图滚动布局。
- */
-@Composable
-internal fun SharedImagePreviewSheetContent(
-    model: Any,
-    imageUrl: String,
-    displayWidth: Int?,
-    displayHeight: Int?,
-    meta: SharedImagePreviewMeta,
-    imageLoader: ImageLoader,
-    selected: Boolean? = null,
-    onToggleSelected: (() -> Unit)? = null,
-    onDecodedSize: (Int?, Int?) -> Unit = { _, _ -> },
-) {
-    val scrollState = rememberScrollState()
-    val unknownText = stringResource(R.string.base_general_unknow)
-    val resolutionText = formatResolution(displayWidth, displayHeight, unknownText)
-    val fileTypeText = formatMimeType(meta.mimeType, imageUrl, unknownText)
-    val fileSizeText = formatFileSize(meta.contentLength, unknownText)
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .fillMaxHeight(SharedImagePreviewDefaults.SheetMaxHeightFraction)
-            .padding(start = 16.dp, end = 16.dp, bottom = 20.dp)
-    ) {
-        Text(
-            text = stringResource(R.string.base_general_image_preview),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(bottom = 10.dp)
-        )
-
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .verticalScroll(scrollState),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)),
-                contentAlignment = Alignment.TopCenter
-            ) {
-                AsyncImage(
-                    model = model,
-                    imageLoader = imageLoader,
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    onSuccess = { state -> onDecodedSize(state.result.image.width, state.result.image.height) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 180.dp)
-                        .then(previewAspectModifier(displayWidth, displayHeight))
-                )
-            }
-        }
-
-        Column(modifier = Modifier.padding(top = 12.dp)) {
-            Text(
-                text = stringResource(R.string.base_general_image_resolution, resolutionText),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                text = stringResource(R.string.base_general_image_file_type, fileTypeText),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-            Text(
-                text = stringResource(R.string.base_general_image_file_size, fileSizeText),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 12.dp)
-            ) {
-                Text(
-                    text = imageUrl,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-                if (selected != null && onToggleSelected != null) {
-                    Spacer(modifier = Modifier.width(12.dp))
-                    OutlinedButton(onClick = onToggleSelected) {
-                        Text(
-                            stringResource(
-                                if (selected) R.string.base_general_remove_this_image else R.string.base_general_keep_this_image
-                            )
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
  * 媒体不可读占位。
  *
  * 用于本地文件已删除、媒体 URI 不可读或缩略图集合为空的场景；只表达不可用状态，不决定是否重试或删除记录。
@@ -537,26 +339,12 @@ private fun buildImageNetworkHeaders(referer: String?, userAgent: String?, cooki
 }
 
 /**
- * 根据图片尺寸生成预览宽高比约束。
- *
- * 未知尺寸时只限制最大高度；已知尺寸时把极端比例夹在可接受范围内，避免超长图或横幅图破坏底部弹窗布局。
- */
-private fun previewAspectModifier(width: Int?, height: Int?): Modifier {
-    if (width == null || height == null || width <= 0 || height <= 0) {
-        return Modifier.heightIn(max = 560.dp)
-    }
-    val aspectRatio = (width.toFloat() / height.toFloat())
-        .coerceIn(SharedImagePreviewDefaults.MinAspectRatio, SharedImagePreviewDefaults.MaxAspectRatio)
-    return Modifier.aspectRatio(aspectRatio, matchHeightConstraintsFirst = false)
-}
-
-/**
  * 格式化图片分辨率展示文案。
  *
  * 只有宽高都有效时才显示像素尺寸，否则显示“未知”，避免把 0 或缺失值误导性展示给用户。
  */
 @Composable
-private fun formatResolution(width: Int?, height: Int?, unknownText: String): String {
+internal fun formatResolution(width: Int?, height: Int?, unknownText: String): String {
     return if (width != null && height != null && width > 0 && height > 0) {
         stringResource(R.string.base_general_image_resolution_value, width, height)
     } else {
@@ -569,7 +357,8 @@ private fun formatResolution(width: Int?, height: Int?, unknownText: String): St
  *
  * 优先使用响应头 MIME；缺失时从 URL 后缀推断，并把 `image/jpeg`、`svg+xml` 等技术值转换成用户更容易识别的格式名。
  */
-private fun formatMimeType(mimeType: String?, url: String, unknownText: String): String {
+internal fun formatMimeType(mimeType: String?, url: String, unknownText: String): String {
+    // 响应头优先，URL 后缀只作缺失时的展示兜底。
     val type = mimeType?.substringAfter("image/", missingDelimiterValue = mimeType)?.uppercase()
         ?: url.substringBefore("?").substringBefore("#").substringAfterLast('.', "").uppercase().takeIf { it.isNotBlank() }
     return when (type) {
@@ -586,8 +375,9 @@ private fun formatMimeType(mimeType: String?, url: String, unknownText: String):
  * 体积单位根据字节数自动在 B、KB、MB、GB 之间切换；为空或非正数时显示“未知”，因为预览阶段不会完整下载图片来强算体积。
  */
 @Composable
-private fun formatFileSize(bytes: Long?, unknownText: String): String {
+internal fun formatFileSize(bytes: Long?, unknownText: String): String {
     if (bytes == null || bytes <= 0L) return unknownText
+    // kb、mb、gb 分别为二进制单位换算值，按最大可读单位展示。
     val kb = bytes / 1024.0
     val mb = kb / 1024.0
     val gb = mb / 1024.0

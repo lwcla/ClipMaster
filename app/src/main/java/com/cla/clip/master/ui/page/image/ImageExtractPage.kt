@@ -12,12 +12,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -52,7 +50,6 @@ import com.cla.clip.master.ui.widget.InlineErrorState
 import com.cla.clip.master.ui.widget.InlineLoadingState
 import com.cla.clip.master.ui.widget.InlineSuccessState
 import com.cla.clip.master.ui.widget.ProbeWebView
-import com.cla.clip.master.ui.widget.SharedImagePreviewDefaults
 import com.cla.clip.master.ui.widget.TitleBar
 import com.cla.clip.master.ui.widget.rememberAnimatedImageLoader
 import kotlinx.coroutines.Job
@@ -286,8 +283,8 @@ private fun LiveCandidateSelectionContent(
 ) {
     // 选择记忆由 VM 持有，页面只读取并发送用户事件。
     val selectedKeys = viewModel.selection.selectedKeys
-    // 单张预览属于本次组合，不跨配置变化保留临时弹层。
-    var previewCandidate by remember { mutableStateOf<ImageCandidateData?>(null) }
+    // 保存点击身份并持续读取候选；只有显式重新提取才创建新的预览会话。
+    var previewKey by remember(viewModel.extractionId) { mutableStateOf<String?>(null) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         LiveCandidateToolbar(
@@ -310,7 +307,7 @@ private fun LiveCandidateSelectionContent(
             gridState = gridState,
             placement = AdPlacement.ImageExtractNative,
             adSession = adSession,
-            blocked = adsBlocked || previewCandidate != null || isSubmittingDownload,
+            blocked = adsBlocked || previewKey != null || isSubmittingDownload,
         ) { candidate ->
                 // 候选身份只关联真实图片，广告条目没有选择键。
                 val key = viewModel.candidateKey(candidate)
@@ -322,51 +319,20 @@ private fun LiveCandidateSelectionContent(
                     imageLoader = imageLoader,
                     failureTitle = stringResource(R.string.base_general_image_load_failed),
                     onPreview = {
-                        previewCandidate = candidate
+                        previewKey = key
                     },
                     onToggleSelected = {
                         viewModel.selection.setSelected(key, !selected)
                     },
-                    onDecodedSize = { width, height -> viewModel.updateCandidateDecodedSize(key, width, height) }
+                    onDecodedSize = { width, height -> viewModel.updateCandidateDecodedSize(candidate, width, height) }
                 )
         }
     }
 
-    // 当前预览快照用于安全展开底部弹层。
-    val candidate = previewCandidate
-    if (candidate != null) {
-        // 预览请求与弹层和前台生命周期绑定，后台不保留 HEAD/Range 网络任务。
-        val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
-        LaunchedEffect(candidate, lifecycle) {
-            lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
-                viewModel.loadCandidatePreviewMeta(candidate)
-            }
-        }
-        // 预览候选身份仍使用业务键，与广告位置序号无关。
-        val candidateKey = viewModel.candidateKey(candidate)
-        // 优先已有元信息缓存，缺失时复用候选尺寸。
-        val meta = viewModel.candidatePreviewMetaCache[candidateKey]
-            ?: ImagePreviewMeta(width = candidate.width, height = candidate.height)
-        // 预览弹层独立状态，退出时随组合树释放。
-        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        // 预览/网格选择由真实图片集合决定。
-        val selected = candidateKey in selectedKeys
-        ModalBottomSheet(
-            onDismissRequest = { previewCandidate = null },
-            sheetState = sheetState,
-            shape = SharedImagePreviewDefaults.SheetShape
-        ) {
-            CandidatePreviewSheetContent(
-                candidate = candidate,
-                meta = meta,
-                selected = selected,
-                imageLoader = imageLoader,
-                onToggleSelected = {
-                    viewModel.selection.setSelected(candidateKey, !selected)
-                },
-                onDecodedSize = { width, height -> viewModel.updateCandidateDecodedSize(candidateKey, width, height) }
-            )
-        }
+    // 候选继续追加到同一个预览，自动完成不会更换此组合调用位置。
+    previewKey?.let { clickedKey ->
+        CandidateImagePreviewDialog(candidates, clickedKey, viewModel, imageLoader, isExtracting,
+            onDismiss = { previewKey = null })
     }
 }
 

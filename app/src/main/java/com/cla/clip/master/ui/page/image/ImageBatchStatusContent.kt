@@ -52,7 +52,9 @@ internal fun BatchStatusContent(
         }
     } else snapshot!!.items
     // 预览只属于当前批次，切换新批次时关闭。
-    var previewItem by remember(state.batchId) { mutableStateOf<ImageExtractItemData?>(null) }
+    var previewKey by remember(state.batchId) { mutableStateOf<String?>(null) }
+    // 批次浏览沿用打开时的展示对象集合，内容身份与数据库更新解耦。
+    var previewItems by remember(state.batchId) { mutableStateOf<List<ImageExtractItemData>>(emptyList()) }
     // 成功和部分成功仍遵循原广告资格，失败与缺失不展示广告。
     val placement = batch?.let { imageBatchAdPlacement(it.status, items.isNotEmpty()) }
     Column(Modifier.fillMaxSize()) {
@@ -92,7 +94,7 @@ internal fun BatchStatusContent(
         }
         MediaAdGrid(items = items, itemKey = { viewModel.candidateKey(it.asCandidate()) },
             sessionKey = viewModel.extractionId, placement = placement, adSession = adSession,
-            gridState = gridState, blocked = previewItem != null || viewModel.isSubmitting) { item ->
+            gridState = gridState, blocked = previewKey != null || viewModel.isSubmitting) { item ->
             MediaTaskTile(
                 model = rememberSharedImageRequest(url = item.outputUri ?: item.url,
                     referer = item.referer, userAgent = item.userAgent, cookie = item.cookie,
@@ -106,15 +108,21 @@ internal fun BatchStatusContent(
                     else -> R.string.base_general_media_task_pending
                 }),
                 name = item.finalName ?: (item.displayOrder + 1).toString(),
-                onPreview = { previewItem = item },
+                // 点击时捕获同一帧图片集合，稳定 key 决定首次定位。
+                onPreview = {
+                    previewItems = items.toList()
+                    previewKey = viewModel.candidateKey(item.asCandidate())
+                },
             )
         }
     }
-    previewItem?.let { item ->
-        SharedImagePreviewBottomSheet(
-            model = rememberSharedImageRequest(item.outputUri ?: item.url, item.referer, item.userAgent, item.cookie, true),
+    previewKey?.let { clickedKey ->
+        BatchImagePreviewDialog(
+            items = previewItems,
+            initialKey = clickedKey,
+            itemKey = { viewModel.candidateKey(it.asCandidate()) },
             imageLoader = imageLoader,
-            onDismiss = { previewItem = null },
+            onDismiss = { previewKey = null; previewItems = emptyList() },
         )
     }
 }

@@ -3,10 +3,10 @@ package com.cla.clip.master.ui.page.video
 import com.cla.clip.feature.ad.api.AdPlacement
 import com.cla.clip.master.entity.VideoDownloadState
 
-/** 提取阶段只有真实候选或缓存内容时展示广告；标题、纯加载和错误不构成展示资格。 */
+/** 仅实际显示的描述或候选构成资格；可操作网页独占内容区，不请求或呈现广告。 */
 internal fun videoExtractAdPlacement(state: ProbeState, hasPreviewContent: Boolean): AdPlacement? = when (state) {
     is ProbeState.Success -> AdPlacement.VideoExtractNative
-    is ProbeState.HiddenProbing -> if (hasPreviewContent) AdPlacement.VideoExtractNative else null
+    is ProbeState.Probing -> if (state.mode == VideoProbeMode.Automatic && hasPreviewContent) AdPlacement.VideoExtractNative else null
     else -> null
 }
 

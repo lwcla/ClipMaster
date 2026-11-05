@@ -1,21 +1,26 @@
 package com.cla.clip.master.ui.widget
 
 import android.annotation.SuppressLint
-import android.view.MotionEvent
+import android.content.Context
+import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.InputMethodManager
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 
 // 统一移动浏览器标识，避免两页发起不同网页布局。
 private const val DEFAULT_PROBE_USER_AGENT =
@@ -29,7 +34,7 @@ fun isExternalAppScheme(scheme: String): Boolean {
 /**
  * 通用网页探测 WebView，统一承载视频/图片提取页都需要的配置、Cookie 和请求拦截能力。
  *
- * 业务侧只需要通过回调处理页面加载完成和资源请求，避免在不同提取页复制一整套 WebView 设置。
+ * 显隐通过 modifier 与动态触摸配置表达，不能参与实例 key；加载诊断可选订阅，不改变图片页业务契约。
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -42,13 +47,31 @@ fun ProbeWebView(
     onPageFinished: (WebView, String?) -> Unit,
     shouldInterceptRequest: (WebView, WebResourceRequest) -> WebResourceResponse?,
     onDocumentStarted: () -> Unit = {},
+    onLoadEvent: (ProbeWebViewEvent) -> Unit = {},
 ) {
     // 每轮资源与回调闭包绑定；重试和恢复创建新实例，不把旧网络请求转交新会话。
     key(targetUrl, sessionId) {
         // 一个 WebView 对应一个加载门闩，合法重定向不会改变已请求的目标。
         val session = remember { ProbeLoadSession() }
+        // STOP 时直接释放网页，避免后台重组被暂停后仍播放或请求资源。
+        val owner = remember { ProbeWebViewOwner(session) }
+        // 生命周期只负责资源许可，业务恢复仍由页面创建新的 session。
+        val lifecycle = LocalLifecycleOwner.current.lifecycle
+        DisposableEffect(lifecycle, owner) {
+            // 主线程事件与组合释放共用幂等所有者。
+            val observer = LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_STOP || event == Lifecycle.Event.ON_DESTROY) owner.release()
+            }
+            lifecycle.addObserver(observer)
+            if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) owner.release()
+            onDispose {
+                lifecycle.removeObserver(observer)
+                owner.release()
+            }
+        }
         AndroidView(
             modifier = modifier,
+            // 平台 Context 只由当前组合内的实例使用，配置不随显隐重复创建。
             factory = { context ->
                 WebView(context).apply webView@{
                     layoutParams = ViewGroup.LayoutParams(
@@ -82,71 +105,38 @@ fun ProbeWebView(
                         setAcceptThirdPartyCookies(this@webView, true)
                     }
 
-                    if (consumeUserTouch) {
-                        setOnTouchListener { _, event ->
-                            // 图片探测 WebView 只允许程序化 JS 滚动和资源加载；用户触摸会改变滚动位置、焦点或触发网页跳转，影响自动探测结果。
-                            event.actionMasked in setOf(
-                                MotionEvent.ACTION_DOWN,
-                                MotionEvent.ACTION_MOVE,
-                                MotionEvent.ACTION_UP,
-                                MotionEvent.ACTION_CANCEL,
-                                MotionEvent.ACTION_POINTER_DOWN,
-                                MotionEvent.ACTION_POINTER_UP
-                            )
-                        }
-                    }
-
-                    webChromeClient = WebChromeClient()
-                    webViewClient = object : WebViewClient() {
-                        /** 主文档导航切断上一文档的扫描，后续完成回调属于新一代文档。 */
-                        override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
-                            super.onPageStarted(view, url, favicon)
-                            if (session.acceptsCallbacks) {
-                                session.beginDocument(url)
-                                onDocumentStarted()
+                    webChromeClient = object : WebChromeClient() {
+                        /** 百分比只属于有效当前文档，不逐回调输出日志。 */
+                        override fun onProgressChanged(view: WebView, newProgress: Int) {
+                            if (session.acceptsDocumentEvent(view.url, view.url, true)) {
+                                onLoadEvent(ProbeWebViewEvent.Progress(session.documentId, newProgress))
                             }
                         }
-                        /** 主文档只拦截外部应用协议，保留站内重定向。 */
-                        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                            // 仅用 scheme 判断外部跳转，不记录完整用户地址。
-                            val reqUrl = request.url
-                            // 协议按大小写无关规则判断，普通网络重定向保持可用。
-                            val scheme = reqUrl.scheme?.lowercase().orEmpty()
-                            if (request.isForMainFrame && isExternalAppScheme(scheme)) {
-                                // 外部 App scheme 不参与资源探测，直接拦截避免页面把用户带出当前流程。
-                                return true
-                            }
-                            return false
-                        }
-
-                        /** 主文档完成仅通知当前实例一次，业务侧仍校验会话身份。 */
-                        override fun onPageFinished(view: WebView, url: String?) {
-                            super.onPageFinished(view, url)
-                            // 重定向中间页和重复完成不启动第二轮扫描，释放后的回调直接丢弃。
-                            if (session.claimPageFinished(url, view.url)) onPageFinished(view, url)
-                        }
-
-                        /** 网络线程只向未释放实例发送请求，不转发给后续轮次。 */
-                        override fun shouldInterceptRequest(
-                            view: WebView,
-                            request: WebResourceRequest
-                        ): WebResourceResponse? {
-                            // 原始闭包保留当前实例的轮次；主线程发布结果还需业务层再次校验。
-                            return if (session.acceptsCallbacks) shouldInterceptRequest(view, request) else null
-                        }
                     }
+                    webViewClient = ProbeWebViewClient(session, onDocumentStarted, onPageFinished,
+                        shouldInterceptRequest, onLoadEvent)
+                    owner.attach(this)
                     onWebViewReady(this)
                 }
             },
             // 实例离开组合即释放；页面不再自行 destroy，避免双重销毁及悬挂 AndroidView。
-            onRelease = { webView ->
-                session.close()
-                webView.stopLoading()
-                webView.webChromeClient = null
-                webView.webViewClient = WebViewClient()
-                webView.destroy()
-            },
+            onRelease = { owner.release() },
+            // 每次重组同步交互状态，展开后不保留 factory 捕获的旧触摸屏蔽。
             update = { webView ->
+                // 已被 STOP 清理的旧实例等待页面换 session，不能继续调用平台方法。
+                if (!session.acceptsCallbacks) return@AndroidView
+                if (consumeUserTouch && webView.hasFocus()) {
+                    // 只在网页持有焦点时收键盘，避免隐藏探测影响其他输入框。
+                    val keyboard = webView.context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+                    keyboard?.hideSoftInputFromWindow(webView.windowToken, 0)
+                    webView.clearFocus()
+                }
+                // 隐藏网页不能通过触摸、硬件键盘或无障碍被误操作；显示仍保留原实例。
+                webView.setOnTouchListener(if (consumeUserTouch) View.OnTouchListener { _, _ -> true } else null)
+                webView.isFocusable = !consumeUserTouch
+                webView.isFocusableInTouchMode = !consumeUserTouch
+                webView.descendantFocusability = if (consumeUserTouch) ViewGroup.FOCUS_BLOCK_DESCENDANTS else ViewGroup.FOCUS_AFTER_DESCENDANTS
+                webView.importantForAccessibility = if (consumeUserTouch) View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS else View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
                 if (session.shouldLoad(targetUrl)) {
                     webView.loadUrl(targetUrl)
                 }

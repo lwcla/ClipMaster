@@ -189,6 +189,8 @@ class ImageExtractVm @Inject constructor(
 
     /** 当前页面内的候选预览元信息缓存，实时网格未落库前用稳定候选 key 记录预览信息。 */
     val candidatePreviewMetaCache = mutableStateMapOf<String, ImagePreviewMeta>()
+    /** 元信息缓存的请求版本及写入票据；只在页面主线程使用，禁止记录内容。 */
+    private val previewRequests = ImagePreviewRequestTracker()
 
     /** 实时候选限频任务；持续请求也会每 250ms 发布最新快照。 */
     private var candidatePublishJob: Job? = null
@@ -214,6 +216,7 @@ class ImageExtractVm @Inject constructor(
         resetProbeSession(sessionId)
         selection.reset()
         candidatePreviewMetaCache.clear()
+        previewRequests.clear()
         submittedCandidates = emptyList()
         extractionId += 1
     }
@@ -304,8 +307,11 @@ class ImageExtractVm @Inject constructor(
             // 限频窗口结束取最新池快照，持续网络回调不会一直推迟首屏发布。
             val latest = snapshotProbingCandidates()
             if (probingCandidates != latest) {
-                probingCandidates.clear()
-                probingCandidates.addAll(latest)
+                // 原子发布候选，避免 Pager 把 clear/addAll 中间态误认为真实空集合。
+                androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
+                    probingCandidates.clear()
+                    probingCandidates.addAll(latest)
+                }
             }
             selection.update(latest.map(::candidateKey))
         }
@@ -316,8 +322,11 @@ class ImageExtractVm @Inject constructor(
         if (!isCandidateSessionActive(expectedSessionId)) return
         candidatePublishJob?.cancel()
         candidatePublishJob = null
-        probingCandidates.clear()
-        probingCandidates.addAll(candidates)
+        // 最终发布与增量发布采用相同原子边界，不产生瞬时空预览。
+        androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
+            probingCandidates.clear()
+            probingCandidates.addAll(candidates)
+        }
         selection.update(candidates.map(::candidateKey))
     }
 
@@ -418,10 +427,18 @@ class ImageExtractVm @Inject constructor(
     }
 
     /** 实时网格缩略图或预览解码成功后回填尺寸，仅在当前页面内存中使用。 */
-    fun updateCandidateDecodedSize(candidateKey: String, width: Int?, height: Int?) {
+    fun updateCandidateDecodedSize(candidate: ImageCandidateData, width: Int?, height: Int?) {
+        // 旧 URL 解码回调只在候选版本仍有效时写入，防止尺寸污染升级后的原图。
+        val candidateKey = candidate.stableKey()
+        // 响应版本包含 URL 与请求上下文，不把页面显示宽高当作版本。
+        val version = candidate.previewRequestVersion()
+        if (probingCandidates.none { it.stableKey() == candidateKey && it.previewRequestVersion() == version }) return
         if (candidateKey.isBlank() || width == null || height == null || width <= 0 || height <= 0) return
         // 已有候选或元信息只用于合并，不丢弃此前有效字段。
-        val old = candidatePreviewMetaCache[candidateKey] ?: ImagePreviewMeta()
+        val old = candidatePreviewMetaCache[candidateKey]
+            .takeIf { previewRequests.hasVersion(candidateKey, version) } ?: ImagePreviewMeta()
+        // 首次解码也登记版本，让随后 HEAD 请求保留同版本尺寸；不能打断已有同版本任务。
+        if (!previewRequests.hasVersion(candidateKey, version)) previewRequests.begin(candidateKey, version)
         if (old.width == width && old.height == height) return
         candidatePreviewMetaCache[candidateKey] = old.copy(width = width, height = height)
     }
@@ -430,9 +447,13 @@ class ImageExtractVm @Inject constructor(
     suspend fun loadCandidatePreviewMeta(candidate: ImageCandidateData) {
         // 稳定身份保持 URL 升级前后的尺寸缓存一致。
         val candidateKey = candidate.stableKey()
-        // 已有完整元信息无需重复联网。
-        val cached = candidatePreviewMetaCache[candidateKey]
+        // 请求版本变化时废弃旧文件属性；稳定 key 只表达同一图片而不表达同一资源。
+        val version = candidate.previewRequestVersion()
+        // 仅同版本元信息可复用，旧资源的类型、体积和尺寸不能污染新资源。
+        val cached = candidatePreviewMetaCache[candidateKey].takeIf { previewRequests.hasVersion(candidateKey, version) }
         if (cached?.isLoading == true || cached?.mimeType != null && cached.contentLength != null) return
+        // 所有写回与 finally 都受此任务票据约束，关闭/换图后的旧任务不能覆盖新请求。
+        val ticket = previewRequests.begin(candidateKey, version)
         candidatePreviewMetaCache[candidateKey] = (cached ?: ImagePreviewMeta()).copy(
             width = cached?.width ?: candidate.width, height = cached?.height ?: candidate.height,
             mimeType = cached?.mimeType ?: guessMimeTypeFromUrl(candidate.url), isLoading = true,
@@ -442,15 +463,19 @@ class ImageExtractVm @Inject constructor(
             val meta = kotlinx.coroutines.withTimeoutOrNull(3_000L) {
                 previewMetadataReader.read(candidate)
             } ?: ImagePreviewMeta()
-            candidatePreviewMetaCache[candidateKey] = mergeMeta(candidatePreviewMetaCache[candidateKey], meta)
+            if (previewRequests.isCurrent(ticket)) {
+                candidatePreviewMetaCache[candidateKey] = mergeMeta(candidatePreviewMetaCache[candidateKey], meta)
+            }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (error: Exception) {
             logD(TAG) { "预览元信息不可用 type=${error.javaClass.simpleName}" }
         } finally {
             // 不恢复已经被重新提取清空的缓存；下次打开可重新请求。
-            candidatePreviewMetaCache[candidateKey]?.let { current ->
-                candidatePreviewMetaCache[candidateKey] = current.copy(isLoading = false)
+            if (previewRequests.isCurrent(ticket)) {
+                candidatePreviewMetaCache[candidateKey]?.let { current ->
+                    candidatePreviewMetaCache[candidateKey] = current.copy(isLoading = false)
+                }
             }
         }
     }

@@ -24,26 +24,6 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * 视频资源探测状态。
- *
- * 状态由页面和 ViewModel 共同驱动：页面负责 WebView 生命周期和网络拦截，ViewModel 保存当前阶段和下载任务事件。
- * `sessionId` 用来区分多次重试，避免旧的超时协程把新一轮探测错误地标记为失败。
- */
-sealed interface ProbeState {
-    /** 初始状态，页面尚未开始加载目标网页。 */
-    data object Idle : ProbeState
-
-    /** 后台隐藏 WebView 正在加载页面并尝试自动播放视频。 */
-    data class HiddenProbing(val sessionId: Int) : ProbeState
-
-    /** 已捕获到可下载的视频候选地址。 */
-    data class Success(val candidate: VideoCandidate) : ProbeState
-
-    /** 当前探测轮次失败，用户可以触发重试。 */
-    data object Failed : ProbeState
-}
-
-/**
  * 视频提取页 ViewModel。
  *
  * 负责保存探测状态、维护重试轮次，并在识别到候选视频后创建下载任务。

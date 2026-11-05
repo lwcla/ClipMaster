@@ -35,6 +35,8 @@ mlkit = "16.0.1"
 jsoup = "1.22.1"
 # Coil (图片加载) 版本
 coil = "3.4.0"
+# 全屏预览缩放组件固定版本，复用现有 Coil 3 请求与动图加载器。
+telephoto = "0.19.0"
 # palette - 用于从图片中提取颜色信息，提供了Kotlin扩展函数，简化了使用流程
 paletteKtx = "1.0.0"
 # paging 版本 - 用于实现分页加载功能，特别适用于处理大量数据的列表，如聊天记录
@@ -115,6 +117,8 @@ jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
 io-coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
 io-coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil" }
 io-coil-gif = { group = "io.coil-kt.coil3", name = "coil-gif", version.ref = "coil" }
+# Compose 图片缩放与按需分块加载，版本由本目录统一管理。
+telephoto-coil3 = { module = "me.saket.telephoto:zoomable-image-coil3", version.ref = "telephoto" }
 # palette - 用于从图片中提取颜色信息，提供了Kotlin扩展函数，简化了使用流程
 androidx-palette-ktx = { group = "androidx.palette", name = "palette-ktx", version.ref = "paletteKtx" }
 # paging - 用于实现分页加载功能，特别适用于处理大量数据的列表，如聊天记录

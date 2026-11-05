@@ -1,7 +1,7 @@
 package com.cla.clip.master.ui.widget.media
 
 /**
- * 单帧媒体条目，稳定身份与内容始终一起交给 Lazy 网格，避免跨版本按下标配对。
+ * 单帧媒体条目，稳定身份与内容始终一起交给 Lazy 网格或 Pager，避免跨版本按下标配对。
  * 仅用于模块内 UI；不参与持久化、序列化或反射，因此不需要 keep。
  */
 internal data class MediaGridItemSnapshot<T>(

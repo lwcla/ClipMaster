@@ -5,6 +5,7 @@ import com.cla.clip.feature.ad.api.AdPlacement
 import com.cla.clip.master.entity.VideoCandidate
 import com.cla.clip.master.entity.VideoDownloadState
 import com.cla.clip.master.ui.page.video.ProbeState
+import com.cla.clip.master.ui.page.video.VideoProbeMode
 import com.cla.clip.master.ui.page.video.videoExtractAdPlacement
 import com.cla.clip.master.ui.page.video.videoDownloadAdPlacement
 import com.cla.clip.master.ui.page.image.imageBatchAdPlacement
@@ -14,11 +15,16 @@ import org.junit.Test
 
 /** 媒体广告仅由真实内容和阶段决定，避免空态、错误态或进度重组触发请求。 */
 class MediaTaskAdPolicyTest {
+    /** 可操作网页必须获得完整内容区，已有摘要也不能让广告继续呈现。 */
+    @Test fun interactiveExtractionHasNoAdEvenWithDescription() {
+        assertNull(videoExtractAdPlacement(ProbeState.Probing(1, VideoProbeMode.Interactive), true))
+    }
+
     /** 无候选、无预览的提取进度必须保持无广告。 */
     @Test fun extractionRequiresContentBeyondTitle() {
-        assertNull(videoExtractAdPlacement(ProbeState.HiddenProbing(0), false))
-        assertEquals(AdPlacement.VideoExtractNative, videoExtractAdPlacement(ProbeState.HiddenProbing(0), true))
-        assertNull(videoExtractAdPlacement(ProbeState.Failed, true))
+        assertNull(videoExtractAdPlacement(ProbeState.Probing(0), false))
+        assertEquals(AdPlacement.VideoExtractNative, videoExtractAdPlacement(ProbeState.Probing(0), true))
+        assertNull(videoExtractAdPlacement(ProbeState.Failed(), true))
     }
 
     /** 捕获真实候选后沿用提取广告位，不因提取完成切换广告单元。 */

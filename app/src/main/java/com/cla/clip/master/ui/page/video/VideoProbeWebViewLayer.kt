@@ -10,6 +10,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import com.cla.clip.base.general.utils.logD
@@ -17,6 +18,7 @@ import com.cla.clip.base.general.utils.logI
 import com.cla.clip.base.general.utils.logW
 import com.cla.clip.master.entity.VideoCandidate
 import com.cla.clip.master.ui.widget.ProbeWebView
+import com.cla.clip.master.ui.widget.ProbeWebViewEvent
 import kotlinx.coroutines.launch
 
 /**
@@ -40,10 +42,9 @@ private const val AUTO_PLAY_JS = """
 """
 
 /**
- * 复用通用 ProbeWebView 的隐藏视频探测层。
+ * 复用通用 ProbeWebView 的视频探测适配层。
  *
- * 完整视口用于网页加载和自动播放触发；透明显示并屏蔽用户触摸，让用户只操作前景提取内容。
- * 透明配置不停止网页探测，WebView 的重试和销毁仍由页面管理；当前不承载手动播放辅助流程。
+ * 自动模式透明且屏蔽交互；可见模式允许用户操作原实例，不重新加载、不改变候选规则。
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -51,26 +52,50 @@ internal fun SharedVideoProbeWebViewLayer(
     targetUrl: String,
     sessionId: Int,
     pageName: String,
+    mode: VideoProbeMode,
     onSaveLinkPreview: suspend (WebView) -> Unit,
     onVideoCandidate: (VideoCandidate) -> Unit,
+    onLoadEvent: (ProbeWebViewEvent) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    // 视频资源拦截日志沿用既有标签，隐藏配置不新增日志。
-    val tag = "webView"
+    // 会话诊断使用统一标签，只记录阶段和数值，不展开网页或候选数据。
+    val tag = "VideoProbe"
     // 预览补全和候选回调使用探测层协程作用域，组件离开组合时取消未完成的任务。
     val coroutineScope = rememberCoroutineScope()
     // 站内导航及时取消上一文档的辅助预览，不把旧 DOM 当作正文补写。
-    var previewJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var previewJob by remember(sessionId) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    // 每轮开始时间只用于低频诊断，不打印 URL 或候选内容。
+    val startedAt = remember(sessionId) { android.os.SystemClock.elapsedRealtime() }
+    // 显隐不触发此 effect，只有新轮次或离场才开始/释放探测资源。
+    DisposableEffect(sessionId) {
+        logD(tag) { "开始网页提取 sessionId=$sessionId" }
+        onDispose {
+            previewJob?.cancel()
+            logD(tag) { "释放网页提取 sessionId=$sessionId durationMs=${android.os.SystemClock.elapsedRealtime() - startedAt}" }
+        }
+    }
 
     ProbeWebView(
         targetUrl = targetUrl,
-        // 与图片提取页一致：保留真实视口继续探测，透明显示避免网页内容露出前景遮罩。
-        modifier = Modifier.fillMaxSize().alpha(0f),
-        // 用户触摸只交给前景页面，避免透明网页被误点、滚动或触发跳转。
-        consumeUserTouch = true,
+        // 两种显示模式处在同一组合位置，改变透明度不更换网页身份。
+        modifier = modifier.fillMaxSize().alpha(if (mode == VideoProbeMode.Interactive) 1f else 0f),
+        // 同一原生实例动态切换触摸、焦点和无障碍许可。
+        consumeUserTouch = mode == VideoProbeMode.Automatic,
         sessionId = sessionId,
         onWebViewReady = {},
         onDocumentStarted = { previewJob?.cancel() },
-        // 页面加载完成后补全预览并尝试触发视频请求，透明配置不改变原有执行时机。
+        // 仅记录阶段变化和去重后的错误，加载百分比不刷日志。
+        onLoadEvent = { event ->
+            when (event) {
+                is ProbeWebViewEvent.Started -> logD(tag) { "主文档开始 sessionId=$sessionId documentId=${event.documentId}" }
+                is ProbeWebViewEvent.Finished -> logD(tag) { "主文档完成 sessionId=$sessionId documentId=${event.documentId}" }
+                is ProbeWebViewEvent.Failed -> logW(tag) { "网页加载错误 sessionId=$sessionId documentId=${event.documentId} reasonCode=${event.error.kind} code=${event.error.code}" }
+                is ProbeWebViewEvent.ExternalAppBlocked -> logW(tag) { "已拦截外部应用跳转 sessionId=$sessionId documentId=${event.documentId}" }
+                is ProbeWebViewEvent.Progress -> Unit
+            }
+            onLoadEvent(event)
+        },
+        // 正常主文档完成后补全预览并尝试触发视频请求，显隐本身不触发第二次播放。
         onPageFinished = { view, _ ->
             previewJob = coroutineScope.launch {
                 // WebView 真实加载后补齐链接预览，解决首轮 OkHttp/Jsoup 被 403 拦截时列表只有域名兜底的问题。
@@ -80,7 +105,7 @@ internal fun SharedVideoProbeWebViewLayer(
             // WebView 加载进度达到完成时才执行原有自动播放脚本。
             val progress = view.progress
             if (progress > 99) {
-                logW(tag) { "onPageFinished: progress=${progress}" }
+                logD(tag) { "尝试触发视频请求 sessionId=$sessionId" }
                 view.evaluateJavascript(AUTO_PLAY_JS, null)
             }
         },

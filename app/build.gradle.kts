@@ -127,10 +127,10 @@ android {
         applicationId = "com.cla.clip.master"
         minSdk = 24
         targetSdk = 36
-        /** 安装升级与更新判断使用单调递增的版本码，0.9.18 发行值为 54。 */
-        versionCode = 54
+        /** 安装升级与更新判断使用单调递增的版本码，0.9.19 发行值为 55。 */
+        versionCode = 55
         /** 用户可见的版本名称，同时用于 APK 命名与版本变化自动发布检查。 */
-        versionName = "0.9.18"
+        versionName = "0.9.19"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -298,6 +298,8 @@ dependencies {
 
     // Coil3依赖项
     implementation(libs.bundles.io.coil)
+    // 全屏预览复用 Coil 3，交由 Telephoto 处理缩放、平移和大图分块。
+    implementation(libs.telephoto.coil3)
 
     // Hilt依赖注入，用于解耦代码，方便管理对象实例
     implementation(libs.hilt.android)
