@@ -19,11 +19,11 @@
 
 ## 目标与范围
 
-### 0.9.22 版本递增与 GitHub 构建发布验收（2026-11-06，实现中）
+### 0.9.22 版本递增与 GitHub 构建发布验收（2026-11-06，已完成）
 
-- 按用户要求将 `versionName` 从 `0.9.21` 递增至 `0.9.22`，`versionCode` 从 `57` 递增至 `58`，普通推送 `main` 后由现有版本门禁触发 GitHub Actions，预期标签为 `v0.9.22-58`；构建及正式发布结果需在推送后独立验收。
+- 按用户要求将 `versionName` 从 `0.9.21` 递增至 `0.9.22`，`versionCode` 从 `57` 递增至 `58`，普通推送 `main` 后由现有版本门禁触发 GitHub Actions；`v0.9.22-58` 已正式发布，构建、签名、APK、mapping、Release 和 tag 已逐项验收。
 - 复用 app 静态版本声明、base/general 派生版本、BuildConfig、APK 命名、`github_release_version.py` 和既有 workflow。版本调整不新增组件、类、方法、业务规则或外部协议，版本配置中文注释同步更新，不为常量递增新增单测或采用 TDD。
-- 本次发布准备纳入同一工作区的中英文资源、英文大字体布局修复、设备回归及 CI 资源门禁；具体设计与历史设备验证以 [多语言主方案](multilingual_support_plan.md) 为准。发布保留现有 domestic/AdMob 配置与可选模块默认开关，不借版本更新改变发布渠道或功能范围。
+- 本次发布已纳入同一工作区的中英文资源、英文大字体布局修复、设备回归及 CI 资源门禁；具体设计与历史设备验证以 [多语言主方案](multilingual_support_plan.md) 为准。发布保留现有 domestic/AdMob 配置与可选模块默认开关，不借版本更新改变发布渠道或功能范围。
 - 验证计划：重跑 Python 版本/资源测试、7 模块资源一致性检查、受影响模块 JVM 测试、Debug Kotlin 编译及完整 Release/Lint/R8；检查 APK 版本与签名、mapping 留存和 `git diff --check`。推送后核对同一源码 SHA 的 workflow、构建 job、签名、附件上传、Release 和 tag，不能以推送成功替代构建成功。
 - 日志与诊断计划：沿用 Gradle、版本脚本和 Actions 低敏状态，只记录源码 SHA、run ID、tag、附件名、大小及摘要；不打印签名、广告凭据或用户内容。本轮无新增持久化、备份字段、运行时日志或 keep 规则；版本发布不重复此前设备安装，跨 API、横屏、深色及真实网络业务边界继续保留在多语言主方案。
 - 本地环境边界：首轮默认目录构建因 Windows 占用 `base/general` 的 `classes.jar` 失败，未修改源码或删除旧产物；复用既有 Gradle init script 隔离方式，将各模块产物写入 `build/release-0.9.22-validation`，本地脚本与日志保存在忽略的根 `build/` 下，不进入提交。独立只读审查未发现发布阻断项。
@@ -31,6 +31,9 @@
 - 提交前验证：`python -m unittest scripts.test_check_localization scripts.test_github_release_version` 共 21 项通过，`python scripts/check_localization.py` 为 7 模块、0 问题；真实版本门禁输出 `changed=true / v0.9.22-58`。`.\gradlew.bat :app:compileDebugKotlin :app:testDebugUnitTest :base:general:testDebugUnitTest :feature:torrent-search:testDebugUnitTest :feature:torrent-search-api:testDebugUnitTest --init-script build/release-0.9.22-isolation.gradle -PenableAdmobDebugAdFeature=false -PenableMagnetFeature=true --offline --console=plain --no-daemon --no-parallel --max-workers=2 '-Pkotlin.compiler.execution.strategy=in-process'` 成功（4m 44s），app 418、base/general 147、种子实现 656、API 4，合计 1225 项测试零失败、零错误、零跳过；日志为 `build/release-0.9.22-preflight-isolated.log`。历史 212 项设备验收不重复计入本轮结果。
 - 本地正式包：`.\gradlew.bat :app:assembleRelease --init-script build/release-0.9.22-isolation.gradle --offline --console=plain --no-daemon --no-parallel --max-workers=2 '-Pkotlin.compiler.execution.strategy=in-process' -PenableAdmobDebugAdFeature=false -PenableAdmobReleaseAdFeature=true -PenableCsjDebugAdFeature=false -PenableCsjReleaseAdFeature=false -PenableUniadDebugAdFeature=false -PenableUniadReleaseAdFeature=false -PappDistribution=domestic` 成功（4m 24s），包含 `lintVitalRelease`、`minifyReleaseWithR8` 和打包；保留既有 Kotlin/AGP/Shizuku 警告。日志为 `build/release-0.9.22-local.log`。
 - 本地产物核验：`apksigner verify --verbose` 确认 v2 签名有效，`aapt dump badging` 与 Release BuildConfig 均为 `com.cla.clip.master / 0.9.22 / 58`。`app/build/release-0.9.22-validation/outputs/apk/release/ClipMaster-v0.9.22-admob.apk` 为 5,036,550 字节，SHA256 为 `55424f048728fc7c38820f23294a017a5cd435e56564c2ac34cc8d8b4339a8ee`；mapping 保留于同一构建目录的 `outputs/mapping/release/mapping.txt`。云端构建与正式发布另行验收，不以本地产物替代。
+- 源码与云端验收：功能提交 `377af2d` 与版本提交 `f9300a6568f378e3ec13446607cbdc4b1cace537` 已快进合入并普通推送 `main`；[Actions 42213563182](https://github.com/lwcla/ClipMaster/actions/runs/42213563182) 为 `completed / success`，版本/资源门禁和 build 两个 job 均成功。正式 APK 构建、签名校验、APK 上传、R8 mapping 保存及 Release 创建步骤全部成功，标签精确指向上述版本提交。
+- 发行产物验收：[GitHub Release v0.9.22-58](https://github.com/lwcla/ClipMaster/releases/tag/v0.9.22-58) 于北京时间 2026-11-06 20:03:42 正式发布，非草稿、非预发布。附件 `ClipMaster-v0.9.22-admob.apk` 为 `uploaded`，大小 5,038,626 字节，GitHub 返回 SHA256 为 `0ed326cff062faeae1505ef171caf33eb8b2343b1dbd94cbd57d23f54fb6d047`。`ClipMaster-release-admob` 与 `ClipMaster-release-admob-mapping` 两个 Actions 产物均存在且未过期，分别按原规则保留 30 天和 90 天；云端签名由成功的签名步骤确认，本轮不重复下载或安装云端 APK。
+- 收尾边界：云端验收补录只修改文档，不再次递增版本；文档推送由版本门禁跳过 Android 构建，不产生第二个 Release。跨设备视觉与真实网络业务边界仍以多语言主方案为准。
 
 ### 0.9.21 版本递增与 GitHub 构建发布验收（2026-11-06，已完成）
 
@@ -450,6 +453,8 @@ public 仓库 README 作为人可读发布页维护，至少包含最新版版�
 - 是否需要把发布页入口放到关于页或错误弹窗外的常驻位置，方便两个自动源都不可达时用户主动查看。
 
 ## 变更记录
+
+- 2026-11-06：完成 `0.9.22 / 58` 云端发布验收，记录成功的 Actions、版本源码 SHA、正式 Release、APK 大小与摘要、mapping 留存及 tag 关联；原因是需要明确确认此次实际构建发布成功，而非仅记录推送成功。
 
 - 2026-11-06：按用户要求准备 `0.9.22 / 58`，纳入中英文适配及英文布局成果，记录主分支自动发布、完整 Release 验证和云端逐项验收计划；原因是需要通过版本递增重新构建并发布当前成果。
 
