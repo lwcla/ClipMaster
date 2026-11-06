@@ -4,11 +4,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -45,7 +42,7 @@ internal data class ImageCandidateToolbarState(
     val showLongRunningHint: Boolean,
 )
 
-/** feature 级候选工具栏；只展示快照并抛出用户事件，小屏下次要操作自然换行。 */
+/** feature 级候选工具栏；摘要与主动作分行，避免长英文按钮挤掉状态，次要操作仍自然换行。 */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ImageCandidateToolbar(
@@ -65,8 +62,8 @@ internal fun ImageCandidateToolbar(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.fillMaxWidth()) {
                 Text(
                     stringResource(if (state.isExtracting) R.string.base_general_image_extract_still_running
                         else R.string.base_general_image_extract_done_waiting),
@@ -80,8 +77,8 @@ internal fun ImageCandidateToolbar(
                     modifier = Modifier.padding(top = 4.dp),
                 )
             }
-            Spacer(Modifier.width(12.dp))
             Button(
+                modifier = Modifier.align(Alignment.End),
                 // 主操作沿用原流程；选择类动作不会停止探测或隐式提交。
                 onClick = { if (state.isExtracting) onStopExtract() else onConfirmDownload() },
                 enabled = !state.isSubmitting && (state.isExtracting || state.selectedCount > 0),

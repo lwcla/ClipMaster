@@ -236,6 +236,13 @@ android {
         compose = true
     }
 
+    androidResources {
+        // 第一期只交付英文和简体中文，排除依赖自带的其他语言，避免宿主与种子搜索混用语言。
+        localeFilters += listOf("en", "b+zh+Hans")
+        // 当前只跟随系统语言，应用独立语言选择及对应系统入口留到下一期。
+        generateLocaleConfig = false
+    }
+
     testOptions {
         unitTests {
             // 纯 JVM 单元测试不运行真实 Android Framework；允许 Process/Bundle 等轻量平台调用返回默认值，避免协议测试被日志桩阻断。

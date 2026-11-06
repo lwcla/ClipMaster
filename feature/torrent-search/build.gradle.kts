@@ -16,6 +16,9 @@ android {
 
     defaultConfig {
         minSdk = 24
+        // 库仪器测试使用独立安装身份与普通 Application，不启动宿主业务初始化。
+        testApplicationId = "com.cla.clip.master.localizationcheck.torrent.test"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     compileOptions {
@@ -46,6 +49,13 @@ dependencies {
     // Compose BOM 统一约束本模块 UI 依赖版本，避免各组件自行漂移。
     val composeBom = platform(libs.androidx.compose.bom)
     implementation(composeBom)
+    // 真实页面布局测试跟随生产 Compose BOM，禁止引入另一组 UI 版本。
+    androidTestImplementation(composeBom)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(libs.compose.ui.test.junit4)
+    // 普通 ComponentActivity 只在 Debug 提供，仪器测试不创建 Hilt 业务 Activity。
+    debugImplementation(libs.compose.ui.test.manifest)
     implementation(libs.activity.compose)
     implementation(libs.compose.ui)
     implementation(libs.compose.foundation)

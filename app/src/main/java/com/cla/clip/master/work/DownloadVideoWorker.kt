@@ -108,6 +108,7 @@ class DownloadVideoWorker @AssistedInject constructor(
      * Worker 执行入口。
      *
      * 读取任务、创建输出文件、清理上次失败的 pending 输出和 M3U8 临时目录；下载失败时会清理本次半成品并通知用户。
+     * 通知使用当前系统语言资源，持久化异常仅供已有错误分类使用，不直接展示给用户。
      */
     override suspend fun doWork(): Result {
         val taskId = inputData.getLong(KEY_TASK_ID, -1)
@@ -177,7 +178,8 @@ class DownloadVideoWorker @AssistedInject constructor(
                 taskId,
                 title = applicationContext.getString(R.string.base_general_download_failed),
                 fileName = fileName.showName,
-                content = errorMsg,
+                // 异常可能包含固定中文或第三方技术文本，通知统一使用可翻译的失败资源。
+                content = applicationContext.getString(R.string.base_general_video_download_failed),
             )
             Result.failure()
         }

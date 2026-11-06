@@ -16,7 +16,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.cla.clip.master.ui.theme.ClipMasterThemeTokens
 
@@ -43,6 +42,7 @@ internal data class SettingSwitchRowState<Id>(
  * 入口式开关卡片骨架；说明 slot 和卡片入口可拥有独立阅读动作。
  * enabled 仅控制 Switch，默认空白区不点击；调用方通过 onEntryClick 决定卡片是否可点击，
  * 避免保存中禁用开关时连带阻止说明阅读或日志浏览。组件不执行系统跳转或数据写入。
+ * 标题允许自然换行，保证英文长权限名称及大字号下含义完整；折叠说明仍由 slot 控制。
  */
 @Composable
 internal fun SettingSwitchEntryCard(
@@ -79,8 +79,6 @@ internal fun SettingSwitchEntryCard(
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
                 descriptionContent()
             }

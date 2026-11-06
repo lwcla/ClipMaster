@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -38,22 +40,26 @@ internal fun AppUpdateDialog(
     /** 调用方传入的通用修饰符。 */
     modifier: Modifier = Modifier,
 ) {
+    // 正文在当前弹窗生命周期内独立滚动；长更新说明不挤出末尾下载入口和固定关闭按钮。
+    val contentScroll = rememberScrollState()
     AlertDialog(
         modifier = modifier,
         onDismissRequest = onDismiss,
         title = { Text(text = state.dialogTitle()) },
         text = {
-            when (state) {
-                is AppUpdateDialogState.UpdateAvailable -> UpdateAvailableContent(
-                    info = state.info,
-                    onOpenLink = onOpenLink,
-                )
+            Column(Modifier.verticalScroll(contentScroll)) {
+                when (state) {
+                    is AppUpdateDialogState.UpdateAvailable -> UpdateAvailableContent(
+                        info = state.info,
+                        onOpenLink = onOpenLink,
+                    )
 
-                is AppUpdateDialogState.UpToDate -> UpToDateContent(state)
-                is AppUpdateDialogState.CheckUnavailable -> CheckUnavailableContent(
-                    state = state,
-                    onOpenLink = onOpenLink,
-                )
+                    is AppUpdateDialogState.UpToDate -> UpToDateContent(state)
+                    is AppUpdateDialogState.CheckUnavailable -> CheckUnavailableContent(
+                        state = state,
+                        onOpenLink = onOpenLink,
+                    )
+                }
             }
         },
         confirmButton = {
@@ -184,7 +190,11 @@ private fun AppUpdateLinkButtons(
         )
         links.forEach { link ->
             Row(modifier = Modifier.fillMaxWidth()) {
-                TextButton(onClick = { onOpenLink(link) }) {
+                TextButton(
+                    onClick = { onOpenLink(link) },
+                    // 多行长名称使用有限圆角，避免默认胶囊轮廓裁掉首末行的边缘字形。
+                    shape = MaterialTheme.shapes.small,
+                ) {
                     Text(text = link.buttonText())
                 }
             }

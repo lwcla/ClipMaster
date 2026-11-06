@@ -17,6 +17,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -30,6 +31,10 @@ import com.cla.clip.feature.torrent.search.R
 import com.cla.clip.feature.torrent.search.data.mapper.toTorrent
 import com.cla.clip.feature.torrent.search.model.contract.Torrent
 import com.cla.clip.feature.torrent.search.ui.component.ClearLocalDataConfirmationDialog
+import com.cla.clip.feature.torrent.search.ui.component.TorrentPageTopBar
+import com.cla.clip.feature.torrent.search.ui.component.torrentPageContentInsets
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import com.cla.clip.feature.torrent.search.ui.component.TorrentResultCard
 import com.cla.clip.feature.torrent.search.ui.component.toTorrentResultCardState
 import java.text.DateFormat
@@ -59,7 +64,7 @@ internal fun LocalDataHomeScreen(
 ) {
     LocalDataScaffold(title = stringResource(R.string.torrent_search_local_data_title), onBack = onBack) { /** padding 是内容安全边距。 */ padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
+            modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Button(onClick = onBookmarks, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.torrent_search_bookmarks_screen_title)) }
@@ -195,7 +200,9 @@ internal fun SearchHistoryScreen(
             }
             items(state.items, key = { /** item 使用带类型命名空间的规范化查询作为稳定业务身份。 */ item -> historyLazyItemKey(item.normalizedQuery) }) { /** item 是当前历史行。 */ item ->
                 Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { onReplay(item.query) }, modifier = Modifier.weight(1f)) { Text(item.query) }
+                    // 查询允许多行完整展示；固定主题圆角避免默认胶囊随高度增大后裁掉首尾文字。
+                    Button(onClick = { onReplay(item.query) }, modifier = Modifier.weight(1f),
+                        shape = MaterialTheme.shapes.medium) { Text(item.query) }
                     TextButton(enabled = !state.isBusy, onClick = { onRemove(item.query) }) { Text(stringResource(R.string.torrent_search_remove_item)) }
                 }
             }
@@ -295,14 +302,12 @@ private fun LocalDataScaffold(
     content: @Composable (androidx.compose.foundation.layout.PaddingValues) -> Unit,
 ) {
     Scaffold(
+        // 四个本地数据页统一避让底部强制手势区，书签移除等末项仍走正常列表滚动。
+        contentWindowInsets = torrentPageContentInsets(),
         topBar = {
-            TopAppBar(
-                title = { Text(title) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.torrent_search_action_back))
-                    }
-                },
+            TorrentPageTopBar(
+                title = title,
+                onBack = onBack,
                 actions = { actions() },
             )
         },

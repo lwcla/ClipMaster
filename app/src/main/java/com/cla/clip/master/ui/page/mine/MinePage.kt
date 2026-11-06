@@ -84,6 +84,8 @@ fun MinePage(
     val appUpdateUiState by mineVm.appUpdateUiState.collectAsStateWithLifecycle()
     /** 当前页面 Context；只用于系统跳转和 toast。 */
     val context = LocalContext.current
+    /** 固定政策地址通过 Compose 资源入口读取，保持配置变化时的资源读取约定一致。 */
+    val privacyPolicyUrl = stringResource(com.cla.clip.master.R.string.host_privacy_policy_url)
     /** 页面级协程作用域；用于浏览器打开失败后的短时 toast。 */
     val coroutineScope = rememberCoroutineScope()
     // 菜单展开只属于页面瞬时状态，正式配置通过 DataStore 已提交 Flow 更新。
@@ -197,7 +199,7 @@ fun MinePage(
                             // 固定 HTTPS 地址与 Play Console 一致，不附加用户数据或跟踪参数。
                             val policyIntent = Intent(
                                 Intent.ACTION_VIEW,
-                                Uri.parse(context.getString(com.cla.clip.master.R.string.host_privacy_policy_url)),
+                                Uri.parse(privacyPolicyUrl),
                             )
                             context.startActivity(policyIntent)
                         }.onFailure { error ->

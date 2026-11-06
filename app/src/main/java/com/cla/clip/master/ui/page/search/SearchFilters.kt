@@ -32,8 +32,10 @@ internal fun SearchFilters(
 ) {
     /** 范围入口只展示短摘要，不把所有选中名称挤到单行。 */
     val fieldLabel = filterState.fields.summaryText()
+    /** 复用共享分隔符，读屏字段列表随系统语言选择标点。 */
+    val fieldSeparator = stringResource(BaseR.string.base_general_text_separator)
     /** 读屏保留全部字段名称，即使视觉摘要被截断也能辨认。 */
-    val fieldDescription = ClipSearchField.entries.filter { it in filterState.fields }.map { it.labelText() }.joinToString("、")
+    val fieldDescription = ClipSearchField.entries.filter { it in filterState.fields }.map { it.labelText() }.joinToString(fieldSeparator)
     /** 时间值使用既有资源。 */
     val timeLabel = filterState.timeFilter.labelText()
     /** 来源摘要沿用既有空/单个/多个规则。 */

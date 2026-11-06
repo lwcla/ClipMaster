@@ -3,6 +3,8 @@ package com.cla.clip.feature.torrent.search.ui.component
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Card
@@ -47,6 +49,7 @@ internal fun Torrent.toTorrentResultCardState(): TorrentResultCardState {
 
 /** 搜索、浏览和本地数据页共用的 Torrent 结果卡，不依赖页面 ViewModel 或导航。 */
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 internal fun TorrentResultCard(
     /** 已收窄且不含外部链接的展示状态。 */
     state: TorrentResultCardState,
@@ -73,9 +76,10 @@ internal fun TorrentResultCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Row(
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 /** unknown 是数值缺失时统一使用的资源化展示值。 */
                 val unknown = stringResource(R.string.torrent_search_value_unknown)

@@ -63,7 +63,7 @@ import kotlin.math.roundToInt
  */
 @Composable
 internal fun FilterDropdown(
-    /** 当前选择摘要，长文本在入口内单行省略。 */
+    /** 当前选择摘要允许完整换行；固定三入口同行时仍能区分维度，不以省略号代替有效状态。 */
     value: String,
     /** 调用方资源化的维度与完整选择摘要，保留读屏信息。 */
     accessibilityDescription: String,
@@ -132,7 +132,7 @@ internal fun FilterDropdown(
             color = MaterialTheme.colorScheme.surface,
         ) {
             Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(value, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(value, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                 Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

@@ -18,6 +18,7 @@ import com.cla.clip.feature.torrent.search.input.toTorrentSearchIntentPayload
 import com.cla.clip.feature.torrent.search.legacy.LegacyMagnetCleanupGate
 import com.cla.clip.feature.torrent.search.legacy.LegacyMagnetCleanupViewModel
 import com.cla.clip.feature.torrent.search.ui.TorrentSearchApp
+import com.cla.clip.feature.torrent.search.ui.enableTorrentLightEdgeToEdge
 import dagger.hilt.android.AndroidEntryPoint
 
 /**
@@ -38,6 +39,8 @@ class TorrentSearchActivity : ComponentActivity() {
     /** 解析初始 Intent 并创建独立 Compose 导航容器；Intent 只预填，不自动联网。 */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 透传真实 Insets 并匹配当前浅色页面的系统图标，再由共享 Scaffold 避开底部强制手势区。
+        enableTorrentLightEdgeToEdge()
         consumeIntent(intent)
         setContent {
             /** legacyCleanupState 只在 Activity 可见生命周期收集门禁状态。 */

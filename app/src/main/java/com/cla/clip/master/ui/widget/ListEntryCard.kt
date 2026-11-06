@@ -12,7 +12,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.cla.clip.master.ui.theme.ClipMasterThemeTokens
 
@@ -20,7 +19,7 @@ import com.cla.clip.master.ui.theme.ClipMasterThemeTokens
  * 通用入口卡片。
  *
  * 适用于“我的页入口”“设置入口”“管理入口”等图标 + 标题 + 说明 + 点击动作的列表卡片；组件只承载展示和点击，
- * 业务导航、统计数量和权限判断由调用方转换成文案和回调后传入。
+ * 业务导航、统计数量和权限判断由调用方转换成文案和回调后传入；英文和大字体完整换行。
  */
 @Composable
 internal fun ListEntryCard(
@@ -33,11 +32,11 @@ internal fun ListEntryCard(
     // 字符串入口委托统一骨架，保持原调用方省略参数的兼容性。
     ListEntryCard(title = title, onClick = onClick, modifier = modifier, icon = icon, descriptionContent = {
         Text(text = description, style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
     })
 }
 
-/** 多段说明入口共享骨架；调用方可按目标独立布局，组件不订阅业务状态。 */
+/** 多段说明入口共享骨架；标题与说明完整换行，由外层列表滚动，不订阅业务状态。 */
 @Composable
 internal fun ListEntryCard(
     title: String,
@@ -69,8 +68,6 @@ internal fun ListEntryCard(
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
                 descriptionContent()
             }

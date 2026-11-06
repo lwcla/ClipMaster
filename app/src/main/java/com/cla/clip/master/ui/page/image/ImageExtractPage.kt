@@ -1,13 +1,10 @@
 package com.cla.clip.master.ui.page.image
 
 import android.webkit.WebView
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -17,6 +14,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.cla.clip.feature.ad.api.AdPlacement
 import com.cla.clip.master.ui.widget.media.MediaAdGrid
 import com.cla.clip.master.ui.page.image.component.ImageCandidateToolbar
+import com.cla.clip.master.ui.page.image.component.ImageExtractPageScaffold
 import com.cla.clip.master.ui.page.image.component.ImageCandidateToolbarState
 import com.cla.clip.master.ad.PageAdSession
 import com.cla.clip.master.ad.rememberPageAdSession
@@ -44,7 +42,6 @@ import com.cla.clip.master.ui.widget.InlineErrorState
 import com.cla.clip.master.ui.widget.InlineLoadingState
 import com.cla.clip.master.ui.widget.InlineSuccessState
 import com.cla.clip.master.ui.widget.ProbeWebView
-import com.cla.clip.master.ui.widget.TitleBar
 import com.cla.clip.master.ui.widget.rememberAnimatedImageLoader
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -108,90 +105,88 @@ fun ImageExtractPage(
             )
         }
     }
-    Scaffold(topBar = { TitleBar(stringResource(R.string.base_general_image_extract_title), onBack) }) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding).adInteractionGuard(adSession)) {
-            if (state is ImageProbeState.Probing) {
-                // User-Agent 在主线程缓存，网络回调不读取 WebView 设置。
-                var userAgent by remember(state.sessionId) { mutableStateOf<String?>(null) }
-                ProbeWebView(
-                    targetUrl = pageUrl,
-                    sessionId = state.sessionId,
-                    modifier = Modifier.fillMaxSize().alpha(0f),
-                    consumeUserTouch = true,
-                    onWebViewReady = { userAgent = it.settings.userAgentString },
-                    onDocumentStarted = { stopProbeJobs() },
-                    onPageFinished = { view, _ ->
-                        // 预览补全为有界旁路，手动停止或候选完成都无需等待它。
-                        previewJob = scope.launch { imageExtractVm.saveWebViewLinkPreview(view, pageUrl) }
-                        scanJob = scope.launch {
-                            try {
-                                // 自动触底必须有 DOM 图片证据，不能只凭网络占位图结束。
-                                val domCandidates = collectImagesWithDoublePass(view, view.url ?: pageUrl, userAgent,
-                                    imageExtractVm, state.sessionId)
-                                imageExtractVm.finishProbe(state.sessionId, hasDomEvidence = domCandidates.isNotEmpty())
-                            } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                                throw cancelled
-                            } catch (error: Exception) {
-                                logD("ImageExtractPage") { "扫描结束 type=${error.javaClass.simpleName}" }
-                                imageExtractVm.finishProbe(state.sessionId)
-                            }
-                        }
-                    },
-                    shouldInterceptRequest = { _, request ->
-                        // 旧回调只携带旧轮次，VM 拒绝已关闭的候选。
-                        val candidate = request.toNetworkCandidate(pageUrl, userAgent)
-                        if (candidate != null && imageExtractVm.addNetworkCandidate(state.sessionId, candidate) != null) {
-                            scope.launch { imageExtractVm.publishProbingCandidates(state.sessionId) }
-                        }
-                        null
-                    },
-                )
-            }
-            ImageExtractContent(
-                state = state,
-                adSession = adSession,
-                viewModel = imageExtractVm,
-                gridState = gridState,
-                imageLoader = imageLoader,
-                showLongRunningHint = showLongRunningHint,
-                adsBlocked = showRetryConfirm,
-                isSubmittingDownload = imageExtractVm.isSubmitting,
-                onRetry = {
-                    if (!imageExtractVm.isSubmitting) {
-                        if (state is ImageProbeState.Extracted) {
-                            scope.launch {
-                                if (!imageExtractVm.retryDownload()) context.toast(R.string.base_general_image_download_retry_failed)
-                            }
-                        } else if (imageExtractVm.probingCandidates.isNotEmpty()) showRetryConfirm = true
-                        else restartProbe()
-                    }
-                },
-                onExtractAgain = { if (!imageExtractVm.isSubmitting) restartProbe() },
-                onStopExtract = {
-                    if (state is ImageProbeState.Probing) {
-                        stopProbeJobs()
-                        imageExtractVm.finishProbe(state.sessionId)
-                    }
-                },
-                onConfirmDownload = { keys ->
-                    scope.launch {
-                        if (!imageExtractVm.createBatchAndStartDownload(pageUrl, pageName, keys)) {
-                            context.toast(R.string.base_general_failed_to_create_the_download_task)
+    ImageExtractPageScaffold(onBack = onBack, contentModifier = Modifier.adInteractionGuard(adSession)) {
+        if (state is ImageProbeState.Probing) {
+            // User-Agent 在主线程缓存，网络回调不读取 WebView 设置。
+            var userAgent by remember(state.sessionId) { mutableStateOf<String?>(null) }
+            ProbeWebView(
+                targetUrl = pageUrl,
+                sessionId = state.sessionId,
+                modifier = Modifier.fillMaxSize().alpha(0f),
+                consumeUserTouch = true,
+                onWebViewReady = { userAgent = it.settings.userAgentString },
+                onDocumentStarted = { stopProbeJobs() },
+                onPageFinished = { view, _ ->
+                    // 预览补全为有界旁路，手动停止或候选完成都无需等待它。
+                    previewJob = scope.launch { imageExtractVm.saveWebViewLinkPreview(view, pageUrl) }
+                    scanJob = scope.launch {
+                        try {
+                            // 自动触底必须有 DOM 图片证据，不能只凭网络占位图结束。
+                            val domCandidates = collectImagesWithDoublePass(view, view.url ?: pageUrl, userAgent,
+                                imageExtractVm, state.sessionId)
+                            imageExtractVm.finishProbe(state.sessionId, hasDomEvidence = domCandidates.isNotEmpty())
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            throw cancelled
+                        } catch (error: Exception) {
+                            logD("ImageExtractPage") { "扫描结束 type=${error.javaClass.simpleName}" }
+                            imageExtractVm.finishProbe(state.sessionId)
                         }
                     }
                 },
-                onOpen = { outputDir ->
-                    if (ImageFolderOpenHelper.openDownloadedImageFolder(context, outputDir) == ImageFolderOpenResult.None) {
-                        scope.launch { context.toast(R.string.base_general_no_available_app_to_open_image_folder) }
+                shouldInterceptRequest = { _, request ->
+                    // 旧回调只携带旧轮次，VM 拒绝已关闭的候选。
+                    val candidate = request.toNetworkCandidate(pageUrl, userAgent)
+                    if (candidate != null && imageExtractVm.addNetworkCandidate(state.sessionId, candidate) != null) {
+                        scope.launch { imageExtractVm.publishProbingCandidates(state.sessionId) }
                     }
+                    null
                 },
             )
-            if (showRetryConfirm) {
-                RetryExtractConfirmDialog(onDismiss = { showRetryConfirm = false }, onConfirm = {
-                    showRetryConfirm = false
-                    restartProbe()
-                })
-            }
+        }
+        ImageExtractContent(
+            state = state,
+            adSession = adSession,
+            viewModel = imageExtractVm,
+            gridState = gridState,
+            imageLoader = imageLoader,
+            showLongRunningHint = showLongRunningHint,
+            adsBlocked = showRetryConfirm,
+            isSubmittingDownload = imageExtractVm.isSubmitting,
+            onRetry = {
+                if (!imageExtractVm.isSubmitting) {
+                    if (state is ImageProbeState.Extracted) {
+                        scope.launch {
+                            if (!imageExtractVm.retryDownload()) context.toast(R.string.base_general_image_download_retry_failed)
+                        }
+                    } else if (imageExtractVm.probingCandidates.isNotEmpty()) showRetryConfirm = true
+                    else restartProbe()
+                }
+            },
+            onExtractAgain = { if (!imageExtractVm.isSubmitting) restartProbe() },
+            onStopExtract = {
+                if (state is ImageProbeState.Probing) {
+                    stopProbeJobs()
+                    imageExtractVm.finishProbe(state.sessionId)
+                }
+            },
+            onConfirmDownload = { keys ->
+                scope.launch {
+                    if (!imageExtractVm.createBatchAndStartDownload(pageUrl, pageName, keys)) {
+                        context.toast(R.string.base_general_failed_to_create_the_download_task)
+                    }
+                }
+            },
+            onOpen = { outputDir ->
+                if (ImageFolderOpenHelper.openDownloadedImageFolder(context, outputDir) == ImageFolderOpenResult.None) {
+                    scope.launch { context.toast(R.string.base_general_no_available_app_to_open_image_folder) }
+                }
+            },
+        )
+        if (showRetryConfirm) {
+            RetryExtractConfirmDialog(onDismiss = { showRetryConfirm = false }, onConfirm = {
+                showRetryConfirm = false
+                restartProbe()
+            })
         }
     }
 }
@@ -351,7 +346,7 @@ private fun LiveCandidateSelectionContent(
  * 当前候选和选择状态只存在页面内存中，重新提取会全部清空；已有候选未下载时必须让用户明确确认这个代价。
  */
 @Composable
-private fun RetryExtractConfirmDialog(
+internal fun RetryExtractConfirmDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {

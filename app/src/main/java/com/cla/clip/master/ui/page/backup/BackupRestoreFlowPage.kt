@@ -100,7 +100,7 @@ internal fun BackupRestoreFlowPage(
 
 /** 连接恢复页外壳与内容区，并把可选功能展示契约原样透传给纯渲染内容。 */
 @Composable
-private fun BackupRestoreFlowScaffold(
+internal fun BackupRestoreFlowScaffold(
     state: BackupRestoreFlowState,
     onBack: () -> Unit,
     onDone: () -> Unit,
@@ -197,36 +197,36 @@ private fun BackupRestoreFlowScaffold(
     }
 
     if (showExitConfirm) {
-        AlertDialog(
-            onDismissRequest = { showExitConfirm = false },
-            title = { Text(text = stringResource(R.string.base_general_backup_restore_exit_title)) },
-            text = {
-                Text(
-                    text = if (state is BackupRestoreFlowState.Restoring) {
-                        stringResource(R.string.base_general_backup_restore_exit_restoring_message)
-                    } else {
-                        stringResource(R.string.base_general_backup_restore_exit_reading_message)
-                    }
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showExitConfirm = false
-                        onForceBack()
-                    }
-                ) {
-                    Text(text = stringResource(R.string.base_general_backup_restore_exit_confirm))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showExitConfirm = false }) {
-                    Text(text = stringResource(R.string.base_general_cancel))
-                }
-            }
+        BackupRestoreExitDialog(
+            restoring = state is BackupRestoreFlowState.Restoring,
+            onDismiss = { showExitConfirm = false },
+            // 确认仍先关闭弹窗，再交给原页面回调检查会话并退出。
+            onConfirm = { showExitConfirm = false; onForceBack() },
         )
     }
 
+}
+
+/** 恢复退出确认只展示阶段说明；会话校验、任务停止与导航仍由页面回调处理。 */
+@Composable
+internal fun BackupRestoreExitDialog(restoring: Boolean, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.base_general_backup_restore_exit_title)) },
+        text = {
+            // 两倍字号下正文独立滚动，退出与取消始终留在固定操作区。
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(stringResource(if (restoring) R.string.base_general_backup_restore_exit_restoring_message
+                    else R.string.base_general_backup_restore_exit_reading_message))
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) { Text(stringResource(R.string.base_general_backup_restore_exit_confirm)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.base_general_cancel)) }
+        },
+    )
 }
 
 /** 只有正在读取或恢复时需要二次确认，结果和错误态可直接返回。 */

@@ -2,29 +2,20 @@ package com.cla.clip.master.ui.page.image
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import coil3.ImageLoader
-import com.cla.clip.base.general.R
 import com.cla.clip.base.general.dao.ImageExtractItemData
 import com.cla.clip.base.general.repository.ImageCandidateData
 import com.cla.clip.master.ui.widget.SelectableImageTile
 import com.cla.clip.master.ui.widget.SharedImagePreviewMeta
 import com.cla.clip.master.ui.widget.image.ImagePreviewContent
 import com.cla.clip.master.ui.widget.image.ImageThumbnailLoadEvent
-import com.cla.clip.master.ui.widget.image.ImagePreviewMetadata
 import com.cla.clip.master.ui.widget.image.SharedImagePreviewDialog
 import com.cla.clip.master.ui.widget.media.snapshotMediaGridItems
 import com.cla.clip.master.ui.widget.rememberSharedImageRequest
+import com.cla.clip.master.ui.page.image.component.CandidateImagePreviewFooter
 
 /**
  * 实时候选缩略图。
@@ -104,14 +95,12 @@ internal fun CandidateImagePreviewDialog(
                 ?: ImagePreviewMeta(width = candidate.width, height = candidate.height)
             // 预览选择状态与网格使用同一个稳定身份集合。
             val selected = candidateKey in viewModel.selection.selectedKeys
-            Column(Modifier.fillMaxWidth().heightIn(max = 144.dp).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-                if (isExtracting) Text(stringResource(R.string.base_general_image_extract_loading))
-                ImagePreviewMetadata(meta.toSharedPreviewMeta(), candidate.url)
+            CandidateImagePreviewFooter(
+                meta = meta.toSharedPreviewMeta(), imageUrl = candidate.url,
+                isExtracting = isExtracting, selected = selected,
                 // 预览中的移除只取消下载勾选，不改变图片集合和计数。
-                TextButton(onClick = { viewModel.selection.setSelected(candidateKey, !selected) }) {
-                    Text(stringResource(if (selected) R.string.base_general_remove_this_image else R.string.base_general_keep_this_image))
-                }
-            }
+                onToggleSelected = { viewModel.selection.setSelected(candidateKey, !selected) },
+            )
         },
     )
 }

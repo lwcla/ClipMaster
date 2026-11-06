@@ -10,6 +10,8 @@ import com.cla.clip.master.ui.widget.AcknowledgementDialog
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -324,7 +326,7 @@ internal fun BackupPage(
 
 /** 首次创建备份前展示的未加密风险披露；确认状态由 ViewModel 持久化。 */
 @Composable
-private fun BackupPlaintextDisclosureDialog(
+internal fun BackupPlaintextDisclosureDialog(
     /** 用户取消披露时只关闭对话框，不继续原动作。 */
     onDismiss: () -> Unit,
     /** 用户确认披露后持久化确认状态并继续原动作。 */
@@ -336,16 +338,20 @@ private fun BackupPlaintextDisclosureDialog(
             Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_backup_plaintext_disclosure_title))
         },
         text = {
-            Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_backup_plaintext_disclosure_message))
-        },
-        confirmButton = {
-            Button(onClick = onConfirm) {
-                Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_backup_plaintext_disclosure_confirm))
+            // 风险披露必须可全文阅读；正文滚动不影响底部确认和取消按钮。
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_backup_plaintext_disclosure_message))
             }
         },
-        dismissButton = {
-            OutlinedButton(onClick = onDismiss) {
-                Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_cancel))
+        confirmButton = {
+            // 同一纵向操作区按真实高度排列按钮，避免大字体换行时弹窗默认流式操作区重叠。
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onConfirm, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small) {
+                    Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_backup_plaintext_disclosure_confirm))
+                }
+                OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small) {
+                    Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_cancel))
+                }
             }
         },
     )
@@ -359,7 +365,7 @@ private fun RemoteBackupFile.lazyListKey(): String = "remote:${path}:${fileName}
 
 /** 自动备份配置和状态区。 */
 @Composable
-private fun AutoBackupSection(
+internal fun AutoBackupSection(
     state: BackupUiState,
     onEnabledChange: (Boolean) -> Unit,
     onRetentionChange: (Int) -> Unit,
@@ -434,7 +440,7 @@ private fun ToggleRow(
 
 /** 本地备份操作区，提供导出和选择文件预检入口。 */
 @Composable
-private fun LocalBackupSection(
+internal fun LocalBackupSection(
     state: BackupUiState,
     isBusy: Boolean,
     onExport: () -> Unit,
@@ -457,11 +463,12 @@ private fun LocalBackupSection(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                Button(onClick = onExport, enabled = !isBusy, modifier = Modifier.weight(1f)) {
+            // 两个主动作各占整行，英文及两倍字号保留完整按钮含义；页面原有列表负责纵向滚动。
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                Button(onClick = onExport, enabled = !isBusy, modifier = Modifier.fillMaxWidth()) {
                     Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_export_backup))
                 }
-                Button(onClick = onImport, enabled = !isBusy, modifier = Modifier.weight(1f)) {
+                Button(onClick = onImport, enabled = !isBusy, modifier = Modifier.fillMaxWidth()) {
                     Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_import_backup))
                 }
             }
@@ -476,15 +483,15 @@ private fun LocalBackupSection(
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                // 文案同时包含保存位置和上传前先落地的说明，不能把后半段作为路径摘要省略。
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedButton(onClick = onChooseDir, enabled = !isBusy, modifier = Modifier.weight(1f)) {
+            // 目录与刷新同样纵向排列，长文案不依赖两列空间或固定按钮高度。
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(onClick = onChooseDir, enabled = !isBusy, modifier = Modifier.fillMaxWidth()) {
                     Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_local_backup_choose_dir))
                 }
                 if (state.localBackupDirUri.isNotBlank()) {
-                    OutlinedButton(onClick = onRefreshLocal, enabled = !isBusy, modifier = Modifier.weight(1f)) {
+                    OutlinedButton(onClick = onRefreshLocal, enabled = !isBusy, modifier = Modifier.fillMaxWidth()) {
                         Icon(imageVector = Icons.Default.Refresh, contentDescription = null)
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_local_backup_refresh))
@@ -504,7 +511,7 @@ private fun LocalBackupSection(
 
 /** WebDAV 配置和手动操作区；只展示当前凭据输入，密码显隐委托通用组件，连接结果由调用方反馈。 */
 @Composable
-private fun WebDavConfigSection(
+internal fun WebDavConfigSection(
     state: BackupUiState,
     /** 子树任意凭据字段聚焦时暂停广告，不向广告层传递字段值。 */
     onEditingChanged: (Boolean) -> Unit,
@@ -574,21 +581,22 @@ private fun WebDavConfigSection(
                     enabled = actionsEnabled
                 )
             }
-            Row(
+            // 全宽按钮避免上传图标与长英文标签共同挤压相邻连接测试动作。
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Button(
                     onClick = onTest,
                     enabled = actionsEnabled,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(text = androidx.compose.ui.res.stringResource(R.string.base_general_webdav_test))
                 }
                 Button(
                     onClick = onUpload,
                     enabled = actionsEnabled,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(imageVector = Icons.Default.CloudUpload, contentDescription = null)
                     Spacer(modifier = Modifier.width(4.dp))
@@ -620,7 +628,7 @@ private fun WebDavConfigSection(
 
 /** 远端备份为空时展示的轻量状态。 */
 @Composable
-private fun EmptyRemoteBackups() {
+internal fun EmptyRemoteBackups() {
     Text(
         text = androidx.compose.ui.res.stringResource(R.string.base_general_webdav_list_empty),
         modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
@@ -663,7 +671,7 @@ private fun RemoteBackupCard(
 
 /** 本地和远端共用基础元数据卡片；类型仅在恢复预览展示，减少列表对摘要的依赖。 */
 @Composable
-private fun BackupFileCard(
+internal fun BackupFileCard(
     fileName: String,
     createdAt: Long?,
     size: Long?,
@@ -722,13 +730,15 @@ private fun BackupFileCard(
  * 这里使用不可取消的模态反馈替代标题栏加载动画，因为备份会写文件/上传网络，恢复会写数据库，用户需要明确知道页面正在处理数据。
  */
 @Composable
-private fun BackupTaskProgressDialog(operation: BackupBusyOperation, progress: BackupProgress?) {
+internal fun BackupTaskProgressDialog(operation: BackupBusyOperation, progress: BackupProgress?) {
+    // 标题由任务种类决定；当前总览只有本地导出挂载此模态弹窗。
     val titleRes = when (operation) {
         BackupBusyOperation.Exporting,
         BackupBusyOperation.UploadingWebDav -> R.string.base_general_backup_backing_up_title
         BackupBusyOperation.Restoring -> R.string.base_general_backup_restoring_title
         else -> R.string.base_general_backup_backing_up_title
     }
+    // 正文优先展示实际阶段，准备中或缺失进度时保留操作级兜底说明。
     val messageRes = when (progress?.phase) {
         BackupProgressPhase.Exporting -> R.string.base_general_backup_progress_exporting
         BackupProgressPhase.UploadingWebDav -> R.string.base_general_backup_progress_uploading

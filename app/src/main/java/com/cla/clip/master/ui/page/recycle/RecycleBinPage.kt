@@ -4,6 +4,10 @@ import com.cla.clip.master.ui.widget.sourceapp.rememberAppIconLoader
 import com.cla.clip.master.ui.widget.sourceapp.SourceAppNameLoadingEffect
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -234,8 +238,9 @@ fun RecycleBinPage(
 }
 
 /** 回收站多选态底部操作栏，只承载彻底删除动作；允许 0 选中停留在多选态，但禁用删除避免误确认。 */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun RecycleBinSelectionBar(
+internal fun RecycleBinSelectionBar(
     selectedCount: Int,
     onDelete: () -> Unit,
 ) {
@@ -243,12 +248,13 @@ private fun RecycleBinSelectionBar(
     val deleteEnabled = selectedCount > 0
     /** 多选彻底删除图标颜色跟随可用性，禁用时降级避免误导用户。 */
     val deleteIconTint = if (deleteEnabled) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-    Row(
+    // 长英文动作与计数分别保留完整宽度，空间不足时换行而非互相挤压。
+    FlowRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
             text = stringResource(com.cla.clip.base.general.R.string.base_general_selected_count, selectedCount),
@@ -267,7 +273,7 @@ private fun RecycleBinSelectionBar(
 
 /** 单条回收站记录还原确认弹窗，确认后只恢复删除状态，不改变原折叠、折叠时间和置顶信息。 */
 @Composable
-private fun RestoreConfirmDialog(
+internal fun RestoreConfirmDialog(
     clip: ClipShowEntity?,
     onDismiss: () -> Unit,
     onConfirm: (ClipShowEntity) -> Unit,
@@ -276,7 +282,8 @@ private fun RestoreConfirmDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(com.cla.clip.base.general.R.string.base_general_restore_clip_title)) },
-        text = { Text(stringResource(com.cla.clip.base.general.R.string.base_general_restore_clip_message)) },
+        // 大字体下说明可滚动，危险动作或还原按钮不能被正文推出窗口。
+        text = { Text(stringResource(com.cla.clip.base.general.R.string.base_general_restore_clip_message), Modifier.verticalScroll(rememberScrollState())) },
         confirmButton = {
             TextButton(onClick = { onConfirm(clip) }) {
                 Text(stringResource(com.cla.clip.base.general.R.string.base_general_restore))
@@ -292,7 +299,7 @@ private fun RestoreConfirmDialog(
 
 /** 回收站永久操作确认弹窗，统一提示不可恢复。 */
 @Composable
-private fun ConfirmPermanentActionDialog(
+internal fun ConfirmPermanentActionDialog(
     visible: Boolean,
     title: String,
     message: String,
@@ -303,7 +310,8 @@ private fun ConfirmPermanentActionDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
-        text = { Text(message) },
+        // 不可恢复说明保留全文，受限窗口通过滚动查看。
+        text = { Text(message, Modifier.verticalScroll(rememberScrollState())) },
         confirmButton = {
             TextButton(onClick = onConfirm) {
                 Text(
@@ -323,19 +331,25 @@ private fun ConfirmPermanentActionDialog(
 /** 回收站保留天数设置底部弹窗，保存后会立即清理超过新天数的数据。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RecycleBinSettingSheet(
+internal fun RecycleBinSettingSheet(
     currentDays: Int,
     onDismiss: () -> Unit,
     onSave: (Int) -> Unit,
 ) {
+    // 弹层直接展开；大字体和键盘压缩高度时由内容滚动保留操作可达性。
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // 选择项保存在本次弹层中，取消不写入设置。
     var selectedDays by remember(currentDays) { mutableStateOf(currentDays) }
+    // 自定义输入与生效天数分别保留，非法输入仅禁用保存。
     var customText by remember(currentDays) { mutableStateOf(currentDays.toString()) }
+    // 数字解析沿用既有范围校验，不改变持久化契约。
     val customDays = customText.toIntOrNull()
+    // 预设值优先，其他选择才使用输入值。
     val effectiveDays = when (selectedDays) {
         7, 30 -> selectedDays
         else -> customDays
     }
+    // 仍只允许仓库已有的合法保留天数。
     val canSave = effectiveDays != null &&
         effectiveDays in ClipSettingsRepository.MIN_RECYCLE_BIN_RETENTION_DAYS..ClipSettingsRepository.MAX_RECYCLE_BIN_RETENTION_DAYS
 
@@ -346,6 +360,7 @@ private fun RecycleBinSettingSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 12.dp)
         ) {
             Text(

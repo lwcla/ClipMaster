@@ -27,6 +27,12 @@ jobs:
       - name: 验证版本判定规则
         run: python3 -m unittest scripts.test_github_release_version
 
+      # CI 运行于 Ubuntu；轻量资源门禁覆盖每次推送，不依赖 Android SDK 或发布密钥。
+      - name: 验证中英文资源完整性
+        run: |
+          python3 -m unittest scripts.test_check_localization
+          python3 scripts/check_localization.py
+
       - name: 比较推送前后版本
         id: version
         env:

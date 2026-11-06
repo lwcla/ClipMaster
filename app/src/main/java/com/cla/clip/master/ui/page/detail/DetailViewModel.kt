@@ -1,6 +1,7 @@
 package com.cla.clip.master.ui.page.detail
 
 import android.content.Context
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cla.clip.base.general.R
@@ -41,7 +42,7 @@ import javax.inject.Inject
  * 剪贴详情页 UI 状态。
  *
  * 详情页只围绕单条剪贴记录渲染，因此状态保持为加载、成功、失败三态；
- * 失败信息使用字符串而不是异常对象，避免 UI 层依赖数据库或网络异常类型。
+ * 失败信息只保存字符串资源 ID，避免 UI 层依赖异常类型，也避免状态跨配置重建后继续显示旧语言。
  */
 sealed class DetailUiState {
     /** 正在根据路由中的剪贴 ID 查询数据库。 */
@@ -50,8 +51,11 @@ sealed class DetailUiState {
     /** 成功加载到剪贴详情，页面可展示正文和操作按钮。 */
     data class Success(val clip: ClipShowEntity) : DetailUiState()
 
-    /** 剪贴记录不存在或加载失败时展示的用户可见错误。 */
-    data class Error(val message: String) : DetailUiState()
+    /** 剪贴记录不存在或加载失败时的展示状态，文案由页面按当前系统语言读取。 */
+    data class Error(
+        /** 仅用于内存 UI 状态的错误资源，不保存已格式化文案或异常对象。 */
+        @get:StringRes val messageRes: Int,
+    ) : DetailUiState()
 }
 
 /**
@@ -63,7 +67,7 @@ sealed class DetailUiState {
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class DetailViewModel @Inject constructor(
-    /** 应用级 Context，用于在 IO 查询中安全读取字符串资源。 */
+    /** 应用级 Context，用于来源过滤操作完成后的即时 Toast 反馈，不缓存页面文案。 */
     @param:ApplicationContext private val appContext: Context,
 
     /** 剪贴仓库使用 Lazy，避免详情页创建时立即初始化数据库查询依赖。 */
@@ -96,6 +100,7 @@ class DetailViewModel @Inject constructor(
      * 详情页状态流。
      *
      * `transformLatest` 保证路由 ID 快速变化时只保留最后一次查询结果，避免旧记录覆盖新详情。
+     * 失败状态只保留资源 ID，生命周期内缓存查询结果时仍可随系统语言重新展示。
      */
     val clipFlow = _clipIdFlow.filterNotNull().transformLatest { id ->
         /** 路由对应的内容对象；不存在时不查询历史来源名称。 */
@@ -103,7 +108,7 @@ class DetailViewModel @Inject constructor(
         currentCoroutineContext().ensureActive()
 
         if (clip == null) {
-            emit(DetailUiState.Error(appContext.getString(R.string.base_general_clip_not_found)))
+            emit(DetailUiState.Error(R.string.base_general_clip_not_found))
             return@transformLatest
         }
 

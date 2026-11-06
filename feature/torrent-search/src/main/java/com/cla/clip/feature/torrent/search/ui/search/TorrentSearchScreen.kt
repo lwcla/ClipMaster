@@ -46,6 +46,12 @@ import com.cla.clip.feature.torrent.search.model.contract.SortOrder
 import com.cla.clip.feature.torrent.search.ui.component.TorrentResultCard
 import com.cla.clip.feature.torrent.search.ui.component.toTorrentResultCardState
 import com.cla.clip.feature.torrent.search.ui.component.torrentCategoryLabel
+import com.cla.clip.feature.torrent.search.ui.component.TorrentPageTopBar
+import com.cla.clip.feature.torrent.search.ui.component.torrentPageContentInsets
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 
 /** 搜索主页面纯渲染入口；所有业务状态和副作用由调用方提升。 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -85,14 +91,12 @@ internal fun TorrentSearchScreen(
     onBack: () -> Unit,
 ) {
     Scaffold(
+        // 统一底部强制手势边界，结果末项必须能滚到系统指示区上方。
+        contentWindowInsets = torrentPageContentInsets(),
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.torrent_search_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.torrent_search_action_back))
-                    }
-                },
+            TorrentPageTopBar(
+                title = stringResource(R.string.torrent_search_title),
+                onBack = onBack,
                 actions = {
                     IconButton(onClick = onSettings) {
                         Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.torrent_search_search_action_settings))
@@ -113,16 +117,18 @@ internal fun TorrentSearchScreen(
                 .padding(contentPadding)
                 .padding(horizontal = 16.dp),
         ) {
-            SearchControls(
-                state = state,
-                onQueryChange = onQueryChange,
-                onCategoryChange = onCategoryChange,
-                onSortChange = onSortChange,
-                onSearch = onSearch,
-                onStop = onStop,
-                onSafeModeChange = onSafeModeChange,
-            )
-            SearchResults(state = state, onResultClick = onResultClick, modifier = Modifier.weight(1f))
+            // 控件与结果共用惰性纵向列表，大字体不会让固定控件区挤掉全部结果视口。
+            SearchResults(state = state, onResultClick = onResultClick, modifier = Modifier.weight(1f), controls = {
+                SearchControls(
+                    state = state,
+                    onQueryChange = onQueryChange,
+                    onCategoryChange = onCategoryChange,
+                    onSortChange = onSortChange,
+                    onSearch = onSearch,
+                    onStop = onStop,
+                    onSafeModeChange = onSafeModeChange,
+                )
+            })
         }
     }
     if (state.showMultiSourceDisclosure) {
@@ -130,7 +136,8 @@ internal fun TorrentSearchScreen(
             onDismissRequest = onDismissDisclosure,
             title = { Text(stringResource(R.string.torrent_search_multi_source_disclosure_title)) },
             text = {
-                Text(stringResource(R.string.torrent_search_multi_source_disclosure_message, state.pendingDisclosureProviderCount))
+                Text(stringResource(R.string.torrent_search_multi_source_disclosure_message, state.pendingDisclosureProviderCount),
+                    modifier = Modifier.verticalScroll(rememberScrollState()))
             },
             confirmButton = {
                 TextButton(onClick = onConfirmDisclosure) {
@@ -148,7 +155,7 @@ internal fun TorrentSearchScreen(
         AlertDialog(
             onDismissRequest = onDismissDisableSafeMode,
             title = { Text(stringResource(R.string.torrent_search_disable_safe_mode_title)) },
-            text = { Text(stringResource(R.string.torrent_search_disable_safe_mode_message)) },
+            text = { Text(stringResource(R.string.torrent_search_disable_safe_mode_message), modifier = Modifier.verticalScroll(rememberScrollState())) },
             confirmButton = {
                 TextButton(onClick = onConfirmDisableSafeMode) {
                     Text(stringResource(R.string.torrent_search_disable_safe_mode_confirm))
@@ -165,6 +172,7 @@ internal fun TorrentSearchScreen(
 
 /** 搜索输入、分类、排序和安全模式控制区。 */
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun SearchControls(
     /** 当前页面状态。 */
     state: TorrentSearchUiState,
@@ -198,10 +206,10 @@ private fun SearchControls(
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { onSearch() }),
         )
-        Row(
+        FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (state.isSearching) {
                 OutlinedButton(onClick = onStop) {
@@ -216,11 +224,14 @@ private fun SearchControls(
             }
             Text(
                 text = stringResource(R.string.torrent_search_enabled_provider_count, state.enabledProviderCount),
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.align(Alignment.CenterVertically),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Text(stringResource(R.string.torrent_search_safe_mode), style = MaterialTheme.typography.labelMedium)
+        }
+        // 安全模式是独立设置行，开关保留触控热区，不参与搜索按钮和来源数的宽度争用。
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.torrent_search_safe_mode), modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
             Switch(checked = state.safeModeEnabled, onCheckedChange = onSafeModeChange)
         }
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -271,12 +282,15 @@ private fun SearchResults(
     onResultClick: (com.cla.clip.feature.torrent.search.model.contract.Torrent) -> Unit,
     /** 结果区域外部布局约束。 */
     modifier: Modifier = Modifier,
+    /** 搜索控件作为首个惰性项，随结果区一起滚动。 */
+    controls: @Composable () -> Unit,
 ) {
     LazyColumn(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp),
     ) {
+        item(key = "search_controls") { controls() }
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),

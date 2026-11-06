@@ -1,12 +1,58 @@
 # TorrentSearch 固定快照接入主方案
 
-> 状态：已完成
+> 状态：实现中
 >
 > 上游基线：`prajwalch/TorrentSearch@ba82e889637027f7bed82715ec4d2106cbce5a28`
 >
 > 宿主基线：`ClipMaster@68f838c`
 
 ## 方案处置与目标
+
+### 英文全页面大字体回归（2026-11-06）
+
+本轮状态：已完成。真实入口最终烟测 1 项、最终 40 场景、生产编译/1078 项单测/lint 均通过，主要页面和十类弹窗的最新截图已人工验收。此状态只针对本节英文长文案/大字体回归，不改变其他功能切片的状态；整体多语言范围与宿主验收以 [多语言主方案](multilingual_support_plan.md) 为准。
+
+#### 当前实现与隔离边界
+
+功能模块 androidTest 以普通 Application、真实生产 Screen 和合成 UI state 覆盖搜索、浏览、详情、本地数据主页、书签、历史、已查看、设置、来源管理、Cloudflare/不可用页，以及首次披露、两处安全模式确认、三类清空确认、Torznab 新增/编辑、旧数据清理确认/失败共十个弹窗变体。40 个场景各运行 320dp、1.0/1.3/2.0 倍字体，并包含 MineEntry/DetailAction 经真实 API 接口分派的回归。
+
+测试身份为 `com.cla.clip.master.localizationcheck.torrent.test`；不创建业务 ViewModel、不读用户数据库、不提交搜索、不点击真实 SAF 导入导出。Cloudflare 仅加载无外部资源的静态 data 页面。测试辅助代码留在模块内，不能反向依赖 app。app 另以真实 App/Hilt runner、独立 `com.cla.clip.master.localizationcheck` 包和应用内显式 Intent 启动非导出 `TorrentSearchActivity`，验证真实窗口；不携带查询、不触发浏览或搜索。
+
+排版采用 feature-local `TorrentPageTopBar` 保留完整标题、换行动作；搜索控制与结果共同滚动，安全模式独立成行；统计、详情和来源管理动作自然换行，长确认正文可滚动，书签错误置于 Scaffold 内容顶部。历史长查询按钮使用 `MaterialTheme.shapes.medium`，避免胶囊 Shape 裁掉首尾字形。
+
+窗口与底部边界采用两项共同契约：`enableTorrentLightEdgeToEdge()` 在生产入口 setContent 前启用完整 Insets，并匹配当前固定浅色 MaterialTheme 的深色系统图标；透明 `SystemBarStyle.light` 在 API 24/25 保留 AndroidX 默认导航暗遮罩。`torrentPageContentInsets()` 将 Scaffold 原有系统栏契约与 `mandatorySystemGestures.only(Bottom)` 合并，供 Search、Browse、Details、Settings、Providers、LocalDataScaffold、Cloudflare 正常/不可用共 8 处复用。所有页面继续消费既有 innerPadding，没有固定像素补偿或额外包装 Scaffold。
+
+#### 测试可信度与规则例外
+
+独立 View Context 确保真实 Dialog 继承英文/字号；测试读取 TextLayoutResult 检查实际字号、可见字形、完整短标签与省略。仅既有结果两行标题、单行来源和来源 URL 允许明确的 Ellipsis 摘要，详情全文与关键操作不豁免。截图前后要求本进程窗口持有焦点且 IME 隐藏，并人工复核 Shape 裁切；不抢焦点的悬浮通知仍可能覆盖标题，必须以人工检查补足，任何系统提示或键盘遮挡的图片均不能计作视觉通过。
+
+滚动采用有界 ScrollBy/ScrollToIndex，检查每步进展，目标及其布局祖先须已放置；不再调用可能无界循环的 performScrollTo/performScrollToNode。Torznab 弹窗组合后逐窗口清焦点、关闭 IME，最多 5 秒并要求连续 500ms 隐藏。测试按真实 native navigation/mandatory 安全边界定位末项；外层显式不消费 Insets，将窗口实际值分发至内层 ComposeView，禁止伪造 80px 等测试边距。每用例捕获并还原 Default/DISPLAY/FORMAT、LocaleList 与资源配置，不改设备语言或生产日期 formatter。
+
+两个跨模块 Compose 接口移除了 modifier 默认值，全部调用方显式传入，解决真实 AbstractMethodError；这是常规 modifier 默认值约定的明确例外。接口随同一 App 源码编译，不作为独立二进制插件分发。简体中文基线同步 `values-b+zh+Hans` 和已审核 73 条术语；140 项资源完整校验仍保留，139 项摘要不变，核心中文标题严格为“种子搜索”、英文严格为“Torrent Search”，没有模糊匹配或动态预期。
+
+MineEntry/DetailAction 两个模块用例仅保护 API 分派与 slot 文案，fixture 没有生产宿主 Scaffold；其截图在 edge-to-edge 下位于状态栏区域，不作为真实宿主视觉验收证据。宿主卡片和详情入口以 app 真实页面回归为准，不能把这两项 API 测试冒充完整页面验证。
+
+本轮未新增业务规则或数据协议，纯排版、系统窗口和测试工具使用真实 Android 仪器回归，不添加仅镜像实现的 JVM 样式测试；生产已有单测仍完整执行。没有数据库、备份、导航协议、网络或 Activity exported 变更，不新增 keep/R8 规则；本轮未单独执行 release/R8。开放问题：后续若支持深色主题，须同步调整窗口图标契约。
+
+#### 必要失败证据与当前验收
+
+- 首轮 39 场景暴露摘要测量、滚动定位及 Compose ABI 问题；API/实现强制重编仍分别为 `Composer,int` 与 `Composer,int,int`，移除接口默认值后 javap 一致，真实入口错误消失。
+- 第二轮 Torznab 无界滚动停滞、第三轮 6 项未放置节点/迟到 IME 失败促成上述有界扫描和焦点门禁；历史 Shape 裁字由人工截图发现。第四轮 40 项通过（376 秒），但这批仍缺少完整底部安全断言，不能作为最终 Insets 验收。
+- 底部独立 RED：`build/english-all-pages-torrent-insets-red.log` 显示书签 2.0 末项无法滚出手势区；`build/torrent-insets-probe.txt` 已确认内层 Compose/native mandatory 同为 80，排除仅测试分发失真。真实 Activity 的 `build/real-torrent-window-probe-before.txt` / `after.txt` 又证明原 decor fitting 令 Compose mandatory 为 0，启用 edge-to-edge 后恢复 80；因此窗口和 8 处 Insets 必须一起修复。修复后书签单例 GREEN（11 秒）。
+- `build/real-torrent-window-final.png` 暴露浅色页面白色系统字，促成固定浅色窗口适配。最终真实生产烟测 1 项已通过，`build/english-all-pages-qa/host-verified/real-torrent-activity-window-production-insets.txt` 记录 native/probe mandatory=80、lightStatusBars=true、lightNavigationBars=true；同目录截图系统字清晰。烟测直接验生产原状，不由测试重设窗口策略。
+- 三 APK 使用独立 init、`enableMagnetFeature=true`、`enableAdmobDebugAdFeature=false`、`localizationUseApp=true` 构建通过：`:app:assembleDebug :app:assembleDebugAndroidTest :feature:torrent-search:assembleDebugAndroidTest`，41 秒、267 项任务/29 项执行，见 `build/english-all-pages-torrent-light-system-bars-build.log`；`git diff --check` 通过。
+- 最终设备矩阵：`build/english-all-pages-torrent-final-device.log` 为 `OK (40 tests)`，406.494 秒；此前底部 RED 所覆盖的书签、长详情、设置末项及全部弹窗在真实安全边界断言下通过。设备由主代理串行操作。
+- 最终生产检查：`build/english-all-pages-final-verification.log` 编译、app/feature/API 单测及 app lint 通过，3 分 6 秒；XML 汇总 app 418、feature 656、API 4，共 1078 项，失败/错误均为 0；lint 为 0 error、89 warnings、3 hints。`base:general` 147 项此前通过，本次未重跑、不混入 1078。
+- 人工视觉验收：`build/english-all-pages-qa/torrent-final` 中 11 类生产页面、下载失败补充状态及十类弹窗的 2.0 倍字号 start/end 共 44 张已复核。书签移除、搜索结果和详情长末项避开手势条；历史查询首尾不再被 Shape 裁切；Torznab 新增/编辑无 IME 遮挡，长警告、底部选项及 Save/Cancel 可读；生产页面系统字清晰。
+- 截图污染闭环：Cloudflare 不可用页的原 2.0 图曾被其他应用的悬浮通知遮住标题，已排除；通知消失后仅重跑该用例，`build/english-all-pages-torrent-clean-capture.log` 为 `OK (1 test)`、9.633 秒，最终目录同名图已替换。重拍的 2.0 start/end 及 1.0/1.3 起始图已目视确认无遮挡，不重跑无变化的完整矩阵。
+
+#### 日志与诊断计划
+
+不新增生产日志：纯布局没有业务副作用，逐文本日志会增加噪声。测试仅记录场景 ID、字号、标签索引、滚动阶段、尺寸及 native/Compose Insets；截图仅含合成内容和独立包真实待机界面，不含用户内容、API Key、真实来源、路径或网络响应。产物保存在独立测试应用 externalFilesDir/english-all-pages，卸载后清理；失败报告保留明确原因，不放宽字形、字号和安全边界断言。
+
+变更记录：2026-11-06，建立 40 场景英文长文案/大字体仪器覆盖，修复页面排版、历史 Shape、Compose 接口 ABI、实际手势区与浅色系统栏；同步 Hans 精确资源基线和测试隔离。本文收束为当前契约、必要 RED→GREEN 证据及明确待验项，移除已失效的“尚不修改生产窗口”等阶段性描述，最终结论以最新设备与生产检查为准。
+
+变更记录：2026-11-06，回填最终 40 项、真实入口 1 项、1078 项单测和 lint 结果，完成 44 张关键页面/弹窗视觉复核，并补拍唯一被悬浮通知污染的页面。仅将本节验收标为已完成，保留纯 API fixture 与真实宿主视觉覆盖的边界；无新增代码、日志、备份或协议变更。
 
 本文件是 TorrentSearch 的唯一主方案文档。旧“磁力搜索第一版方案”及其 `Academic Torrents` 单源、本地 XML 索引、`:feature:magnet-api`、`:feature:magnet`、宿主下载记录磁力 Tab 和旧磁力备份协议均已废弃；它们只作为历史记录，不得继续扩展。后续实现按本方案完整替换，旧数据不迁移。
 
@@ -94,7 +140,7 @@ HTTPS-only 本地策略。Provider 域名仅从固定源码的可执行 URL 常�
 
 上游 `app/src/main/res` 已完整机械导入并保留已有语言。所有本地资源定义、XML
 引用和文件型名称都增加 `torrent_search_` 前缀（AGP 固定 `resources.properties` 元数据文件除外）；默认 `values` 保持英文，任务 2
-的核心入口和空壳字符串同时保留在 `values-zh-rCN`。本阶段不导入上游 Kotlin、
+的核心入口和空壳字符串最初保留在 `values-zh-rCN`，2026-11-06 按多语言主方案统一迁入 `values-b+zh+Hans` 并同步独立资源快照。本阶段不导入上游 Kotlin、
 Koin、Application、Activity 或 launcher 声明，资源可由当前空壳模块独立编译。
 为避免资源阶段引入未使用的 SplashScreen 运行时，API 31 的上游
 `Theme.SplashScreen`/`postSplashScreenTheme` 关系仅回退为平台无 ActionBar 父主题；

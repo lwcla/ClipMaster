@@ -17,6 +17,7 @@ import com.cla.clip.base.general.dao.ImageExtractBatchData
 import com.cla.clip.base.general.dao.ImageExtractItemData
 import com.cla.clip.base.general.repository.ImageCandidateData
 import com.cla.clip.master.ad.PageAdSession
+import com.cla.clip.master.ui.page.image.component.ImageBatchContentLayout
 import com.cla.clip.master.ui.widget.*
 import com.cla.clip.master.ui.widget.media.MediaAdGrid
 import com.cla.clip.master.ui.widget.media.MediaTaskTile
@@ -57,41 +58,11 @@ internal fun BatchStatusContent(
     var previewItems by remember(state.batchId) { mutableStateOf<List<ImageExtractItemData>>(emptyList()) }
     // 成功和部分成功仍遵循原广告资格，失败与缺失不展示广告。
     val placement = batch?.let { imageBatchAdPlacement(it.status, items.isNotEmpty()) }
-    Column(Modifier.fillMaxSize()) {
-        Text(batch?.pageName ?: stringResource(R.string.base_general_image_extract_title),
-            style = MaterialTheme.typography.titleMedium, maxLines = 3,
-            overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(16.dp))
-        when (presentation.phase) {
-            ImageBatchPhase.Loading -> InlineLoadingState(stringResource(R.string.base_general_preparing_download))
-            ImageBatchPhase.ReadError -> InlineErrorState(stringResource(R.string.base_general_media_read_failed))
-            ImageBatchPhase.Missing -> InlineErrorState(stringResource(R.string.base_general_the_download_task_was_not_found))
-            ImageBatchPhase.Queued -> InlineLoadingState(stringResource(R.string.base_general_media_task_queued))
-            ImageBatchPhase.Downloading -> InlineLoadingState(stringResource(R.string.base_general_image_download_progress, presentation.processed, presentation.total))
-            ImageBatchPhase.Publishing -> InlineLoadingState(stringResource(R.string.base_general_image_publish_progress, presentation.processed, presentation.total))
-            ImageBatchPhase.Result -> if (batch != null) {
-                if (batch.status == ImageExtractBatchData.STATUS_FAILED) {
-                    InlineErrorState(buildImageDownloadResultText(batch, includeOpenText = false))
-                } else {
-                    SuccessText(buildImageDownloadResultText(batch, includeOpenText = batch.successCount > 0),
-                        onOpen = if (batch.successCount > 0) ({ onOpen(batch.outputDir) }) else null)
-                }
-            }
-        }
-        if (presentation.phase == ImageBatchPhase.ReadError) {
-            TextButton(onClick = { readRevision += 1 }) { Text(stringResource(R.string.base_general_click_retry)) }
-        }
-        if (presentation.phase == ImageBatchPhase.Result || presentation.phase == ImageBatchPhase.Missing) {
-            Row {
-                if (batch != null && batch.failedCount > 0) {
-                    TextButton(onClick = onRetry, enabled = !viewModel.isSubmitting) {
-                        Text(stringResource(if (viewModel.isSubmitting) R.string.base_general_preparing_download else R.string.base_general_media_retry_batch))
-                    }
-                }
-                TextButton(onClick = onExtractAgain, enabled = !viewModel.isSubmitting) {
-                    Text(stringResource(R.string.base_general_re_extract_images))
-                }
-            }
-        }
+    ImageBatchContentLayout(summary = {
+        ImageBatchStatusSummary(presentation, batch, viewModel.isSubmitting, onRetry, onExtractAgain, onOpen,
+            // 仅重订阅当前快照，不重复创建批次或入队。
+            onRetryRead = { readRevision += 1 })
+    }, grid = {
         MediaAdGrid(items = items, itemKey = { viewModel.candidateKey(it.asCandidate()) },
             sessionKey = viewModel.extractionId, placement = placement, adSession = adSession,
             gridState = gridState, blocked = previewKey != null || viewModel.isSubmitting) { item ->
@@ -115,7 +86,7 @@ internal fun BatchStatusContent(
                 },
             )
         }
-    }
+    })
     previewKey?.let { clickedKey ->
         BatchImagePreviewDialog(
             items = previewItems,
@@ -129,3 +100,55 @@ internal fun BatchStatusContent(
 
 /** 薄适配复用候选稳定身份，数据库 id 产生后不改变网格 key。 */
 private fun ImageExtractItemData.asCandidate() = ImageCandidateData(url, referer, userAgent, cookie, displayOrder, width, height)
+
+/** 批次摘要和动作只消费展示快照；读取、下载与目录操作仍由原页面回调负责。 */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun ImageBatchStatusSummary(
+    presentation: ImageBatchPresentation,
+    batch: ImageExtractBatchData?,
+    isSubmitting: Boolean,
+    onRetry: () -> Unit,
+    onExtractAgain: () -> Unit,
+    onOpen: (String?) -> Unit,
+    onRetryRead: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier.fillMaxWidth()) {
+        Text(batch?.pageName ?: stringResource(R.string.base_general_image_extract_title),
+            style = MaterialTheme.typography.titleMedium, maxLines = 3,
+            overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(16.dp))
+        when (presentation.phase) {
+            ImageBatchPhase.Loading -> InlineLoadingState(stringResource(R.string.base_general_preparing_download))
+            ImageBatchPhase.ReadError -> InlineErrorState(stringResource(R.string.base_general_media_read_failed))
+            ImageBatchPhase.Missing -> InlineErrorState(stringResource(R.string.base_general_the_download_task_was_not_found))
+            ImageBatchPhase.Queued -> InlineLoadingState(stringResource(R.string.base_general_media_task_queued))
+            ImageBatchPhase.Downloading -> InlineLoadingState(stringResource(R.string.base_general_image_download_progress, presentation.processed, presentation.total))
+            ImageBatchPhase.Publishing -> InlineLoadingState(stringResource(R.string.base_general_image_publish_progress, presentation.processed, presentation.total))
+            ImageBatchPhase.Result -> if (batch != null) {
+                if (batch.status == ImageExtractBatchData.STATUS_FAILED) {
+                    InlineErrorState(buildImageDownloadResultText(batch, includeOpenText = false))
+                } else {
+                    SuccessText(buildImageDownloadResultText(batch, includeOpenText = batch.successCount > 0),
+                        onOpen = if (batch.successCount > 0) ({ onOpen(batch.outputDir) }) else null)
+                }
+            }
+        }
+        if (presentation.phase == ImageBatchPhase.ReadError) {
+            TextButton(onClick = onRetryRead) { Text(stringResource(R.string.base_general_click_retry)) }
+        }
+        if (presentation.phase == ImageBatchPhase.Result || presentation.phase == ImageBatchPhase.Missing) {
+            // 长英文动作在空间不足时换行，避免第二个操作被剩余宽度裁剪。
+            FlowRow {
+                if (batch != null && batch.failedCount > 0) {
+                    TextButton(onClick = onRetry, enabled = !isSubmitting) {
+                        Text(stringResource(if (isSubmitting) R.string.base_general_preparing_download else R.string.base_general_media_retry_batch))
+                    }
+                }
+                TextButton(onClick = onExtractAgain, enabled = !isSubmitting) {
+                    Text(stringResource(R.string.base_general_re_extract_images))
+                }
+            }
+        }
+    }
+}

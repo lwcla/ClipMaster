@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -28,7 +27,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.cla.clip.base.general.R
 import com.cla.clip.master.R as HostR
@@ -81,39 +79,39 @@ internal fun BackupRestoreFlowActions(
     onDone: () -> Unit,
     onRestore: () -> Unit,
 ) {
-    Row(
+    // 恢复和部分重试动作各占整行，避免两倍字号下次要动作先占满横向空间。
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.End,
-        verticalAlignment = Alignment.CenterVertically
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalAlignment = Alignment.End,
     ) {
         when (state) {
             is BackupRestoreFlowState.Preview -> {
-                TextButton(onClick = onBack) {
+                TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.base_general_cancel))
                 }
-                Spacer(modifier = Modifier.size(8.dp))
-                Button(onClick = onRestore) {
+                Button(onClick = onRestore, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.base_general_restore_backup))
                 }
             }
             is BackupRestoreFlowState.Result -> {
                 if (state.settingsRestoreFailed || state.featureRestoreFailed) {
                     // 部分提交保留重试入口，幂等规则保护已经写入的数据。
-                    TextButton(onClick = onRestore) {
+                    TextButton(onClick = onRestore, modifier = Modifier.fillMaxWidth()) {
                         Text(stringResource(HostR.string.host_backup_restore_retry_partial))
                     }
-                    Spacer(modifier = Modifier.size(8.dp))
                 }
                 Button(
                     onClick = onDone,
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(stringResource(R.string.base_general_backup_flow_done))
                 }
             }
             is BackupRestoreFlowState.Error -> {
-                Button(onClick = onBack) {
+                Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
                     Text(
                         if (state.stage == BackupRestoreFailureStage.Reading) {
                             stringResource(R.string.base_general_backup_flow_retry_select)
@@ -205,7 +203,7 @@ private fun PreviewContent(
 ) {
     val preview = state.preview
     FlowSection(title = stringResource(R.string.base_general_backup_section_info)) {
-        InfoRow(stringResource(R.string.base_general_backup_info_file_name), state.fileName, keepEnd = true)
+        InfoRow(stringResource(R.string.base_general_backup_info_file_name), state.fileName)
         InfoRow(stringResource(R.string.base_general_backup_info_open_source), state.sourceType.labelText())
         InfoRow(stringResource(R.string.base_general_backup_info_kind), preview.backupKind.labelText())
         InfoRow(stringResource(R.string.base_general_backup_info_created_at), preview.createdAt.toBackupDisplayTime())
@@ -263,7 +261,7 @@ private fun ResultContent(
 
     FlowSection(title = stringResource(R.string.base_general_backup_section_info)) {
         state.preview?.let { preview ->
-            InfoRow(stringResource(R.string.base_general_backup_info_file_name), state.fileName, keepEnd = true)
+            InfoRow(stringResource(R.string.base_general_backup_info_file_name), state.fileName)
             InfoRow(stringResource(R.string.base_general_backup_info_open_source), state.sourceType.labelText())
             InfoRow(stringResource(R.string.base_general_backup_info_kind), preview.backupKind.labelText())
         }
@@ -291,12 +289,13 @@ private fun ResultContent(
     )
 }
 
+/** 展示恢复失败的阶段与提示；资源在组合时读取，保留的错误状态可跟随系统语言变化。 */
 @Composable
 private fun ErrorContent(state: BackupRestoreFlowState.Error) {
     FlowSection(title = state.stage.labelText()) {
         InfoRow(stringResource(R.string.base_general_backup_info_open_source), state.sourceType.labelText())
         Text(
-            text = state.message,
+            text = stringResource(state.messageRes),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.error
         )
@@ -324,25 +323,21 @@ private fun FlowSection(
     }
 }
 
+/** 详情标签与完整值纵向排列，大字体下仍可读完设备名、文件名及三项统计，不使用限行裁切。 */
 @Composable
-private fun InfoRow(label: String, value: String, keepEnd: Boolean = false) {
-    Row(
+private fun InfoRow(label: String, value: String) {
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.Top
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Text(
             text = label,
-            modifier = Modifier.weight(0.34f),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
             text = value.ifBlank { unknownText() },
-            modifier = Modifier.weight(0.66f),
             style = MaterialTheme.typography.bodyMedium,
-            maxLines = if (keepEnd) 3 else 2,
-            overflow = if (keepEnd) TextOverflow.Ellipsis else TextOverflow.Clip
         )
     }
 }
@@ -404,11 +399,13 @@ private fun BackupCountRow(label: String, count: Int) {
     BackupCountRow(label = label, value = count.toString(), muted = count == 0)
 }
 
+/** 分类和值各占一行；恢复报告的三项英文计数不能占满横向空间并挤掉分类名称。 */
 @Composable
 private fun BackupCountRow(label: String, value: String, muted: Boolean) {
+    // 全零分类降低视觉权重，但仍完整显示分类和各项计数。
     val color = if (muted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(text = label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = color)
+    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(text = label, style = MaterialTheme.typography.bodyMedium, color = color)
         Text(text = value, style = MaterialTheme.typography.bodyMedium, color = color)
     }
 }

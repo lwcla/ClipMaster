@@ -32,6 +32,10 @@ import com.cla.clip.feature.torrent.search.model.contract.Torrent
 import com.cla.clip.feature.torrent.search.ui.component.TorrentResultCard
 import com.cla.clip.feature.torrent.search.ui.component.toTorrentResultCardState
 import com.cla.clip.feature.torrent.search.ui.component.torrentCategoryLabel
+import com.cla.clip.feature.torrent.search.ui.component.TorrentPageTopBar
+import com.cla.clip.feature.torrent.search.ui.component.torrentPageContentInsets
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 
 /** 原生 Latest/Top 浏览页，只消费稳定 UI state 并上抛事件。 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -53,19 +57,11 @@ internal fun TorrentBrowseScreen(
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
+        // 复用功能内系统栏与底部强制手势契约，保留页面原有 innerPadding 消费。
+        contentWindowInsets = torrentPageContentInsets(),
         modifier = modifier,
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.torrent_search_browse_screen_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.torrent_search_action_back),
-                        )
-                    }
-                },
-            )
+            TorrentPageTopBar(title = stringResource(R.string.torrent_search_browse_screen_title), onBack = onBack)
         },
     ) { /** paddingValues 是 Scaffold 为系统栏与顶部栏提供的安全内边距。 */ paddingValues ->
         Column(
@@ -150,7 +146,7 @@ private fun BrowseContent(
 ) {
     if (state.phase == BrowsePhase.COMPLETED && state.results.isEmpty()) {
         Column(
-            modifier = modifier.fillMaxWidth().padding(24.dp),
+            modifier = modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
         ) {

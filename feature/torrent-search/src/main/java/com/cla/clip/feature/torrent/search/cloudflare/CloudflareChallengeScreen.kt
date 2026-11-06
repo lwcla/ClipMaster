@@ -25,6 +25,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
 import com.cla.clip.feature.torrent.search.R
+import com.cla.clip.feature.torrent.search.ui.component.TorrentPageTopBar
+import com.cla.clip.feature.torrent.search.ui.component.torrentPageContentInsets
 
 /** 仅用于已知 Cloudflare Provider 的受限挑战 WebView。 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -40,16 +42,11 @@ internal fun CloudflareChallengeScreen(
     /** navigationPolicy 把全部页面内导航限制在初始 scheme、host 与端口。 */
     val navigationPolicy = CloudflareNavigationPolicy(target.url)
     Scaffold(
+        // WebView 可交互内容沿用全功能统一底部边界，不落在系统强制手势区。
+        contentWindowInsets = torrentPageContentInsets(),
         modifier = modifier,
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.torrent_search_cloudflare_title_format, target.providerName)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.torrent_search_action_back))
-                    }
-                },
-            )
+            TorrentPageTopBar(title = stringResource(R.string.torrent_search_cloudflare_title_format, target.providerName), onBack = onBack)
         },
     ) { /** contentPadding 是系统栏与顶部栏提供的安全边距。 */ contentPadding ->
         AndroidView(
@@ -110,15 +107,10 @@ internal fun CloudflareChallengeUnavailableScreen(
     onBack: () -> Unit,
 ) {
     Scaffold(
+        // 不可用页与正常挑战页保持相同系统边界。
+        contentWindowInsets = torrentPageContentInsets(),
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.torrent_search_cloudflare_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.torrent_search_action_back))
-                    }
-                },
-            )
+            TorrentPageTopBar(title = stringResource(R.string.torrent_search_cloudflare_title), onBack = onBack)
         },
     ) { /** contentPadding 是错误页系统安全边距。 */ contentPadding ->
         Box(modifier = Modifier.fillMaxSize().padding(contentPadding), contentAlignment = Alignment.Center) {

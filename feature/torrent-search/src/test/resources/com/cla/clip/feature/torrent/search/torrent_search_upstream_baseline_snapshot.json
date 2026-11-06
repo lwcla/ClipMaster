@@ -356,8 +356,8 @@
       "sha256": "173c90cbeb773e6a65b430581a85720dc5c7ddba17d543cfefe3d2aed9b9a7a4"
     },
     {
-      "path": "values-zh-rCN/strings.xml",
-      "sha256": "fce7d4aa476df7f52a457fa416d7404dca80bd833bebb04e4c70edec8cf7ac9a"
+      "path": "values-b+zh+Hans/strings.xml",
+      "sha256": "4e3d9be8ffb9e082b0491d10f0391afbfed68f26f1c7e213b544e8bf3c2cabd7"
     },
     {
       "path": "values-v31/themes.xml",

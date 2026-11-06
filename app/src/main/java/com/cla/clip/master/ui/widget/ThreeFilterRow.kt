@@ -7,7 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
-/** 三入口固定等宽同行，文字省略与完整读屏由各 slot 负责；不持有业务状态。 */
+/** 三入口固定等宽同行，文字自然换行与完整读屏由各 slot 负责；不持有业务状态。 */
 @Composable
 internal fun ThreeFilterRow(
     /** 外部布局与边距。 */ modifier: Modifier = Modifier,

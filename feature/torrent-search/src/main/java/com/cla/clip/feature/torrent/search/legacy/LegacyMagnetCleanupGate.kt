@@ -10,6 +10,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import com.cla.clip.feature.torrent.search.R
 
 /** 在旧数据检测完成前阻止创建新功能内容，并承载确认、重试与退出。 */
@@ -67,7 +69,8 @@ private fun LegacyMagnetCleanupConfirmation(
                     R.string.torrent_search_legacy_cleanup_message,
                     snapshot.databaseFileCount,
                     snapshot.cacheFileCount,
-                )
+                ),
+                modifier = Modifier.verticalScroll(rememberScrollState()),
             )
         },
         confirmButton = {
@@ -94,7 +97,7 @@ private fun LegacyMagnetCleanupFailure(
     AlertDialog(
         onDismissRequest = onExit,
         title = { Text(stringResource(R.string.torrent_search_legacy_cleanup_failed_title)) },
-        text = { Text(stringResource(R.string.torrent_search_legacy_cleanup_failed_message)) },
+        text = { Text(stringResource(R.string.torrent_search_legacy_cleanup_failed_message), modifier = Modifier.verticalScroll(rememberScrollState())) },
         confirmButton = {
             TextButton(onClick = onRetry) {
                 Text(stringResource(R.string.torrent_search_button_retry))

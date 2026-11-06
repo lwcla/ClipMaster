@@ -427,6 +427,10 @@ TorrentSearch 进入 P0/P1 测试清单：先以失败测试固定“恰好 43 �
 
 ## 变更记录
 
+- 2026-11-06：全应用英文布局验收复用宿主真实 Context/截图检查，新增领域设备场景；种子模块为访问内部生产 Screen 添加独立 androidTest、普通 runner 和 test manifest。合成 UiState、英文 320dp 与 1.0/1.3/2.0 倍字号，初始与滚动后都检查；具体覆盖/命令统一记录于多语言主方案。纯 UI 不新增镜像 JVM 测试，不改业务协议或生产日志。
+
+- 2026-11-06：增加中英文资源门禁：`python -m unittest scripts.test_check_localization` 验证合成 XML 的缺键、占位符、复数和默认语言边界，`python scripts/check_localization.py` 检查实际资源；轻量检查接入现有 CI 的版本检查阶段。纯翻译不添加逐字断言，Android 资源编译和设备语言切换仍负责运行时验证，完整范围见 `multilingual_support_plan.md`。
+
 - 2026-10-31：记录 AdMob 设备回绑回归及该模块新增的 Compose 测试依赖，明确真实挂载断言、合成加载边界和反射夹具的维护范围；原因是纯缓存单测无法发现 View 未重新挂入容器的缺陷。
 
 - 2026-10-26：本轮移除已完成；483 项单测、编译与 Release/R8 通过，设备验收未执行，详细证据见下载记录主方案。

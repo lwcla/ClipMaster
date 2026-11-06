@@ -14,10 +14,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlin.math.roundToInt
 
 /**
  * 静态 HTML 阅读器；只接受调用方已读取的可信正文，不读取文件、联网或持有业务状态。
@@ -39,6 +41,8 @@ internal fun OfflineHtmlDocument(
     val loadError by rememberUpdatedState(onLoadError)
     // 生命周期来源为当前导航目的地；后台和不可见目的地均暂停阅读实例。
     val owner = LocalLifecycleOwner.current
+    // WebView 不会自动采用 Compose 字号；使用当前配置同步正文倍率，不改变 HTML 或页面身份。
+    val textZoom = (LocalConfiguration.current.fontScale * 100).roundToInt()
     key(html) {
         // 仅在当前组合中保存 View 引用，不跨进程或页面保存平台对象。
         var documentView by remember { mutableStateOf<WebView?>(null) }
@@ -63,6 +67,8 @@ internal fun OfflineHtmlDocument(
             // 在主线程创建平台 View；只在此处加载一次内存正文。
             factory = { context ->
                 WebView(context).apply {
+                    // 首次载入前应用同一字号，避免标题已放大而政策正文仍以 100% 显示。
+                    settings.textZoom = textZoom
                     settings.javaScriptEnabled = false
                     settings.domStorageEnabled = false
                     settings.allowFileAccess = false
@@ -92,6 +98,10 @@ internal fun OfflineHtmlDocument(
                     loadDataWithBaseURL(LOCAL_DOCUMENT_URL, html, "text/html", "UTF-8", null)
                     documentView = this
                 }
+            },
+            // 配置变化只更新字号；不重新加载正文或重建实例，阅读位置由原 WebView 持续保留。
+            update = { view ->
+                if (view.settings.textZoom != textZoom) view.settings.textZoom = textZoom
             },
             // 离开阅读页立即释放，避免隐藏 WebView 占用资源或持有 Activity。
             onRelease = { view ->

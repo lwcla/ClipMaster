@@ -114,18 +114,13 @@ internal fun Success(
                 )
             }
         }
-        InlineSuccessState(stringResource(GeneralR.string.base_general_extract_the_video_address_success))
-        Button(
-            // 同一时刻只启动一次权限/提交流程。
-            onClick = { pendingCandidate = System.currentTimeMillis() to candidate },
-            enabled = pendingCandidate == null && !videoExtractVm.isSubmitting,
-        ) {
-            Text(stringResource(if (videoExtractVm.isSubmitting) GeneralR.string.base_general_preparing_download
-                else GeneralR.string.base_general_to_download))
-        }
-        if (videoExtractVm.submissionFailed) {
-            InlineErrorState(stringResource(GeneralR.string.base_general_failed_to_create_the_download_task))
-        }
+        VideoExtractSuccessContent(
+            isSubmitting = videoExtractVm.isSubmitting,
+            submissionFailed = videoExtractVm.submissionFailed,
+            permissionPending = pendingCandidate != null,
+            // 权限请求仍由原适配层发起，纯展示入口只上抛用户意图。
+            onDownload = { pendingCandidate = System.currentTimeMillis() to candidate },
+        )
     }
 }
 
@@ -139,6 +134,32 @@ private fun VideoProbeControlsPreview() {
                 VideoProbeNotice.LongRunning, onShow = {}, onHide = {}, onRetry = {})
             VideoProbeControls(ProbeState.Failed(VideoProbeFailure.PageLoad(ProbeWebFailure(ProbeWebFailureKind.Http, 403))),
                 VideoProbePageState.Loading(), null, onShow = {}, onHide = {}, onRetry = {})
+        }
+    }
+}
+
+/** 成功状态的纯展示区域；权限申请和提交任务由调用方负责，测试可使用空回调。 */
+@Composable
+internal fun VideoExtractSuccessContent(
+    isSubmitting: Boolean,
+    submissionFailed: Boolean,
+    permissionPending: Boolean,
+    onDownload: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center) {
+        InlineSuccessState(stringResource(GeneralR.string.base_general_extract_the_video_address_success))
+        Button(
+            // 同一时刻只启动一次权限/提交流程。
+            onClick = onDownload,
+            enabled = !permissionPending && !isSubmitting,
+        ) {
+            Text(stringResource(if (isSubmitting) GeneralR.string.base_general_preparing_download
+                else GeneralR.string.base_general_to_download))
+        }
+        if (submissionFailed) {
+            InlineErrorState(stringResource(GeneralR.string.base_general_failed_to_create_the_download_task))
         }
     }
 }

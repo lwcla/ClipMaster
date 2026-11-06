@@ -1,5 +1,5 @@
 <resources>
-    <string name="ad_debug_detail_native_title">调试广告位</string>
-    <string name="ad_debug_detail_native_body">这里会显示详情页原生广告。当前仅用于验证广告模块、广告位布局和运行时开关。</string>
+    <string name="ad_debug_detail_native_title">Debug ad placement</string>
+    <string name="ad_debug_detail_native_body">A native ad appears here on the details page. This placeholder is only for testing the ad module, placement layout, and runtime switch.</string>
     <string name="ad_debug_detail_native_badge">AD DEBUG</string>
 </resources>

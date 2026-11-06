@@ -6,6 +6,7 @@ import com.cla.clip.master.backup.local.LocalBackupFile
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cla.clip.base.general.R
@@ -52,7 +53,7 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class BackupRestoreVm @Inject constructor(
-    /** 应用级 Context，用于复制系统文件选择器返回的备份文件并读取字符串资源。 */
+    /** 应用级 Context，用于复制系统文件选择器返回的备份文件，不缓存页面文案。 */
     @param:ApplicationContext private val appContext: Context,
     /** 统一备份仓库，负责预检和恢复写库。 */
     private val backupRepository: BackupRepository,
@@ -386,7 +387,7 @@ class BackupRestoreVm @Inject constructor(
         )
     }
 
-    /** 恢复流程页专用长任务包装，失败时停留在同一个页面内展示可行动原因。 */
+    /** 恢复流程页专用长任务包装；失败时保留资源 ID，在同一页面内按当前语言展示可行动原因。 */
     private suspend fun runRestoreFlowOperation(
         operation: BackupBusyOperation,
         taskId: String,
@@ -427,12 +428,13 @@ class BackupRestoreVm @Inject constructor(
                 "备份恢复流程页 操作失败 taskId=$taskId operation=$operation sourceType=${sourceType.logCode} " +
                     "stage=${failureStage.logCode} reasonCode=$reasonCode type=${throwable::class.simpleName}"
             }
+            /** 只缓存失败分类和文案资源，系统语言改变不需要重新执行恢复任务。 */
             val errorState = BackupRestoreFlowState.Error(
                 taskId = taskId,
                 sourceType = sourceType,
                 stage = failureStage,
                 reasonCode = reasonCode,
-                message = mapErrorMessage(throwable)
+                messageRes = mapErrorMessageResource(throwable)
             )
             transitionRestoreFlow(errorState, taskId, reasonCode)
             clearRestoreBusyIfCurrent(operation, taskId)
@@ -524,9 +526,10 @@ class BackupRestoreVm @Inject constructor(
         )
     }
 
-    /** 把失败类型映射成可行动的用户提示。 */
-    private fun mapErrorMessage(throwable: Throwable): String {
-        val resId = when (throwable) {
+    /** 沿用既有失败类型分支返回提示资源；由页面读取文案，未知失败仍使用原有兜底资源。 */
+    @StringRes
+    private fun mapErrorMessageResource(throwable: Throwable): Int {
+        return when (throwable) {
             is BackupFailure.InvalidFormat -> R.string.base_general_backup_error_invalid_format
             is BackupFailure.AppMismatch -> R.string.base_general_backup_error_app_mismatch
             is BackupFailure.UnsupportedSchema -> R.string.base_general_backup_error_schema
@@ -540,7 +543,6 @@ class BackupRestoreVm @Inject constructor(
             is BackupFailure.InsufficientSpace -> R.string.base_general_backup_error_insufficient_space
             else -> R.string.base_general_backup_error_unknown
         }
-        return appContext.getString(resId)
     }
 
     /** 将用户选择的外部备份复制到私有临时文件，避免页面间状态持有完整字节数组。 */

@@ -49,6 +49,12 @@ import com.cla.clip.feature.torrent.search.R
 import com.cla.clip.feature.torrent.search.model.contract.TorrentDetails
 import com.cla.clip.feature.torrent.search.model.contract.TorrentFile
 import com.cla.clip.feature.torrent.search.ui.component.torrentCategoryLabel
+import com.cla.clip.feature.torrent.search.ui.component.TorrentPageTopBar
+import com.cla.clip.feature.torrent.search.ui.component.torrentPageContentInsets
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import java.text.DateFormat
 import java.util.Date
 
@@ -85,31 +91,33 @@ internal fun TorrentDetailsScreen(
         onDispose { imageLoader.shutdown() }
     }
     Scaffold(
+        // 详情动作与长内容末项共同避开系统底部强制手势区。
+        contentWindowInsets = torrentPageContentInsets(),
         modifier = modifier,
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.torrent_search_torrent_details_screen_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.torrent_search_action_back),
-                        )
-                    }
-                },
-                actions = {
-                    TextButton(
-                        onClick = onToggleBookmark,
-                        enabled = state.bookmarkPresencePhase == BookmarkPresencePhase.READY && !state.isBookmarkBusy,
-                    ) {
-                        Text(
-                            stringResource(
-                                if (state.isBookmarked) R.string.torrent_search_bookmark_remove else R.string.torrent_search_bookmark_save,
-                            ),
-                        )
-                    }
-                },
-            )
+            Column {
+                TorrentPageTopBar(
+                    title = stringResource(R.string.torrent_search_torrent_details_screen_title),
+                    onBack = onBack,
+                    actions = {
+                        TextButton(
+                            onClick = onToggleBookmark,
+                            enabled = state.bookmarkPresencePhase == BookmarkPresencePhase.READY && !state.isBookmarkBusy,
+                        ) {
+                            Text(
+                                stringResource(
+                                    if (state.isBookmarked) R.string.torrent_search_bookmark_remove else R.string.torrent_search_bookmark_save,
+                                ),
+                            )
+                        }
+                    },
+                )
+                // 失败提示参与 Scaffold 顶部高度测量，不能作为根层兄弟覆盖标题和返回按钮。
+                if (state.bookmarkWriteFailed) {
+                    Text(stringResource(R.string.torrent_search_bookmark_error), color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                }
+            }
         },
     ) { /** paddingValues 是 Scaffold 为系统栏与顶部栏提供的安全内边距。 */ paddingValues ->
         when (state.phase) {
@@ -144,13 +152,6 @@ internal fun TorrentDetailsScreen(
             )
         }
     }
-    if (state.bookmarkWriteFailed) {
-        Text(
-            text = stringResource(R.string.torrent_search_bookmark_error),
-            color = MaterialTheme.colorScheme.error,
-            modifier = Modifier.padding(16.dp),
-        )
-    }
 }
 
 /** 详情加载占位，离页取消由生命周期 ViewModel 负责。 */
@@ -173,7 +174,7 @@ private fun TorrentDetailsError(
     modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = modifier.padding(24.dp),
+        modifier = modifier.verticalScroll(rememberScrollState()).padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
     ) {
@@ -318,6 +319,7 @@ private fun TorrentDetailsContent(
 
 /** 详情系统动作与 Torrent 保存状态卡；不直接访问 Context、URI 或字节。 */
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun TorrentDetailsActions(
     /** 当前详情是否提供 Torrent 文件地址。 */
     hasDownload: Boolean,
@@ -341,7 +343,7 @@ private fun TorrentDetailsActions(
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.torrent_search_torrent_details_actions_title), style = MaterialTheme.typography.titleMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = onOpenMagnet) { Text(stringResource(R.string.torrent_search_open_magnet_action)) }
                 OutlinedButton(onClick = onShareMagnet) { Text(stringResource(R.string.torrent_search_share_action)) }
                 OutlinedButton(onClick = onCopyMagnet) { Text(stringResource(R.string.torrent_search_copy_action)) }

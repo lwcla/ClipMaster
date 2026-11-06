@@ -1,5 +1,6 @@
 package com.cla.clip.master.ui.page.backup
 
+import androidx.annotation.StringRes
 import com.cla.clip.base.general.backup.BackupPreview
 import com.cla.clip.base.general.backup.BackupProgress
 import com.cla.clip.base.general.backup.BackupRestoreReport
@@ -91,13 +92,18 @@ sealed class BackupRestoreFlowState {
         val featureRestoreFailed: Boolean = false,
     ) : BackupRestoreFlowState()
 
-    /** 读取或恢复失败，展示统一 reasonCode 映射后的可行动提示。 */
+    /** 读取或恢复失败，保留失败分类与资源 ID，页面按当前系统语言展示可行动提示。 */
     data class Error(
+        /** 当前失败任务身份，供重试和过期结果隔离使用。 */
         val taskId: String,
+        /** 发起恢复的入口，用于显示来源并保留重试方式。 */
         val sourceType: BackupRestoreOpenSource,
+        /** 失败所在阶段，决定页面主动作和阶段提示。 */
         val stage: BackupRestoreFailureStage,
+        /** 稳定失败分类，仅用于诊断与流程判断，不作为用户文案显示。 */
         val reasonCode: String,
-        val message: String,
+        /** 仅用于内存 UI 状态的文案资源，避免配置重建后沿用旧语言字符串。 */
+        @get:StringRes val messageRes: Int,
     ) : BackupRestoreFlowState()
 }
 

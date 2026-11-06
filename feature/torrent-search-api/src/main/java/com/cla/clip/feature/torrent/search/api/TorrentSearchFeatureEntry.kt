@@ -48,13 +48,13 @@ interface TorrentSearchFeatureEntry {
      *
      * @param onLaunch 用户确认启动后的回调，不在 API 组件内读取宿主导航或 Context。
      * @param entryCard 宿主卡片渲染器，负责套用宿主共享卡片和主题 token。
-     * @param modifier 宿主提供的布局修饰符，用于适配现有列表间距。
+     * @param modifier 宿主显式提供布局修饰符；跨模块 Compose 接口不生成默认参数桥，避免实现签名漂移。
      */
     @Composable
     fun MineEntry(
         onLaunch: () -> Unit,
         entryCard: TorrentSearchMineEntryCard,
-        modifier: Modifier = Modifier,
+        modifier: Modifier,
     )
 
     /**
@@ -62,13 +62,13 @@ interface TorrentSearchFeatureEntry {
      *
      * @param initialQuery 宿主当前剪贴条目提供的候选文本，不在组件内持久化。
      * @param onLaunch 用户点击后的回调，只回传调用方提供的候选文本。
-     * @param modifier 宿主操作行提供的布局修饰符。
+     * @param modifier 宿主操作行显式提供布局修饰符；与实现使用相同 Compose 签名，不依赖默认参数桥。
      */
     @Composable
     fun RowScope.DetailAction(
         initialQuery: String,
         onLaunch: (String) -> Unit,
-        modifier: Modifier = Modifier,
+        modifier: Modifier,
     )
 
     /** 把备份 manifest 的 featureCounts 映射为宿主预检摘要行。 */

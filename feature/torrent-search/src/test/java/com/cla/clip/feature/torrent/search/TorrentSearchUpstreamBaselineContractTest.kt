@@ -250,14 +250,14 @@ class TorrentSearchUpstreamBaselineContractTest {
         }
     }
 
-    /** 默认英文和简体中文都必须保留任务 2 的入口、空壳和备份核心文案。 */
+    /** 默认英文和按 Hans 脚本匹配的简体中文都必须保留入口、空壳和备份核心文案。 */
     @Test
     fun coreIntegrationStringsExistInEnglishAndSimplifiedChinese() {
         /** 默认 values 必须是英文基线，不能依赖 values-en 才获得英文。 */
         val defaultStrings = readNamedResourceValues(findModuleRoot().resolve("src/main/res/values/strings.xml"))
-        /** 简体中文固定放在 Android 标准 zh-rCN 目录。 */
+        /** 简体中文统一按 Hans 脚本匹配地区；目录和完整译文仍由独立资源快照锁定。 */
         val simplifiedChineseStrings = readNamedResourceValues(
-            findModuleRoot().resolve("src/main/res/values-zh-rCN/strings.xml"),
+            findModuleRoot().resolve("src/main/res/values-b+zh+Hans/strings.xml"),
         )
         /** 空壳已公开使用的核心资源必须在两种语言中完整保留。 */
         val requiredNames = setOf(
@@ -275,7 +275,8 @@ class TorrentSearchUpstreamBaselineContractTest {
             simplifiedChineseStrings.keys.containsAll(requiredNames),
         )
         assertEquals("Torrent Search", defaultStrings.getValue("torrent_search_title"))
-        assertEquals("Torrent 搜索", simplifiedChineseStrings.getValue("torrent_search_title"))
+        // 简体中文标题按已确认术语统一为“种子搜索”，仍用精确文本防止名称回退。
+        assertEquals("种子搜索", simplifiedChineseStrings.getValue("torrent_search_title"))
     }
 
     /** 从 Gradle 可能采用的仓库根或模块根工作目录定位当前模块。 */

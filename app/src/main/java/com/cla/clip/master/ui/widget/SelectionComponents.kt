@@ -1,8 +1,12 @@
 package com.cla.clip.master.ui.widget
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -51,7 +55,7 @@ internal data class SingleChoiceOption<T>(
 /**
  * 通用单选弹窗。
  *
- * 适用于设置项、筛选项等即时选择场景；说明文案可选，避免公共组件绑定具体业务语境。
+ * 适用于设置项、筛选项等即时选择场景；长说明与选项可滚动，关闭按钮保持可达。
  */
 @Composable
 internal fun <T> SingleChoiceDialog(
@@ -69,7 +73,7 @@ internal fun <T> SingleChoiceDialog(
         onDismissRequest = onDismiss,
         title = { Text(text = title) },
         text = {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 if (!description.isNullOrBlank()) {
                     Text(
                         text = description,
@@ -99,7 +103,7 @@ internal fun <T> SingleChoiceDialog(
 /**
  * 通用单选行。
  *
- * 行整体可点，RadioButton 也触发同一个回调；常用于 Dialog、Sheet 或设置列表中的单选选项。
+ * 行整体可点，RadioButton 也触发同一个回调；完整选项可换行，避免大字号隐藏选择含义。
  */
 @Composable
 internal fun SingleChoiceRow(
@@ -123,8 +127,7 @@ internal fun SingleChoiceRow(
         Text(
             text = title,
             style = MaterialTheme.typography.bodyLarge,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
         )
     }
 }
@@ -154,6 +157,7 @@ internal data class SelectableListItemState<Id>(
  * 通用复选列表底部弹层。
  *
  * 组件提供标题、可选全选控制、列表、错误提示和确认/取消动作；选择状态由调用方维护或在薄适配层中维护。
+ * 标题/错误独占完整宽度，动作可换行，防止大字号下未加权按钮挤掉关键文字和列表。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -175,6 +179,7 @@ internal fun <Id> SelectableListBottomSheet(
     onToggleSelectAll: (() -> Unit)? = null,
     errorText: String? = null,
 ) {
+    // 弹层只保留局部展开状态，选择与提交仍由调用方持有。
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -209,31 +214,27 @@ internal fun <Id> SelectableListBottomSheet(
                 }
             }
 
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 if (!errorText.isNullOrBlank()) {
                     Text(
                         text = errorText,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.fillMaxWidth()
                     )
-                } else {
-                    Spacer(modifier = Modifier.weight(1f))
                 }
-                TextButton(onClick = onDismiss) {
-                    Text(cancelText)
-                }
-                Button(
-                    modifier = Modifier.padding(start = 8.dp),
-                    enabled = confirmEnabled,
-                    onClick = onConfirm
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Text(confirmText)
+                    TextButton(onClick = onDismiss) { Text(cancelText) }
+                    Button(enabled = confirmEnabled, onClick = onConfirm) { Text(confirmText) }
                 }
             }
         }
@@ -243,7 +244,7 @@ internal fun <Id> SelectableListBottomSheet(
 /**
  * 复选底部弹层标题与可选全选控制。
  *
- * 全选仅作为批量操作入口；是否显示和具体文案由调用方决定，避免组件绑定某个选择语义。
+ * 全选仅作为批量操作入口；与标题纵向排列，长标题和选项互不挤占宽度。
  */
 @Composable
 private fun SelectableListSheetHeader(
@@ -254,16 +255,16 @@ private fun SelectableListSheetHeader(
     selectAllText: String?,
     onToggleSelectAll: (() -> Unit)?,
 ) {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 20.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Text(
             text = title,
             style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.fillMaxWidth()
         )
         if (showSelectAll && onToggleSelectAll != null && selectAllText != null) {
             Row(
@@ -277,6 +278,7 @@ private fun SelectableListSheetHeader(
                 )
                 Text(
                     text = selectAllText,
+                    modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (selectAllEnabled) {
                         MaterialTheme.colorScheme.onSurface
@@ -300,7 +302,7 @@ internal enum class CheckboxPlacement {
 /**
  * 通用复选列表行，支持具名勾选位置，不改变选择与点击契约。
  *
- * 头部紧凑标记由整行承担唯一复选语义，尾部保持原事件契约；可选图标 slot 不承担业务副作用。
+ * 标题自然换行，保留英文选项完整含义；头部紧凑标记由整行承担唯一复选语义，尾部保持原事件契约。
  */
 @Composable
 internal fun <Id> SelectableListItem(
@@ -343,8 +345,6 @@ internal fun <Id> SelectableListItem(
                 text = state.title,
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (state.enabled) 1f else 0.38f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
             )
             if (!state.subtitle.isNullOrBlank()) {
                 Text(
@@ -420,7 +420,7 @@ internal fun SelectionActionBar(
 /**
  * 剪贴批量选择底部操作栏。
  *
- * 第一版只承载“删除”和“折叠”两个批量动作；调用方负责决定按钮可用性和执行中的防连点状态。
+ * 第一版只承载“删除”和“折叠”两个批量动作；计数独立行、按钮按宽度换行，长数量不挤占列表高度。
  */
 @Composable
 internal fun ClipBatchSelectionActionBar(
@@ -444,31 +444,36 @@ internal fun ClipBatchSelectionActionBar(
             shadowElevation = 8.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
                     text = selectedText,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(),
                     style = MaterialTheme.typography.bodyMedium
                 )
-                OutlinedButton(
-                    enabled = enabled,
-                    onClick = onFold
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Text(foldText)
-                }
-                Spacer(Modifier.width(8.dp))
-                Button(
-                    enabled = enabled,
-                    onClick = onDelete
-                ) {
-                    DeleteActionIcon(contentDescription = null, tint = deleteIconTint, size = 18.dp)
-                    Spacer(Modifier.width(6.dp))
-                    Text(deleteText)
+                    OutlinedButton(
+                        enabled = enabled,
+                        onClick = onFold
+                    ) {
+                        Text(foldText)
+                    }
+                    Button(
+                        enabled = enabled,
+                        onClick = onDelete
+                    ) {
+                        DeleteActionIcon(contentDescription = null, tint = deleteIconTint, size = 18.dp)
+                        Spacer(Modifier.width(6.dp))
+                        Text(deleteText)
+                    }
                 }
             }
         }

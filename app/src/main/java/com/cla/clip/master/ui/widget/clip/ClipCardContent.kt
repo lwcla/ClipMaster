@@ -3,8 +3,11 @@ package com.cla.clip.master.ui.widget.clip
 import android.graphics.Bitmap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,23 +21,17 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import com.cla.clip.master.ui.widget.text.SearchMatchMode
 import com.cla.clip.master.ui.widget.text.buildSearchHighlightedText
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -46,20 +43,22 @@ import com.cla.clip.base.general.utils.toSourceAppDisplayName
 import com.cla.clip.master.ui.widget.rememberDeletedFormattedTime
 import com.cla.clip.master.ui.widget.rememberFoldedFormattedTime
 import com.cla.clip.master.ui.widget.rememberFormattedTime
-import kotlin.math.max
 
-/** 共享来源行统一默认图标；普通范围展示写入时间，折叠/回收站展示各自业务时间。 */
+/** 共享元信息沿用系统字号；来源保留一行摘要，完整业务时间在空间不足时换行。 */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun SourceAppNameWithTime(
+    /** 当前卡片已有的展示快照，不读取数据库或来源服务。 */
     clip: ClipShowEntity,
     /** 本次搜索的关键词与允许高亮字段。 */
     highlight: ClipSearchHighlight?,
+    /** 页面决定写入、折叠或删除时间，排版层不改变业务时间含义。 */
     timeMode: ClipCardTimeMode,
     /** 卡片局部会话图像与边框取色同源，展示实体不持图片。 */
     icon: Bitmap?,
+    /** 外层决定元信息宽度，组件不覆盖系统密度或卡片交互。 */
+    modifier: Modifier = Modifier,
 ) {
-    /** 密度与时间模式沿用内容记录，不受图标版本影响。 */
-    val currentDensity = LocalDensity.current
     /** 时间语义由页面指定，与异步图像加载无关。 */
     val timeText = when (timeMode) {
         ClipCardTimeMode.ClipTime -> clip.rememberFormattedTime()
@@ -70,66 +69,38 @@ internal fun SourceAppNameWithTime(
             prefix = stringResource(com.cla.clip.base.general.R.string.base_general_deleted_at_prefix)
         )
     }
-    // 来源 App 与时间区域空间很窄，锁定 fontScale 可以避免系统大字体下挤压到不可读。
-    CompositionLocalProvider(LocalDensity provides Density(density = currentDensity.density, fontScale = 1f)) {
-        /** 名称有效性不依赖图标是否存在。 */
-        val sourceAppName = clip.sourceAppName.toSourceAppDisplayName()
-        Layout(
-            content = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    AppIconImage(
-                        icon = icon,
-                        modifier = Modifier.size(15.dp),
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    HighlightableText(
-                        text = sourceAppName,
-                        highlightQuery = highlight?.queryFor(ClipHighlightField.SourceName)?.takeIf { !clip.sourceAppName.isNullOrBlank() },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                    )
-                }
-
-                Text(
-                    text = timeText,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontSize = 11.sp,
-                    textAlign = TextAlign.End,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) { measurables, constraints ->
-            val leftNode = measurables[0]
-            val rightNode = measurables[1]
-
-            // 时间最多占一半宽度，优先保留来源 App 图标和名称的识别空间。
-            val maxTimeWidth = (constraints.maxWidth * 0.5f).toInt()
-            val rightPlaceable = rightNode.measure(
-                constraints.copy(
-                    minWidth = 0,
-                    maxWidth = maxTimeWidth
-                )
+    /** 名称有效性和搜索高亮继续独立于图标加载；只保留既有来源摘要契约。 */
+    val sourceAppName = clip.sourceAppName.toSourceAppDisplayName()
+    // 两块元信息自然换行，不用缩小系统字号或限制时间半宽来挤进固定一行。
+    FlowRow(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(
+            modifier = Modifier.align(Alignment.CenterVertically),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AppIconImage(
+                icon = icon,
+                modifier = Modifier.size(15.dp),
             )
-
-            // 左右之间固定留 8dp 间隔，避免长 App 名和长时间文本贴在一起。
-            val remainingWidth = constraints.maxWidth - rightPlaceable.width - 8.dp.roundToPx()
-            val leftMaxWidth = max(0, remainingWidth)
-            val leftPlaceable = leftNode.measure(
-                constraints.copy(
-                    minWidth = 0,
-                    maxWidth = leftMaxWidth
-                )
+            Spacer(modifier = Modifier.width(4.dp))
+            HighlightableText(
+                text = sourceAppName,
+                highlightQuery = highlight?.queryFor(ClipHighlightField.SourceName)?.takeIf { !clip.sourceAppName.isNullOrBlank() },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
             )
-
-            val height = max(leftPlaceable.height, rightPlaceable.height)
-            layout(constraints.maxWidth, height) {
-                leftPlaceable.placeRelative(0, (height - leftPlaceable.height) / 2)
-                rightPlaceable.placeRelative(constraints.maxWidth - rightPlaceable.width, (height - rightPlaceable.height) / 2)
-            }
         }
+        Text(
+            text = timeText,
+            modifier = Modifier.align(Alignment.CenterVertically),
+            style = MaterialTheme.typography.bodyMedium,
+            fontSize = 11.sp,
+            // FlowRow 已负责元信息位置，多行时间沿自然起点排版，不再向预留段落宽度右对齐。
+        )
     }
 }
 

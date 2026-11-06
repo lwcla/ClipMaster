@@ -130,11 +130,11 @@ fun VideoDownloadPage(
                             }
 
                             is VideoDownloadState.Downloading -> {
-                                Downloading(state)
+                                VideoDownloadProgressContent(state)
                             }
 
                             is VideoDownloadState.Merging -> {
-                                Merging(state)
+                                VideoMergeProgressContent(state)
                             }
 
                             is VideoDownloadState.Success -> {
@@ -142,7 +142,7 @@ fun VideoDownloadPage(
                             }
 
                             is VideoDownloadState.Failed -> {
-                                Failed(
+                                VideoDownloadFailureContent(
                                     state,
                                     taskMissing = task == null && state.errorMsg != "download_read_failed",
                                     retry = {
@@ -174,14 +174,19 @@ fun VideoDownloadPage(
 
 /** 下载失败状态，点击整行触发重试。 */
 @Composable
-private fun Failed(
+internal fun VideoDownloadFailureContent(
+    // 失败状态沿用现有原因映射，不在展示层改变错误分类。
     state: VideoDownloadState.Failed,
+    // 原页面负责重试业务，展示层只透传点击。
+    retry: () -> Unit,
+    // 布局修饰符位于首个可选参数，遵循共享 Compose 接口约定。
+    modifier: Modifier = Modifier,
+    // 已失效任务只显示原因，保留原禁用重试契约。
     taskMissing: Boolean = false,
-    retry: () -> Unit
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.clickable(enabled = !taskMissing, onClick = { retry() })
+        modifier = modifier.clickable(enabled = !taskMissing, onClick = retry)
     ) {
         Icon(
             painter = rememberVectorPainter(Icons.Default.Error),
@@ -201,11 +206,12 @@ private fun Failed(
     }
 }
 
+/** 合成错误预览仅展示既有重试入口。 */
 @Preview(showBackground = true)
 @Composable
 private fun FailedPreview() {
     ClipMaterTheme {
-        Failed(
+        VideoDownloadFailureContent(
             state = VideoDownloadState.Failed(errorMsg = "下载失败，点击重试"),
             retry = {}
         )
@@ -215,14 +221,14 @@ private fun FailedPreview() {
 /** 下载成功状态，点击后尝试使用系统播放器打开保存的视频。 */
 @Composable
 private fun Success(state: VideoDownloadState.Success) {
+    // 原页面上下文与协程仅用于播放器启动和失败提示，不传入纯展示组件。
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-        modifier = Modifier.clickable(onClick = {
-            val uri = state.savePath?.let(Uri::parse) ?: return@clickable
+    VideoDownloadSuccessContent(onOpen = {
+            // 只在用户点击后读取当前结果 URI；空路径仍直接忽略。
+            val uri = state.savePath?.let(Uri::parse) ?: return@VideoDownloadSuccessContent
+            // 外部播放器授权保持原有临时读取边界，不交由纯展示组件处理。
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 // 下载结果可能是内容 URI，授予临时读取权限给外部播放器。
                 setDataAndType(uri, "video/*")
@@ -234,8 +240,83 @@ private fun Success(state: VideoDownloadState.Success) {
             }.onFailure {
                 scope.launch { context.toast(R.string.base_general_there_is_no_available_application_to_open_this_video) }
             }
-        })
+    })
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun SuccessPreview() {
+    ClipMaterTheme {
+        Success(VideoDownloadState.Success("download/path/video.mp4"))
+    }
+}
+
+/** 普通视频文件下载进度状态。 */
+@Composable
+internal fun VideoDownloadProgressContent(state: VideoDownloadState.Downloading, modifier: Modifier = Modifier) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = modifier.padding(horizontal = 40.dp)
     ) {
+        LinearProgressIndicator(
+            progress = { state.progress.toFloat() / 100 },
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Text(
+            text = stringResource(R.string.base_general_download_progress, state.progress),
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(start = 12.dp)
+        )
+    }
+}
+
+/** 固定合成百分比不驱动下载任务。 */
+@Preview(showBackground = true)
+@Composable
+private fun DownloadingPreview() {
+    ClipMaterTheme {
+        VideoDownloadProgressContent(VideoDownloadState.Downloading(progress = 66))
+    }
+}
+
+/** M3U8 分片下载完成后的合并进度状态。 */
+@Composable
+internal fun VideoMergeProgressContent(state: VideoDownloadState.Merging, modifier: Modifier = Modifier) {
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = modifier.padding(horizontal = 40.dp)
+    ) {
+        LinearProgressIndicator(
+            progress = { state.progress.toFloat() / 100 },
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Text(
+            text = stringResource(R.string.base_general_merge_progress, state.progress),
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(start = 12.dp)
+        )
+    }
+}
+
+/** 固定合成百分比仅展示合并阶段。 */
+@Preview(showBackground = true)
+@Composable
+private fun MergingPreview() {
+    ClipMaterTheme {
+        VideoMergeProgressContent(VideoDownloadState.Merging(progress = 66))
+    }
+}
+
+/** 成功状态只展示播放入口；系统播放器启动留在页面适配层，避免布局测试产生外部副作用。 */
+@Composable
+internal fun VideoDownloadSuccessContent(onOpen: () -> Unit, modifier: Modifier = Modifier) {
+    Row(modifier.clickable(onClick = onOpen), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center) {
         Icon(
             painter = rememberVectorPainter(Icons.Default.DownloadDone),
             contentDescription = null,
@@ -251,72 +332,5 @@ private fun Success(state: VideoDownloadState.Success) {
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(start = 0.dp, top = 0.dp, end = 12.dp, bottom = 0.dp)
         )
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-private fun SuccessPreview() {
-    ClipMaterTheme {
-        Success(VideoDownloadState.Success("download/path/video.mp4"))
-    }
-}
-
-/** 普通视频文件下载进度状态。 */
-@Composable
-private fun Downloading(state: VideoDownloadState.Downloading) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.padding(horizontal = 40.dp)
-    ) {
-        LinearProgressIndicator(
-            progress = { state.progress.toFloat() / 100 },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Text(
-            text = stringResource(R.string.base_general_download_progress, state.progress),
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(start = 12.dp)
-        )
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-private fun DownloadingPreview() {
-    ClipMaterTheme {
-        Downloading(VideoDownloadState.Downloading(progress = 66))
-    }
-}
-
-/** M3U8 分片下载完成后的合并进度状态。 */
-@Composable
-private fun Merging(state: VideoDownloadState.Merging) {
-
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.padding(horizontal = 40.dp)
-    ) {
-        LinearProgressIndicator(
-            progress = { state.progress.toFloat() / 100 },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Text(
-            text = stringResource(R.string.base_general_merge_progress, state.progress),
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(start = 12.dp)
-        )
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-private fun MergingPreview() {
-    ClipMaterTheme {
-        Merging(VideoDownloadState.Merging(progress = 66))
     }
 }

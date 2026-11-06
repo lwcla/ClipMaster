@@ -117,6 +117,7 @@ internal enum class DetailLinkType {
  *
  * 页面根据路由传入的 `clipId` 加载单条剪贴记录，点击正文卡片复制内容，并提供删除以及跳转到图片/视频提取的入口。
  * 数据读取和剪贴操作放在 ViewModel 中，Composable 只负责生命周期触发和状态渲染。
+ * 错误状态在展示时读取资源，使保留的 ViewModel 状态可以跟随系统语言变化。
  *
  * @param torrentSearchFeatures 可选 TorrentSearch 操作集合；关闭实现模块时为空，不渲染快捷按钮。
  * @param onLaunchTorrentSearch 用户点击快捷按钮后的回调，携带入口实现和当前剪贴候选查询文本。
@@ -218,7 +219,7 @@ fun DetailPage(
                         )
 
                         Text(
-                            text = uiState.message,
+                            text = stringResource(uiState.messageRes),
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -388,6 +389,8 @@ private fun DetailActionSections(
                             initialQuery = torrentSearchInitialQuery,
                             /** 实现组件只回传候选文本，页面再连同入口交给导航层。 */
                             onLaunch = { query -> onLaunchTorrentSearch(feature, query) },
+                            // 跨模块 Compose 接口显式传参，避免默认参数桥与实现的运行时签名不一致。
+                            modifier = Modifier,
                         )
                     }
                 }
@@ -459,7 +462,7 @@ private fun DetailActionSections(
  * 来源明确时提供屏蔽或取消屏蔽动作；未知来源不展示按钮，避免用户误以为普通 App 侧也能稳定识别来源。
  */
 @Composable
-private fun DetailSourceBlockSection(
+internal fun DetailSourceBlockSection(
     clip: ClipShowEntity,
     blockedSourcePackages: Set<String>,
     onRequestAction: (DetailSourceBlockAction) -> Unit,
@@ -494,7 +497,7 @@ private fun DetailSourceBlockSection(
 }
 
 /** 详情页来源过滤确认动作。 */
-private sealed interface DetailSourceBlockAction {
+internal sealed interface DetailSourceBlockAction {
     /** 确认加入来源过滤名单。 */
     data class Block(
         /** 来源 App 包名。 */
@@ -510,7 +513,7 @@ private sealed interface DetailSourceBlockAction {
 
 /** 详情页来源过滤二次确认弹窗。 */
 @Composable
-private fun DetailSourceBlockConfirmDialog(
+internal fun DetailSourceBlockConfirmDialog(
     action: DetailSourceBlockAction,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
@@ -528,7 +531,8 @@ private fun DetailSourceBlockConfirmDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(titleRes)) },
-        text = { Text(stringResource(messageRes)) },
+        // 长说明在大字体下独立滚动，保留标题与确认按钮的可见区域。
+        text = { Text(stringResource(messageRes), Modifier.verticalScroll(rememberScrollState())) },
         confirmButton = {
             TextButton(onClick = onConfirm) {
                 Text(stringResource(R.string.base_general_sure))
@@ -583,25 +587,15 @@ private fun DetailLinksSection(
                 link = link,
                 onClick = { onOpenLinkActions(link) }
             )
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(spacing.small),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                DetailLinkTextAction(
-                    label = stringResource(R.string.base_general_copy_link),
-                    onClick = { onCopyLink(link.url) }
-                )
-                if (link.canExtract) {
-                    DetailLinkTextAction(
-                        label = stringResource(R.string.base_general_video_extract),
-                        onClick = { onExtractVideo(link) }
-                    )
-                    DetailLinkTextAction(
-                        label = stringResource(R.string.base_general_image_extract),
-                        onClick = { onExtractImages(link) }
-                    )
-                }
-            }
+            // 与操作弹层共用可换行的动作组，窄屏英文不再挤压后续操作。
+            DetailLinkActions(
+                canExtract = link.canExtract,
+                // 复制仍使用当前链接完整原文，展示摘要不参与业务参数。
+                onCopyLink = { onCopyLink(link.url) },
+                // 原链接模型交给调用方，沿用既有视频和图片提取导航。
+                onExtractVideo = { onExtractVideo(link) },
+                onExtractImages = { onExtractImages(link) },
+            )
             if (!link.canExtract) {
                 Text(
                     text = stringResource(R.string.base_general_link_extract_unsupported),
@@ -670,7 +664,7 @@ private fun DetailLinkSummaryRow(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DetailAllLinksBottomSheet(
+internal fun DetailAllLinksBottomSheet(
     links: List<DetailLinkUiState>,
     onDismiss: () -> Unit,
     onSelectLink: (DetailLinkUiState) -> Unit,
@@ -715,7 +709,7 @@ private fun DetailAllLinksBottomSheet(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DetailLinkActionBottomSheet(
+internal fun DetailLinkActionBottomSheet(
     link: DetailLinkUiState,
     onDismiss: () -> Unit,
     onCopyLink: () -> Unit,
@@ -760,25 +754,13 @@ private fun DetailLinkActionBottomSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 softWrap = false
             )
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(ClipMasterThemeTokens.tokens.spacing.small),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                DetailLinkTextAction(
-                    label = stringResource(R.string.base_general_copy_link),
-                    onClick = onCopyLink
-                )
-                if (link.canExtract) {
-                    DetailLinkTextAction(
-                        label = stringResource(R.string.base_general_video_extract),
-                        onClick = onExtractVideo
-                    )
-                    DetailLinkTextAction(
-                        label = stringResource(R.string.base_general_image_extract),
-                        onClick = onExtractImages
-                    )
-                }
-            }
+            // 弹层和快捷区采用相同换行规则，已绑定当前链接的回调直接透传。
+            DetailLinkActions(
+                canExtract = link.canExtract,
+                onCopyLink = onCopyLink,
+                onExtractVideo = onExtractVideo,
+                onExtractImages = onExtractImages,
+            )
             if (!link.canExtract) {
                 Text(
                     text = stringResource(R.string.base_general_link_extract_unsupported),
@@ -808,9 +790,8 @@ private fun DetailLinkTextAction(
             .clickable(role = Role.Button, onClick = onClick)
             .padding(vertical = 8.dp, horizontal = 2.dp),
         style = MaterialTheme.typography.labelLarge,
+        // 来源过滤操作同样保留完整含义，英文大字体允许自然换行。
         color = MaterialTheme.colorScheme.primary,
-        maxLines = 1,
-        overflow = TextOverflow.Clip
     )
 }
 

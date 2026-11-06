@@ -2,6 +2,7 @@ package com.cla.clip.master.ui.widget
 
 import android.content.res.Configuration
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -9,7 +10,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
@@ -35,7 +35,6 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.cla.clip.base.general.R
@@ -43,16 +42,16 @@ import com.cla.clip.master.ui.theme.ClipMasterTheme
 import com.cla.clip.master.ui.theme.ClipMasterThemeTokens
 
 /**
- * 图标、单行标题和右侧当前值组成的下拉设置卡片。
+ * 图标、纵向标题/当前值和下拉箭头组成的设置卡片；长文案自然换行，不靠省略隐藏设置含义。
  *
  * 只展示上层已提交值并回传事件，不保存业务数据或持有导航、Repository。
  * 菜单状态由调用方提升管理，离页或进入后台时应关闭；相同值只关闭菜单，不重复提交。
  */
 @Composable
 internal fun <T> SettingDropdownEntryCard(
-    // 调用方资源化的标题；宽度不足时单行省略，完整含义通过读屏描述保留。
+    // 调用方资源化的标题；窄屏或大字时允许换行，完整含义在视觉与读屏中一致。
     title: String,
-    // 右侧紧凑文案，不含“当前”前缀；完整选项文案仍由菜单展示。
+    // 标题下方的当前值，不含“当前”前缀；允许自然换行。
     selectedLabel: String,
     // 业务值必须稳定且互不重复，菜单以其作为身份而非列表下标。
     options: List<SingleChoiceOption<T>>,
@@ -99,26 +98,14 @@ internal fun <T> SettingDropdownEntryCard(
                 icon()
             }
             Spacer(Modifier.width(spacing.medium))
-            Text(
-                text = title,
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.width(spacing.small))
-            // 菜单使用当前值区域作为锚点，靠右显示并由 Popup 处理屏幕边缘约束。
-            // 当前值区域最多 132dp，为窄屏标题保留空间；短值仍按内容收缩。
-            Box(modifier = Modifier.widthIn(max = 132.dp)) {
+            // 标题和当前值共享完整剩余宽度，防止两段英文在同一行互相挤压。
+            Box(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = selectedLabel,
-                        modifier = Modifier.weight(1f, fill = false),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(text = title, style = MaterialTheme.typography.titleMedium)
+                        Text(text = selectedLabel, style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     Icon(
                         imageVector = Icons.Default.ArrowDropDown,
                         contentDescription = null,
@@ -157,7 +144,7 @@ internal fun <T> SettingDropdownEntryCard(
     }
 }
 
-/** 默认、深色和窄屏大字体预览，检查单行布局与当前值不重叠。 */
+/** 默认、深色和窄屏大字体预览，检查标题/当前值自然换行且不重叠。 */
 @Preview(showBackground = true)
 @Preview(showBackground = true, uiMode = Configuration.UI_MODE_NIGHT_YES)
 @Preview(showBackground = true, widthDp = 320, fontScale = 2f)

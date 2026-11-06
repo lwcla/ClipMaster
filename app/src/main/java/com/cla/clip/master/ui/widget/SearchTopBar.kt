@@ -25,7 +25,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.cla.clip.master.ui.theme.ClipMasterTheme
@@ -39,6 +38,7 @@ private val SearchTopBarContentHeight = 48.dp
  * 顶部无边框搜索输入，取代整条标题栏，不承载业务搜索、历史、导航或持久化。
  * query 唯一来源为调用方；inputModifier 用于接入焦点请求，组件不在重组时主动弹键盘。
  * 返回、清空与提交只是事件，是否退出搜索或收键盘由页面决定。
+ * 空输入提示允许完整换行，栏高随实际内容增长；用户编辑内容仍保持单行滚动。
  */
 @Composable
 internal fun SearchTopBar(
@@ -93,8 +93,6 @@ internal fun SearchTopBar(
                                 text = placeholder,
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                         innerTextField()

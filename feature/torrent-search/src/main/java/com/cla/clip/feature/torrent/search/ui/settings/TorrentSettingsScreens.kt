@@ -51,6 +51,12 @@ import com.cla.clip.feature.torrent.search.settings.TorrentSearchDnsMode
 import com.cla.clip.feature.torrent.search.torznab.TorznabConfig
 import com.cla.clip.feature.torrent.search.torznab.TorznabConfigId
 import com.cla.clip.feature.torrent.search.ui.component.torrentCategoryLabel
+import com.cla.clip.feature.torrent.search.ui.component.TorrentPageTopBar
+import com.cla.clip.feature.torrent.search.ui.component.torrentPageContentInsets
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 
 /** TorrentSearch 设置纯渲染页面；只消费轻量状态并把写操作提升到 ViewModel。 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -76,15 +82,10 @@ internal fun TorrentSettingsScreen(
     /** showDisableConfirmation 仅控制本次 Composition 内的确认弹窗。 */
     var showDisableConfirmation by remember { mutableStateOf(false) }
     Scaffold(
+        // 设置末项复用统一底部手势安全区，不依赖导航栏一定报告非零高度。
+        contentWindowInsets = torrentPageContentInsets(),
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.torrent_search_settings_screen_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.torrent_search_action_back))
-                    }
-                },
-            )
+            TorrentPageTopBar(title = stringResource(R.string.torrent_search_settings_screen_title), onBack = onBack)
         },
     ) { /** contentPadding 是系统栏与顶部栏提供的安全边距。 */ contentPadding ->
         LazyColumn(
@@ -179,7 +180,7 @@ internal fun TorrentSettingsScreen(
         AlertDialog(
             onDismissRequest = { showDisableConfirmation = false },
             title = { Text(stringResource(R.string.torrent_search_disable_safe_mode_title)) },
-            text = { Text(stringResource(R.string.torrent_search_disable_safe_mode_message)) },
+            text = { Text(stringResource(R.string.torrent_search_disable_safe_mode_message), modifier = Modifier.verticalScroll(rememberScrollState())) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -229,14 +230,12 @@ internal fun TorrentProviderManagementScreen(
     /** addingConfig 控制新增弹窗，与 editingConfig 互斥。 */
     var addingConfig by remember { mutableStateOf(false) }
     Scaffold(
+        // 来源管理与设置使用同一系统边界，底部编辑/删除动作不能落在手势指示区。
+        contentWindowInsets = torrentPageContentInsets(),
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.torrent_search_search_providers_screen_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.torrent_search_action_back))
-                    }
-                },
+            TorrentPageTopBar(
+                title = stringResource(R.string.torrent_search_search_providers_screen_title),
+                onBack = onBack,
                 actions = {
                     IconButton(onClick = { addingConfig = true }) {
                         Icon(Icons.Default.Add, contentDescription = stringResource(R.string.torrent_search_search_providers_add_screen_title))
@@ -314,6 +313,7 @@ internal fun TorrentProviderManagementScreen(
 
 /** 单个 Provider 卡片；动态来源通过可空回调暴露编辑与删除动作。 */
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun ProviderCard(
     /** 当前来源展示状态。 */
     provider: TorrentProviderUiState,
@@ -327,12 +327,11 @@ private fun ProviderCard(
     onChallenge: (() -> Unit)?,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
-        Row(
+        Column(
             modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(provider.descriptor.displayName, style = MaterialTheme.typography.titleMedium)
                 Text(
                     text = provider.descriptor.baseUrl,
@@ -349,22 +348,25 @@ private fun ProviderCard(
                     )
                 }
             }
-            if (onEdit != null) {
-                IconButton(onClick = onEdit) {
-                    Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.torrent_search_search_providers_list_action_edit))
+            // 操作独立成可换行区域，长来源名不再与编辑、删除及开关争用同一行。
+            FlowRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (onEdit != null) {
+                    IconButton(onClick = onEdit) {
+                        Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.torrent_search_search_providers_list_action_edit))
+                    }
                 }
-            }
-            if (onDelete != null) {
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.torrent_search_search_providers_list_action_delete))
+                if (onDelete != null) {
+                    IconButton(onClick = onDelete) {
+                        Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.torrent_search_search_providers_list_action_delete))
+                    }
                 }
-            }
-            if (onChallenge != null) {
-                TextButton(onClick = onChallenge) {
-                    Text(stringResource(R.string.torrent_search_cloudflare_open_action))
+                if (onChallenge != null) {
+                    TextButton(onClick = onChallenge) {
+                        Text(stringResource(R.string.torrent_search_cloudflare_open_action))
+                    }
                 }
+                Switch(checked = provider.enabled, onCheckedChange = onEnabledChange)
             }
-            Switch(checked = provider.enabled, onCheckedChange = onEnabledChange)
         }
     }
 }
@@ -511,12 +513,11 @@ private fun SettingsNavigationCard(
             .fillMaxWidth()
             .clickable(enabled = enabled, onClick = onClick),
     ) {
-        Row(
+        Column(
             modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
                 Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

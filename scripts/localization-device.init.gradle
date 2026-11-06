@@ -1,0 +1,16 @@
+// 仅显式传入此 init script 时启用，避免资源测试覆盖手机上已安装的正式应用及其数据。
+gradle.beforeProject { project ->
+    // project 是当前配置模块；仅宿主需要独立包名和测试产物目录，库模块沿用原构建缓存。
+    if (project.path == ':app') {
+        project.layout.buildDirectory.set(project.rootProject.layout.buildDirectory.dir('localization-device/app'))
+        project.afterEvaluate {
+            // 使用独立安装身份及无业务初始化的 runner；不影响源码中的默认配置。
+            project.android.defaultConfig.applicationId = 'com.cla.clip.master.localizationcheck'
+            project.android.defaultConfig.testApplicationId = 'com.cla.clip.master.localizationcheck.test'
+            // 仅完整页面集成显式启用真实 App/Hilt；普通布局与资源测试继续隔离后台初始化。
+            project.android.defaultConfig.testInstrumentationRunner = project.findProperty('localizationUseApp') == 'true'
+                ? 'com.cla.clip.master.localization.LocalizationAppTestRunner'
+                : 'com.cla.clip.master.localization.LocalizationTestRunner'
+        }
+    }
+}

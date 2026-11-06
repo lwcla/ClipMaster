@@ -47,6 +47,16 @@
 - `PagingStateContent`、`MediaStateContent` 和 `SharedImagePreview` 使用主题 token 收敛状态色、尺寸、圆角和间距。
 - 删除类执行入口统一使用 `:base:general` 的 `base_general_ic_delete` 图形和 `DeleteActionIcon` / `DeleteIconButton` 组件，图标由 Compose tint 为 `MaterialTheme.colorScheme.error`；清空类入口不纳入同款删除图标统一范围，继续保留 `DeleteSweep` / `DeleteForever` 等清空语义图标并统一危险色，回收站入口卡片仍保持导航入口的 `DeleteOutline` + primary 色。
 
+## 标题栏多语言与动态字体契约（2026-11-06）
+
+- 真机英文回归已确认旧标题栏每侧固定 112dp 保护区导致 `Image extraction`、`Clipboard filtering`、`Backup & restore` 等页面标题在 320dp 窄屏被省略；固定 48dp 高度还会限制放大后的文字行高。
+- 共享 `TitleBar` 保持现有公开接口及 `navigation`、`title`、`actions` 三个 `RowScope` 插槽。布局先测量导航与动作实际宽度，以较宽一侧加标题间距作为两侧对称保护区，让单排标题仍相对整条标题栏居中，并与两侧操作保持分离。
+- 标题固有宽度超出单排居中区域时，导航与动作留在首行，标题放到独立的全宽第二行；无两侧操作时无需保留空白操作行。`TitleBarText` 最多显示两行，超过两行的异常长标题仍保留省略兜底；常规页面标题不再依赖固定侧边宽度裁短。
+- 内容区最小高度保持 48dp，实际高度随标题行数和动态字体增长；返回按钮继续为 48dp 点击区。三段位置使用逻辑起止方向放置，保持 RTL 下导航与动作镜像以及标题居中。
+- 复用现有标题、返回按钮与页面骨架，只在共享组件内部调整测量和放置，不新增页面状态、全局尺寸缓存或独立业务规则，不改变导航、生命周期、权限和数据行为。
+- 单元测试检查：这是依赖真实 Compose 字体与布局的 UI 回归，不新增 JVM 规则测试；`EnglishLayoutDeviceTest.pageTitlesRemainReadable` 已在真实设备确认失败。修复后 320dp、1.0/1.3 字体比例及双动作/RTL 标题回归通过；编译、418 项宿主单测与 lint 通过，完整结果见 [多语言方案](multilingual_support_plan.md)。现有标题 slot 均为支持固有尺寸查询的文本；未来引入 Subcompose 类标题前需重新评估测量契约。
+- 日志与诊断计划：仅通过测试布局结果与合成页面截图检查截断、重叠和高度，不添加高频测量日志，不记录真实页面内容；无设置、备份、反射或外部协议变化，无需新增备份逻辑或 keep/R8 规则。
+
 ## 主链路改造
 
 - 首页底部导航移除临时红色背景，改为更轻的图标 + 文案 + 选中指示；保留列表和我的两个 Tab，并继续使用标准 `NavigationBar` 结构，只收缩图标和标签字号来降低占用感。
@@ -77,7 +87,7 @@
 
 - 来源过滤页已通过 topBar slot 切换普通标题栏与共享 `SearchTopBar`；页面接入见 [来源过滤方案](clip_source_app_filter_plan.md)，搜索组件契约见 [共享表单方案](shared_form_components_plan.md)。
 - 为 `SecondaryPageScaffold` 增加可选 `topBar` 内容 slot：默认仍通过原 title/onBack/actions 构造 `TitleBar`；调用方提供 slot 时替换整条顶部栏。沿用现有导航栏 Insets、内容 padding、Snackbar 和底栏机制，顶部组件负责一次状态栏避让。
-- 不将无边框输入塞入居中标题插槽，不改变 `TitleBar` 每侧 112dp 的保护规则；其他页面无需改造。搜索顶部常规字体下与普通态同为 48dp，极大字体允许随输入内容增加高度，分隔线不占额外一行。
+- 不将无边框输入塞入居中标题插槽；`TitleBar` 的实际宽度测量、两行标题与动态高度以“标题栏多语言与动态字体契约”为准，调用页面无需改造。搜索顶部常规字体下最小高度同为 48dp，极大字体允许随输入内容增加高度，分隔线不占额外一行。
 - 实施时检查骨架所有调用方及默认行为兼容性，运行 `.\gradlew.bat :app:compileDebugKotlin --console=plain`；状态规则测试见来源过滤主文档，Preview/设备检查 Insets、窄屏和键盘，不能把现有编译结果当作草案验证。
 - 日志与诊断计划：展示 slot 无新增副作用，不新增重组日志；无数据或外部协议变化，无需备份及 release/R8 调整。
 - 最终验证：七处 SecondaryPageScaffold 调用方已检查，默认 topBar 为空继续构造原 TitleBar；app 190 项单测、Kotlin 编译、最后布局补验编译通过，只读审查无可行动问题。布局/IME/读屏未做设备验收，具体证据以来源过滤主文档为准。
@@ -108,6 +118,8 @@
 - 反回归筛查：使用 `rg "Color\\.|\\.dp|RoundedCornerShape|shadow"` 等方式人工检查硬编码样式，合理例外记录到本文或对应页面文档。
 
 ## 变更记录
+
+- 2026-11-06：根据真机英文标题截断回归，取消共享标题栏固定 112dp 侧边保护与固定内容高度，改按实际操作宽度布局；拥挤时标题另起全宽一行并最多显示两行。保持公开插槽、居中、RTL 与 48dp 返回点击区；设备回归先失败，修复后编译、单测、lint 与设备回归通过，结果见多语言主方案。原因是翻译资源完整并不能保证长英文标题在真实屏幕和大字体下完整可读。
 
 - 2026-10-31：同步检查更新置底及空功能分类隐藏的页面摘要，避免与我的页主方案冲突；纯排列调整不新增运行时日志，验证由我的页方案记录。
 
