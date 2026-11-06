@@ -10,9 +10,9 @@
 
 ## 目标与范围
 
-### 0.9.21 版本递增与 GitHub 构建发布验收（2026-11-06，实现中）
+### 0.9.21 版本递增与 GitHub 构建发布验收（2026-11-06，已完成）
 
-- 按用户要求将 `versionName` 从 `0.9.20` 递增至 `0.9.21`，`versionCode` 从 `56` 递增至 `57`，普通推送 `main` 后触发既有 GitHub Actions；预期标签为 `v0.9.21-57`，构建、签名、APK、mapping 和正式 Release 均需逐项核实。
+- 按用户要求将 `versionName` 从 `0.9.20` 递增至 `0.9.21`，`versionCode` 从 `56` 递增至 `57`，普通推送 `main` 后触发既有 GitHub Actions；`v0.9.21-57` 已正式发布，构建、签名、APK、mapping 和 Release 均已逐项核实。
 - 复用 app 静态版本声明、base/general 派生版本、APK 命名、`github_release_version.py` 和现有 workflow。版本调整不新增组件、类、方法、业务规则或外部协议，版本码中文注释同步更新；不为常量递增新增镜像单测或采用 TDD。
 - 验证计划：运行既有版本脚本单测、真实版本变化判定及 `git diff --check`，编译和单测按最终纳入源码执行；使用完整 Release 构建核对 Lint/R8，推送后独立验收本次 SHA 对应的 Actions 和 Release，不能把版本检查成功等同于 Android 构建成功。
 - 日志与诊断计划：沿用 Gradle、版本脚本及 Actions 的低敏状态，记录源码 SHA、run ID、tag、附件名称和摘要；不输出签名配置、凭据或用户内容。版本元数据无新增运行时日志、持久化或备份字段，不调整 keep 规则。
@@ -21,6 +21,9 @@
 - 审查与边界：独立只读代码审查未发现必须修复的问题，已同步文档中过期的夹具编译错误和未实施描述；中文注释、字符串资源前缀、生命周期与日志隐私边界均沿用已检查实现。本轮不执行设备安装、TalkBack、真实广告素材及真实网站完整下载链路，风险和后续验收分别保留于各主方案。
 - 完整本地验证：使用同一隔离脚本执行 `.\gradlew.bat :app:assembleRelease :app:compileDebugAndroidTestJavaWithJavac :app:generateDebugBuildConfig --init-script build\image-preview-isolation.gradle --offline --console=plain --no-daemon --no-parallel --max-workers=2 '-Pkotlin.compiler.execution.strategy=in-process' -PenableAdmobDebugAdFeature=false -PenableAdmobReleaseAdFeature=true -PenableCsjDebugAdFeature=false -PenableCsjReleaseAdFeature=false -PenableUniadDebugAdFeature=false -PenableUniadReleaseAdFeature=false -PappDistribution=domestic` 成功（4m 23s），包含 `lintVitalRelease`、`minifyReleaseWithR8`、完整 APK 打包和仪器 Java 编译；保留既有 Kotlin/AGP 与 Shizuku 隐藏接口警告。日志为 `build/release-0.9.21-preflight.log` 和 `build/release-0.9.21-local.log`。
 - 本地产物核验：`apksigner verify --verbose` 确认 APK v2 签名有效，`aapt dump badging` 和生成的 BuildConfig 均为 `com.cla.clip.master / 0.9.21 / 57`；APK 大小为 5,555,958 字节，SHA256 为 `f529758ff3142ec1c79a53a67a4dba5ecad7a45ad1c3024e6cf996156b0b3d77`，mapping 保留于 `app/build/image-preview-20261105-v2/outputs/mapping/release/mapping.txt`。本地检查不能替代下述云端验收，发布完成后另行补录 run、tag 及附件结果。
+- 源码与云端验收：功能提交 `b54af49` 与版本提交 `277d824852fd5b957856719983776b1b30744f66` 已普通快进推送 `main`；[Actions 42138776951](https://github.com/lwcla/ClipMaster/actions/runs/42138776951) 最终为 `completed / success`，`check-version` 和 `build` 均成功。Release 构建、APK 签名校验、APK 上传、R8 mapping 保存及 Release 创建步骤全部成功，发布 tag 精确指向该版本提交。
+- 发行产物验收：[GitHub Release v0.9.21-57](https://github.com/lwcla/ClipMaster/releases/tag/v0.9.21-57) 已于北京时间 2026-11-06 08:53:19 正式发布，非草稿、非预发布。附件 `ClipMaster-v0.9.21-admob.apk` 为 `uploaded`，大小 5,558,034 字节，GitHub 返回 SHA256 为 `40f163e7edb8638ea9fbb067a9a37360a22d1c0db5e23af4289d2e34d9f1e46d`；`ClipMaster-release-admob` 和 `ClipMaster-release-admob-mapping` 两个 Actions 产物均存在且未过期，分别保留 30 天和 90 天。云端签名由成功的签名步骤确认，本轮不重复下载云端 APK 或安装设备。
+- 收尾边界：本次补录仅更新验收文档，不再次递增版本；后续文档推送沿用版本门禁跳过 Android 构建，不产生第二个 Release。
 
 ### 0.9.20 版本递增与 GitHub 构建发布验收（2026-11-05，已完成）
 
@@ -425,6 +428,8 @@ public 仓库 README 作为人可读发布页维护，至少包含最新版版�
 - 是否需要把发布页入口放到关于页或错误弹窗外的常驻位置，方便两个自动源都不可达时用户主动查看。
 
 ## 变更记录
+
+- 2026-11-06：完成 `0.9.21 / 57` 云端发布验收，记录成功的 Actions、源码与 tag 对应关系、正式 Release、APK 摘要和 mapping 留存，确认图片功能及版本已推送主分支。
 
 - 2026-11-06：按用户要求准备 `0.9.21 / 57`，复用主分支版本变化门禁触发 GitHub 重新构建发布，并明确构建、签名、APK、mapping 及 Release 的独立验收要求。
 
