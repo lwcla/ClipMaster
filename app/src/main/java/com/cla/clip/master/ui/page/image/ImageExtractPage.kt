@@ -3,16 +3,10 @@ package com.cla.clip.master.ui.page.image
 import android.webkit.WebView
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -22,6 +16,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.repeatOnLifecycle
 import com.cla.clip.feature.ad.api.AdPlacement
 import com.cla.clip.master.ui.widget.media.MediaAdGrid
+import com.cla.clip.master.ui.page.image.component.ImageCandidateToolbar
+import com.cla.clip.master.ui.page.image.component.ImageCandidateToolbarState
 import com.cla.clip.master.ad.PageAdSession
 import com.cla.clip.master.ad.rememberPageAdSession
 import com.cla.clip.master.ad.adInteractionGuard
@@ -30,12 +26,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.cla.clip.base.general.R
@@ -283,19 +277,28 @@ private fun LiveCandidateSelectionContent(
 ) {
     // 选择记忆由 VM 持有，页面只读取并发送用户事件。
     val selectedKeys = viewModel.selection.selectedKeys
+    // 快照捕获提取身份，异步加载回调不能读取后来变化的轮次。
+    val extractionId = viewModel.extractionId
     // 保存点击身份并持续读取候选；只有显式重新提取才创建新的预览会话。
     var previewKey by remember(viewModel.extractionId) { mutableStateOf<String?>(null) }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        LiveCandidateToolbar(
-            isExtracting = isExtracting,
-            isSubmittingDownload = isSubmittingDownload,
-            selectedCount = selectedKeys.size,
-            totalCount = candidates.size,
+        ImageCandidateToolbar(
+            state = ImageCandidateToolbarState(
+                isExtracting = isExtracting,
+                isSubmitting = isSubmittingDownload,
+                selectedCount = selectedKeys.size,
+                totalCount = candidates.size,
+                allSelected = viewModel.selection.isAllSelected,
+                canSelectAll = viewModel.selection.canSelectAll,
+                filterFailedEnabled = viewModel.selection.filterFailedEnabled,
+                showLongRunningHint = showLongRunningHint,
+            ),
             onRetry = onRetry,
-            onSelectAll = { viewModel.selection.selectAll(true) },
-            onUnselectAll = { viewModel.selection.selectAll(false) },
-            showLongRunningHint = showLongRunningHint,
+            // 使用点击时最新选择状态，避免连续点击读取旧快照。
+            onToggleSelectAll = viewModel::toggleSelectAllCandidates,
+            // 持续开关与批量动作都由 VM 统一编排，不逐图提示或持有第二份过滤状态。
+            onFilterFailedChange = viewModel::setFilterFailedCandidates,
             onStopExtract = onStopExtract,
             onConfirmDownload = { onConfirmDownload(selectedKeys.toSet()) }
         )
@@ -313,19 +316,24 @@ private fun LiveCandidateSelectionContent(
                 val key = viewModel.candidateKey(candidate)
                 // 用户选择只取当前候选集合，广告插入不改变数量。
                 val selected = key in selectedKeys
-                LiveCandidateTile(
-                    candidate = candidate,
-                    selected = selected,
-                    imageLoader = imageLoader,
-                    failureTitle = stringResource(R.string.base_general_image_load_failed),
-                    onPreview = {
-                        previewKey = key
-                    },
-                    onToggleSelected = {
-                        viewModel.selection.setSelected(key, !selected)
-                    },
-                    onDecodedSize = { width, height -> viewModel.updateCandidateDecodedSize(candidate, width, height) }
-                )
+                // 同身份的请求版本升级也重建加载子组合，旧闭包不能换绑到新请求。
+                androidx.compose.runtime.key(extractionId, key, candidate.previewRequestVersion()) {
+                    LiveCandidateTile(
+                        candidate = candidate,
+                        selected = selected,
+                        imageLoader = imageLoader,
+                        failureTitle = stringResource(R.string.base_general_image_load_failed),
+                        onPreview = {
+                            previewKey = key
+                        },
+                        onToggleSelected = {
+                            viewModel.selection.setSelected(key, !selected)
+                        },
+                        // 尺寸仍沿用既有版本校验，失败状态使用独立事件通道。
+                        onDecodedSize = { width, height -> viewModel.updateCandidateDecodedSize(candidate, width, height) },
+                        onLoadEvent = { event -> viewModel.onCandidateLoadEvent(extractionId, candidate, event) },
+                    )
+                }
         }
     }
 
@@ -336,95 +344,6 @@ private fun LiveCandidateSelectionContent(
     }
 }
 
-
-/**
- * 实时选择页顶部工具栏。
- *
- * 展示提取是否仍在运行、候选总数、已选数量和核心操作；停止提取或提交下载时会禁用会话与选择动作。
- */
-@Composable
-private fun LiveCandidateToolbar(
-    isExtracting: Boolean,
-    isSubmittingDownload: Boolean,
-    selectedCount: Int,
-    totalCount: Int,
-    showLongRunningHint: Boolean,
-    onRetry: () -> Unit,
-    onSelectAll: () -> Unit,
-    onUnselectAll: () -> Unit,
-    onStopExtract: () -> Unit,
-    onConfirmDownload: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 10.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(
-                        if (isExtracting) R.string.base_general_image_extract_still_running else R.string.base_general_image_extract_done_waiting
-                    ),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = stringResource(R.string.base_general_image_live_count, selectedCount, totalCount),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-            Button(
-                onClick = {
-                    if (isExtracting) {
-                        onStopExtract()
-                    } else {
-                        onConfirmDownload()
-                    }
-                },
-                enabled = !isSubmittingDownload && (isExtracting || selectedCount > 0)
-            ) {
-                Text(
-                    stringResource(
-                        when {
-                            isSubmittingDownload -> R.string.base_general_image_extract_submitting
-                            isExtracting -> R.string.base_general_finish_image_extract
-                            else -> R.string.base_general_confirm_download_selected_images
-                        }
-                    )
-                )
-            }
-        }
-        if (showLongRunningHint && isExtracting) {
-            Text(stringResource(R.string.base_general_image_extract_long_running), style = MaterialTheme.typography.bodySmall)
-        }
-        if (!isExtracting && selectedCount == 0 && totalCount > 0) {
-            Text(
-                text = stringResource(R.string.base_general_image_select_at_least_one),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-        }
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(top = 8.dp)
-        ) {
-            TextButton(onClick = onRetry, enabled = !isSubmittingDownload) {
-                Text(stringResource(R.string.base_general_re_extract_images))
-            }
-            TextButton(onClick = onSelectAll, enabled = !isSubmittingDownload && selectedCount < totalCount) {
-                Text(stringResource(R.string.base_general_select_all))
-            }
-            TextButton(onClick = onUnselectAll, enabled = !isSubmittingDownload && selectedCount > 0) {
-                Text(stringResource(R.string.base_general_unselect_all))
-            }
-        }
-    }
-}
 
 /**
  * 重新提取确认弹窗。

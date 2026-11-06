@@ -81,6 +81,8 @@ internal fun <T> MediaAdGrid(
                     minimumContentHeightPx = minimumGridHeightPx,
                     blocked = blocked,
                     canReveal = !gridState.isScrollInProgress,
+                    // 固定分隔不随网格滚动；仅实际素材占高时由底栏计入空间预算。
+                    contentPadding = PaddingValues(start = 12.dp, top = 12.dp, end = 12.dp),
                 )
             }
         }

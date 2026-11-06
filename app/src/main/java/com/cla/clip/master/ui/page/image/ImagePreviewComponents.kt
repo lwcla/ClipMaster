@@ -20,6 +20,7 @@ import com.cla.clip.base.general.repository.ImageCandidateData
 import com.cla.clip.master.ui.widget.SelectableImageTile
 import com.cla.clip.master.ui.widget.SharedImagePreviewMeta
 import com.cla.clip.master.ui.widget.image.ImagePreviewContent
+import com.cla.clip.master.ui.widget.image.ImageThumbnailLoadEvent
 import com.cla.clip.master.ui.widget.image.ImagePreviewMetadata
 import com.cla.clip.master.ui.widget.image.SharedImagePreviewDialog
 import com.cla.clip.master.ui.widget.media.snapshotMediaGridItems
@@ -28,7 +29,7 @@ import com.cla.clip.master.ui.widget.rememberSharedImageRequest
 /**
  * 实时候选缩略图。
  *
- * 该适配层只负责把探测阶段候选转换为共享图片缩略图所需的请求模型；选择状态、预览动作和解码尺寸仍由页面维护。
+ * 该适配层只转换请求模型并转交加载事件；选择、失败记忆和预览动作仍由页面维护。
  */
 @Composable
 internal fun LiveCandidateTile(
@@ -39,6 +40,8 @@ internal fun LiveCandidateTile(
     onPreview: () -> Unit,
     onToggleSelected: () -> Unit,
     onDecodedSize: (Int?, Int?) -> Unit,
+    // 页面闭包已绑定提取轮次和候选版本，共享组件不理解这些业务身份。
+    onLoadEvent: (ImageThumbnailLoadEvent) -> Unit,
 ) {
     SelectableImageTile(
         model = rememberSharedImageRequest(
@@ -55,6 +58,7 @@ internal fun LiveCandidateTile(
         onPreview = onPreview,
         onToggleSelected = onToggleSelected,
         onDecodedSize = onDecodedSize,
+        onLoadEvent = onLoadEvent,
     )
 }
 

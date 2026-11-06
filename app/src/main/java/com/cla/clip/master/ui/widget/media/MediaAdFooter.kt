@@ -1,17 +1,12 @@
 package com.cla.clip.master.ui.widget.media
 
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.layout
-import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import com.cla.clip.feature.ad.api.AdPlacement
 import com.cla.clip.master.ad.PageAdSession
@@ -45,21 +40,13 @@ internal fun MediaAdFooter(
     // 页面本身过小时不请求广告；已超高时移除子组合，让 PageAdSlot 释放原生资源。
     if (oversized || !MediaAdFooterPolicy.fits(availableHeightPx, 0, minimumContentHeightPx)) return
 
-    Box(
-        modifier = modifier.fillMaxWidth().layout { measurable, constraints ->
-            // 固定宽度下读取素材完整高度，不能用剩余高度压缩或裁切 SDK 资产。
-            val footer = measurable.measure(constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity))
-            // 本帧先决定是否放置，保证超高广告不会短暂把业务内容挤成零高度。
-            val fits = MediaAdFooterPolicy.fits(availableHeightPx, footer.height, minimumContentHeightPx)
-            if (!fits) {
-                // 只从 false 变为 true；下一次组合释放子树，不会形成测量与状态反复切换。
-                oversized = true
-            }
-            layout(footer.width, if (fits) footer.height else 0) {
-                // 超高素材本帧不放置，也不提供可见/可点击的裁切广告区域。
-                if (fits) footer.placeRelative(0, 0)
-            }
-        },
+    MediaAdFooterLayout(
+        availableHeightPx = availableHeightPx,
+        minimumContentHeightPx = minimumContentHeightPx,
+        contentPadding = contentPadding,
+        // 锁存超高状态，下一次组合释放原生资源且同一广告位不重试。
+        onOversized = { oversized = true },
+        modifier = modifier,
     ) {
         PageAdSlot(
             session = session,
@@ -67,7 +54,6 @@ internal fun MediaAdFooter(
             slotIndex = 0,
             requestEnabled = !blocked,
             canReveal = !blocked && canReveal,
-            modifier = Modifier.padding(contentPadding),
             // 固定槽没有 Lazy 离屏；小屏主动移除时及时销毁超高素材。
             retainOnDispose = false,
         )

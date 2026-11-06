@@ -1,4 +1,7 @@
 <resources>
+    <!-- 图片候选持续过滤开关：开启后自动取消当前及后续加载失败项的选择，单图手动例外由选择规则保留。 -->
+    <string name="host_image_filter_failed">过滤失败图片</string>
+    <string name="host_image_filter_failed_description">自动取消加载失败图片的选择</string>
     <!-- 全屏图片预览：计数由真实图片集合计算，关闭与重试仅作用于预览。 -->
     <string name="host_image_preview_title">图片预览</string>
     <string name="host_image_preview_close">关闭预览</string>

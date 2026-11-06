@@ -38,9 +38,12 @@ internal fun ToggleFilterChip(
     onSelectedChange: (Boolean) -> Unit,
     // 外部控制布局约束，不缩放胶囊或缩小实际点击区域。
     modifier: Modifier = Modifier,
+    // 禁用只阻止交互，不改变当前选中值；默认兼容已有系统应用调用方。
+    enabled: Boolean = true,
 ) {
     FilterChip(
         selected = selected,
+        enabled = enabled,
         // 保持原开关的目标状态回调契约，不在组件内触发扫描。
         onClick = { onSelectedChange(!selected) },
         modifier = modifier.semantics { contentDescription = accessibilityDescription },
@@ -62,7 +65,7 @@ internal fun ToggleFilterChip(
         ),
         // 选中态也保留 1dp 描边，颜色变化不引起几何尺寸变化。
         border = FilterChipDefaults.filterChipBorder(
-            enabled = true,
+            enabled = enabled,
             selected = selected,
             borderColor = MaterialTheme.colorScheme.outlineVariant,
             selectedBorderColor = MaterialTheme.colorScheme.primary,

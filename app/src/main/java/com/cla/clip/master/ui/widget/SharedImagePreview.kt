@@ -26,6 +26,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.key
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,6 +61,9 @@ import coil3.size.Size
 import coil3.size.SizeResolver
 import com.cla.clip.base.general.R
 import com.cla.clip.master.image.download.ImageRequestHeaderBuilder
+import com.cla.clip.master.ui.widget.image.ImageThumbnailLoadEvent
+import com.cla.clip.master.ui.widget.image.ImageThumbnailLoadPhase
+import com.cla.clip.master.ui.widget.image.ImageThumbnailLoadSession
 
 /**
  * 共享图片预览组件的默认参数。
@@ -154,7 +160,8 @@ internal fun rememberSharedImageRequest(
 /**
  * 可选择的图片缩略图。
  *
- * 主体点击用于预览，右上角图标独立切换选择状态；选择集合由调用方维护，组件只负责视觉、点击语义和解码尺寸回调。
+ * 主体点击用于预览，右上角图标独立切换选择状态；选择集合由调用方维护。
+ * 加载结果来自同一 Coil painter，按请求模型隔离子组合，防止旧回调被换绑到新的候选版本。
  */
 @Composable
 internal fun SelectableImageTile(
@@ -167,44 +174,67 @@ internal fun SelectableImageTile(
     failureTitle: String? = null,
     failureSubtitle: String? = null,
     onDecodedSize: (Int?, Int?) -> Unit = { _, _ -> },
+    // 默认不订阅，兼容只展示图片的调用方；事件不包含请求上下文或业务实体。
+    onLoadEvent: (ImageThumbnailLoadEvent) -> Unit = {},
 ) {
-    var loadFailed by remember(model) { mutableStateOf(false) }
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .aspectRatio(1f)
-            .clip(SharedImagePreviewDefaults.SelectableTileShape)
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .border(
-                width = if (selected) 2.dp else 1.dp,
-                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-                shape = SharedImagePreviewDefaults.SelectableTileShape
-            )
-            .clickable(onClick = onPreview)
-    ) {
-        AsyncImage(
-            model = model,
-            imageLoader = imageLoader,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            onSuccess = { state ->
-                loadFailed = false
-                onDecodedSize(state.result.image.width, state.result.image.height)
-            },
-            onError = { loadFailed = true },
-            modifier = Modifier
-                .fillMaxSize()
-                .alpha(if (selected) 1f else 0.42f)
-        )
-
-        if (loadFailed && failureTitle != null) {
-            ImageLoadFailureContent(title = failureTitle, subtitle = failureSubtitle)
+    key(model, imageLoader) {
+        // 失败占位只消费有效加载事件，与调用方收到的阶段保持一致。
+        var loadFailed by remember(model) { mutableStateOf(false) }
+        // 同模型的回调更新不重建请求；模型变化由外层 key 隔离，旧组件不会拿到新闭包。
+        val currentLoadEvent by rememberUpdatedState(onLoadEvent)
+        // 仅当前请求子组合拥有门闩；勾选变化不会建立新的加载尝试。
+        val loadSession = remember {
+            ImageThumbnailLoadSession { event ->
+                loadFailed = event.phase == ImageThumbnailLoadPhase.Failed
+                currentLoadEvent(event)
+            }
         }
+        // Lazy 离场关闭写入，重新激活恢复门闩；取消不清空页面保存的失败证据。
+        DisposableEffect(loadSession) {
+            loadSession.open()
+            onDispose { loadSession.close() }
+        }
+        Box(
+            modifier = modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(SharedImagePreviewDefaults.SelectableTileShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .border(
+                    width = if (selected) 2.dp else 1.dp,
+                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                    shape = SharedImagePreviewDefaults.SelectableTileShape
+                )
+                .clickable(onClick = onPreview)
+        ) {
+            AsyncImage(
+                model = model,
+                imageLoader = imageLoader,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                // 真实请求开始才改变状态；未加载的网格项没有失败证据。
+                onLoading = { loadSession.loading() },
+                onSuccess = { state ->
+                    // 缓存命中同样由门闩补齐尝试身份，再回填既有解码尺寸。
+                    loadSession.complete(ImageThumbnailLoadPhase.Succeeded)
+                    onDecodedSize(state.result.image.width, state.result.image.height)
+                },
+                // 不输出异常原文，组件仅转换可见失败状态。
+                onError = { loadSession.complete(ImageThumbnailLoadPhase.Failed) },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .alpha(if (selected) 1f else 0.42f)
+            )
 
-        ImageSelectionCheckIcon(
-            selected = selected,
-            onToggleSelected = onToggleSelected,
-        )
+            if (loadFailed && failureTitle != null) {
+                ImageLoadFailureContent(title = failureTitle, subtitle = failureSubtitle)
+            }
+
+            ImageSelectionCheckIcon(
+                selected = selected,
+                onToggleSelected = onToggleSelected,
+            )
+        }
     }
 }
 

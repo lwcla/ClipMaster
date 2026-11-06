@@ -16,6 +16,7 @@ import com.cla.clip.base.general.repository.ImageExtractRepository
 import com.cla.clip.base.general.utils.logD
 import com.cla.clip.master.utils.WebViewLinkPreviewExtractor
 import com.cla.clip.master.work.DownloadImagesWorker
+import com.cla.clip.master.ui.widget.image.ImageThumbnailLoadEvent
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -155,6 +156,38 @@ class ImageExtractVm @Inject constructor(
     /** 候选选择跨组合重建保留，只有显式重新提取清空。 */
     internal val selection = ImageCandidateSelection()
 
+    /** 缩略图失败只存在当前提取的内存状态，与预览元信息和下载结果分离。 */
+    internal val candidateLoads = ImageCandidateLoadTracker()
+
+    /** 页面传入事件创建时的提取轮次及候选模型，协作者拒绝旧版本回调。 */
+    internal fun onCandidateLoadEvent(expectedExtractionId: Int, candidate: ImageCandidateData, event: ImageThumbnailLoadEvent) {
+        candidateLoads.onLoadEvent(expectedExtractionId, candidateKey(candidate), candidate.previewRequestVersion(), event)
+        selection.updateFailures(candidateLoads.failedKeys.toSet())
+    }
+
+    /** 用户切换持续过滤；无已知失败也可提前开启，提交和批次阶段拒绝操作。 */
+    internal fun setFilterFailedCandidates(enabled: Boolean) {
+        if (isSubmitting || probeState is ImageProbeState.Extracted || selection.filterFailedEnabled == enabled) return
+        // 仅记录实际移除数量，不输出图片身份或请求信息。
+        val before = selection.selectedKeys.size
+        selection.setFilterFailed(enabled)
+        logCandidateSelection("filter", before)
+    }
+
+    /** 合并按钮按最新目标集合执行全选或清空，不改变过滤开关。 */
+    internal fun toggleSelectAllCandidates() {
+        if (isSubmitting || probeState is ImageProbeState.Extracted || !selection.canSelectAll) return
+        // 点击时读取实时状态，避免旧 UI 快照反转错误动作。
+        val before = selection.selectedKeys.size
+        selection.selectAll(!selection.isAllSelected)
+        logCandidateSelection("select_all", before)
+    }
+
+    /** 只对用户开关和批量操作打印低敏汇总，加载事件不逐图刷日志。 */
+    private fun logCandidateSelection(action: String, previousCount: Int) {
+        logD(TAG) { "图片选择已更新 action=$action extractionId=$extractionId filterEnabled=${selection.filterFailedEnabled} candidateCount=${probingCandidates.size} failedCount=${candidateLoads.failedKeys.size} selectedCount=${selection.selectedKeys.size} manualOverrideCount=${selection.manualOverrideCount} removedCount=${(previousCount - selection.selectedKeys.size).coerceAtLeast(0)}" }
+    }
+
     /** 下载提交跨配置变化防重。 */
     var isSubmitting by mutableStateOf(false)
         private set
@@ -219,6 +252,7 @@ class ImageExtractVm @Inject constructor(
         previewRequests.clear()
         submittedCandidates = emptyList()
         extractionId += 1
+        candidateLoads.update(extractionId, emptyMap())
     }
 
     /** 停止扫描立即冻结内存结果，不等待预览缓存写入，也不隐式创建下载任务。 */
@@ -314,6 +348,8 @@ class ImageExtractVm @Inject constructor(
                 }
             }
             selection.update(latest.map(::candidateKey))
+            candidateLoads.update(extractionId, latest.associate { candidateKey(it) to it.previewRequestVersion() })
+            selection.updateFailures(candidateLoads.failedKeys.toSet())
         }
     }
 
@@ -328,6 +364,8 @@ class ImageExtractVm @Inject constructor(
             probingCandidates.addAll(candidates)
         }
         selection.update(candidates.map(::candidateKey))
+        candidateLoads.update(extractionId, candidates.associate { candidateKey(it) to it.previewRequestVersion() })
+        selection.updateFailures(candidateLoads.failedKeys.toSet())
     }
 
     /** 返回当前阶段性候选快照，供手动结束或失败兜底判断使用。 */
@@ -394,6 +432,7 @@ class ImageExtractVm @Inject constructor(
     private suspend fun submitBatch(create: suspend () -> Pair<Long, List<ImageCandidateData>>?): Boolean {
         if (isSubmitting) return false
         isSubmitting = true
+        selection.setFrozen(true)
         return viewModelScope.async {
             try {
                 // IO 只负责落库和入队，完成后回主线程发布界面快照。
@@ -413,6 +452,8 @@ class ImageExtractVm @Inject constructor(
                 false
             } finally {
                 isSubmitting = false
+                // 失败回到候选阶段才解冻；已提交批次不追溯修改，重新提取统一重置。
+                if (probeState !is ImageProbeState.Extracted) selection.setFrozen(false)
             }
         }.await()
     }
